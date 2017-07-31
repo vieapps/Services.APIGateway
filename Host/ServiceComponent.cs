@@ -20,6 +20,15 @@ namespace net.vieapps.Services.APIGateway
 	internal class ServiceComponent : IDisposable
 	{
 
+		#region Attributes
+		internal IWampChannel _incommingChannel = null, _outgoingChannel = null;
+		long _incommingChannelSessionID = 0, _outgoingChannelSessionID = 0;
+		bool _channelAreClosedBySystem = false;
+
+		ManagementService _managementService = null;
+		Dictionary<string, int> _services = new Dictionary<string, int>();
+		#endregion
+
 		#region Constructor & Destructor
 		public ServiceComponent() { }
 
@@ -34,11 +43,21 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
-		#region Start
-		bool _channelAreClosedBySystem = false;
-		ManagementService _managementService = null;
-		RTUService _rtuService = null;
-		Dictionary<string, int> _services = new Dictionary<string, int>();
+		#region Start/Stop
+		internal void Start(string[] args = null, Func<Task> continueWith = null)
+		{
+			Task.Run(async () =>
+			{
+				await Task.Delay(13);
+				await this.StartAsync(args);
+			})
+			.ContinueWith(async (task) =>
+			{
+				if (continueWith != null)
+					await continueWith().ConfigureAwait(false);
+			})
+			.ConfigureAwait(false);
+		}
 
 		internal async Task StartAsync(string[] args = null)
 		{
@@ -47,6 +66,7 @@ namespace net.vieapps.Services.APIGateway
 			await this.OpenIncomingChannelAsync(
 				(sender, arguments) => {
 					Global.WriteLog("The incoming connection is established" + "\r\n" + " - Session ID: " + arguments.SessionId + "\r\n");
+					this._incommingChannelSessionID = arguments.SessionId;
 				},
 				(sender, arguments) => {
 					if (arguments.CloseType.Equals(SessionCloseType.Disconnection))
@@ -60,7 +80,8 @@ namespace net.vieapps.Services.APIGateway
 								123,
 								() => {
 									Global.WriteLog("Re-connect the incoming connection successful" + "\r\n");
-								}, (ex) => {
+								},
+								(ex) => {
 									Global.WriteLog("Error occurred while re-connecting the incoming connection", ex);
 								}
 							);
@@ -74,6 +95,7 @@ namespace net.vieapps.Services.APIGateway
 			await this.OpenOutgoingChannelAsync(
 				(sender, arguments) => {
 					Global.WriteLog("The outgoing connection is established" + "\r\n" + " - Session ID: " + arguments.SessionId + "\r\n");
+					this._outgoingChannelSessionID = arguments.SessionId;
 				},
 				(sender, arguments) => {
 					if (arguments.CloseType.Equals(SessionCloseType.Disconnection))
@@ -87,7 +109,8 @@ namespace net.vieapps.Services.APIGateway
 								123,
 								() => {
 									Global.WriteLog("Re-connect the outgoing connection successful" + "\r\n");
-								}, (ex) => {
+								},
+								(ex) => {
 									Global.WriteLog("Error occurred while re-connecting the outgoing connection", ex);
 								}
 							);
@@ -98,6 +121,12 @@ namespace net.vieapps.Services.APIGateway
 				}
 			);
 
+			// register services
+			await this.RegisterServicesAsync(args);
+		}
+
+		internal async Task RegisterServicesAsync(string[] args = null)
+		{
 			// register helper services
 			var registerHelperServices = true;
 			if (args != null && args.Length > 0)
@@ -112,96 +141,58 @@ namespace net.vieapps.Services.APIGateway
 			if (registerHelperServices)
 			{
 				this._managementService = new ManagementService();
-				await this._incommingChannel.RealmProxy.Services.RegisterCallee(this._managementService, new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin }));
+				await this._incommingChannel.RealmProxy.Services.RegisterCallee(new ManagementService(), new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin }));
 				Global.WriteLog("The management service is registered");
 
-				this._rtuService = new RTUService();
-				await this._incommingChannel.RealmProxy.Services.RegisterCallee(this._rtuService, new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin }));
+				await this._incommingChannel.RealmProxy.Services.RegisterCallee(new RTUService(), new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin }));
 				Global.WriteLog("The real-time update (RTU) service is registered");
 			}
 
 			// register business services
-			this.RegisterServices(args);
-		}
-
-		void RegisterServices(string[] args = null)
-		{
 			var current = Process.GetCurrentProcess().ProcessName + ".exe";
 			UtilityService.GetFiles(Directory.GetCurrentDirectory(), "*.exe")
 				.Where(info => !info.Name.IsEquals(current))
-				.ForEach(info => 
+				.Select(info => info.Name)
+				.ForEach(name =>
 				{
-					var name = info.Name;
-					if (!this._services.ContainsKey(name))
-					{
-						var process = UtilityService.RunProcess(name, null,
-							(sender, arguments) => {
-								this._services.Remove((sender as Process).StartInfo.FileName);
-								Global.WriteLog("The service of [" + (sender as Process).StartInfo.FileName + " - PID: " + (sender as Process).Id.ToString() + "] is stopped...");
-							},
-							(sender, arguments) => {
-								Global.WriteLog(
-									"[" + (sender as Process).StartInfo.FileName + " - PID: " + (sender as Process).Id.ToString() + "] -------------" + "\r\n" +
-									arguments.Data + "\r\n" +
-									"--------------------------------------------------------------" + "\r\n"
-								);
-							}
-						);
-						this._services.Add(name, process.Id);
-						Global.WriteLog("The service of [" + name + " - PID: " + process.Id.ToString() + "] is running...");
-					}
+					this.StartService(name);
 				});
 		}
-		#endregion
 
-		#region Stop
 		internal void Stop()
 		{
 			if (this._managementService != null)
 				this._managementService.FlushAll();
 
-			this._services
-				.Select(info => info.Value)
-				.ToList()
-				.ForEach(id =>
-				{
-					UtilityService.KillProcess(id);
-				});
+			this._services.ForEach(info =>
+			{
+				this.StopService(info.Key, false);
+			});
 			this._services.Clear();
 
 			this._channelAreClosedBySystem = true;
 			this.CloseIncomingChannel();
 			this.CloseOutgoingChannel();
 		}
-
-		void OnCloseIncomingChannel()
-		{
-		}
-
-		void OnCloseOutgoingChannel()
-		{
-		}
 		#endregion
 
 		#region Open/Close channels
 		protected virtual Tuple<string, string, bool> GetLocationInfo()
 		{
-			var address = ConfigurationManager.AppSettings["Address"];
-			if (string.IsNullOrEmpty(address))
+			var address = ConfigurationManager.AppSettings["RouterAddress"];
+			if (string.IsNullOrWhiteSpace(address))
 				address = "ws://127.0.0.1:26429/";
 
-			var realm = ConfigurationManager.AppSettings["Realm"];
-			if (string.IsNullOrEmpty(realm))
+			var realm = ConfigurationManager.AppSettings["RouterRealm"];
+			if (string.IsNullOrWhiteSpace(realm))
 				realm = "VIEAppsRealm";
 
-			var mode = ConfigurationManager.AppSettings["Mode"];
-			if (string.IsNullOrEmpty(mode))
+			var mode = ConfigurationManager.AppSettings["RouterChannelsMode"];
+			if (string.IsNullOrWhiteSpace(mode))
 				mode = "MsgPack";
 
 			return new Tuple<string, string, bool>(address, realm, mode.IsEquals("json"));
 		}
-
-		internal IWampChannel _incommingChannel = null;
 
 		public async Task OpenIncomingChannelAsync(Action<object, WampSessionCreatedEventArgs> onConnectionEstablished = null, Action<object, WampSessionCloseEventArgs> onConnectionBroken = null, Action<object, WampConnectionErrorEventArgs> onConnectionError = null)
 		{
@@ -233,8 +224,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			if (this._incommingChannel != null)
 			{
-				this.OnCloseIncomingChannel();
-				this._incommingChannel.Close();
+				this._incommingChannel.Close("The incoming channel is closed when stop the API Gateway Hosting Service", new GoodbyeDetails());
 				this._incommingChannel = null;
 			}
 		}
@@ -250,18 +240,14 @@ namespace net.vieapps.Services.APIGateway
 					try
 					{
 						await this._incommingChannel.Open();
-						if (onSuccess != null)
-							onSuccess();
+						onSuccess?.Invoke();
 					}
 					catch (Exception ex)
 					{
-						if (onError != null)
-							onError(ex);
+						onError?.Invoke(ex);
 					}
 				})).Start();
 		}
-
-		internal IWampChannel _outgoingChannel = null;
 
 		public async Task OpenOutgoingChannelAsync(Action<object, WampSessionCreatedEventArgs> onConnectionEstablished = null, Action<object, WampSessionCloseEventArgs> onConnectionBroken = null, Action<object, WampConnectionErrorEventArgs> onConnectionError = null)
 		{
@@ -293,8 +279,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			if (this._outgoingChannel != null)
 			{
-				this.OnCloseOutgoingChannel();
-				this._outgoingChannel.Close();
+				this._outgoingChannel.Close("The outgoing channel is closed when stop the API Gateway Hosting Service", new GoodbyeDetails());
 				this._outgoingChannel = null;
 			}
 		}
@@ -310,15 +295,55 @@ namespace net.vieapps.Services.APIGateway
 					try
 					{
 						await this._outgoingChannel.Open();
-						if (onSuccess != null)
-							onSuccess();
+						onSuccess?.Invoke();
 					}
 					catch (Exception ex)
 					{
-						if (onError != null)
-							onError(ex);
+						onError?.Invoke(ex);
 					}
 				})).Start();
+		}
+		#endregion
+
+		#region Start/Stop business service
+		void StartService(string name, string arguments = null)
+		{
+			if (string.IsNullOrWhiteSpace(name) || this._services.ContainsKey(name.ToLower()))
+				return;
+
+			var process = UtilityService.RunProcess(
+				name,
+				arguments,
+				(sender, args) => {
+					this._services.Remove((sender as Process).StartInfo.FileName);
+					Global.WriteLog("The service [" + (sender as Process).StartInfo.FileName + " - PID: " + (sender as Process).Id.ToString() + "] is stopped...");
+				},
+				(sender, args) => {
+					Global.WriteLog(
+						"[" + (sender as Process).StartInfo.FileName + " - PID: " + (sender as Process).Id.ToString() + "] -------------" + "\r\n" +
+						args.Data + "\r\n" +
+						"--------------------------------------------------------------" + "\r\n"
+					);
+				}
+			);
+
+			this._services.Add(name.ToLower(), process.Id);
+			Global.WriteLog("The service [" + name + " - PID: " + process.Id.ToString() + "] is running...");
+		}
+
+		void StopService(int processId)
+		{
+			UtilityService.KillProcess(processId);
+		}
+
+		void StopService(string name, bool clean = true)
+		{
+			if (!string.IsNullOrWhiteSpace(name) && this._services.ContainsKey(name.ToLower()))
+			{
+				this.StopService(this._services[name.ToLower()]);
+				if (clean)
+					this._services.Remove(name.ToLower());
+			}
 		}
 		#endregion
 

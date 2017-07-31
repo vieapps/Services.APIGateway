@@ -7,7 +7,7 @@ namespace net.vieapps.Services.APIGateway
 	static class Program
 	{
 		[STAThread]
-		static void Main()
+		static void Main(string[] args)
 		{
 			// initialize
 			Global.AsService = !Environment.UserInteractive;
@@ -22,6 +22,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				Application.EnableVisualStyles();
 				Application.SetCompatibleTextRenderingDefault(false);
+
 				Global.Form = new MainForm();
 				Application.Run(Global.Form);
 			}

@@ -20,10 +20,7 @@ namespace net.vieapps.Services.APIGateway
 		protected override void OnStart(string[] args)
 		{
 			Global.InitializeLog();
-			Task.Run(async () =>
-			{
-				await Global.Component.StartAsync(args);
-			}).ConfigureAwait(false);
+			Global.Component.Start(args);
 		}
 
 		protected override void OnStop()

@@ -12,9 +12,22 @@ namespace net.vieapps.Services.APIGateway
 {
 	public partial class MainForm : Form
 	{
-		public MainForm()
+		public MainForm(string[] args = null)
 		{
 			this.InitializeComponent();
+			this.arguments = args;
+		}
+
+		string[] arguments = null;
+
+		void MainForm_Load(object sender, EventArgs e)
+		{
+			Global.Component.Start(this.arguments);
+		}
+
+		void MainForm_FormClosed(object sender, FormClosedEventArgs e)
+		{
+			Global.Component.Dispose();
 		}
 	}
 }

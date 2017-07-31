@@ -18,12 +18,13 @@ namespace net.vieapps.Services.APIGateway
 	{
 		public RTUService() { }
 
-		ISubject<UpdateMessage> _subject = null;
+		#region Send update messages
+		ISubject<UpdateMessage> _updateSubject = null;
 
-		void GetSubject()
+		void GetUpdateSubject()
 		{
-			if (this._subject == null)
-				this._subject = Global.Component._outgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.client.messages");
+			if (this._updateSubject == null)
+				this._updateSubject = Global.Component._outgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages");
 		}
 
 		public Task SendUpdateMessageAsync(UpdateMessage message)
@@ -31,11 +32,11 @@ namespace net.vieapps.Services.APIGateway
 			if (message != null)
 				try
 				{
-					this.GetSubject();
-					this._subject.OnNext(message);
+					this.GetUpdateSubject();
+					this._updateSubject.OnNext(message);
 #if DEBUG
 					Global.WriteLog(
-						"Publish a client's message successful" + "\r\n" +
+						"Publish an update message successful" + "\r\n" +
 						"- Device: " + message.DeviceID + "\r\n" +
 						"- Excluded: " + (string.IsNullOrWhiteSpace(message.ExcludedDeviceID) ? "None" : message.ExcludedDeviceID) + "\r\n" +
 						"- Message: " + message.Data.ToString(Formatting.None) + "\r\n"
@@ -44,7 +45,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					Global.WriteLog("Error occurred while publishing a client's message", ex);
+					Global.WriteLog("Error occurred while publishing an update message", ex);
 				}
 			return Task.CompletedTask;
 		}
@@ -54,8 +55,8 @@ namespace net.vieapps.Services.APIGateway
 			if (messages != null && messages.Count > 0)
 				try
 				{
-					this.GetSubject();
-					var publisher = messages
+					this.GetUpdateSubject();
+					using (var publisher = messages
 						.Select(msg => new UpdateMessage()
 						{
 							Type = msg.Type,
@@ -67,10 +68,10 @@ namespace net.vieapps.Services.APIGateway
 						.Subscribe(
 							(message) =>
 							{
-								this._subject.OnNext(message);
+								this._updateSubject.OnNext(message);
 #if DEBUG
 								Global.WriteLog(
-									"Publish a client's message successful" + "\r\n" +
+									"Publish an update message successful" + "\r\n" +
 									"- Device: " + message.DeviceID + "\r\n" +
 									"- Excluded: " + (string.IsNullOrWhiteSpace(message.ExcludedDeviceID) ? "None" : message.ExcludedDeviceID) + "\r\n" +
 									"- Message: " + message.Data.ToString(Formatting.None) + "\r\n"
@@ -79,46 +80,58 @@ namespace net.vieapps.Services.APIGateway
 							},
 							(exception) =>
 							{
-								Global.WriteLog("Error occurred while publishing a client's message", exception);
+								Global.WriteLog("Error occurred while publishing an update message", exception);
 							}
+						)
+					)
+					{
+#if DEBUG
+						Global.WriteLog(
+							"Publish the update messages successful" + "\r\n" +
+							"- Device: " + deviceID + "\r\n" +
+							"- Excluded: " + (string.IsNullOrWhiteSpace(excludedDeviceID) ? "None" : excludedDeviceID) + "\r\n" +
+							"- Total of messages: " + messages.Count.ToString() + "\r\n"
 						);
-					publisher.Dispose();
+#endif
+					}
 				}
 				catch (Exception ex)
 				{
-					Global.WriteLog("Error occurred while publishing the clients' messages", ex);
+					Global.WriteLog("Error occurred while publishing the update messages", ex);
 				}
 			return Task.CompletedTask;
 		}
+		#endregion
 
-		Dictionary<string, ISubject<BaseMessage>> _subjects = new Dictionary<string, ISubject<BaseMessage>>();
+		#region Send inter-communicate messages
+		Dictionary<string, ISubject<BaseMessage>> _communicateSubjects = new Dictionary<string, ISubject<BaseMessage>>();
 
-		ISubject<BaseMessage> GetSubject(string serviceName)
+		ISubject<BaseMessage> GetCommunicateSubject(string serviceName)
 		{
-			var uri = "net.vieapps.rtu.service.messages." + serviceName.ToLower();
+			var uri = "net.vieapps.rtu.communicate.messages." + serviceName.ToLower();
 			ISubject<BaseMessage> subject;
-			if (!this._subjects.TryGetValue(uri, out subject))
-				lock (this._subjects)
+			if (!this._communicateSubjects.TryGetValue(uri, out subject))
+				lock (this._communicateSubjects)
 				{
-					if (!this._subjects.TryGetValue(uri, out subject))
+					if (!this._communicateSubjects.TryGetValue(uri, out subject))
 					{
 						subject = Global.Component._outgoingChannel.RealmProxy.Services.GetSubject<BaseMessage>(uri);
-						this._subjects.Add(uri, subject);
+						this._communicateSubjects.Add(uri, subject);
 					}
 				}
 			return subject;
 		}
 
-		public Task SendInterCommuniateMessageAsync(string serviceName, BaseMessage message)
+		public Task SendInterCommunicateMessageAsync(string serviceName, BaseMessage message)
 		{
 			if (!string.IsNullOrWhiteSpace(serviceName) && message != null)
 				try
 				{
-					var subject = this.GetSubject(serviceName);
+					var subject = this.GetCommunicateSubject(serviceName);
 					subject.OnNext(message);
 #if DEBUG
 					Global.WriteLog(
-						"Publish a service's message successful" + "\r\n" +
+						"Publish an inter-communicate message successful" + "\r\n" +
 						"- Destination: net.vieapps.services." + serviceName.ToLower() + "\r\n" +
 						"- Message: " + message.Data.ToString(Formatting.None) + "\r\n"
 					);
@@ -126,18 +139,18 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					Global.WriteLog("Error occurred while publishing a service's message", ex);
+					Global.WriteLog("Error occurred while publishing an inter-communicate message", ex);
 				}
 			return Task.CompletedTask;
 		}
 
-		public Task SendInterCommuniateMessagesAsync(string serviceName, List<BaseMessage> messages)
+		public Task SendInterCommunicateMessagesAsync(string serviceName, List<BaseMessage> messages)
 		{
 			if (!string.IsNullOrWhiteSpace(serviceName) && messages != null && messages.Count > 0)
 				try
 				{
-					var subject = this.GetSubject(serviceName);
-					var publisher = messages
+					var subject = this.GetCommunicateSubject(serviceName);
+					using (var publisher = messages
 						.ToObservable()
 						.Subscribe(
 							(message) =>
@@ -145,7 +158,7 @@ namespace net.vieapps.Services.APIGateway
 								subject.OnNext(message);
 #if DEBUG
 								Global.WriteLog(
-									"Publish a service's message successful" + "\r\n" +
+									"Publish an inter-communicate message successful" + "\r\n" +
 									"- Destination: net.vieapps.services." + serviceName.ToLower() + "\r\n" +
 									"- Message: " + message.Data.ToString(Formatting.None) + "\r\n"
 								);
@@ -153,16 +166,27 @@ namespace net.vieapps.Services.APIGateway
 							},
 							(exception) =>
 							{
-								Global.WriteLog("Error occurred while publishing a service's message", exception);
+								Global.WriteLog("Error occurred while publishing an inter-communicate message", exception);
 							}
+						)
+					)
+					{
+#if DEBUG
+						Global.WriteLog(
+							"Publish the inter-communicate messages successful" + "\r\n" +
+							"- Destination: net.vieapps.services." + serviceName.ToLower() + "\r\n" +
+							"- Total of messages: " + messages.Count.ToString() + "\r\n"
 						);
-					publisher.Dispose();
+#endif
+					}
 				}
 				catch (Exception ex)
 				{
-					Global.WriteLog("Error occurred while publishing the services' messages", ex);
+					Global.WriteLog("Error occurred while publishing the inter-communicate messages", ex);
 				}
 			return Task.CompletedTask;
 		}
+		#endregion
+
 	}
 }

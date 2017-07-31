@@ -28,15 +28,15 @@ namespace net.vieapps.Services.APIGateway
 				this._max = 10;
 			}
 #endif
+
 			try
 			{
-				this._logsPath = ConfigurationManager.AppSettings["RootLogFolder"];
+				this._logsPath = ConfigurationManager.AppSettings["LogsPath"];
 			}
-			catch
-			{
+			catch { }
+			if (string.IsNullOrWhiteSpace(this._logsPath))
 				this._logsPath = Directory.GetCurrentDirectory() + @"\logs";
-			}
-			if (this._logsPath.EndsWith(@"\"))
+			else if (this._logsPath.EndsWith(@"\"))
 				this._logsPath = this._logsPath.Left(this._logsPath.Length - 1);
 		}
 		#endregion

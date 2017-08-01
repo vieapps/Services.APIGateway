@@ -54,7 +54,7 @@ namespace net.vieapps.Services.APIGateway
 		public Task WriteLogsAsync(string correlationID, string serviceName, string objectName, List<string> logs, string stack)
 		{
 			string path = serviceName.ToLower() + @"\" + serviceName.ToLower()
-				+ (string.IsNullOrWhiteSpace(objectName) ? "" : "." + objectName.ToLower());
+				+ (!string.IsNullOrWhiteSpace(objectName) && !serviceName.IsEquals(objectName) ? "." + objectName.ToLower() : "");
 
 			Queue<string> queueOfLogs;
 			if (!this._logs.TryGetValue(path, out queueOfLogs))
@@ -69,10 +69,11 @@ namespace net.vieapps.Services.APIGateway
 
 			logs.ForEach(log =>
 			{
-				queueOfLogs.Enqueue(
-					correlationID + "\t" + DateTime.Now.ToString("HH:mm:ss.fff") + "\t" + log
-					+ (string.IsNullOrWhiteSpace(stack) ? "" : "\r\n\t" + stack + "\r\n")
+				queueOfLogs.Enqueue(correlationID + "\t" + DateTime.Now.ToString("HH:mm:ss.fff") + "\t" + log + (string.IsNullOrWhiteSpace(stack) ? "" : "\r\n\t" + stack + "\r\n")
 				);
+
+				if (!Global.AsService)
+					Global.Form.UpdateLogs(correlationID + "\t" + DateTime.Now.ToString("HH:mm:ss.fff") + "\t" + log + (string.IsNullOrWhiteSpace(stack) ? "" : "\r\n\t" + stack + "\r\n"));
 			});
 
 			if (queueOfLogs.Count >= this._max)
@@ -95,7 +96,7 @@ namespace net.vieapps.Services.APIGateway
 			if (!Directory.Exists(this._logsPath + @"\" + info[0]))
 				Directory.CreateDirectory(this._logsPath + @"\" + info[0]);
 
-			UtilityService.WriteTextFile(this._logsPath + @"\" + info[0] + @"\" + DateTime.Now.ToString("yyyy-MM-dd-HH") + "." + info[1], logItems, true);
+			UtilityService.WriteTextFile(this._logsPath + @"\" + info[0] + @"\" + DateTime.Now.ToString("yyyy-MM-dd-HH") + "." + info[1] + ".txt", logItems, true);
 		}
 
 		internal void FlushAll()

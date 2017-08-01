@@ -49,7 +49,7 @@ namespace net.vieapps.Services.APIGateway
 				Global.EventLog.WriteEntry(msg, ex != null ? EventLogEntryType.Error : EventLogEntryType.Information);
 			else
 			{
-				//Program.Form.UpdateLogs(msg);
+				Global.Form.UpdateLogs(msg);
 			}
 		}
 		#endregion

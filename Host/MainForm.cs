@@ -1,11 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace net.vieapps.Services.APIGateway
@@ -29,5 +22,48 @@ namespace net.vieapps.Services.APIGateway
 		{
 			Global.Component.Dispose();
 		}
+
+		void ManageServices_Click(object sender, EventArgs e)
+		{
+
+		}
+
+		void ClearLogs_Click(object sender, EventArgs e)
+		{
+			this.Logs.Text = "";
+		}
+
+		public delegate void UpdateLogsDelegator(string logs);
+
+		internal void UpdateLogs(string logs)
+		{
+			if (base.InvokeRequired)
+			{
+				UpdateLogsDelegator method = new UpdateLogsDelegator(this.UpdateLogs);
+				base.Invoke(method, new object[] { logs });
+			}
+			else
+			{
+				this.Logs.AppendText(logs + "\r\n");
+				this.Logs.SelectionStart = this.Logs.TextLength;
+				this.Logs.ScrollToCaret();
+			}
+		}
+
+		public delegate void UpdateServicesInfoDelegator(int available, int running);
+
+		internal void UpdateServicesInfo(int available, int running)
+		{
+			if (base.InvokeRequired)
+			{
+				UpdateServicesInfoDelegator method = new UpdateServicesInfoDelegator(this.UpdateServicesInfo);
+				base.Invoke(method, new object[] { available, running });
+			}
+			else
+			{
+				this.ServicesInfo.Text = "Available services: " + available.ToString() + " - Running services: " + running.ToString();
+			}
+		}
+
 	}
 }

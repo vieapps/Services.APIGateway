@@ -26,7 +26,8 @@ namespace net.vieapps.Services.APIGateway
 		bool _channelAreClosedBySystem = false;
 
 		ManagementService _managementService = null;
-		Dictionary<string, int> _services = new Dictionary<string, int>();
+		internal List<string> _availableServices = null;
+		internal Dictionary<string, int> _runningServices = new Dictionary<string, int>();
 		#endregion
 
 		#region Constructor & Destructor
@@ -48,7 +49,6 @@ namespace net.vieapps.Services.APIGateway
 		{
 			Task.Run(async () =>
 			{
-				await Task.Delay(13);
 				await this.StartAsync(args);
 			})
 			.ContinueWith(async (task) =>
@@ -125,50 +125,16 @@ namespace net.vieapps.Services.APIGateway
 			await this.RegisterServicesAsync(args);
 		}
 
-		internal async Task RegisterServicesAsync(string[] args = null)
-		{
-			// register helper services
-			var registerHelperServices = true;
-			if (args != null && args.Length > 0)
-				for (var index = 0; index < args.Length; index++)
-					if (args[index].IsStartsWith("/helper-services:"))
-					{
-						if (args[index].IsEndsWith(":false"))
-							registerHelperServices = false;
-						break;
-					}
-
-			if (registerHelperServices)
-			{
-				this._managementService = new ManagementService();
-				await this._incommingChannel.RealmProxy.Services.RegisterCallee(new ManagementService(), new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin }));
-				Global.WriteLog("The management service is registered");
-
-				await this._incommingChannel.RealmProxy.Services.RegisterCallee(new RTUService(), new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin }));
-				Global.WriteLog("The real-time update (RTU) service is registered");
-			}
-
-			// register business services
-			var current = Process.GetCurrentProcess().ProcessName + ".exe";
-			UtilityService.GetFiles(Directory.GetCurrentDirectory(), "*.exe")
-				.Where(info => !info.Name.IsEquals(current))
-				.Select(info => info.Name)
-				.ForEach(name =>
-				{
-					this.StartService(name);
-				});
-		}
-
 		internal void Stop()
 		{
 			if (this._managementService != null)
 				this._managementService.FlushAll();
 
-			this._services.ForEach(info =>
+			this._runningServices.ForEach(info =>
 			{
 				this.StopService(info.Key, false);
 			});
-			this._services.Clear();
+			this._runningServices.Clear();
 
 			this._channelAreClosedBySystem = true;
 			this.CloseIncomingChannel();
@@ -305,17 +271,62 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
-		#region Start/Stop business service
+		internal async Task RegisterServicesAsync(string[] args = null)
+		{
+			// register helper services
+			var registerHelperServices = true;
+			if (args != null && args.Length > 0)
+				for (var index = 0; index < args.Length; index++)
+					if (args[index].IsStartsWith("/helper-services:"))
+					{
+						if (args[index].IsEndsWith(":false"))
+							registerHelperServices = false;
+						break;
+					}
+
+			if (registerHelperServices)
+			{
+				this._managementService = new ManagementService();
+				await this._incommingChannel.RealmProxy.Services.RegisterCallee(new ManagementService(), new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin }));
+				Global.WriteLog("The management service is registered");
+
+				await this._incommingChannel.RealmProxy.Services.RegisterCallee(new RTUService(), new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin }));
+				Global.WriteLog("The real-time update (RTU) service is registered");
+			}
+
+			// register services
+			if (this._availableServices == null)
+				this.GetAvailableServices();
+
+			this._availableServices.ForEach(name =>
+			{
+				this.StartService(name);
+			});
+
+			if (!Global.AsService)
+				Global.Form.UpdateServicesInfo(this._availableServices.Count, this._runningServices.Count);
+		}
+
+		internal void GetAvailableServices()
+		{
+			var current = Process.GetCurrentProcess().ProcessName + ".exe";
+			this._availableServices = UtilityService.GetFiles(Directory.GetCurrentDirectory(), "*.exe")
+				.Where(info => !info.Name.IsEquals(current))
+				.Select(info => info.Name)
+				.ToList();
+		}
+
+		#region Start/Stop service
 		void StartService(string name, string arguments = null)
 		{
-			if (string.IsNullOrWhiteSpace(name) || this._services.ContainsKey(name.ToLower()))
+			if (string.IsNullOrWhiteSpace(name) || this._runningServices.ContainsKey(name.ToLower()))
 				return;
 
 			var process = UtilityService.RunProcess(
 				name,
 				arguments,
 				(sender, args) => {
-					this._services.Remove((sender as Process).StartInfo.FileName);
+					this._runningServices.Remove((sender as Process).StartInfo.FileName);
 					Global.WriteLog("The service [" + (sender as Process).StartInfo.FileName + " - PID: " + (sender as Process).Id.ToString() + "] is stopped...");
 				},
 				(sender, args) => {
@@ -327,7 +338,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 			);
 
-			this._services.Add(name.ToLower(), process.Id);
+			this._runningServices.Add(name.ToLower(), process.Id);
 			Global.WriteLog("The service [" + name + " - PID: " + process.Id.ToString() + "] is running...");
 		}
 
@@ -338,11 +349,11 @@ namespace net.vieapps.Services.APIGateway
 
 		void StopService(string name, bool clean = true)
 		{
-			if (!string.IsNullOrWhiteSpace(name) && this._services.ContainsKey(name.ToLower()))
+			if (!string.IsNullOrWhiteSpace(name) && this._runningServices.ContainsKey(name.ToLower()))
 			{
-				this.StopService(this._services[name.ToLower()]);
+				this.StopService(this._runningServices[name.ToLower()]);
 				if (clean)
-					this._services.Remove(name.ToLower());
+					this._runningServices.Remove(name.ToLower());
 			}
 		}
 		#endregion

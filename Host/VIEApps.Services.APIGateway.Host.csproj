@@ -38,6 +38,9 @@
   <PropertyGroup>
     <StartupObject>net.vieapps.Services.APIGateway.Program</StartupObject>
   </PropertyGroup>
+  <PropertyGroup>
+    <ApplicationIcon>Gateway.ico</ApplicationIcon>
+  </PropertyGroup>
   <ItemGroup>
     <Reference Include="Castle.Core, Version=4.1.1.0, Culture=neutral, PublicKeyToken=407dd0808d44fbdc, processorArchitecture=MSIL">
       <HintPath>..\..\..\packages\Castle.Core.4.1.1\lib\net45\Castle.Core.dll</HintPath>
@@ -143,22 +146,22 @@
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml" />
     <Reference Include="WampSharp, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\..\..\packages\WampSharp.1.2.5.39-beta\lib\net45\WampSharp.dll</HintPath>
+      <HintPath>..\..\..\packages\WampSharp.1.2.5.40-beta\lib\net45\WampSharp.dll</HintPath>
     </Reference>
     <Reference Include="WampSharp.Default.Client, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\..\..\packages\WampSharp.Default.Client.1.2.5.39-beta\lib\net45\WampSharp.Default.Client.dll</HintPath>
+      <HintPath>..\..\..\packages\WampSharp.Default.Client.1.2.5.40-beta\lib\net45\WampSharp.Default.Client.dll</HintPath>
     </Reference>
     <Reference Include="WampSharp.Fleck, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\..\..\packages\WampSharp.Fleck.1.2.5.39-beta\lib\net45\WampSharp.Fleck.dll</HintPath>
+      <HintPath>..\..\..\packages\WampSharp.Fleck.1.2.5.40-beta\lib\net45\WampSharp.Fleck.dll</HintPath>
     </Reference>
     <Reference Include="WampSharp.NewtonsoftJson, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\..\..\packages\WampSharp.NewtonsoftJson.1.2.5.39-beta\lib\net45\WampSharp.NewtonsoftJson.dll</HintPath>
+      <HintPath>..\..\..\packages\WampSharp.NewtonsoftJson.1.2.5.40-beta\lib\net45\WampSharp.NewtonsoftJson.dll</HintPath>
     </Reference>
     <Reference Include="WampSharp.NewtonsoftMsgpack, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\..\..\packages\WampSharp.NewtonsoftMsgpack.1.2.5.39-beta\lib\net45\WampSharp.NewtonsoftMsgpack.dll</HintPath>
+      <HintPath>..\..\..\packages\WampSharp.NewtonsoftMsgpack.1.2.5.40-beta\lib\net45\WampSharp.NewtonsoftMsgpack.dll</HintPath>
     </Reference>
     <Reference Include="WampSharp.WebSocket4Net, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\..\..\packages\WampSharp.WebSocket4Net.1.2.5.39-beta\lib\net45\WampSharp.WebSocket4Net.dll</HintPath>
+      <HintPath>..\..\..\packages\WampSharp.WebSocket4Net.1.2.5.40-beta\lib\net45\WampSharp.WebSocket4Net.dll</HintPath>
     </Reference>
     <Reference Include="WebSocket4Net, Version=0.15.0.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>..\..\..\packages\WebSocket4Net.0.15.0-beta6\lib\net45\WebSocket4Net.dll</HintPath>
@@ -224,6 +227,9 @@
       <Project>{c496cef5-9ff8-4364-9860-fcdefed4e277}</Project>
       <Name>VIEApps.Services.Base</Name>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="Gateway.ico" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

@@ -25,7 +25,7 @@ namespace net.vieapps.Services.APIGateway
 
 		void ManageServices_Click(object sender, EventArgs e)
 		{
-
+			Global.Component.StopService("VIEApps.Services.Users.exe");
 		}
 
 		void ClearLogs_Click(object sender, EventArgs e)
@@ -43,11 +43,13 @@ namespace net.vieapps.Services.APIGateway
 				base.Invoke(method, new object[] { logs });
 			}
 			else
-			{
-				this.Logs.AppendText(logs + "\r\n");
-				this.Logs.SelectionStart = this.Logs.TextLength;
-				this.Logs.ScrollToCaret();
-			}
+				try
+				{
+					this.Logs.AppendText(logs + "\r\n");
+					this.Logs.SelectionStart = this.Logs.TextLength;
+					this.Logs.ScrollToCaret();
+				}
+				catch { }
 		}
 
 		public delegate void UpdateServicesInfoDelegator(int available, int running);
@@ -60,10 +62,11 @@ namespace net.vieapps.Services.APIGateway
 				base.Invoke(method, new object[] { available, running });
 			}
 			else
-			{
-				this.ServicesInfo.Text = "Available services: " + available.ToString() + " - Running services: " + running.ToString();
-			}
+				try
+				{
+					this.ServicesInfo.Text = "Available services: " + available.ToString() + " - Running services: " + running.ToString();
+				}
+				catch { }
 		}
-
 	}
 }

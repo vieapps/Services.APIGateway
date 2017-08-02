@@ -66,7 +66,7 @@ namespace net.vieapps.Services.APIGateway
 						})
 						.ToObservable()
 						.Subscribe(
-							(message) =>
+							message =>
 							{
 								this._updateSubject.OnNext(message);
 #if DEBUG
@@ -78,7 +78,7 @@ namespace net.vieapps.Services.APIGateway
 								);
 #endif
 							},
-							(exception) =>
+							exception =>
 							{
 								Global.WriteLog("Error occurred while publishing an update message", exception);
 							}
@@ -153,7 +153,7 @@ namespace net.vieapps.Services.APIGateway
 					using (var publisher = messages
 						.ToObservable()
 						.Subscribe(
-							(message) =>
+							message =>
 							{
 								subject.OnNext(message);
 #if DEBUG
@@ -164,7 +164,7 @@ namespace net.vieapps.Services.APIGateway
 								);
 #endif
 							},
-							(exception) =>
+							exception =>
 							{
 								Global.WriteLog("Error occurred while publishing an inter-communicate message", exception);
 							}

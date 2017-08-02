@@ -64,59 +64,69 @@ namespace net.vieapps.Services.APIGateway
 			// open channels
 			Global.WriteLog("Starting the API Gateway...");
 			await this.OpenIncomingChannelAsync(
-				(sender, arguments) => {
-					Global.WriteLog("The incoming connection is established" + "\r\n" + " - Session ID: " + arguments.SessionId + "\r\n");
+				(sender, arguments) =>
+				{
+					Global.WriteLog("The incoming connection is established" + "\r\n" + " - Session ID: " + arguments.SessionId);
 					this._incommingChannelSessionID = arguments.SessionId;
 				},
-				(sender, arguments) => {
+				(sender, arguments) =>
+				{
 					if (arguments.CloseType.Equals(SessionCloseType.Disconnection))
-						Global.WriteLog("The incoming connection is broken because the router is not found or the router is refused" + "\r\n" + " - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString() + "\r\n");
+						Global.WriteLog("The incoming connection is broken because the router is not found or the router is refused" + "\r\n" + " - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
 					else
 					{
 						if (this._channelAreClosedBySystem)
-							Global.WriteLog("The incoming connection is closed" + "\r\n" + " - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString() + "\r\n");
+							Global.WriteLog("The incoming connection is closed" + "\r\n" + " - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
 						else
 							this.ReOpenIncomingChannel(
 								123,
-								() => {
-									Global.WriteLog("Re-connect the incoming connection successful" + "\r\n");
+								() =>
+								{
+									Global.WriteLog("Re-connect the incoming connection successful");
 								},
-								(ex) => {
+								ex =>
+								{
 									Global.WriteLog("Error occurred while re-connecting the incoming connection", ex);
 								}
 							);
 					}
 				},
-				(sender, arguments) => {
+				(sender, arguments) =>
+				{
 					Global.WriteLog("Got an error of incoming connection: " + (arguments.Exception != null ? arguments.Exception.Message : "None"), arguments.Exception);
 				}
 			);
 
 			await this.OpenOutgoingChannelAsync(
-				(sender, arguments) => {
-					Global.WriteLog("The outgoing connection is established" + "\r\n" + " - Session ID: " + arguments.SessionId + "\r\n");
+				(sender, arguments) =>
+				{
+					Global.WriteLog("The outgoing connection is established" + "\r\n" + " - Session ID: " + arguments.SessionId);
 					this._outgoingChannelSessionID = arguments.SessionId;
 				},
-				(sender, arguments) => {
+				(sender, arguments) =>
+				{
 					if (arguments.CloseType.Equals(SessionCloseType.Disconnection))
-						Global.WriteLog("The outgoing connection is broken because the router is not found or the router is refused" + "\r\n" + " - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString() + "\r\n");
+						Global.WriteLog("The outgoing connection is broken because the router is not found or the router is refused" + "\r\n" + " - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
 					else
 					{
 						if (this._channelAreClosedBySystem)
-							Global.WriteLog("The outgoing connection is closed" + "\r\n" + " - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString() + "\r\n");
+							Global.WriteLog("The outgoing connection is closed" + "\r\n" + " - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
 						else
 							this.ReOpenOutgoingChannel(
 								123,
-								() => {
-									Global.WriteLog("Re-connect the outgoing connection successful" + "\r\n");
+								() =>
+								{
+									Global.WriteLog("Re-connect the outgoing connection successful");
 								},
-								(ex) => {
+								ex =>
+								{
 									Global.WriteLog("Error occurred while re-connecting the outgoing connection", ex);
 								}
 							);
 					}
 				},
-				(sender, arguments) => {
+				(sender, arguments) =>
+				{
 					Global.WriteLog("Got an error of incoming connection: " + (arguments.Exception != null ? arguments.Exception.Message : "None"), arguments.Exception);
 				}
 			);
@@ -132,9 +142,10 @@ namespace net.vieapps.Services.APIGateway
 
 			this._runningServices.ForEach(info =>
 			{
-				this.StopService(info.Key, false);
+				this.StopService(info.Key, false, false);
 			});
 			this._runningServices.Clear();
+			this.UpdateServicesInfo();
 
 			this._channelAreClosedBySystem = true;
 			this.CloseIncomingChannel();
@@ -303,6 +314,11 @@ namespace net.vieapps.Services.APIGateway
 				this.StartService(name);
 			});
 
+			this.UpdateServicesInfo();
+		}
+
+		internal void UpdateServicesInfo()
+		{
 			if (!Global.AsService)
 				Global.Form.UpdateServicesInfo(this._availableServices.Count, this._runningServices.Count);
 		}
@@ -317,7 +333,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		#region Start/Stop service
-		void StartService(string name, string arguments = null)
+		internal void StartService(string name, string arguments = null)
 		{
 			if (string.IsNullOrWhiteSpace(name) || this._runningServices.ContainsKey(name.ToLower()))
 				return;
@@ -325,16 +341,31 @@ namespace net.vieapps.Services.APIGateway
 			var process = UtilityService.RunProcess(
 				name,
 				arguments,
-				(sender, args) => {
+				(sender, args) =>
+				{
 					this._runningServices.Remove((sender as Process).StartInfo.FileName);
-					Global.WriteLog("The service [" + (sender as Process).StartInfo.FileName + " - PID: " + (sender as Process).Id.ToString() + "] is stopped...");
+					try
+					{
+						Global.WriteLog(
+							"----- [" + (sender as Process).StartInfo.FileName + " - PID: " + (sender as Process).Id.ToString() + "] ------------------" + "\r\n" +
+							"The sevice is stopped..." + "\r\n" +
+							"--------------------------------------------------------------------------------" + "\r\n"
+						);
+					}
+					catch { }
 				},
-				(sender, args) => {
-					Global.WriteLog(
-						"[" + (sender as Process).StartInfo.FileName + " - PID: " + (sender as Process).Id.ToString() + "] -------------" + "\r\n" +
-						args.Data + "\r\n" +
-						"--------------------------------------------------------------" + "\r\n"
-					);
+				(sender, args) =>
+				{
+					if (!string.IsNullOrWhiteSpace(args.Data))
+						try
+						{
+							Global.WriteLog(
+								"----- [" + (sender as Process).StartInfo.FileName + " - PID: " + (sender as Process).Id.ToString() + "] ------------------" + "\r\n" +
+								args.Data + "\r\n" +
+								"--------------------------------------------------------------------------------" + "\r\n"
+							);
+						}
+						catch { }
 				}
 			);
 
@@ -342,18 +373,20 @@ namespace net.vieapps.Services.APIGateway
 			Global.WriteLog("The service [" + name + " - PID: " + process.Id.ToString() + "] is running...");
 		}
 
-		void StopService(int processId)
+		internal void StopService(int processId)
 		{
 			UtilityService.KillProcess(processId);
 		}
 
-		void StopService(string name, bool clean = true)
+		internal void StopService(string name, bool clean = true, bool updateInfo = true)
 		{
 			if (!string.IsNullOrWhiteSpace(name) && this._runningServices.ContainsKey(name.ToLower()))
 			{
 				this.StopService(this._runningServices[name.ToLower()]);
 				if (clean)
 					this._runningServices.Remove(name.ToLower());
+				if (updateInfo)
+					this.UpdateServicesInfo();
 			}
 		}
 		#endregion

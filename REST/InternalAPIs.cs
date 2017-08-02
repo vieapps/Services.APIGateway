@@ -39,23 +39,20 @@ namespace net.vieapps.Services.APIGateway
 			if (string.IsNullOrWhiteSpace(requestInfo.ObjectName))
 				requestInfo.ObjectName = "unknown";
 
-			// authourize (JSON Web Token)
-			var appToken = context.Request.Headers["x-app-token"];
-			if (string.IsNullOrWhiteSpace(appToken))
-				appToken = context.Request.QueryString["x-app-token"];
-
+			// check authenticate (JSON Web Token)
+			var appToken = requestInfo.GetParameter("x-app-token");
 			var isAuthorizeRequired = requestInfo.ServiceName.IsEquals("users") && requestInfo.ObjectName.IsEquals("session") && requestInfo .Verb.IsEquals("GET")
 				? false
 				: true;
 
-			// stop on not authenticated
+			// stop if not authenticated
 			if (isAuthorizeRequired && string.IsNullOrWhiteSpace(appToken))
 			{
 				Global.ShowError(context, new InvalidSessionException("Session is invalid (JSON Web Token is not found)"));
 				return;
 			}
 
-			// check access token
+			// check authorized with access token
 			if (!string.IsNullOrWhiteSpace(appToken))
 				try
 				{

@@ -47,7 +47,7 @@
 			// 
 			// ClearLogs
 			// 
-			this.ClearLogs.Location = new System.Drawing.Point(1436, 12);
+			this.ClearLogs.Location = new System.Drawing.Point(740, 12);
 			this.ClearLogs.Name = "ClearLogs";
 			this.ClearLogs.Size = new System.Drawing.Size(246, 70);
 			this.ClearLogs.TabIndex = 1;
@@ -63,13 +63,13 @@
 			this.Logs.Name = "Logs";
 			this.Logs.ReadOnly = true;
 			this.Logs.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
-			this.Logs.Size = new System.Drawing.Size(1671, 858);
+			this.Logs.Size = new System.Drawing.Size(974, 588);
 			this.Logs.TabIndex = 2;
 			// 
 			// ServicesInfo
 			// 
 			this.ServicesInfo.AutoSize = true;
-			this.ServicesInfo.Location = new System.Drawing.Point(295, 35);
+			this.ServicesInfo.Location = new System.Drawing.Point(288, 35);
 			this.ServicesInfo.Name = "ServicesInfo";
 			this.ServicesInfo.Size = new System.Drawing.Size(30, 25);
 			this.ServicesInfo.TabIndex = 3;
@@ -79,12 +79,12 @@
 			// 
 			this.AutoScaleDimensions = new System.Drawing.SizeF(12F, 25F);
 			this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-			this.ClientSize = new System.Drawing.Size(1694, 967);
+			this.ClientSize = new System.Drawing.Size(998, 697);
 			this.Controls.Add(this.ServicesInfo);
 			this.Controls.Add(this.Logs);
 			this.Controls.Add(this.ClearLogs);
 			this.Controls.Add(this.ManageServices);
-			this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedSingle;
+			this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog;
 			this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
 			this.MaximizeBox = false;
 			this.MinimizeBox = false;

@@ -56,8 +56,7 @@ namespace net.vieapps.Services.APIGateway
 			string path = serviceName.ToLower() + @"\" + serviceName.ToLower()
 				+ (!string.IsNullOrWhiteSpace(objectName) && !serviceName.IsEquals(objectName) ? "." + objectName.ToLower() : "");
 
-			Queue<string> queueOfLogs;
-			if (!this._logs.TryGetValue(path, out queueOfLogs))
+			if (!this._logs.TryGetValue(path, out Queue<string> queueOfLogs))
 				lock (this._logs)
 				{
 					if (!this._logs.TryGetValue(path, out queueOfLogs))
@@ -69,9 +68,7 @@ namespace net.vieapps.Services.APIGateway
 
 			logs.ForEach(log =>
 			{
-				queueOfLogs.Enqueue(correlationID + "\t" + DateTime.Now.ToString("HH:mm:ss.fff") + "\t" + log + (string.IsNullOrWhiteSpace(stack) ? "" : "\r\n\t" + stack + "\r\n")
-				);
-
+				queueOfLogs.Enqueue(correlationID + "\t" + DateTime.Now.ToString("HH:mm:ss.fff") + "\t" + log + (string.IsNullOrWhiteSpace(stack) ? "" : "\r\n\t" + stack + "\r\n"));
 				if (!Global.AsService)
 					Global.Form.UpdateLogs(correlationID + "\t" + DateTime.Now.ToString("HH:mm:ss.fff") + "\t" + log + (string.IsNullOrWhiteSpace(stack) ? "" : "\r\n\t" + stack + "\r\n"));
 			});

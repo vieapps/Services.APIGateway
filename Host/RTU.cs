@@ -57,10 +57,10 @@ namespace net.vieapps.Services.APIGateway
 				{
 					this.GetUpdateSubject();
 					using (var publisher = messages
-						.Select(msg => new UpdateMessage()
+						.Select(message => new UpdateMessage()
 						{
-							Type = msg.Type,
-							Data = msg.Data,
+							Type = message.Type,
+							Data = message.Data,
 							DeviceID = deviceID,
 							ExcludedDeviceID = excludedDeviceID
 						})
@@ -78,10 +78,7 @@ namespace net.vieapps.Services.APIGateway
 								);
 #endif
 							},
-							exception =>
-							{
-								Global.WriteLog("Error occurred while publishing an update message", exception);
-							}
+							exception => Global.WriteLog("Error occurred while publishing an update message", exception)
 						)
 					)
 					{
@@ -109,8 +106,7 @@ namespace net.vieapps.Services.APIGateway
 		ISubject<BaseMessage> GetCommunicateSubject(string serviceName)
 		{
 			var uri = "net.vieapps.rtu.communicate.messages." + serviceName.ToLower();
-			ISubject<BaseMessage> subject;
-			if (!this._communicateSubjects.TryGetValue(uri, out subject))
+			if (!this._communicateSubjects.TryGetValue(uri, out ISubject<BaseMessage> subject))
 				lock (this._communicateSubjects)
 				{
 					if (!this._communicateSubjects.TryGetValue(uri, out subject))
@@ -127,8 +123,7 @@ namespace net.vieapps.Services.APIGateway
 			if (!string.IsNullOrWhiteSpace(serviceName) && message != null)
 				try
 				{
-					var subject = this.GetCommunicateSubject(serviceName);
-					subject.OnNext(message);
+					this.GetCommunicateSubject(serviceName).OnNext(message);
 #if DEBUG
 					Global.WriteLog(
 						"Publish an inter-communicate message successful" + "\r\n" +
@@ -164,10 +159,7 @@ namespace net.vieapps.Services.APIGateway
 								);
 #endif
 							},
-							exception =>
-							{
-								Global.WriteLog("Error occurred while publishing an inter-communicate message", exception);
-							}
+							exception => Global.WriteLog("Error occurred while publishing an inter-communicate message", exception)
 						)
 					)
 					{

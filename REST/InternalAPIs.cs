@@ -9,6 +9,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 using WampSharp.V2;
+using WampSharp.V2.Core.Contracts;
 
 using net.vieapps.Components.Utility;
 using net.vieapps.Components.Security;
@@ -123,6 +124,10 @@ namespace net.vieapps.Services.APIGateway
 
 				context.Response.ContentType = "application/json";
 				await context.Response.Output.WriteAsync(json.ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None));
+			}
+			catch (WampException ex)
+			{
+				Global.ShowError(context, ex, requestInfo);
 			}
 			catch (Exception ex)
 			{

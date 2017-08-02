@@ -56,34 +56,34 @@ namespace net.vieapps.Services.APIGateway
 			string path = serviceName.ToLower() + @"\" + serviceName.ToLower()
 				+ (!string.IsNullOrWhiteSpace(objectName) && !serviceName.IsEquals(objectName) ? "." + objectName.ToLower() : "");
 
-			if (!this._logs.TryGetValue(path, out Queue<string> queueOfLogs))
+			if (!this._logs.TryGetValue(path, out Queue<string> svcLogs))
 				lock (this._logs)
 				{
-					if (!this._logs.TryGetValue(path, out queueOfLogs))
+					if (!this._logs.TryGetValue(path, out svcLogs))
 					{
-						queueOfLogs = new Queue<string>();
-						this._logs.Add(path, queueOfLogs);
+						svcLogs = new Queue<string>();
+						this._logs.Add(path, svcLogs);
 					}
 				}
 
 			logs.ForEach(log =>
 			{
-				queueOfLogs.Enqueue(correlationID + "\t" + DateTime.Now.ToString("HH:mm:ss.fff") + "\t" + log + (string.IsNullOrWhiteSpace(stack) ? "" : "\r\n\t" + stack + "\r\n"));
+				svcLogs.Enqueue(correlationID + "\t" + DateTime.Now.ToString("HH:mm:ss.fff") + "\t" + log + (string.IsNullOrWhiteSpace(stack) ? "" : "\r\n\t" + stack + "\r\n"));
 				if (!Global.AsService)
 					Global.Form.UpdateLogs(correlationID + "\t" + DateTime.Now.ToString("HH:mm:ss.fff") + "\t" + log + (string.IsNullOrWhiteSpace(stack) ? "" : "\r\n\t" + stack + "\r\n"));
 			});
 
-			if (queueOfLogs.Count >= this._max)
-				this.Flush(path, queueOfLogs);
+			if (svcLogs.Count >= this._max)
+				this.Flush(path, svcLogs);
 
 			return Task.CompletedTask;
 		}
 
 		internal void Flush(string path, Queue<string> logs)
 		{
-			var logItems = new List<string>();
+			var lines = new List<string>();
 			while (logs.Count > 0)
-				logItems.Add(logs.Dequeue());
+				lines.Add(logs.Dequeue());
 
 			if (!Directory.Exists(this._logsPath))
 				Directory.CreateDirectory(this._logsPath);
@@ -93,7 +93,7 @@ namespace net.vieapps.Services.APIGateway
 			if (!Directory.Exists(this._logsPath + @"\" + info[0]))
 				Directory.CreateDirectory(this._logsPath + @"\" + info[0]);
 
-			UtilityService.WriteTextFile(this._logsPath + @"\" + info[0] + @"\" + DateTime.Now.ToString("yyyy-MM-dd-HH") + "." + info[1] + ".txt", logItems, true);
+			UtilityService.WriteTextFile(this._logsPath + @"\" + info[0] + @"\" + DateTime.Now.ToString("yyyy-MM-dd-HH") + "." + info[1] + ".txt", lines);
 		}
 
 		internal void FlushAll()

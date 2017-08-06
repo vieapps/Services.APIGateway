@@ -714,6 +714,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				{ "Message", message.Contains("potentially dangerous") ? "Invalid" : message },
 				{ "Type", type },
+				{ "Verb", context.Request.HttpMethod },
 				{ "CorrelationID", Global.GetCorrelationID(context.Items) }
 			};
 
@@ -730,7 +731,8 @@ namespace net.vieapps.Services.APIGateway
 					counter++;
 					inners.Add(new JObject()
 					{
-						{ "Inner", "(" + counter + "): " + exception.Message + " [" + exception.GetType().ToString() + "]" },
+						{ "Message", "(" + counter + "): " + exception.Message },
+						{ "Type", exception.GetType().ToString() },
 						{ "StackTrace", exception.StackTrace }
 					});
 					exception = exception.InnerException;
@@ -796,7 +798,7 @@ namespace net.vieapps.Services.APIGateway
 
 				type = "ServiceNotFoundException";
 				stack = exception.StackTrace;
-				inner = new ServiceNotFoundException(message, exception);
+				inner = exception;
 			}
 			else if (exception.ErrorUri.Equals("wamp.error.runtime_error"))
 			{
@@ -827,9 +829,7 @@ namespace net.vieapps.Services.APIGateway
 					? (jsonException["Type"] as JValue).Value.ToString().ToArray('.').Last()
 					: "ServiceOperationException";
 
-				inner = jsonException != null
-					? null
-					: new ServiceOperationException(message, exception);
+				inner = exception;
 			}
 
 			else
@@ -849,17 +849,19 @@ namespace net.vieapps.Services.APIGateway
 				var logs = new List<string>()
 				{
 					message,
-					"Type: " + type,
-					"Request Info: " + (requestInfo != null ? requestInfo.ToJson().ToString(Formatting.None) : "None")
+					"Type: " + type
 				};
 
-				if (jsonException != null)
-					logs.Add("Exception:\r\n" + jsonException.ToString(Formatting.Indented));
-
 				if (!string.IsNullOrWhiteSpace(stack))
-					logs.Add("StackTrace:\r\n" + stack);
+					logs.Add("StackTrace:" + stack);
 
-				var correlationID = requestInfo != null ? requestInfo.Session.CorrelationID : Global.GetCorrelationID(context.Items);
+				if (requestInfo != null)
+					logs.Add("Request:\r\n" + requestInfo.ToJson().ToString(Formatting.Indented));
+
+				if (jsonException != null)
+					logs.Add("Details:\r\n" + jsonException.ToString(Formatting.Indented));
+
+				var correlationID = requestInfo != null ? requestInfo.CorrelationID : Global.GetCorrelationID(context.Items);
 				var serviceName = requestInfo != null ? requestInfo.ServiceName : "unknown";
 				var objectName = requestInfo != null ? requestInfo.ObjectName : "unknown";
 
@@ -921,34 +923,62 @@ namespace net.vieapps.Services.APIGateway
 			if (string.IsNullOrWhiteSpace(session.AppPlatform))
 				session.AppPlatform = query["x-app-platform"];
 
+			if (string.IsNullOrWhiteSpace(session.AppName) && string.IsNullOrWhiteSpace(session.AppPlatform) && !string.IsNullOrWhiteSpace(agentString))
+			{
+				session.AppName = "Generic App";
+				if (agentString.IsContains("iPhone") || agentString.IsContains("iPad") || agentString.IsContains("iPod"))
+					session.AppPlatform = "iOS";
+				else if (agentString.IsContains("Android"))
+					session.AppPlatform = "Android";
+				else if (agentString.IsContains("Android"))
+					session.AppPlatform = "Android";
+				else if (agentString.IsContains("Windows Phone"))
+					session.AppPlatform = "Windows Phone";
+				else if (agentString.IsContains("BlackBerry") || agentString.IsContains("BB10"))
+					session.AppPlatform = "BlackBerry";
+				else if (agentString.IsContains("IEMobile") || agentString.IsContains("Opera Mini"))
+					session.AppPlatform = "Mobile";
+				else
+					session.AppPlatform = "Desktop";
+				session.AppPlatform += " PWA";
+			}
+
 			session.AppOrigin = header["origin"];
 			if (string.IsNullOrWhiteSpace(session.AppOrigin))
-			{
 				session.AppOrigin = urlReferrer?.AbsoluteUri;
-				if (string.IsNullOrWhiteSpace(session.AppOrigin))
-				{
-					session.AppOrigin = !string.IsNullOrWhiteSpace(session.AppName) && !string.IsNullOrWhiteSpace(session.AppPlatform)
-						? session.AppName + "/" + session.AppPlatform
-						: "";
-
-					session.AppOrigin = (!session.AppOrigin.Equals("") ? " (" : "")
-						+ session.IP
-						+ (!session.AppOrigin.Equals("") ? ")" : "");
-				}
-			}
+			if (string.IsNullOrWhiteSpace(session.AppOrigin))
+				session.AppOrigin = session.IP;
 
 			return session;
 		}
 
-		internal static string GetAccessToken(this User user)
+		internal static string GetAccessToken(string userID, SystemRole userRole, List<string> userRoles, List<Privilege> privileges)
 		{
-			var key = UtilityService.GetUUID();
 			var token = new JObject()
 			{
-				{ "Key", Global.RSAEncrypt(key) },
-				{ "Data", user.ToJson().ToString(Formatting.None).Encrypt(key) }
+				{ "ID", userID },
+				{ "Role", userRole.ToString() }
 			};
+
+			if (userRoles != null && userRoles.Count > 0)
+				token.Add(new JProperty("Roles", userRoles));
+
+			if (privileges != null && privileges.Count > 0)
+				token.Add(new JProperty("Privileges", privileges));
+
+			var key = UtilityService.GetUUID();
+			token = new JObject()
+			{
+				{ "Key", Global.RSAEncrypt(key) },
+				{ "Data", token.ToString(Formatting.None).Encrypt(key) }
+			};
+
 			return token.ToString(Formatting.None).Encrypt(Global.AESKey);
+		}
+
+		internal static string GetAccessToken(this User user)
+		{
+			return Global.GetAccessToken(user.ID, user.Role, user.Roles, user.Privileges);
 		}
 
 		internal static User GetUser(this string accessToken)
@@ -1010,24 +1040,21 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		static string GetSignature(this string sessionID, string accessToken, string algorithm = "SHA512")
+		static string GetSignature(this string sessionID, string accessToken, string algorithm = "HS512")
 		{
 			var data = accessToken + "@" + sessionID;
 			var key = CryptoService.DefaultEncryptionKey;
 
-			algorithm = string.IsNullOrWhiteSpace(algorithm)
-				? "SHA512"
-				: algorithm;
-
+			algorithm = algorithm ?? "HS512";
 			switch (algorithm.ToLower())
 			{
-				case "sha1":
+				case "hs1":
 					return data.GetHMACSHA1(key, false);
 
-				case "sha256":
+				case "hs256":
 					return data.GetHMACSHA256(key, false);
 
-				case "sha384":
+				case "hs384":
 					return data.GetHMACSHA384(key, false);
 
 				default:
@@ -1035,9 +1062,9 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		internal static string GetJSONWebToken(this Session session)
+		internal static string GetJSONWebToken(this Session session, string accessToken = null)
 		{
-			var accessToken = session.User.GetAccessToken();
+			accessToken = accessToken ?? session.User.GetAccessToken();
 			var payload = new JObject()
 			{
 				{ "iat", DateTime.Now.ToUnixTimestamp() },
@@ -1049,7 +1076,7 @@ namespace net.vieapps.Services.APIGateway
 			return JSONWebToken.Encode(payload, Global.GenerateJWTKey());
 		}
 
-		internal static async Task<Tuple<string, User>> ParseJSONWebTokenAsync(string jwt, Func<User, string, string, Task> sessionChecker = null)
+		internal static async Task<string> ParseJSONWebTokenAsync(this Session session, string jwt, Func<Session, Task> checkAsync = null)
 		{
 			// parse JSON Web Token
 			JObject payload = null;
@@ -1066,18 +1093,19 @@ namespace net.vieapps.Services.APIGateway
 				throw new InvalidTokenException(ex);
 			}
 
-			// check
+			// check issued time
 			var issuedAt = payload["iat"] != null
 				? (long)(payload["iat"] as JValue).Value
 				: DateTime.Now.AddDays(-30).ToUnixTimestamp();
 			if (DateTime.Now.ToUnixTimestamp() - issuedAt > 30)
 				throw new TokenExpiredException();
 
+			// get session identity
 			var sessionID = payload["jti"] != null
 				? (payload["jti"] as JValue).Value as string
 				: null;
 			if (string.IsNullOrWhiteSpace(sessionID))
-				throw new InvalidTokenException("Token is invalid (Identity of the JSON Web Token is invalid)");
+				throw new InvalidTokenException("Token is invalid (Identity is invalid)");
 
 			try
 			{
@@ -1085,45 +1113,46 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-				throw new InvalidTokenException("Token is invalid (Identity of the JSON Web Token is invalid)", ex);
+				throw new InvalidTokenException("Token is invalid (Identity is invalid)", ex);
 			}
 
+			// get access token
 			var accessToken = payload["jtk"] != null
 				? (payload["jtk"] as JValue).Value as string
 				: null;
 			if (string.IsNullOrWhiteSpace(accessToken))
-				throw new InvalidTokenException("Token is invalid (Access token of the JSON Web Token is invalid)");
+				throw new InvalidTokenException("Token is invalid (Access token is invalid)");
 
 			var signature = payload["jts"] != null
 				? (payload["jts"] as JValue).Value as string
 				: null;
 			if (string.IsNullOrWhiteSpace(signature) || !signature.Equals(sessionID.GetSignature(accessToken)))
-				throw new InvalidTokenSignatureException("Token is invalid (Signature of the JSON Web Token is invalid)");
+				throw new InvalidTokenSignatureException("Token is invalid (Signature is invalid)");
 
-			var accountID = (payload["uid"] as JValue).Value as string;
-			if (accountID == null)
-				throw new InvalidTokenException("Token is invalid (Account identity of the JSON Web Token is invalid)");
+			var userID = (payload["uid"] as JValue).Value as string;
+			if (userID == null)
+				throw new InvalidTokenException("Token is invalid (User identity is invalid)");
 
-			// get access token
-			User user = null;
+			// get user information
 			try
 			{
-				user = accessToken.GetUser();
+				session.User = accessToken.GetUser();
 			}
 			catch (Exception ex)
 			{
-				throw new InvalidTokenException("Token is invalid (Access token of the JSON Web Token is invalid)", ex);
+				throw new InvalidTokenException("Token is invalid (Access token is invalid)", ex);
 			}
 
-			if (!user.ID.Equals(accountID))
-				throw new InvalidTokenException("Token is invalid (Identity of the JSON Web Token is invalid)");
+			if (!session.User.ID.Equals(userID))
+				throw new InvalidTokenException("Token is invalid (User identity is invalid)");
 
-			// check with session
-			if (!user.ID.Equals("") && sessionChecker != null)
-				await sessionChecker(user, sessionID, accessToken);
+			// check to see the session is registered or not
+			session.SessionID = sessionID;
+			if (checkAsync != null)
+				await checkAsync(session);
 
-			// return the user when done
-			return new Tuple<string, User>(sessionID, user);
+			// return access token
+			return accessToken;
 		}
 		#endregion
 

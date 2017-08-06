@@ -83,6 +83,7 @@ namespace net.vieapps.Services.APIGateway
 		internal static async Task ProcessRequestAsync(AspNetWebSocketContext context)
 		{
 			// prepare
+			var correlationID = Global.GetCorrelationID(context.Items);
 			var request = new JObject();
 			try
 			{
@@ -111,19 +112,16 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			var session = Global.GetSession(context.Headers, context.QueryString, context.UserHostAddress, context.UserAgent, context.UrlReferrer);
-			session.CorrelationID = Global.GetCorrelationID(context.Items);
 			if (string.IsNullOrWhiteSpace(session.DeviceID))
 			{
 				await context.SendAsync(new InvalidTokenException("No device identity is found"));
 				return;
 			}
 
-			// check access token
+			// parse JSON Web Token and check access token
 			try
 			{
-				var info = await Global.ParseJSONWebTokenAsync(appToken);
-				session.SessionID = info.Item1;
-				session.User = info.Item2;
+				await session.ParseJSONWebTokenAsync(appToken, InternalAPIs.CheckSessionAsync);
 			}
 			catch (Exception ex)
 			{
@@ -167,7 +165,7 @@ namespace net.vieapps.Services.APIGateway
 				RTU.RegisterSubscriber(session.SessionID, subject, message => messages.Enqueue(message));
 
 #if DEBUG || RTULOGS
-				Global.WriteLogs(session.CorrelationID, "RTU", new List<string>() {
+				Global.WriteLogs(correlationID, "RTU", new List<string>() {
 					"The real-time updater of a client's device is started",
 					"- Account: " + (session.User.ID.Equals("") ? "Visitor" : session.User.ID),
 					"- Session ID: " + session.SessionID,
@@ -194,7 +192,7 @@ namespace net.vieapps.Services.APIGateway
 				catch { }
 
 			// register online session
-			await session.RegisterOnlineAsync(context.UserHostAddress);
+			await session.RegisterOnlineAsync(session.IP);
 
 			// push messages to client's device
 			while (true)
@@ -208,13 +206,13 @@ namespace net.vieapps.Services.APIGateway
 					}
 					catch (Exception ex)
 					{
-						Global.WriteLogs(session.CorrelationID, "RTU", "Error occurred while disposing subscriber: " + ex.Message, ex);
+						Global.WriteLogs(correlationID, "RTU", "Error occurred while disposing subscriber: " + ex.Message, ex);
 					}
 
-					await session.UnregisterOnlineAsync(context.UserHostAddress);
+					await session.UnregisterOnlineAsync(session.IP);
 
 #if DEBUG || RTULOGS
-					Global.WriteLogs(session.CorrelationID, "RTU", new List<string>() {
+					Global.WriteLogs(correlationID, "RTU", new List<string>() {
 							"The real-time updater of a client's device is stopped",
 							"- Account: " + (session.User.ID.Equals("") ? "Visitor" : session.User.ID),
 							"- Session ID: " + session.SessionID,
@@ -237,10 +235,10 @@ namespace net.vieapps.Services.APIGateway
 						{
 							await context.SendAsync(message);
 #if DEBUG || RTULOGS
-							Global.WriteLogs(session.CorrelationID, "RTU", new List<string>() {
+							Global.WriteLogs(correlationID, "RTU", new List<string>() {
 								"Push the message to the subscriber's device successful",
 								"- Session: " + (session.User.ID.Equals("") ? "Visitor" : session.User.ID) + " @ " + session.SessionID,
-								"- Device: " + session.DeviceID + " @ " + session.AppName + "/" + session.AppPlatform + " [IP: " + context.UserHostAddress + "]",
+								"- Device: " + session.DeviceID + " @ " + session.AppName + "/" + session.AppPlatform + " [IP: " + session.IP + "]",
 								"- Message: " + message.Data.ToString(Formatting.None)
 							});
 #endif
@@ -252,7 +250,7 @@ namespace net.vieapps.Services.APIGateway
 					}
 					catch (Exception ex)
 					{
-						Global.WriteLogs(session.CorrelationID, "RTU", "Error occurred while pushing message to the subscriber's device", ex);
+						Global.WriteLogs(correlationID, "RTU", "Error occurred while pushing message to the subscriber's device", ex);
 					}
 
 				// wait for few times

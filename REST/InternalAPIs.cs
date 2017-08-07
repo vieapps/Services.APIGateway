@@ -56,7 +56,7 @@ namespace net.vieapps.Services.APIGateway
 						var isVerifyRequired = !string.IsNullOrWhiteSpace(requestInfo.Session.User.ID)
 							? true
 							: isSessionProccessed && requestInfo.Verb.IsEquals("GET")
-								? requestInfo.Query["anonymous"] == null
+								? !requestInfo.Query.ContainsKey("anonymous")
 								: true;
 
 						if (isVerifyRequired)
@@ -153,7 +153,7 @@ namespace net.vieapps.Services.APIGateway
 					}
 
 					// register the session of anonymous/visitor
-					else if (requestInfo.Verb.IsEquals("GET") && requestInfo.Query["anonymous"] != null && requestInfo.Session.User != null && string.IsNullOrWhiteSpace(requestInfo.Session.User.ID))
+					else if (requestInfo.Verb.IsEquals("GET") && requestInfo.Query.ContainsKey("anonymous") && requestInfo.Session.User != null && string.IsNullOrWhiteSpace(requestInfo.Session.User.ID))
 						requestInfo.Extra = new Dictionary<string, string>()
 						{
 							{ "SessionID", requestInfo.Query["anonymous"].Decrypt(Global.AESKey, true).Encrypt() },
@@ -213,19 +213,30 @@ namespace net.vieapps.Services.APIGateway
 					// other actions
 					else
 					{
+						accessToken = null;
+
 						// sign-out
 						if (requestInfo.Verb.IsEquals("DELETE"))
 						{
+							accessToken = (new User()).GetAccessToken();
+							requestInfo.Session.SessionID = (json["ID"] as JValue).Value.ToString();
 							requestInfo.Session.User = new User();
-							json = new JObject()
+							json = await service.ProcessRequestAsync(new RequestInfo(requestInfo.Session)
 							{
-								{ "ID", requestInfo.Session.SessionID },
-								{ "DeviceID", requestInfo.Session.DeviceID }
-							};
+								Verb = "GET",
+								ServiceName = "users",
+								ObjectName = "session",
+								Extra = new Dictionary<string, string>()
+								{
+									{ "SessionID", requestInfo.Session.SessionID.Encrypt() },
+									{ "AccessToken", accessToken.Encrypt() }
+								},
+								CorrelationID = requestInfo.CorrelationID
+							});
 						}
 
 						// update output
-						requestInfo.Session.UpdateSessionJson(json);
+						requestInfo.Session.UpdateSessionJson(json, accessToken);
 					}
 				}
 
@@ -306,7 +317,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Helper: update JSON of session
-		static void UpdateSessionJson(this Session session, JObject json, string accessToken = null)
+		static void UpdateSessionJson(this Session session, JObject json, string accessToken)
 		{
 			json = json ?? new JObject()
 			{

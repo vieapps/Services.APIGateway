@@ -18,17 +18,17 @@ namespace net.vieapps.Services.APIGateway
 			Global.Component.Start(this.arguments);
 		}
 
-		void MainForm_FormClosed(object sender, FormClosedEventArgs e)
+		void MainForm_FormClosed(object sender, FormClosedEventArgs args)
 		{
 			Global.Component.Dispose();
 		}
 
-		void ManageServices_Click(object sender, EventArgs e)
+		void ManageServices_Click(object sender, EventArgs args)
 		{
 			Global.Component.StopService("VIEApps.Services.Users.exe");
 		}
 
-		void ClearLogs_Click(object sender, EventArgs e)
+		void ClearLogs_Click(object sender, EventArgs args)
 		{
 			this.Logs.Text = "";
 		}

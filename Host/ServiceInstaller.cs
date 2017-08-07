@@ -1,10 +1,8 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Configuration.Install;
-using System.Linq;
-using System.Threading.Tasks;
+using System.ServiceProcess;
 
 namespace net.vieapps.Services.APIGateway
 {
@@ -14,6 +12,35 @@ namespace net.vieapps.Services.APIGateway
 		public ServiceInstaller()
 		{
 			this.InitializeComponent();
+
+			this.Installers.Add(new ServiceProcessInstaller()
+			{
+				Account = ServiceAccount.LocalSystem,
+				Username = null,
+				Password = null
+			});
+
+			this.Installers.Add(new System.ServiceProcess.ServiceInstaller()
+			{
+				StartType = ServiceStartMode.Automatic,
+				ServiceName = "VIEApps-API-Gateway",
+				DisplayName = "VIEApps API Gateway",
+				Description = "Gateway for routing requests of micro-services"
+			});
+
+			this.AfterInstall += new InstallEventHandler(this.StartServiceAfterInstall);
+		}
+
+		void StartServiceAfterInstall(object sender, InstallEventArgs args)
+		{
+			try
+			{
+				using (var controller = new ServiceController("VIEApps-API-Gateway"))
+				{
+					controller.Start();
+				}
+			}
+			catch { }
 		}
 	}
 }

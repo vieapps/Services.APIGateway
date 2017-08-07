@@ -5,7 +5,7 @@
 		/// <summary> 
 		/// Required designer variable.
 		/// </summary>
-		private System.ComponentModel.IContainer components = null;
+		System.ComponentModel.IContainer components = null;
 
 		/// <summary>
 		/// Clean up any resources being used.
@@ -13,9 +13,9 @@
 		/// <param name="disposing">true if managed resources should be disposed; otherwise, false.</param>
 		protected override void Dispose(bool disposing)
 		{
-			if (disposing && (components != null))
+			if (disposing && (this.components != null))
 			{
-				components.Dispose();
+				this.components.Dispose();
 			}
 			base.Dispose(disposing);
 		}
@@ -25,10 +25,10 @@
 		/// Required method for Designer support - do not modify 
 		/// the contents of this method with the code editor.
 		/// </summary>
-		private void InitializeComponent()
+		void InitializeComponent()
 		{
-			components = new System.ComponentModel.Container();
-			this.ServiceName = "ServiceRunner";
+			this.components = new System.ComponentModel.Container();
+			this.ServiceName = "VIEApps-API-Gateway";
 		}
 		#endregion
 

@@ -179,27 +179,31 @@ namespace net.vieapps.Services.APIGateway
 					if (requestInfo.Verb.IsEquals("POST"))
 					{
 						// get account information
-						requestInfo.Session.User = (await service.ProcessRequestAsync(new RequestInfo(requestInfo.Session, new User() { ID = (json["ID"] as JValue).Value.ToString() })
-						{
-							ServiceName = "users",
-							ObjectName = "mediator",
-							Extra = new Dictionary<string, string>()
+						requestInfo.Session.User = (await service.ProcessRequestAsync(
+							new RequestInfo(requestInfo.Session, new User() { ID = (json["ID"] as JValue).Value.ToString() })
 							{
-								{ "Account", "" }
-							},
-							CorrelationID = requestInfo.CorrelationID
-						})).FromJson<User>();
+								ServiceName = "users",
+								ObjectName = "mediator",
+								Extra = new Dictionary<string, string>()
+								{
+									{ "Account", "" }
+								},
+								CorrelationID = requestInfo.CorrelationID
+							}
+						)).FromJson<User>();
 
 						// update access token
 						accessToken = requestInfo.Session.User.GetAccessToken();
-						await service.ProcessRequestAsync(new RequestInfo(requestInfo.Session)
-						{
-							Verb = "PUT",
-							ServiceName = "users",
-							ObjectName = "session",
-							Body = "{\"AccessToken\":\"" + accessToken.Encrypt() + "\"}",
-							CorrelationID = requestInfo.CorrelationID
-						});
+						await service.ProcessRequestAsync(
+							new RequestInfo(requestInfo.Session)
+							{
+								Verb = "PUT",
+								ServiceName = "users",
+								ObjectName = "session",
+								Body = "{\"AccessToken\":\"" + accessToken.Encrypt() + "\"}",
+								CorrelationID = requestInfo.CorrelationID
+							}
+						);
 
 						// update output
 						json = new JObject()
@@ -220,19 +224,20 @@ namespace net.vieapps.Services.APIGateway
 						{
 							accessToken = (new User()).GetAccessToken();
 							requestInfo.Session.SessionID = (json["ID"] as JValue).Value.ToString();
-							requestInfo.Session.User = new User();
-							json = await service.ProcessRequestAsync(new RequestInfo(requestInfo.Session)
-							{
-								Verb = "GET",
-								ServiceName = "users",
-								ObjectName = "session",
-								Extra = new Dictionary<string, string>()
+							json = await service.ProcessRequestAsync(
+								new RequestInfo(requestInfo.Session, new User())
 								{
-									{ "SessionID", requestInfo.Session.SessionID.Encrypt() },
-									{ "AccessToken", accessToken.Encrypt() }
-								},
-								CorrelationID = requestInfo.CorrelationID
-							});
+									Verb = "GET",
+									ServiceName = "users",
+									ObjectName = "session",
+									Extra = new Dictionary<string, string>()
+									{
+										{ "SessionID", requestInfo.Session.SessionID.Encrypt() },
+										{ "AccessToken", accessToken.Encrypt() }
+									},
+									CorrelationID = requestInfo.CorrelationID
+								}
+							);
 						}
 
 						// update output

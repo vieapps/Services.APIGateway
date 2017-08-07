@@ -685,12 +685,12 @@ namespace net.vieapps.Services.APIGateway
 #endif
 
 			// prepare url
-			var url = "";
+			var url = app.Request.ApplicationPath + "Global.ashx";
 			if (Global.StaticSegments.Contains(executionFilePaths[0]))
-				url = app.Request.ApplicationPath + "Global.ashx?request-of-static-resource=&path=" + app.Context.Request.RawUrl.UrlEncode();
+				url += "?request-of-static-resource=&path=" + app.Context.Request.RawUrl.UrlEncode();
 			else
 			{
-				url = app.Request.ApplicationPath + "Global.ashx?service-name=" + executionFilePaths[0].GetANSIUri();
+				url += "?service-name=" + executionFilePaths[0].GetANSIUri();
 				if (executionFilePaths.Length > 1)
 					url += "&object-name=" + executionFilePaths[1].GetANSIUri();
 				if (executionFilePaths.Length > 2)
@@ -1287,37 +1287,37 @@ namespace net.vieapps.Services.APIGateway
 	public class GlobalApp : HttpApplication
 	{
 
-		protected void Application_Start(object sender, EventArgs e)
+		protected void Application_Start(object sender, EventArgs args)
 		{
 			Global.OnAppStart(sender as HttpContext);
 		}
 
-		protected void Application_BeginRequest(object sender, EventArgs e)
+		protected void Application_BeginRequest(object sender, EventArgs args)
 		{
 			Global.OnAppBeginRequest(sender as HttpApplication);
 		}
 
-		protected void Application_PreRequestHandlerExecute(object sender, EventArgs e)
+		protected void Application_PreRequestHandlerExecute(object sender, EventArgs args)
 		{
 			Global.OnAppPreHandlerExecute(sender as HttpApplication);
 		}
 
-		protected void Application_PreSendRequestHeaders(object sender, EventArgs e)
+		protected void Application_PreSendRequestHeaders(object sender, EventArgs args)
 		{
 			Global.OnAppPreSendHeaders(sender as HttpApplication);
 		}
 
-		protected void Application_EndRequest(object sender, EventArgs e)
+		protected void Application_EndRequest(object sender, EventArgs args)
 		{
 			Global.OnAppEndRequest(sender as HttpApplication);
 		}
 
-		protected void Application_Error(object sender, EventArgs e)
+		protected void Application_Error(object sender, EventArgs args)
 		{
 			Global.OnAppError(sender as HttpApplication);
 		}
 
-		protected void Application_End(object sender, EventArgs e)
+		protected void Application_End(object sender, EventArgs args)
 		{
 			Global.OnAppEnd();
 		}

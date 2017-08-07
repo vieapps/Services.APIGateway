@@ -70,26 +70,11 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static async Task ProcessRequestAsync(AspNetWebSocketContext context)
 		{
-			// prepare
-			var correlationID = Global.GetCorrelationID(context.Items);
-			var request = new JObject();
-			try
-			{
-				if (string.IsNullOrWhiteSpace(context.QueryString["request"]))
-					throw new InvalidSessionException();
-				request = JObject.Parse(context.QueryString["request"].Url64Decode());
-			}
-			catch (Exception ex)
-			{
-				await context.SendAsync(ex);
-				return;
-			}
-
-			// validate client identity
+			// validate client credential
 			string appToken = null;
 			try
 			{
-				appToken = (request["x-app-token"] as JValue).Value.ToString();
+				appToken = context.QueryString["x-app-token"];
 				if (string.IsNullOrWhiteSpace(appToken))
 					throw new TokenNotFoundException();
 			}
@@ -102,7 +87,7 @@ namespace net.vieapps.Services.APIGateway
 			var session = Global.GetSession(context.Headers, context.QueryString, context.UserHostAddress, context.UrlReferrer, context.UserAgent);
 			if (string.IsNullOrWhiteSpace(session.DeviceID))
 			{
-				await context.SendAsync(new InvalidTokenException("No device identity is found"));
+				await context.SendAsync(new InvalidTokenException("Device identity is not found"));
 				return;
 			}
 
@@ -147,6 +132,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// fetch messages
+			var correlationID = Global.GetCorrelationID(context.Items);
 			var messages = new Queue<UpdateMessage>();
 			try
 			{
@@ -186,7 +172,7 @@ namespace net.vieapps.Services.APIGateway
 			while (true)
 			{
 				// client is disconnected
-				if (context.WebSocket.State != WebSocketState.Open || !context.IsClientConnected)
+				if (!context.WebSocket.State.Equals(WebSocketState.Open) || !context.IsClientConnected)
 				{
 					try
 					{

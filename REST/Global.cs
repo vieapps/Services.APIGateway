@@ -17,7 +17,6 @@ using Newtonsoft.Json.Linq;
 
 using WampSharp.Core.Listener;
 using WampSharp.V2;
-using WampSharp.V2.Rpc;
 using WampSharp.V2.Realm;
 using WampSharp.V2.Core.Contracts;
 
@@ -29,6 +28,60 @@ namespace net.vieapps.Services.APIGateway
 {
 	internal static class Global
 	{
+
+		#region Get setting/parameter of the app
+		internal static string GetAppSetting(string name, string defaultValue = null)
+		{
+			var value = ConfigurationManager.AppSettings["vieapps:" + name.Trim()];
+			return value ?? defaultValue;
+		}
+
+		internal static string GetAppParameter(string name, NameValueCollection header, NameValueCollection query, string defaultValue = null)
+		{
+			var value = header?[name];
+			if (value == null)
+				value = query?[name];
+			return value ?? defaultValue;
+		}
+
+		internal static Tuple<string, string, string> GetAppInfo(NameValueCollection header, NameValueCollection query, string ipAddress, Uri urlReferrer = null, string agentString = null)
+		{
+			var appName = Global.GetAppParameter("x-app-name", header, query);
+			if (string.IsNullOrWhiteSpace(appName))
+				appName = "Generic App";
+
+			var appPlatform = Global.GetAppParameter("x-app-platform", header, query);
+			if (string.IsNullOrWhiteSpace(appPlatform) && !string.IsNullOrWhiteSpace(agentString))
+			{
+				if (agentString.IsContains("iPhone") || agentString.IsContains("iPad") || agentString.IsContains("iPod"))
+					appPlatform = "iOS";
+				else if (agentString.IsContains("Android"))
+					appPlatform = "Android";
+				else if (agentString.IsContains("Windows Phone"))
+					appPlatform = "Windows Phone";
+				else if (agentString.IsContains("BlackBerry") || agentString.IsContains("BB10"))
+					appPlatform = "BlackBerry";
+				else if (agentString.IsContains("IEMobile") || agentString.IsContains("Opera Mini"))
+					appPlatform = "Mobile";
+				else
+					appPlatform = "Desktop";
+				appPlatform += " PWA";
+			}
+
+			var appOrigin = header["origin"];
+			if (string.IsNullOrWhiteSpace(appOrigin))
+				appOrigin = urlReferrer?.AbsoluteUri;
+			if (string.IsNullOrWhiteSpace(appOrigin))
+				appOrigin = ipAddress;
+
+			return new Tuple<string, string, string>(appName, appPlatform, appOrigin);
+		}
+
+		internal static Tuple<string, string, string> GetAppInfo(this HttpContext context)
+		{
+			return Global.GetAppInfo(context.Request.Headers, context.Request.QueryString, context.Request.UserHostAddress, context.Request.UrlReferrer, context.Request.UserAgent);
+		}
+		#endregion
 
 		#region Encryption keys
 		static string _AESKey = null;
@@ -43,7 +96,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					try
 					{
-						Global._AESKey = ConfigurationManager.AppSettings["AESKey"];
+						Global._AESKey = Global.GetAppSetting("AESKey");
 					}
 					catch
 					{
@@ -79,7 +132,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					try
 					{
-						Global._JWTKey = ConfigurationManager.AppSettings["JWTKey"];
+						Global._JWTKey = Global.GetAppSetting("JWTKey");
 					}
 					catch
 					{
@@ -110,7 +163,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					try
 					{
-						Global._RSAKey = ConfigurationManager.AppSettings["RSAKey"];
+						Global._RSAKey = Global.GetAppSetting("RSAKey");
 					}
 					catch
 					{
@@ -501,11 +554,14 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Start/End the app
+		internal static HashSet<string> HiddenSegments = null, BypassSegments = null, StaticSegments = null;
+
 		internal static void OnAppStart(HttpContext context)
 		{
 			var stopwatch = new Stopwatch();
 			stopwatch.Start();
 
+			// Json.ET
 			JsonConvert.DefaultSettings = () => new JsonSerializerSettings()
 			{
 				Formatting = Formatting.Indented,
@@ -513,10 +569,27 @@ namespace net.vieapps.Services.APIGateway
 				DateTimeZoneHandling = DateTimeZoneHandling.Local
 			};
 
+			// open WAMP channels
 			Task.Run(async () =>
 			{
 				await Global.OpenChannelsAsync();
 			}).ConfigureAwait(false);
+
+			// special segments
+			var segments = Global.GetAppSetting("BypassSegments");
+			Global.BypassSegments = string.IsNullOrWhiteSpace(segments)
+				? new HashSet<string>()
+				: segments.Trim().ToLower().ToHashSet('|', true);
+
+			segments = Global.GetAppSetting("HiddenSegments");
+			Global.HiddenSegments = string.IsNullOrWhiteSpace(segments)
+				? new HashSet<string>()
+				: segments.Trim().ToLower().ToHashSet('|', true);
+
+			segments = Global.GetAppSetting("StaticSegments");
+			Global.StaticSegments = string.IsNullOrWhiteSpace(segments)
+				? new HashSet<string>()
+				: segments.Trim().ToLower().ToHashSet('|', true);
 
 			stopwatch.Stop();
 			Global.WriteLogs("*** The API Gateway REST server is ready for serving. The app is initialized in " + stopwatch.GetElapsedTimes());
@@ -537,7 +610,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			// update default headers to allow access from everywhere
 			app.Context.Response.HeaderEncoding = Encoding.UTF8;
-			app.Context.Response.AddHeader("Access-Control-Allow-Origin", "*");
+			app.Context.Response.AddHeader("access-control-allow-origin", "*");
 
 			// prepare
 			var executionFilePath = app.Request.AppRelativeCurrentExecutionFilePath;
@@ -546,50 +619,60 @@ namespace net.vieapps.Services.APIGateway
 
 			var executionFilePaths = string.IsNullOrEmpty(executionFilePath)
 				? new string[] {""}
-				: executionFilePath.ToArray('/', true);
+				: executionFilePath.ToLower().ToArray('/', true);
 
 			// update special headers on OPTIONS request
 			if (app.Context.Request.HttpMethod.Equals("OPTIONS"))
 			{
-				app.Context.Response.AddHeader("Access-Control-Allow-Methods", "HEAD,GET,POST,PUT,DELETE,OPTIONS");
+				app.Context.Response.AddHeader("access-control-allow-methods", "HEAD,GET,POST,PUT,DELETE,OPTIONS");
 
-				var allowHeaders = app.Context.Request.Headers.Get("Access-Control-Request-Headers");
+				var allowHeaders = app.Context.Request.Headers.Get("access-control-request-headers");
 				if (!string.IsNullOrWhiteSpace(allowHeaders))
-					app.Context.Response.AddHeader("Access-Control-Allow-Headers", allowHeaders);
+					app.Context.Response.AddHeader("access-control-allow-headers", allowHeaders);
 
 				return;
 			}
 
-#if DEBUG || REQUESTLOGS
-			var origin = app.Context.Request.UrlReferrer != null
-				? app.Context.Request.UrlReferrer.AbsoluteUri
-				: app.Context.Request.Headers != null && app.Context.Request.Headers["origin"] != null
-					? app.Context.Request.Headers["origin"]
-					: null;
-
-			if (string.IsNullOrWhiteSpace(origin))
+			// by-pass segments
+			else if (Global.BypassSegments.Count > 0 && Global.BypassSegments.Contains(executionFilePaths[0]))
 			{
-				var appName = app.Context.Request.Headers != null && app.Context.Request.Headers["x-app-name"] != null
-					? app.Context.Request.Headers["x-app-name"]
-					: app.Context.Request.QueryString != null && app.Context.Request.QueryString["x-app-name"] != null
-						? app.Context.Request.QueryString["x-app-name"]
-						: "";
-
-				var appPlatform = app.Context.Request.Headers != null && app.Context.Request.Headers["x-app-platform"] != null
-					? app.Context.Request.Headers["x-app-platform"]
-					: app.Context.Request.QueryString != null && app.Context.Request.QueryString["x-app-platform"] != null
-						? app.Context.Request.QueryString["x-app-platform"]
-						: "";
-
-				origin = (!string.IsNullOrWhiteSpace(appName) && !string.IsNullOrWhiteSpace(appPlatform)
-						? appName + "/" + appPlatform
-						: "")
-					+ " - " + app.Context.Request.UserHostAddress;
+				app.Context.Response.Cache.SetNoStore();
+				return;
 			}
+
+			// hidden segments
+			else if (Global.HiddenSegments.Count > 0 && Global.HiddenSegments.Contains(executionFilePaths[0]))
+			{
+				Global.ShowError(app.Context, "Forbidden", "AccessDeniedException", null, null);
+				app.Context.Response.End();
+				return;
+			}
+
+			// 403/404 errors
+			else if (executionFilePaths[0].IsEquals("global.ashx"))
+			{
+				var errorElements = app.Context.Request.QueryString != null && app.Context.Request.QueryString.Count > 0
+					? app.Context.Request.QueryString.ToString().UrlDecode().ToArray(';')
+					: new string[] { "244", "" };
+				var errorMessage = errorElements[0].Equals("403")
+					? "Forbidden"
+					: errorElements[0].Equals("404")
+						? "Not Found"
+						: "Unknown (" + errorElements[0] + " : " + (errorElements.Length > 1 ? errorElements[1].Replace(":80", "").Replace(":443", "") : "unknown") + ")";
+				var errorType = errorElements[0].Equals("403") || errorElements[0].Equals("404")
+					? "InvalidRequestException"
+					: "Unknown";
+				Global.ShowError(app.Context, errorMessage, errorType, null, null);
+				app.Context.Response.End();
+				return;
+			}
+
+#if DEBUG || REQUESTLOGS
+			var appInfo = app.Context.GetAppInfo();
 
 			Global.WriteLogs(new List<string>() {
 					"Begin process [" + app.Context.Request.HttpMethod + "]: " + app.Context.Request.RawUrl,
-					"- Origin: " + origin,
+					"- Origin: " + appInfo.Item1 + " / " + appInfo.Item2 + " - " + appInfo.Item3,
 					"- IP: " + app.Context.Request.UserHostAddress,
 					"- Agent: " + app.Context.Request.UserAgent,
 				});
@@ -601,26 +684,33 @@ namespace net.vieapps.Services.APIGateway
 			}
 #endif
 
-			// rewrite url
-			var url = app.Request.ApplicationPath + "Global.ashx?service-name=" + executionFilePaths[0].GetANSIUri();
-			if (executionFilePaths.Length > 1)
-				url += "&object-name=" + executionFilePaths[1].GetANSIUri();
-			if (executionFilePaths.Length > 2)
-				url += "&object-identity=" + executionFilePaths[2].GetANSIUri();
+			// prepare url
+			var url = "";
+			if (Global.StaticSegments.Contains(executionFilePaths[0]))
+				url = app.Request.ApplicationPath + "Global.ashx?request-of-static-resource=&path=" + app.Context.Request.RawUrl.UrlEncode();
+			else
+			{
+				url = app.Request.ApplicationPath + "Global.ashx?service-name=" + executionFilePaths[0].GetANSIUri();
+				if (executionFilePaths.Length > 1)
+					url += "&object-name=" + executionFilePaths[1].GetANSIUri();
+				if (executionFilePaths.Length > 2)
+					url += "&object-identity=" + executionFilePaths[2].GetANSIUri();
+			}
 
 			foreach (string key in app.Request.QueryString)
 				if (!string.IsNullOrWhiteSpace(key))
 					url += "&" + key + "=" + app.Request.QueryString[key].UrlEncode();
 
+			// rewrite url
+			app.Context.RewritePath(url);
+
 #if DEBUG || REWRITELOGS
 			Global.WriteLogs(new List<string>()
 				{
-					"[" + app.Context.Request.HttpMethod + "]: " + app.Context.Request.RawUrl,
+					"Rewrite [" + app.Context.Request.HttpMethod + "]: " + app.Context.Request.RawUrl,
 					"=> " + url
 				});
 #endif
-
-			app.Context.RewritePath(url);
 		}
 
 		internal static void OnAppEndRequest(HttpApplication app)
@@ -632,7 +722,9 @@ namespace net.vieapps.Services.APIGateway
 			else if (app.Context.Items.Contains("StopWatch"))
 			{
 				(app.Context.Items["StopWatch"] as Stopwatch).Stop();
-				Global.WriteLogs("End process - Execution times: " + (app.Context.Items["StopWatch"] as Stopwatch).GetElapsedTimes());
+				var executionTimes = (app.Context.Items["StopWatch"] as Stopwatch).GetElapsedTimes();
+				Global.WriteLogs("End process - Execution times: " + executionTimes);
+				app.Response.Headers.Add("x-execution-times", executionTimes);
 			}
 #endif
 		}
@@ -645,7 +737,7 @@ namespace net.vieapps.Services.APIGateway
 				return;
 
 			// check
-			var acceptEncoding = app.Request.Headers["Accept-Encoding"];
+			var acceptEncoding = app.Request.Headers["accept-encoding"];
 			if (string.IsNullOrWhiteSpace(acceptEncoding))
 				return;
 
@@ -654,36 +746,36 @@ namespace net.vieapps.Services.APIGateway
 			acceptEncoding = acceptEncoding.ToLower();
 
 			// deflate
-			if (acceptEncoding.Contains("deflate") || acceptEncoding.Equals("*"))
+			if (acceptEncoding.IsContains("deflate") || acceptEncoding.Equals("*"))
 			{
 				app.Response.Filter = new DeflateStream(previousStream, CompressionMode.Compress);
-				app.Response.AppendHeader("Content-Encoding", "deflate");
+				app.Response.AppendHeader("content-encoding", "deflate");
 			}
 
 			// gzip
-			else if (acceptEncoding.Contains("gzip"))
+			else if (acceptEncoding.IsContains("gzip"))
 			{
 				app.Response.Filter = new GZipStream(previousStream, CompressionMode.Compress);
-				app.Response.AppendHeader("Content-Encoding", "gzip");
+				app.Response.AppendHeader("content-encoding", "gzip");
 			}
 		}
 
 		internal static void OnAppPreSendHeaders(HttpApplication app)
 		{
 			// remove un-nessesary headers
-			app.Context.Response.Headers.Remove("Allow");
-			app.Context.Response.Headers.Remove("Public");
-			app.Context.Response.Headers.Remove("X-Powered-By");
+			app.Context.Response.Headers.Remove("allow");
+			app.Context.Response.Headers.Remove("public");
+			app.Context.Response.Headers.Remove("x-powered-by");
 
 			// add special header
-			if (app.Response.Headers["Server"] != null)
-				app.Response.Headers.Set("Server", "VIEApps API Gateway");
+			if (app.Response.Headers["server"] != null)
+				app.Response.Headers.Set("server", "VIEApps NGX API Gateway");
 			else
-				app.Response.Headers.Add("Server", "VIEApps API Gateway");
+				app.Response.Headers.Add("server", "VIEApps  NGX API Gateway");
 		}
 		#endregion
 
-		#region Handle errors
+		#region Error handlings
 		static string ShowErrorStacks = null;
 
 		internal static bool IsShowErrorStacks
@@ -719,7 +811,7 @@ namespace net.vieapps.Services.APIGateway
 			};
 
 			if (!string.IsNullOrWhiteSpace(stack) && Global.IsShowErrorStacks)
-				json.Add(new JProperty("StackTrace", stack));
+				json.Add(new JProperty("Stack", stack));
 
 			if (inner != null && Global.IsShowErrorStacks)
 			{
@@ -733,7 +825,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 						{ "Message", "(" + counter + "): " + exception.Message },
 						{ "Type", exception.GetType().ToString() },
-						{ "StackTrace", exception.StackTrace }
+						{ "Stack", exception.StackTrace }
 					});
 					exception = exception.InnerException;
 				}
@@ -766,7 +858,7 @@ namespace net.vieapps.Services.APIGateway
 				{ "Type", exception["ClassName"] },
 				{ "Method", exception["ExceptionMethod"] },
 				{ "Source", exception["Source"] },
-				{ "StackTrace", exception["StackTraceString"] },
+				{ "Stack", exception["StackTraceString"] },
 			};
 
 			var inner = exception["InnerException"];
@@ -853,7 +945,7 @@ namespace net.vieapps.Services.APIGateway
 				};
 
 				if (!string.IsNullOrWhiteSpace(stack))
-					logs.Add("StackTrace:" + stack);
+					logs.Add("Stack:" + stack);
 
 				if (requestInfo != null)
 					logs.Add("Request:\r\n" + requestInfo.ToJson().ToString(Formatting.Indented));
@@ -861,9 +953,15 @@ namespace net.vieapps.Services.APIGateway
 				if (jsonException != null)
 					logs.Add("Details:\r\n" + jsonException.ToString(Formatting.Indented));
 
-				var correlationID = requestInfo != null ? requestInfo.CorrelationID : Global.GetCorrelationID(context.Items);
-				var serviceName = requestInfo != null ? requestInfo.ServiceName : "unknown";
-				var objectName = requestInfo != null ? requestInfo.ObjectName : "unknown";
+				var correlationID = requestInfo != null
+					? requestInfo.CorrelationID
+					: Global.GetCorrelationID(context.Items);
+				var serviceName = requestInfo != null
+					? requestInfo.ServiceName
+					: "unknown";
+				var objectName = requestInfo != null
+					? requestInfo.ObjectName
+					: "unknown";
 
 				Global.WriteLogs(correlationID, objectName, logs, inner, serviceName);
 			}
@@ -903,53 +1001,18 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Session & User with JSON Web Token
-		internal static Session GetSession(NameValueCollection header, NameValueCollection query, string ipAddress, string agentString = null, Uri urlReferrer = null)
+		internal static Session GetSession(NameValueCollection header, NameValueCollection query, string ipAddress, Uri urlReferrer = null, string agentString = null)
 		{
-			var session = new Session()
+			var appInfo = Global.GetAppInfo(header, query, ipAddress, urlReferrer, agentString);
+			return new Session()
 			{
 				IP = ipAddress,
-				AppAgent = agentString
+				AppAgent = agentString,
+				DeviceID = Global.GetAppParameter("x-device-id", header, query, ""),
+				AppName = appInfo.Item1,
+				AppPlatform = appInfo.Item2,
+				AppOrigin = appInfo.Item3
 			};
-
-			session.DeviceID = header["x-device-id"];
-			if (string.IsNullOrWhiteSpace(session.DeviceID))
-				session.DeviceID = query["x-device-id"];
-
-			session.AppName = header["x-app-name"];
-			if (string.IsNullOrWhiteSpace(session.AppName))
-				session.AppName = query["x-app-name"];
-
-			session.AppPlatform = header["x-app-name"];
-			if (string.IsNullOrWhiteSpace(session.AppPlatform))
-				session.AppPlatform = query["x-app-platform"];
-
-			if (string.IsNullOrWhiteSpace(session.AppName) && string.IsNullOrWhiteSpace(session.AppPlatform) && !string.IsNullOrWhiteSpace(agentString))
-			{
-				session.AppName = "Generic App";
-				if (agentString.IsContains("iPhone") || agentString.IsContains("iPad") || agentString.IsContains("iPod"))
-					session.AppPlatform = "iOS";
-				else if (agentString.IsContains("Android"))
-					session.AppPlatform = "Android";
-				else if (agentString.IsContains("Android"))
-					session.AppPlatform = "Android";
-				else if (agentString.IsContains("Windows Phone"))
-					session.AppPlatform = "Windows Phone";
-				else if (agentString.IsContains("BlackBerry") || agentString.IsContains("BB10"))
-					session.AppPlatform = "BlackBerry";
-				else if (agentString.IsContains("IEMobile") || agentString.IsContains("Opera Mini"))
-					session.AppPlatform = "Mobile";
-				else
-					session.AppPlatform = "Desktop";
-				session.AppPlatform += " PWA";
-			}
-
-			session.AppOrigin = header["origin"];
-			if (string.IsNullOrWhiteSpace(session.AppOrigin))
-				session.AppOrigin = urlReferrer?.AbsoluteUri;
-			if (string.IsNullOrWhiteSpace(session.AppOrigin))
-				session.AppOrigin = session.IP;
-
-			return session;
 		}
 
 		internal static string GetAccessToken(string userID, SystemRole userRole, List<string> userRoles, List<Privilege> privileges)
@@ -970,10 +1033,10 @@ namespace net.vieapps.Services.APIGateway
 			token = new JObject()
 			{
 				{ "Key", Global.RSAEncrypt(key) },
-				{ "Data", token.ToString(Formatting.None).Encrypt(key) }
+				{ "Data", Global.AESEncrypt(token.ToString(Formatting.None), key) }
 			};
 
-			return token.ToString(Formatting.None).Encrypt(Global.AESKey);
+			return Global.AESEncrypt(token.ToString(Formatting.None));
 		}
 
 		internal static string GetAccessToken(this User user)
@@ -987,7 +1050,7 @@ namespace net.vieapps.Services.APIGateway
 			string decrypted = "";
 			try
 			{
-				decrypted = accessToken.Decrypt(Global.AESKey);
+				decrypted = Global.AESDecrypt(accessToken);
 			}
 			catch (Exception ex)
 			{
@@ -1022,7 +1085,7 @@ namespace net.vieapps.Services.APIGateway
 			// decrypt JSON
 			try
 			{
-				decrypted = (token["Data"] as JValue).Value.ToString().Decrypt(decrypted);
+				decrypted = Global.AESDecrypt((token["Data"] as JValue).Value.ToString(), decrypted);
 			}
 			catch (Exception ex)
 			{
@@ -1043,22 +1106,20 @@ namespace net.vieapps.Services.APIGateway
 		static string GetSignature(this string sessionID, string accessToken, string algorithm = "HS512")
 		{
 			var data = accessToken + "@" + sessionID;
-			var key = CryptoService.DefaultEncryptionKey;
-
 			algorithm = algorithm ?? "HS512";
 			switch (algorithm.ToLower())
 			{
 				case "hs1":
-					return data.GetHMACSHA1(key, false);
+					return data.GetHMACSHA1(Global.AESKey, false);
 
 				case "hs256":
-					return data.GetHMACSHA256(key, false);
+					return data.GetHMACSHA256(Global.AESKey, false);
 
 				case "hs384":
-					return data.GetHMACSHA384(key, false);
+					return data.GetHMACSHA384(Global.AESKey, false);
 
 				default:
-					return data.GetHMACSHA512(key, false);
+					return data.GetHMACSHA512(Global.AESKey, false);
 			}
 		}
 
@@ -1068,7 +1129,7 @@ namespace net.vieapps.Services.APIGateway
 			var payload = new JObject()
 			{
 				{ "iat", DateTime.Now.ToUnixTimestamp() },
-				{ "jti", session.SessionID.Encrypt(Global.AESKey.Reverse()) },
+				{ "jti", Global.AESEncrypt(session.SessionID, Global.AESKey.Reverse()) },
 				{ "uid", session.User.ID },
 				{ "jtk", accessToken },
 				{ "jts", session.SessionID.GetSignature(accessToken) }
@@ -1109,7 +1170,7 @@ namespace net.vieapps.Services.APIGateway
 
 			try
 			{
-				sessionID = sessionID.Decrypt(Global.AESKey.Reverse());
+				sessionID = Global.AESDecrypt(sessionID, Global.AESKey.Reverse());
 			}
 			catch (Exception ex)
 			{
@@ -1174,6 +1235,34 @@ namespace net.vieapps.Services.APIGateway
 			// real-time update
 			else if (context.IsWebSocketRequest)
 				context.AcceptWebSocketRequest(RTU.ProcessRequestAsync);
+
+			// static resources
+			else if (context.Request.QueryString["request-of-static-resource"] != null)
+			{
+				var path = context.Request.QueryString["path"];
+				if (string.IsNullOrWhiteSpace(path))
+					path = "~/temp/countries.json";
+
+				try
+				{
+					if (path.IsEndsWith(".json"))
+						context.Response.ContentType = "application/json";
+					else if (path.IsEndsWith(".js"))
+						context.Response.ContentType = "application/javascript";
+					else if (path.IsEndsWith(".css"))
+						context.Response.ContentType = "text/css";
+					else if (path.IsEndsWith(".html"))
+						context.Response.ContentType = "text/html";
+					else
+						context.Response.ContentType = "text/plain";
+					context.Response.Cache.SetNoStore();
+					await context.Response.Output.WriteAsync(await UtilityService.ReadTextFileAsync(context.Server.MapPath(path)));
+				}
+				catch (Exception ex)
+				{
+					await context.Response.Output.WriteAsync("Error: " + ex.Message + " [" + path + "]");
+				}
+			}
 
 			// APIs
 			else

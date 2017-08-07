@@ -1,16 +1,9 @@
 ﻿#region Related components
 using System;
-using System.Configuration;
 using System.Collections.Generic;
-using System.Collections.Specialized;
-using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Diagnostics;
-using System.IO.Compression;
-using System.Text;
 using System.Linq;
-using System.Web;
 using System.Web.WebSockets;
 using System.Net.WebSockets;
 
@@ -19,11 +12,6 @@ using System.Reactive.Linq;
 
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-
-using WampSharp.V2;
-using WampSharp.V2.Core.Contracts;
-using WampSharp.V2.Realm;
-using WampSharp.Core.Listener;
 
 using net.vieapps.Components.Utility;
 using net.vieapps.Components.Security;
@@ -111,7 +99,7 @@ namespace net.vieapps.Services.APIGateway
 				return;
 			}
 
-			var session = Global.GetSession(context.Headers, context.QueryString, context.UserHostAddress, context.UserAgent, context.UrlReferrer);
+			var session = Global.GetSession(context.Headers, context.QueryString, context.UserHostAddress, context.UrlReferrer, context.UserAgent);
 			if (string.IsNullOrWhiteSpace(session.DeviceID))
 			{
 				await context.SendAsync(new InvalidTokenException("No device identity is found"));
@@ -244,16 +232,12 @@ namespace net.vieapps.Services.APIGateway
 #endif
 						}
 					}
-					catch (OperationCanceledException)
-					{
-						break;
-					}
 					catch (Exception ex)
 					{
 						Global.WriteLogs(correlationID, "RTU", "Error occurred while pushing message to the subscriber's device", ex);
 					}
 
-				// wait for few times
+				// wait
 				try
 				{
 					await Task.Delay(234, RTU.CancellationTokenSource.Token);
@@ -295,11 +279,10 @@ namespace net.vieapps.Services.APIGateway
 					{
 						counter++;
 						inners.Add(new JObject()
-								{
-									{ "Error", "(" + counter + "): " + inner.Message + " [" + inner.GetType().ToString() + "]" },
-									{ "Stack", inner.StackTrace }
-								}
-						);
+						{
+							{ "Error", "(" + counter + "): " + inner.Message + " [" + inner.GetType().ToString() + "]" },
+							{ "Stack", inner.StackTrace }
+						});
 						inner = inner.InnerException;
 					}
 					message.Add(new JProperty("Inners", inners));

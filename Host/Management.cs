@@ -31,7 +31,7 @@ namespace net.vieapps.Services.APIGateway
 
 			try
 			{
-				this._logsPath = ConfigurationManager.AppSettings["LogsPath"];
+				this._logsPath = ConfigurationManager.AppSettings["vieapps:LogsPath"];
 			}
 			catch { }
 			if (string.IsNullOrWhiteSpace(this._logsPath))

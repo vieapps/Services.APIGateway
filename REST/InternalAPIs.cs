@@ -28,17 +28,11 @@ namespace net.vieapps.Services.APIGateway
 			{
 				Session = Global.GetSession(context.Request.Headers, context.Request.QueryString, context.Request.UserHostAddress, context.Request.UrlReferrer, context.Request.UserAgent),
 				Verb = context.Request.HttpMethod,
-				ServiceName = context.Request.QueryString["service-name"],
-				ObjectName = context.Request.QueryString["object-name"],
+				ServiceName = string.IsNullOrWhiteSpace(context.Request.QueryString["service-name"]) ? "unknown" : context.Request.QueryString["service-name"],
+				ObjectName = string.IsNullOrWhiteSpace(context.Request.QueryString["object-name"]) ? "unknown" : context.Request.QueryString["object-name"],
 				Query = context.Request.QueryString.ToDictionary(),
 				Header = context.Request.Headers.ToDictionary()
 			};
-
-			if (string.IsNullOrWhiteSpace(requestInfo.ServiceName))
-				requestInfo.ServiceName = "unknown";
-
-			if (string.IsNullOrWhiteSpace(requestInfo.ObjectName))
-				requestInfo.ObjectName = "unknown";
 
 			// SPECIAL: process with sessions
 			var isSessionProccessed = requestInfo.ServiceName.IsEquals("users") && requestInfo.ObjectName.IsEquals("session");

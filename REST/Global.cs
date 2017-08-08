@@ -765,13 +765,17 @@ namespace net.vieapps.Services.APIGateway
 			// remove un-nessesary headers
 			app.Context.Response.Headers.Remove("allow");
 			app.Context.Response.Headers.Remove("public");
-			app.Context.Response.Headers.Remove("x-powered-by");
 
-			// add special header
+			// add special headers
 			if (app.Response.Headers["server"] != null)
-				app.Response.Headers.Set("server", "VIEApps NGX API Gateway");
+				app.Context.Response.Headers.Set("x-powered-by", "VIEApps NGX API Gateway");
 			else
-				app.Response.Headers.Add("server", "VIEApps  NGX API Gateway");
+			app.Context.Response.Headers.Add("x-powered-by", "VIEApps NGX API Gateway");
+
+			if (app.Response.Headers["server"] != null)
+				app.Response.Headers.Set("server", "VIEApps NGX");
+			else
+				app.Response.Headers.Add("server", "VIEApps  NGX");
 		}
 		#endregion
 

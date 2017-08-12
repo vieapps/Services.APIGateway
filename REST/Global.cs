@@ -538,7 +538,7 @@ namespace net.vieapps.Services.APIGateway
 			var stopwatch = new Stopwatch();
 			stopwatch.Start();
 
-			// Json.ET
+			// Json.NET
 			JsonConvert.DefaultSettings = () => new JsonSerializerSettings()
 			{
 				Formatting = Formatting.Indented,
@@ -753,13 +753,9 @@ namespace net.vieapps.Services.APIGateway
 			// remove un-nessesary headers
 			app.Context.Response.Headers.Remove("allow");
 			app.Context.Response.Headers.Remove("public");
+			app.Context.Response.Headers.Remove("x-powered-by");
 
 			// add special headers
-			if (app.Response.Headers["x-powered-by"] != null)
-				app.Context.Response.Headers.Set("x-powered-by", "VIEApps NGX API Gateway");
-			else
-				app.Context.Response.Headers.Add("x-powered-by", "VIEApps NGX API Gateway");
-
 			if (app.Response.Headers["server"] != null)
 				app.Response.Headers.Set("server", "VIEApps NGX");
 			else

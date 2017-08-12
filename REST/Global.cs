@@ -568,6 +568,12 @@ namespace net.vieapps.Services.APIGateway
 				? new HashSet<string>()
 				: segments.Trim().ToLower().ToHashSet('|', true);
 
+			// handling unhandled exception
+			AppDomain.CurrentDomain.UnhandledException += (sender, arguments) =>
+			{
+				Global.WriteLogs("An unhandled exception is thrown", arguments.ExceptionObject as Exception);
+			};
+
 			stopwatch.Stop();
 			Global.WriteLogs("*** The API Gateway is ready for serving. The app is initialized in " + stopwatch.GetElapsedTimes());
 		}
@@ -612,15 +618,12 @@ namespace net.vieapps.Services.APIGateway
 
 			// by-pass segments
 			else if (Global.BypassSegments.Count > 0 && Global.BypassSegments.Contains(executionFilePaths[0]))
-			{
-				app.Context.Response.Cache.SetNoStore();
 				return;
-			}
 
 			// hidden segments
 			else if (Global.HiddenSegments.Count > 0 && Global.HiddenSegments.Contains(executionFilePaths[0]))
 			{
-				Global.ShowError(app.Context, "Forbidden", "AccessDeniedException", null, null);
+				Global.ShowError(app.Context, 403, "Forbidden", "AccessDeniedException", null, null);
 				app.Context.Response.End();
 				return;
 			}
@@ -630,25 +633,31 @@ namespace net.vieapps.Services.APIGateway
 			{
 				var errorElements = app.Context.Request.QueryString != null && app.Context.Request.QueryString.Count > 0
 					? app.Context.Request.QueryString.ToString().UrlDecode().ToArray(';')
-					: new string[] { "244", "" };
+					: new string[] { "500", "" };
 				var errorMessage = errorElements[0].Equals("403")
 					? "Forbidden"
 					: errorElements[0].Equals("404")
-						? "Not Found"
+						? "Invalid"
 						: "Unknown (" + errorElements[0] + " : " + (errorElements.Length > 1 ? errorElements[1].Replace(":80", "").Replace(":443", "") : "unknown") + ")";
-				var errorType = errorElements[0].Equals("403") || errorElements[0].Equals("404")
-					? "InvalidRequestException"
-					: "Unknown";
-				Global.ShowError(app.Context, errorMessage, errorType, null, null);
+				var errorType = errorElements[0].Equals("403")
+					? "AccessDeniedException"
+					: errorElements[0].Equals("404")
+						? "InvalidRequestException"
+						: "Unknown";						
+				Global.ShowError(app.Context, errorElements[0].CastAs<int>(), errorMessage, errorType, null, null);
 				app.Context.Response.End();
 				return;
 			}
+
+#if DEBUG || REQUESTLOGS || REWRITELOGS
+			var requestUrl = app.Context.Request.Url.Scheme + "://" + app.Context.Request.Url.Host + app.Context.Request.RawUrl;
+#endif
 
 #if DEBUG || REQUESTLOGS
 			var appInfo = app.Context.GetAppInfo();
 
 			Global.WriteLogs(new List<string>() {
-					"Begin process [" + app.Context.Request.HttpMethod + "]: " + app.Context.Request.RawUrl,
+					"Begin process [" + app.Context.Request.HttpMethod + "]: " + requestUrl,
 					"- Origin: " + appInfo.Item1 + " / " + appInfo.Item2 + " - " + appInfo.Item3,
 					"- IP: " + app.Context.Request.UserHostAddress,
 					"- Agent: " + app.Context.Request.UserAgent,
@@ -684,7 +693,7 @@ namespace net.vieapps.Services.APIGateway
 #if DEBUG || REWRITELOGS
 			Global.WriteLogs(new List<string>()
 				{
-					"Rewrite [" + app.Context.Request.HttpMethod + "]: " + app.Context.Request.RawUrl,
+					"Rewrite: " + requestUrl,
 					"=> " + url
 				});
 #endif
@@ -769,20 +778,25 @@ namespace net.vieapps.Services.APIGateway
 #if DEBUG
 					Global.ShowErrorStacks = "true";
 #else
-					try
-					{
-						Global.ShowErrorStacks = ConfigurationManager.AppSettings["ShowErrorStacks"];
-					}
-					catch
-					{
-						Global.ShowErrorStacks = "false";
-					}
+					Global.ShowErrorStacks = Global.GetAppSetting("ShowErrorStacks", "false");
 #endif
 				return Global.ShowErrorStacks.IsEquals("true");
 			}
 		}
 
-		internal static void ShowError(HttpContext context, string message, string type, string stack, Exception inner)
+		static string SetErrorStatus = null;
+
+		internal static bool IsSetErrorStatus
+		{
+			get
+			{
+				if (string.IsNullOrWhiteSpace(Global.SetErrorStatus))
+					Global.SetErrorStatus = Global.GetAppSetting("SetErrorStatus", "false");
+				return Global.SetErrorStatus.IsEquals("true");
+			}
+		}
+
+		internal static void ShowError(HttpContext context, int code, string message, string type, string stack, Exception inner)
 		{
 			// prepare
 			var json = new JObject()
@@ -823,9 +837,16 @@ namespace net.vieapps.Services.APIGateway
 				{ "Error", json }
 			};
 
+			// status code
+			if (Global.IsSetErrorStatus)
+			{
+				context.Response.TrySkipIisCustomErrors = true;
+				context.Response.StatusCode = code < 1 ? 500 : code;
+			}
+
 			// response with JSON
-			context.Response.ContentType = "application/json";
 			context.Response.Cache.SetNoStore();
+			context.Response.ContentType = "application/json";
 			context.Response.ClearContent();
 			context.Response.Output.Write(json.ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None));
 
@@ -853,6 +874,7 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static void ShowError(HttpContext context, WampException exception, RequestInfo requestInfo = null, bool writeLogs = true)
 		{
+			var code = 500;
 			var message = "";
 			var type = "";
 			var stack = "";
@@ -874,6 +896,7 @@ namespace net.vieapps.Services.APIGateway
 				type = "ServiceNotFoundException";
 				stack = exception.StackTrace;
 				inner = exception;
+				code = 404;
 			}
 			else if (exception.ErrorUri.Equals("wamp.error.runtime_error"))
 			{
@@ -916,7 +939,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// show error
-			Global.ShowError(context, message, type, stack, inner);
+			Global.ShowError(context, code, message, type, stack, inner);
 
 			// write logs
 			if (writeLogs)
@@ -969,7 +992,7 @@ namespace net.vieapps.Services.APIGateway
 						inner = exception.InnerException;
 					}
 				}
-				Global.ShowError(context, exception != null ? exception.Message : "Unknown", type, stack, inner);
+				Global.ShowError(context, 500, exception != null ? exception.Message : "Unknown", type, stack, inner);
 			}
 		}
 

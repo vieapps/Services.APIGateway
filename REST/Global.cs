@@ -32,41 +32,47 @@ namespace net.vieapps.Services.APIGateway
 		#region Get setting/parameter of the app
 		internal static string GetAppSetting(string name, string defaultValue = null)
 		{
-			var value = ConfigurationManager.AppSettings["vieapps:" + name.Trim()];
-			return value ?? defaultValue;
+			var value = string.IsNullOrEmpty(name)
+				? null
+				: ConfigurationManager.AppSettings["vieapps:" + name.Trim()];
+			return string.IsNullOrEmpty(value)
+				? defaultValue
+				: value;
 		}
 
 		internal static string GetAppParameter(string name, NameValueCollection header, NameValueCollection query, string defaultValue = null)
 		{
-			var value = header?[name];
+			var value = string.IsNullOrWhiteSpace(name)
+				? null
+				: header?[name];
 			if (value == null)
-				value = query?[name];
-			return value ?? defaultValue;
+				value = string.IsNullOrWhiteSpace(name)
+				? null
+				: query?[name];
+			return string.IsNullOrEmpty(value)
+				? defaultValue
+				: value;
 		}
 
-		internal static Tuple<string, string, string> GetAppInfo(NameValueCollection header, NameValueCollection query, string ipAddress, Uri urlReferrer = null, string agentString = null)
+		internal static Tuple<string, string, string> GetAppInfo(NameValueCollection header, NameValueCollection query, string agentString, string ipAddress, Uri urlReferrer = null)
 		{
-			var appName = Global.GetAppParameter("x-app-name", header, query);
-			if (string.IsNullOrWhiteSpace(appName))
-				appName = "Generic App";
+			var appName = Global.GetAppParameter("x-app-name", header, query, "Generic App");
 
 			var appPlatform = Global.GetAppParameter("x-app-platform", header, query);
-			if (string.IsNullOrWhiteSpace(appPlatform) && !string.IsNullOrWhiteSpace(agentString))
-			{
-				if (agentString.IsContains("iPhone") || agentString.IsContains("iPad") || agentString.IsContains("iPod"))
-					appPlatform = "iOS";
-				else if (agentString.IsContains("Android"))
-					appPlatform = "Android";
-				else if (agentString.IsContains("Windows Phone"))
-					appPlatform = "Windows Phone";
-				else if (agentString.IsContains("BlackBerry") || agentString.IsContains("BB10"))
-					appPlatform = "BlackBerry";
-				else if (agentString.IsContains("IEMobile") || agentString.IsContains("Opera Mini"))
-					appPlatform = "Mobile";
-				else
-					appPlatform = "Desktop";
-				appPlatform += " PWA";
-			}
+			if (string.IsNullOrWhiteSpace(appPlatform))
+				appPlatform = string.IsNullOrWhiteSpace(agentString)
+					? "N/A"
+					: agentString.IsContains("iPhone") || agentString.IsContains("iPad") || agentString.IsContains("iPod")
+						? "iOS PWA"
+						: agentString.IsContains("Android")
+							? "Android PWA"
+							: agentString.IsContains("Windows Phone")
+								? "Windows Phone PWA"
+								: agentString.IsContains("BlackBerry") || agentString.IsContains("BB10")
+									? "BlackBerry PWA"
+									: agentString.IsContains("IEMobile") || agentString.IsContains("Opera Mini")
+										? "Mobile PWA"
+										: "Desktop PWA";
 
 			var appOrigin = header["origin"];
 			if (string.IsNullOrWhiteSpace(appOrigin))
@@ -79,12 +85,13 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static Tuple<string, string, string> GetAppInfo(this HttpContext context)
 		{
-			return Global.GetAppInfo(context.Request.Headers, context.Request.QueryString, context.Request.UserHostAddress, context.Request.UrlReferrer, context.Request.UserAgent);
+			return Global.GetAppInfo(context.Request.Headers, context.Request.QueryString, context.Request.UserAgent, context.Request.UserHostAddress, context.Request.UrlReferrer);
 		}
 		#endregion
 
 		#region Encryption keys
 		static string _AESKey = null;
+
 		/// <summary>
 		/// Geths the key for working with AES
 		/// </summary>
@@ -93,19 +100,7 @@ namespace net.vieapps.Services.APIGateway
 			get
 			{
 				if (Global._AESKey == null)
-				{
-					try
-					{
-						Global._AESKey = Global.GetAppSetting("AESKey");
-					}
-					catch
-					{
-						Global._AESKey = null;
-					}
-
-					if (string.IsNullOrWhiteSpace(Global._AESKey))
-						Global._AESKey = "VIEApps-c98c6942-Default-0ad9-AES-40ed-Encryption-9e53-Key-65c501fcf7b3";
-				}
+					Global._AESKey = Global.GetAppSetting("AESKey", "VIEApps-c98c6942-Default-0ad9-AES-40ed-Encryption-9e53-Key-65c501fcf7b3");
 				return Global._AESKey;
 			}
 		}
@@ -121,6 +116,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		static string _JWTKey = null;
+
 		/// <summary>
 		/// Geths the key for working with JSON Web Token
 		/// </summary>
@@ -129,19 +125,7 @@ namespace net.vieapps.Services.APIGateway
 			get
 			{
 				if (Global._JWTKey == null)
-				{
-					try
-					{
-						Global._JWTKey = Global.GetAppSetting("JWTKey");
-					}
-					catch
-					{
-						Global._JWTKey = null;
-					}
-
-					if (string.IsNullOrWhiteSpace(Global._JWTKey))
-						Global._JWTKey = "VIEApps-49d8bd8c-Default-babc-JWT-43f4-Sign-bc30-Key-355b0891dc0f";
-				}
+					Global._JWTKey = Global.GetAppSetting("JWTKey", "VIEApps-49d8bd8c-Default-babc-JWT-43f4-Sign-bc30-Key-355b0891dc0f");
 				return Global._JWTKey;
 			}
 		}
@@ -152,6 +136,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		static string _RSAKey = null;
+
 		/// <summary>
 		/// Geths the key for working with RSA
 		/// </summary>
@@ -160,19 +145,7 @@ namespace net.vieapps.Services.APIGateway
 			get
 			{
 				if (Global._RSAKey == null)
-				{
-					try
-					{
-						Global._RSAKey = Global.GetAppSetting("RSAKey");
-					}
-					catch
-					{
-						Global._RSAKey = null;
-					}
-
-					if (string.IsNullOrWhiteSpace(Global._RSAKey))
-						Global._RSAKey = "FU4UoaKHeOYHOYDFlxlcSnsAelTHcu2o0eMAyzYwdWXQCpHZO8DRA2OLesV/JAilDRKILDjEBkTWbkghvLnlss4ymoqZzzJrpGn/cUjRP2/4P2Q18IAYYdipP65nMg4YXkyKfZC/MZfArm8pl51+FiPtQoSG0fHkmoXlq5xJ0g7jhzyMJelZjsGq+3QPji3stj89o5QK5WZZhxOmcGWvjsSLMTrV9bF4Gd9Si5UG8Wzs9/iybvu/yt3ZvIjo9kxrLceVpW/cQjDEhqQzRogpQPtSfkTgeEBtjkp91B+ISGquWWAPUt/bMjBR94zQWCBneIB6bEHY9gMDjabyZDsiSKSuKlvDWpEEx8j2DJLcqstXHs9akw5k44pusVapamk2TCSjcCnEX9SFUbyHrbb3ODJPBqVL4sAnKLl8dv54+ihvb6Oooeq+tiAx6LVwmSCTRZmGrgdURO110eewrEAbKcF+DxHe7wfkuKYLDkzskjQ44/BWzlWydxzXHAL3r59/1P/t7AtP9CAZVv9MXQghafkCJfEx+Q94gfyzl79PwCFrKa4YcEUAjif55aVaJcWdPWWBIaIgELlf/NgCzGRleTKG0KP1dcdkpbpQZb7lik6JLUWlPD0YaFpEomjpwNeblK+KElUWhqgh2SPtsDyISYB22ZsThWI4kdKHsngtR+SF7gsnuR4DUcsew99R3hFtC/9jtRxNgvVukMWy5q17gWcQQPRf4zbWgLfqe3uJwz7bitf9O5Okd+2INMb5iHKxW7uxemVfMUKKCT+60PUtsbKgd+oqOpOLhfwC2LbTE3iCOkPuKkKQAIor1+CahhZ7CWzxFaatiAVKzfSTdHna9gcfewZlahWQv4+frqWa6rfmEs8EbJt8sKimXlehY8oZf3TaHqS5j/8Pu7RLVpF7Yt3El+vdkbzEphS5P5fQdcKZCxGCWFl2WtrP+Njtw/J/ifjMuxrjppo4CxIGPurEODTTE3l+9rGQN0tm7uhjjdRiOLEK/ulXA04s5qMDfZTgZZowS1/379S1ImflGSLXGkmOjU42KsoI6v17dXXQ/MwWd7wilHC+ZRLsvZC5ts0F7pc4Qq4KmDZG4HKKf4SIiJpbpHgovKfVJdVXrTL/coHpg+FzBNvCO02TUBqJytD4dV4wZomSYwuWdo5is4xYjpOdMMZfzipEcDn0pNM7TzNonLAjUlefCAjJONl+g3s1tHdNZ6aSsLF63CpRhEchN3HFxSU4KGj0EbaR96Fo8PMwhrharF/QKWDfRvOK+2qsTqwZPqVFygObZq6RUfp6wWZwP8Tj+e1oE9DrvVMoNwhfDXtZm7d2Yc4eu+PyvJ7louy5lFGdtIuc9u3VUtw/Y0K7sRS383T+SHXBHJoLjQOK65TjeAzrYDUJF1UMV3UvuBrfVMUErMGlLzJdj/TqYDQdJS5+/ehaAnK4aDYSHCI8DQXF5NWLFlOSDy/lHIjN5msz/tfJTM70YqMQgslQmE5yH78HEQytlTsd+7WlhcLd1LpjylXQJhXYLRM8RX9zoKi7gJxNYe1GpnpQhfPpIg28trSwvs4zMPqf3YWf12HM1F7M9OUIkQoUtwyEUE5DUv2ZkDjYrMHbTN9xuJTDH/5FNsyUYCAER0Cgt/p1H+08fFFdrdZNIVRwI2s7mcMgIXtAcDLagcf0cxn1qYyc1vC9wmX7Ad/Sy69D+Yfhr2aJGgxSN1m7VIGncBfWGiVMwoaJi//pDRkmfkusAq+LypEZHy83HWf3hvpxvZBLjxRZeYXA4SMcTRMrPlkfzpGPd8Pe5JtYotUvJHJ/QRk/GqTnJuiB+hwvB7d73P+jwpE4gXpJszHHbYwQEpsdLg0xOTWDHMxF08IfLipuM7d9yTEziMfBApJ9R3+fTOMJ0h7BgCWiYp6DmNwPbmrmHbbXhwNJ2dSWS15+x/iWKEV+zz1rJTpZpqWyo4/EGg8Ao4DIXHSV8cHk4vOywsC2Kff/d7tE1jXKpWDLEo6Yo0NIgHG6gehWPSbnHWQNw6hkyKh/sO6IT0PGgM2A/FgYrsALTxbBoakMuCh+FPS/y4FXWQB80ABmKQTwql0jBAMhhBJTjdH0mS21WOj0wQ8gZgddpyePc5VPXuT9Tf6KqFwFs29f6IZDRrQs609aM/QNgfJqfhSlmzYnuDUJxzXpSzUmU9lejvu/GqO2T1XmY/ergxK9SI7aAah3TQIyZ36umMpUtsoN6hFy5RyMBnNJ/Cvt56pS5wLaq0Gl8WjctHmxAHy+UfIOh0P3HATlp2cto+w=";
-				}
+					Global._RSAKey = Global.GetAppSetting("RSAKey", "FU4UoaKHeOYHOYDFlxlcSnsAelTHcu2o0eMAyzYwdWXQCpHZO8DRA2OLesV/JAilDRKILDjEBkTWbkghvLnlss4ymoqZzzJrpGn/cUjRP2/4P2Q18IAYYdipP65nMg4YXkyKfZC/MZfArm8pl51+FiPtQoSG0fHkmoXlq5xJ0g7jhzyMJelZjsGq+3QPji3stj89o5QK5WZZhxOmcGWvjsSLMTrV9bF4Gd9Si5UG8Wzs9/iybvu/yt3ZvIjo9kxrLceVpW/cQjDEhqQzRogpQPtSfkTgeEBtjkp91B+ISGquWWAPUt/bMjBR94zQWCBneIB6bEHY9gMDjabyZDsiSKSuKlvDWpEEx8j2DJLcqstXHs9akw5k44pusVapamk2TCSjcCnEX9SFUbyHrbb3ODJPBqVL4sAnKLl8dv54+ihvb6Oooeq+tiAx6LVwmSCTRZmGrgdURO110eewrEAbKcF+DxHe7wfkuKYLDkzskjQ44/BWzlWydxzXHAL3r59/1P/t7AtP9CAZVv9MXQghafkCJfEx+Q94gfyzl79PwCFrKa4YcEUAjif55aVaJcWdPWWBIaIgELlf/NgCzGRleTKG0KP1dcdkpbpQZb7lik6JLUWlPD0YaFpEomjpwNeblK+KElUWhqgh2SPtsDyISYB22ZsThWI4kdKHsngtR+SF7gsnuR4DUcsew99R3hFtC/9jtRxNgvVukMWy5q17gWcQQPRf4zbWgLfqe3uJwz7bitf9O5Okd+2INMb5iHKxW7uxemVfMUKKCT+60PUtsbKgd+oqOpOLhfwC2LbTE3iCOkPuKkKQAIor1+CahhZ7CWzxFaatiAVKzfSTdHna9gcfewZlahWQv4+frqWa6rfmEs8EbJt8sKimXlehY8oZf3TaHqS5j/8Pu7RLVpF7Yt3El+vdkbzEphS5P5fQdcKZCxGCWFl2WtrP+Njtw/J/ifjMuxrjppo4CxIGPurEODTTE3l+9rGQN0tm7uhjjdRiOLEK/ulXA04s5qMDfZTgZZowS1/379S1ImflGSLXGkmOjU42KsoI6v17dXXQ/MwWd7wilHC+ZRLsvZC5ts0F7pc4Qq4KmDZG4HKKf4SIiJpbpHgovKfVJdVXrTL/coHpg+FzBNvCO02TUBqJytD4dV4wZomSYwuWdo5is4xYjpOdMMZfzipEcDn0pNM7TzNonLAjUlefCAjJONl+g3s1tHdNZ6aSsLF63CpRhEchN3HFxSU4KGj0EbaR96Fo8PMwhrharF/QKWDfRvOK+2qsTqwZPqVFygObZq6RUfp6wWZwP8Tj+e1oE9DrvVMoNwhfDXtZm7d2Yc4eu+PyvJ7louy5lFGdtIuc9u3VUtw/Y0K7sRS383T+SHXBHJoLjQOK65TjeAzrYDUJF1UMV3UvuBrfVMUErMGlLzJdj/TqYDQdJS5+/ehaAnK4aDYSHCI8DQXF5NWLFlOSDy/lHIjN5msz/tfJTM70YqMQgslQmE5yH78HEQytlTsd+7WlhcLd1LpjylXQJhXYLRM8RX9zoKi7gJxNYe1GpnpQhfPpIg28trSwvs4zMPqf3YWf12HM1F7M9OUIkQoUtwyEUE5DUv2ZkDjYrMHbTN9xuJTDH/5FNsyUYCAER0Cgt/p1H+08fFFdrdZNIVRwI2s7mcMgIXtAcDLagcf0cxn1qYyc1vC9wmX7Ad/Sy69D+Yfhr2aJGgxSN1m7VIGncBfWGiVMwoaJi//pDRkmfkusAq+LypEZHy83HWf3hvpxvZBLjxRZeYXA4SMcTRMrPlkfzpGPd8Pe5JtYotUvJHJ/QRk/GqTnJuiB+hwvB7d73P+jwpE4gXpJszHHbYwQEpsdLg0xOTWDHMxF08IfLipuM7d9yTEziMfBApJ9R3+fTOMJ0h7BgCWiYp6DmNwPbmrmHbbXhwNJ2dSWS15+x/iWKEV+zz1rJTpZpqWyo4/EGg8Ao4DIXHSV8cHk4vOywsC2Kff/d7tE1jXKpWDLEo6Yo0NIgHG6gehWPSbnHWQNw6hkyKh/sO6IT0PGgM2A/FgYrsALTxbBoakMuCh+FPS/y4FXWQB80ABmKQTwql0jBAMhhBJTjdH0mS21WOj0wQ8gZgddpyePc5VPXuT9Tf6KqFwFs29f6IZDRrQs609aM/QNgfJqfhSlmzYnuDUJxzXpSzUmU9lejvu/GqO2T1XmY/ergxK9SI7aAah3TQIyZ36umMpUtsoN6hFy5RyMBnNJ/Cvt56pS5wLaq0Gl8WjctHmxAHy+UfIOh0P3HATlp2cto+w=");
 				return Global._RSAKey;
 			}
 		}
@@ -253,22 +226,14 @@ namespace net.vieapps.Services.APIGateway
 
 		#region WAMP channels
 		internal static IWampChannel IncommingChannel = null, OutgoingChannel = null;
+		internal static long IncommingChannelSessionID = 0, OutgoingChannelSessionID = 0;
 		internal static bool ChannelAreClosedBySystem = false;
 
 		static Tuple<string, string, bool> GetLocationInfo()
 		{
-			var address = ConfigurationManager.AppSettings["RouterAddress"];
-			if (string.IsNullOrWhiteSpace(address))
-				address = "ws://127.0.0.1:26429/";
-
-			var realm = ConfigurationManager.AppSettings["RouterRealm"];
-			if (string.IsNullOrWhiteSpace(realm))
-				realm = "VIEAppsRealm";
-
-			var mode = ConfigurationManager.AppSettings["RouterChannelsMode"];
-			if (string.IsNullOrWhiteSpace(mode))
-				mode = "MsgPack";
-
+			var address = Global.GetAppSetting("RouterAddress", "ws://127.0.0.1:26429/");
+			var realm = Global.GetAppSetting("RouterRealm", "VIEAppsRealm");
+			var mode = Global.GetAppSetting("RouterChannelsMode", "MsgPack");
 			return new Tuple<string, string, bool>(address, realm, mode.IsEquals("json"));
 		}
 
@@ -285,6 +250,11 @@ namespace net.vieapps.Services.APIGateway
 			Global.IncommingChannel = useJsonChannel
 				? (new DefaultWampChannelFactory()).CreateJsonChannel(address, realm)
 				: (new DefaultWampChannelFactory()).CreateMsgpackChannel(address, realm);
+
+			Global.IncommingChannel.RealmProxy.Monitor.ConnectionEstablished += (sender, arguments) =>
+			{
+				Global.IncommingChannelSessionID = arguments.SessionId;
+			};
 
 			if (onConnectionEstablished != null)
 				Global.IncommingChannel.RealmProxy.Monitor.ConnectionEstablished += new EventHandler<WampSessionCreatedEventArgs>(onConnectionEstablished);
@@ -341,6 +311,11 @@ namespace net.vieapps.Services.APIGateway
 				? (new DefaultWampChannelFactory()).CreateJsonChannel(address, realm)
 				: (new DefaultWampChannelFactory()).CreateMsgpackChannel(address, realm);
 
+			Global.OutgoingChannel.RealmProxy.Monitor.ConnectionEstablished += (sender, arguments) =>
+			{
+				Global.OutgoingChannelSessionID = arguments.SessionId;
+			};
+
 			if (onConnectionEstablished != null)
 				Global.OutgoingChannel.RealmProxy.Monitor.ConnectionEstablished += new EventHandler<WampSessionCreatedEventArgs>(onConnectionEstablished);
 
@@ -386,15 +361,15 @@ namespace net.vieapps.Services.APIGateway
 		{
 			await Global.OpenIncomingChannelAsync(
 				(sender, arguments) => {
-					Global.WriteLogs("The incoming connection is established" + "\r\n" + " - Session ID: " + arguments.SessionId);
+					Global.WriteLogs("The incoming connection is established - Session ID: " + arguments.SessionId);
 				},
 				(sender, arguments) => {
 					if (arguments.CloseType.Equals(SessionCloseType.Disconnection))
-						Global.WriteLogs("The incoming connection is broken because the router is not found or the router is refused" + "\r\n" + " - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
+						Global.WriteLogs("The incoming connection is broken because the router is not found or the router is refused - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
 					else
 					{
 						if (Global.ChannelAreClosedBySystem)
-							Global.WriteLogs("The incoming connection is closed" + "\r\n" + " - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
+							Global.WriteLogs("The incoming connection is closed - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
 						else
 							Global.ReOpenIncomingChannel(
 								123,
@@ -414,15 +389,15 @@ namespace net.vieapps.Services.APIGateway
 
 			await Global.OpenOutgoingChannelAsync(
 				(sender, arguments) => {
-					Global.WriteLogs("The outgoing connection is established" + "\r\n" + " - Session ID: " + arguments.SessionId);
+					Global.WriteLogs("The outgoing connection is established - Session ID: " + arguments.SessionId);
 				},
 				(sender, arguments) => {
 					if (arguments.CloseType.Equals(SessionCloseType.Disconnection))
-						Global.WriteLogs("The outgoing connection is broken because the router is not found or the router is refused" + "\r\n" + " - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
+						Global.WriteLogs("The outgoing connection is broken because the router is not found or the router is refused - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
 					else
 					{
 						if (Global.ChannelAreClosedBySystem)
-							Global.WriteLogs("The outgoing connection is closed" + "\r\n" + " - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
+							Global.WriteLogs("The outgoing connection is closed - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
 						else
 							Global.ReOpenOutgoingChannel(
 								123,
@@ -592,7 +567,7 @@ namespace net.vieapps.Services.APIGateway
 				: segments.Trim().ToLower().ToHashSet('|', true);
 
 			stopwatch.Stop();
-			Global.WriteLogs("*** The API Gateway REST server is ready for serving. The app is initialized in " + stopwatch.GetElapsedTimes());
+			Global.WriteLogs("*** The API Gateway is ready for serving. The app is initialized in " + stopwatch.GetElapsedTimes());
 		}
 
 		internal static void OnAppEnd()
@@ -715,10 +690,10 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static void OnAppEndRequest(HttpApplication app)
 		{
-#if DEBUG || REQUESTLOGS
 			if (app == null || app.Context == null || app.Context.Request == null || app.Context.Request.HttpMethod.Equals("OPTIONS"))
 				return;
 
+#if DEBUG || REQUESTLOGS
 			else if (app.Context.Items.Contains("StopWatch"))
 			{
 				(app.Context.Items["StopWatch"] as Stopwatch).Stop();
@@ -727,6 +702,8 @@ namespace net.vieapps.Services.APIGateway
 				app.Response.Headers.Add("x-execution-times", executionTimes);
 			}
 #endif
+
+			app.Response.Headers.Add("x-correlation-id", Global.GetCorrelationID(app.Context.Items));
 		}
 		#endregion
 
@@ -767,10 +744,10 @@ namespace net.vieapps.Services.APIGateway
 			app.Context.Response.Headers.Remove("public");
 
 			// add special headers
-			if (app.Response.Headers["server"] != null)
+			if (app.Response.Headers["x-powered-by"] != null)
 				app.Context.Response.Headers.Set("x-powered-by", "VIEApps NGX API Gateway");
 			else
-			app.Context.Response.Headers.Add("x-powered-by", "VIEApps NGX API Gateway");
+				app.Context.Response.Headers.Add("x-powered-by", "VIEApps NGX API Gateway");
 
 			if (app.Response.Headers["server"] != null)
 				app.Response.Headers.Set("server", "VIEApps NGX");
@@ -1005,9 +982,9 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Session & User with JSON Web Token
-		internal static Session GetSession(NameValueCollection header, NameValueCollection query, string ipAddress, Uri urlReferrer = null, string agentString = null)
+		internal static Session GetSession(NameValueCollection header, NameValueCollection query, string agentString, string ipAddress, Uri urlReferrer)
 		{
-			var appInfo = Global.GetAppInfo(header, query, ipAddress, urlReferrer, agentString);
+			var appInfo = Global.GetAppInfo(header, query, agentString, ipAddress, urlReferrer);
 			return new Session()
 			{
 				IP = ipAddress,
@@ -1249,17 +1226,16 @@ namespace net.vieapps.Services.APIGateway
 
 				try
 				{
-					if (path.IsEndsWith(".json"))
-						context.Response.ContentType = "application/json";
-					else if (path.IsEndsWith(".js"))
-						context.Response.ContentType = "application/javascript";
-					else if (path.IsEndsWith(".css"))
-						context.Response.ContentType = "text/css";
-					else if (path.IsEndsWith(".html"))
-						context.Response.ContentType = "text/html";
-					else
-						context.Response.ContentType = "text/plain";
+					var contentType = path.IsEndsWith(".json") || path.IsEndsWith(".js")
+						? "application/" + (path.IsEndsWith(".js") ?"javascript" : "json")
+							: "text/"
+								+ (path.IsEndsWith(".css")
+									? "css"
+									: path.IsEndsWith(".html") || path.IsEndsWith(".htm")
+										? "html"
+										: "plain");
 					context.Response.Cache.SetNoStore();
+					context.Response.ContentType = contentType;
 					await context.Response.Output.WriteAsync(await UtilityService.ReadTextFileAsync(context.Server.MapPath(path)));
 				}
 				catch (Exception ex)
@@ -1271,12 +1247,15 @@ namespace net.vieapps.Services.APIGateway
 			// APIs
 			else
 			{
+				// prepare
+				var serviceName = context.Request.QueryString["service-name"];
+
 				// no information
-				if (string.IsNullOrWhiteSpace(context.Request.QueryString["service-name"]))
+				if (string.IsNullOrWhiteSpace(serviceName))
 					Global.ShowError(context, new InvalidRequestException());
 
 				// external APIs
-				else if (ExternalAPIs.APIs.ContainsKey(context.Request.QueryString["service-name"]))
+				else if (ExternalAPIs.APIs.ContainsKey(serviceName))
 					await ExternalAPIs.ProcessRequestAsync(context);
 
 				// internal APIs

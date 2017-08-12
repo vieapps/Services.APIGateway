@@ -84,7 +84,7 @@ namespace net.vieapps.Services.APIGateway
 				return;
 			}
 
-			var session = Global.GetSession(context.Headers, context.QueryString, context.UserHostAddress, context.UrlReferrer, context.UserAgent);
+			var session = Global.GetSession(context.Headers, context.QueryString, context.UserAgent, context.UserHostAddress, context.UrlReferrer);
 			if (string.IsNullOrWhiteSpace(session.DeviceID))
 			{
 				await context.SendAsync(new InvalidTokenException("Device identity is not found"));
@@ -141,7 +141,7 @@ namespace net.vieapps.Services.APIGateway
 #if DEBUG || RTULOGS
 				Global.WriteLogs(correlationID, "RTU", new List<string>() {
 					"The real-time updater of a client's device is started",
-					"- Account: " + (session.User.ID.Equals("") ? "Visitor" : session.User.ID),
+					"- Account ID: " + (session.User.ID.Equals("") ? "Visitor" : session.User.ID),
 					"- Session ID: " + session.SessionID,
 					"- Device ID: " + session.DeviceID,
 					"- IP: " + session.IP,
@@ -188,7 +188,7 @@ namespace net.vieapps.Services.APIGateway
 #if DEBUG || RTULOGS
 					Global.WriteLogs(correlationID, "RTU", new List<string>() {
 							"The real-time updater of a client's device is stopped",
-							"- Account: " + (session.User.ID.Equals("") ? "Visitor" : session.User.ID),
+							"- Account ID: " + (session.User.ID.Equals("") ? "Visitor" : session.User.ID),
 							"- Session ID: " + session.SessionID,
 							"- Device ID: " + session.DeviceID,
 							"- IP: " + session.IP,
@@ -211,7 +211,7 @@ namespace net.vieapps.Services.APIGateway
 #if DEBUG || RTULOGS
 							Global.WriteLogs(correlationID, "RTU", new List<string>() {
 								"Push the message to the subscriber's device successful",
-								"- Session: " + (session.User.ID.Equals("") ? "Visitor" : session.User.ID) + " @ " + session.SessionID,
+								"- Session: " + session.SessionID,
 								"- Device: " + session.DeviceID + " @ " + session.AppName + "/" + session.AppPlatform + " [IP: " + session.IP + "]",
 								"- Message: " + message.Data.ToString(Formatting.None)
 							});

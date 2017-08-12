@@ -26,7 +26,7 @@ namespace net.vieapps.Services.APIGateway
 			// prepare the requesting information
 			var requestInfo = new RequestInfo()
 			{
-				Session = Global.GetSession(context.Request.Headers, context.Request.QueryString, context.Request.UserHostAddress, context.Request.UrlReferrer, context.Request.UserAgent),
+				Session = Global.GetSession(context.Request.Headers, context.Request.QueryString, context.Request.UserAgent, context.Request.UserHostAddress, context.Request.UrlReferrer),
 				Verb = context.Request.HttpMethod,
 				ServiceName = string.IsNullOrWhiteSpace(context.Request.QueryString["service-name"]) ? "unknown" : context.Request.QueryString["service-name"],
 				ObjectName = string.IsNullOrWhiteSpace(context.Request.QueryString["object-name"]) ? "unknown" : context.Request.QueryString["object-name"],

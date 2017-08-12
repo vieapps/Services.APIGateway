@@ -1,7 +1,6 @@
 ﻿#region Related components
 using System;
 using System.Collections.Generic;
-using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
 using System.Web.WebSockets;
@@ -21,7 +20,6 @@ namespace net.vieapps.Services.APIGateway
 {
 	internal static class RTU
 	{
-		internal static CancellationTokenSource CancellationTokenSource = new CancellationTokenSource();
 		internal static Dictionary<string, IDisposable> Subscribers = new Dictionary<string, IDisposable>();
 
 		#region Subscribers
@@ -74,7 +72,7 @@ namespace net.vieapps.Services.APIGateway
 			string appToken = null;
 			try
 			{
-				appToken = context.QueryString["x-app-token"];
+				appToken = Global.GetAppParameter("x-app-token", context.Headers, context.QueryString);
 				if (string.IsNullOrWhiteSpace(appToken))
 					throw new TokenNotFoundException();
 			}
@@ -226,7 +224,7 @@ namespace net.vieapps.Services.APIGateway
 				// wait
 				try
 				{
-					await Task.Delay(234, RTU.CancellationTokenSource.Token);
+					await Task.Delay(234, Global.CancellationTokenSource.Token);
 				}
 				catch (OperationCanceledException)
 				{
@@ -293,7 +291,7 @@ namespace net.vieapps.Services.APIGateway
 			if (context.WebSocket.State.Equals(WebSocketState.Open))
 				try
 				{
-					await context.WebSocket.SendAsync(new ArraySegment<byte>(message.ToBytes()), WebSocketMessageType.Text, true, RTU.CancellationTokenSource.Token);
+					await context.WebSocket.SendAsync(new ArraySegment<byte>(message.ToBytes()), WebSocketMessageType.Text, true, Global.CancellationTokenSource.Token);
 				}
 				catch (OperationCanceledException) { }
 				catch (Exception ex)

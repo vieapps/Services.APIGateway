@@ -5,6 +5,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Security.Cryptography;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Diagnostics;
 using System.IO.Compression;
@@ -28,6 +29,7 @@ namespace net.vieapps.Services.APIGateway
 {
 	internal static class Global
 	{
+		internal static CancellationTokenSource CancellationTokenSource = new CancellationTokenSource();
 
 		#region Get setting/parameter of the app
 		internal static string GetAppSetting(string name, string defaultValue = null)
@@ -47,8 +49,8 @@ namespace net.vieapps.Services.APIGateway
 				: header?[name];
 			if (value == null)
 				value = string.IsNullOrWhiteSpace(name)
-				? null
-				: query?[name];
+					? null
+					: query?[name];
 			return string.IsNullOrEmpty(value)
 				? defaultValue
 				: value;
@@ -572,7 +574,7 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static void OnAppEnd()
 		{
-			RTU.CancellationTokenSource.Cancel();
+			Global.CancellationTokenSource.Cancel();
 			RTU.StopSubscribers();
 			Global.ChannelAreClosedBySystem = true;
 			Global.CloseIncomingChannel();

@@ -2,6 +2,7 @@
 using System;
 using System.Linq;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 
 using System.Reactive.Subjects;
@@ -27,7 +28,7 @@ namespace net.vieapps.Services.APIGateway
 				this._updateSubject = Global.Component._outgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages");
 		}
 
-		public Task SendUpdateMessageAsync(UpdateMessage message)
+		public Task SendUpdateMessageAsync(UpdateMessage message, CancellationToken cancellationToken = default(CancellationToken))
 		{
 			if (message != null)
 				try
@@ -50,7 +51,7 @@ namespace net.vieapps.Services.APIGateway
 			return Task.CompletedTask;
 		}
 
-		public Task SendUpdateMessagesAsync(List<BaseMessage> messages, string deviceID, string excludedDeviceID)
+		public Task SendUpdateMessagesAsync(List<BaseMessage> messages, string deviceID, string excludedDeviceID, CancellationToken cancellationToken = default(CancellationToken))
 		{
 			if (messages != null && messages.Count > 0)
 				try
@@ -118,7 +119,7 @@ namespace net.vieapps.Services.APIGateway
 			return subject;
 		}
 
-		public Task SendInterCommunicateMessageAsync(string serviceName, BaseMessage message)
+		public Task SendInterCommunicateMessageAsync(string serviceName, BaseMessage message, CancellationToken cancellationToken = default(CancellationToken))
 		{
 			if (!string.IsNullOrWhiteSpace(serviceName) && message != null)
 				try
@@ -139,7 +140,7 @@ namespace net.vieapps.Services.APIGateway
 			return Task.CompletedTask;
 		}
 
-		public Task SendInterCommunicateMessagesAsync(string serviceName, List<BaseMessage> messages)
+		public Task SendInterCommunicateMessagesAsync(string serviceName, List<BaseMessage> messages, CancellationToken cancellationToken = default(CancellationToken))
 		{
 			if (!string.IsNullOrWhiteSpace(serviceName) && messages != null && messages.Count > 0)
 				try

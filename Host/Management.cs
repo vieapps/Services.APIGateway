@@ -1,9 +1,10 @@
 ﻿#region Related components
 using System;
 using System.Collections.Generic;
-using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Configuration;
+using System.IO;
 
 using net.vieapps.Components.Utility;
 #endregion
@@ -46,12 +47,12 @@ namespace net.vieapps.Services.APIGateway
 		int _max = 10;
 		string _logsPath = "logs";
 
-		public Task WriteLogAsync(string correlationID, string serviceName, string objectName, string log, string stack)
+		public Task WriteLogAsync(string correlationID, string serviceName, string objectName, string log, string stack, CancellationToken cancellationToken = default(CancellationToken))
 		{
-			return this.WriteLogsAsync(correlationID, serviceName, objectName, new List<string>() { log }, stack);
+			return this.WriteLogsAsync(correlationID, serviceName, objectName, new List<string>() { log }, stack, cancellationToken);
 		}
 
-		public Task WriteLogsAsync(string correlationID, string serviceName, string objectName, List<string> logs, string stack)
+		public Task WriteLogsAsync(string correlationID, string serviceName, string objectName, List<string> logs, string stack, CancellationToken cancellationToken = default(CancellationToken))
 		{
 			string path = serviceName.ToLower() + @"\" + serviceName.ToLower()
 				+ (!string.IsNullOrWhiteSpace(objectName) && !serviceName.IsEquals(objectName) ? "." + objectName.ToLower() : "");

@@ -164,7 +164,7 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				var service = await InternalAPIs.GetServiceAsync(requestInfo.ServiceName.Trim().ToLower());
-				var json = await service.ProcessRequestAsync(requestInfo);
+				var json = await service.ProcessRequestAsync(requestInfo, Global.CancellationTokenSource.Token);
 
 				// SPECIALS (POST): working with sessions
 				if (isSessionProccessed)

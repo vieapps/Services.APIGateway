@@ -68,8 +68,8 @@ namespace net.vieapps.Services.APIGateway
 
 			// prepare identity
 			requestInfo.Session.SessionID = string.IsNullOrWhiteSpace(requestInfo.Session.SessionID)
-				? requestInfo.Session.SessionID
-				: UtilityService.GetUUID();
+				? UtilityService.GetUUID()
+				: requestInfo.Session.SessionID;
 
 			// prepare body
 			if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT"))
@@ -150,7 +150,7 @@ namespace net.vieapps.Services.APIGateway
 					else if (requestInfo.Verb.IsEquals("GET") && requestInfo.Query.ContainsKey("anonymous") && requestInfo.Session.User != null && string.IsNullOrWhiteSpace(requestInfo.Session.User.ID))
 						requestInfo.Extra = new Dictionary<string, string>()
 						{
-							{ "SessionID", requestInfo.Query["anonymous"].Decrypt(Global.AESKey, true).Encrypt() },
+							{ "SessionID", Global.AESDecrypt(requestInfo.Query["anonymous"], Global.AESKey.Reverse(), true).Encrypt() },
 							{ "AccessToken", accessToken.Encrypt() }
 						};
 				}
@@ -318,13 +318,15 @@ namespace net.vieapps.Services.APIGateway
 		#region Helper: update JSON of session
 		static void UpdateSessionJson(this Session session, JObject json, string accessToken)
 		{
+			// check & initialize JSON
 			json = json ?? new JObject()
 			{
 				{ "ID", session.SessionID },
 				{ "DeviceID", session.DeviceID }
 			};
 
-			json["ID"] = (json["ID"] as JValue).Value.ToString().Encrypt(Global.AESKey, true);
+			// encrypt the identity
+			json["ID"] = Global.AESEncrypt((json["ID"] as JValue).Value.ToString(), Global.AESKey.Reverse(), true);
 
 			session.User = session.User ?? new User();
 			json.Add(new JProperty("JWT", session.GetJSONWebToken(accessToken)));

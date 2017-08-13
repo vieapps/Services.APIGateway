@@ -8,6 +8,7 @@ using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Diagnostics;
+using System.IO;
 using System.IO.Compression;
 using System.Text;
 using System.Linq;
@@ -31,38 +32,14 @@ namespace net.vieapps.Services.APIGateway
 	{
 		internal static CancellationTokenSource CancellationTokenSource = new CancellationTokenSource();
 
-		#region Get setting/parameter of the app
-		internal static string GetAppSetting(string name, string defaultValue = null)
+		#region Get the app info
+		internal static Tuple<string, string, string> GetAppInfo(NameValueCollection header, NameValueCollection query, string agentString, string ipAddress, Uri urlReferrer)
 		{
-			var value = string.IsNullOrEmpty(name)
-				? null
-				: ConfigurationManager.AppSettings["vieapps:" + name.Trim()];
-			return string.IsNullOrEmpty(value)
-				? defaultValue
-				: value;
-		}
+			var name = UtilityService.GetAppParameter("x-app-name", header, query, "Generic App");
 
-		internal static string GetAppParameter(string name, NameValueCollection header, NameValueCollection query, string defaultValue = null)
-		{
-			var value = string.IsNullOrWhiteSpace(name)
-				? null
-				: header?[name];
-			if (value == null)
-				value = string.IsNullOrWhiteSpace(name)
-					? null
-					: query?[name];
-			return string.IsNullOrEmpty(value)
-				? defaultValue
-				: value;
-		}
-
-		internal static Tuple<string, string, string> GetAppInfo(NameValueCollection header, NameValueCollection query, string agentString, string ipAddress, Uri urlReferrer = null)
-		{
-			var appName = Global.GetAppParameter("x-app-name", header, query, "Generic App");
-
-			var appPlatform = Global.GetAppParameter("x-app-platform", header, query);
-			if (string.IsNullOrWhiteSpace(appPlatform))
-				appPlatform = string.IsNullOrWhiteSpace(agentString)
+			var platform = UtilityService.GetAppParameter("x-app-platform", header, query);
+			if (string.IsNullOrWhiteSpace(platform))
+				platform = string.IsNullOrWhiteSpace(agentString)
 					? "N/A"
 					: agentString.IsContains("iPhone") || agentString.IsContains("iPad") || agentString.IsContains("iPod")
 						? "iOS PWA"
@@ -76,13 +53,13 @@ namespace net.vieapps.Services.APIGateway
 										? "Mobile PWA"
 										: "Desktop PWA";
 
-			var appOrigin = header["origin"];
-			if (string.IsNullOrWhiteSpace(appOrigin))
-				appOrigin = urlReferrer?.AbsoluteUri;
-			if (string.IsNullOrWhiteSpace(appOrigin))
-				appOrigin = ipAddress;
+			var origin = header?["origin"];
+			if (string.IsNullOrWhiteSpace(origin))
+				origin = urlReferrer?.AbsoluteUri;
+			if (string.IsNullOrWhiteSpace(origin))
+				origin = ipAddress;
 
-			return new Tuple<string, string, string>(appName, appPlatform, appOrigin);
+			return new Tuple<string, string, string>(name, platform, origin);
 		}
 
 		internal static Tuple<string, string, string> GetAppInfo(this HttpContext context)
@@ -102,7 +79,7 @@ namespace net.vieapps.Services.APIGateway
 			get
 			{
 				if (Global._AESKey == null)
-					Global._AESKey = Global.GetAppSetting("AESKey", "VIEApps-c98c6942-Default-0ad9-AES-40ed-Encryption-9e53-Key-65c501fcf7b3");
+					Global._AESKey = UtilityService.GetAppSetting("AESKey", "VIEApps-c98c6942-Default-0ad9-AES-40ed-Encryption-9e53-Key-65c501fcf7b3");
 				return Global._AESKey;
 			}
 		}
@@ -127,7 +104,7 @@ namespace net.vieapps.Services.APIGateway
 			get
 			{
 				if (Global._JWTKey == null)
-					Global._JWTKey = Global.GetAppSetting("JWTKey", "VIEApps-49d8bd8c-Default-babc-JWT-43f4-Sign-bc30-Key-355b0891dc0f");
+					Global._JWTKey = UtilityService.GetAppSetting("JWTKey", "VIEApps-49d8bd8c-Default-babc-JWT-43f4-Sign-bc30-Key-355b0891dc0f");
 				return Global._JWTKey;
 			}
 		}
@@ -147,7 +124,7 @@ namespace net.vieapps.Services.APIGateway
 			get
 			{
 				if (Global._RSAKey == null)
-					Global._RSAKey = Global.GetAppSetting("RSAKey", "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");
+					Global._RSAKey = UtilityService.GetAppSetting("RSAKey", "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");
 				return Global._RSAKey;
 			}
 		}
@@ -233,9 +210,9 @@ namespace net.vieapps.Services.APIGateway
 
 		static Tuple<string, string, bool> GetLocationInfo()
 		{
-			var address = Global.GetAppSetting("RouterAddress", "ws://127.0.0.1:26429/");
-			var realm = Global.GetAppSetting("RouterRealm", "VIEAppsRealm");
-			var mode = Global.GetAppSetting("RouterChannelsMode", "MsgPack");
+			var address = UtilityService.GetAppSetting("RouterAddress", "ws://127.0.0.1:26429/");
+			var realm = UtilityService.GetAppSetting("RouterRealm", "VIEAppsRealm");
+			var mode = UtilityService.GetAppSetting("RouterChannelsMode", "MsgPack");
 			return new Tuple<string, string, bool>(address, realm, mode.IsEquals("json"));
 		}
 
@@ -553,17 +530,17 @@ namespace net.vieapps.Services.APIGateway
 			}).ConfigureAwait(false);
 
 			// special segments
-			var segments = Global.GetAppSetting("BypassSegments");
+			var segments = UtilityService.GetAppSetting("BypassSegments");
 			Global.BypassSegments = string.IsNullOrWhiteSpace(segments)
 				? new HashSet<string>()
 				: segments.Trim().ToLower().ToHashSet('|', true);
 
-			segments = Global.GetAppSetting("HiddenSegments");
+			segments = UtilityService.GetAppSetting("HiddenSegments");
 			Global.HiddenSegments = string.IsNullOrWhiteSpace(segments)
 				? new HashSet<string>()
 				: segments.Trim().ToLower().ToHashSet('|', true);
 
-			segments = Global.GetAppSetting("StaticSegments");
+			segments = UtilityService.GetAppSetting("StaticSegments");
 			Global.StaticSegments = string.IsNullOrWhiteSpace(segments)
 				? new HashSet<string>()
 				: segments.Trim().ToLower().ToHashSet('|', true);
@@ -701,11 +678,9 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static void OnAppEndRequest(HttpApplication app)
 		{
-			if (app == null || app.Context == null || app.Context.Request == null || app.Context.Request.HttpMethod.Equals("OPTIONS"))
-				return;
-
 #if DEBUG || REQUESTLOGS
-			else if (app.Context.Items.Contains("StopWatch"))
+			// add execution times
+			if (app != null && app.Context != null && app.Context.Request != null && !app.Context.Request.HttpMethod.Equals("OPTIONS") && app.Context.Items.Contains("StopWatch"))
 			{
 				(app.Context.Items["StopWatch"] as Stopwatch).Stop();
 				var executionTimes = (app.Context.Items["StopWatch"] as Stopwatch).GetElapsedTimes();
@@ -714,7 +689,9 @@ namespace net.vieapps.Services.APIGateway
 			}
 #endif
 
-			app.Response.Headers.Add("x-correlation-id", Global.GetCorrelationID(app.Context.Items));
+			// add correlation identity
+			if (app != null && app.Response != null && !app.Context.Request.HttpMethod.Equals("OPTIONS"))
+				app.Response.Headers.Add("x-correlation-id", Global.GetCorrelationID(app.Context.Items));
 		}
 		#endregion
 
@@ -759,7 +736,7 @@ namespace net.vieapps.Services.APIGateway
 			if (app.Response.Headers["server"] != null)
 				app.Response.Headers.Set("server", "VIEApps NGX");
 			else
-				app.Response.Headers.Add("server", "VIEApps  NGX");
+				app.Response.Headers.Add("server", "VIEApps NGX");
 		}
 		#endregion
 
@@ -774,7 +751,7 @@ namespace net.vieapps.Services.APIGateway
 #if DEBUG
 					Global.ShowErrorStacks = "true";
 #else
-					Global.ShowErrorStacks = Global.GetAppSetting("ShowErrorStacks", "false");
+					Global.ShowErrorStacks = UtilityService.GetAppSetting("ShowErrorStacks", "false");
 #endif
 				return Global.ShowErrorStacks.IsEquals("true");
 			}
@@ -787,7 +764,7 @@ namespace net.vieapps.Services.APIGateway
 			get
 			{
 				if (string.IsNullOrWhiteSpace(Global.SetErrorStatus))
-					Global.SetErrorStatus = Global.GetAppSetting("SetErrorStatus", "false");
+					Global.SetErrorStatus = UtilityService.GetAppSetting("SetErrorStatus", "false");
 				return Global.SetErrorStatus.IsEquals("true");
 			}
 		}
@@ -877,7 +854,7 @@ namespace net.vieapps.Services.APIGateway
 			Exception inner = null;
 			JObject jsonException = null;
 
-			if (exception.ErrorUri.Equals("wamp.error.no_such_procedure"))
+			if (exception.ErrorUri.Equals("wamp.error.no_such_procedure") || exception.ErrorUri.Equals("wamp.error.callee_unregistered"))
 			{
 				if (exception.Arguments.Length > 0 && exception.Arguments[0] != null && exception.Arguments[0] is JValue)
 				{
@@ -1010,7 +987,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				IP = ipAddress,
 				AppAgent = agentString,
-				DeviceID = Global.GetAppParameter("x-device-id", header, query, ""),
+				DeviceID = UtilityService.GetAppParameter("x-device-id", header, query, ""),
 				AppName = appInfo.Item1,
 				AppPlatform = appInfo.Item2,
 				AppOrigin = appInfo.Item3
@@ -1244,6 +1221,8 @@ namespace net.vieapps.Services.APIGateway
 				var path = context.Request.QueryString["path"];
 				if (string.IsNullOrWhiteSpace(path))
 					path = "~/temp/countries.json";
+				else if (path.IndexOf("?") > 0)
+					path = path.Left(path.IndexOf("?"));
 
 				try
 				{
@@ -1259,9 +1238,13 @@ namespace net.vieapps.Services.APIGateway
 					context.Response.ContentType = contentType;
 					await context.Response.Output.WriteAsync(await UtilityService.ReadTextFileAsync(context.Server.MapPath(path)));
 				}
+				catch (FileNotFoundException ex)
+				{
+					Global.ShowError(context, 404, "Not found [" + path + "]", "FileNotFoundException", ex.StackTrace, ex.InnerException);
+				}
 				catch (Exception ex)
 				{
-					await context.Response.Output.WriteAsync("Error: " + ex.Message + " [" + path + "]");
+					Global.ShowError(context, ex);
 				}
 			}
 

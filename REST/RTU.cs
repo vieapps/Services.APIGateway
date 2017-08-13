@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Linq;
+using System.Dynamic;
 using System.Web.WebSockets;
 using System.Net.WebSockets;
 
@@ -28,7 +29,7 @@ namespace net.vieapps.Services.APIGateway
 			return Global.OutgoingChannel?.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages");
 		}
 
-		internal static IDisposable RegisterSubscriber(string identity, ISubject<UpdateMessage> subject, Action<UpdateMessage> onNext, Action<Exception> onError = null)
+		internal static IDisposable RegisterSubscriber(string identity, ISubject<UpdateMessage> subject, Action<UpdateMessage> onNext, Action<Exception> onError)
 		{
 			identity = string.IsNullOrWhiteSpace(identity)
 				? UtilityService.GetUUID()
@@ -68,28 +69,42 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static async Task ProcessRequestAsync(AspNetWebSocketContext context)
 		{
-			// validate client credential
-			string appToken = null;
+			// prepare client credential
+			ExpandoObject request = null;
 			try
 			{
-				appToken = Global.GetAppParameter("x-app-token", context.Headers, context.QueryString);
-				if (string.IsNullOrWhiteSpace(appToken))
-					throw new TokenNotFoundException();
+				request = context.QueryString["request"] != null
+					? context.QueryString["request"].Url64Decode().ToExpandoObject()
+					: new ExpandoObject();
 			}
 			catch (Exception ex)
 			{
-				await context.SendAsync(ex);
+				await context.SendAsync(new TokenNotFoundException("Token is not found", ex));
+				return;
+			}
+
+			string appToken = request.Get<string>("x-app-token");
+			if (string.IsNullOrWhiteSpace(appToken))
+			{
+				await context.SendAsync(new TokenNotFoundException("Token is not found"));
 				return;
 			}
 
 			var session = Global.GetSession(context.Headers, context.QueryString, context.UserAgent, context.UserHostAddress, context.UrlReferrer);
+			if (request.Has("x-device-id"))
+				session.DeviceID = request.Get<string>("x-device-id");
+			if (request.Has("x-app-name"))
+				session.AppName = request.Get<string>("x-app-name");
+			if (request.Has("x-app-platform"))
+				session.AppPlatform = request.Get<string>("x-app-platform");
+
 			if (string.IsNullOrWhiteSpace(session.DeviceID))
 			{
 				await context.SendAsync(new InvalidTokenException("Device identity is not found"));
 				return;
 			}
 
-			// parse JSON Web Token and check access token
+			// prepare client credential
 			try
 			{
 				await session.ParseJSONWebTokenAsync(appToken, InternalAPIs.CheckSessionAsync);
@@ -134,7 +149,12 @@ namespace net.vieapps.Services.APIGateway
 			var messages = new Queue<UpdateMessage>();
 			try
 			{
-				RTU.RegisterSubscriber(session.SessionID, subject, message => messages.Enqueue(message));
+				RTU.RegisterSubscriber(
+						session.SessionID,
+						subject,
+						message => messages.Enqueue(message),
+						ex => Global.WriteLogs(correlationID, "RTU", "Error occurred while fetching messages", ex)
+					);
 
 #if DEBUG || RTULOGS
 				Global.WriteLogs(correlationID, "RTU", new List<string>() {

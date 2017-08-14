@@ -107,7 +107,9 @@ namespace net.vieapps.Services.APIGateway
 			// prepare client credential
 			try
 			{
-				await session.ParseJSONWebTokenAsync(appToken, InternalAPIs.CheckSessionAsync);
+				var accessToken = session.ParseJSONWebToken(appToken);
+				if (!await InternalAPIs.CheckSessionAsync(session))
+					throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 			}
 			catch (Exception ex)
 			{
@@ -160,12 +162,8 @@ namespace net.vieapps.Services.APIGateway
 				Global.WriteLogs(correlationID, "RTU", new List<string>() {
 					"The real-time updater of a client's device is started",
 					"- Account ID: " + (session.User.ID.Equals("") ? "Visitor" : session.User.ID),
-					"- Session ID: " + session.SessionID,
-					"- Device ID: " + session.DeviceID,
-					"- IP: " + session.IP,
-					"- App: " + session.AppName + "/" + session.AppPlatform,
-					"- Origin: " + session.AppOrigin,
-					"- Agent: " + session.AppAgent + "\r\n",
+					"- Session: " + session.SessionID + " @ " + session.DeviceID,
+					"- Info: " + session.AppName + " / " + session.AppPlatform  + " - " + session.AppOrigin + " [IP: " + session.IP + " - Agent: " + session.AppAgent + "]"
 				});
 #endif
 			}
@@ -207,12 +205,8 @@ namespace net.vieapps.Services.APIGateway
 					Global.WriteLogs(correlationID, "RTU", new List<string>() {
 							"The real-time updater of a client's device is stopped",
 							"- Account ID: " + (session.User.ID.Equals("") ? "Visitor" : session.User.ID),
-							"- Session ID: " + session.SessionID,
-							"- Device ID: " + session.DeviceID,
-							"- IP: " + session.IP,
-							"- App: " + session.AppName + "/" + session.AppPlatform,
-							"- Origin: " + session.AppOrigin,
-							"- Agent: " + session.AppAgent + "\r\n",
+							"- Session: " + session.SessionID + " @ " + session.DeviceID,
+							"- Info: " + session.AppName + " / " + session.AppPlatform  + " - " + session.AppOrigin + " [IP: " + session.IP + " - Agent: " + session.AppAgent + "]"
 						});
 #endif
 					break;
@@ -230,7 +224,7 @@ namespace net.vieapps.Services.APIGateway
 							Global.WriteLogs(correlationID, "RTU", new List<string>() {
 								"Push the message to the subscriber's device successful",
 								"- Session: " + session.SessionID,
-								"- Device: " + session.DeviceID + " @ " + session.AppName + "/" + session.AppPlatform + " [IP: " + session.IP + "]",
+								"- Device: " + session.DeviceID + " @ " + session.AppName + " / " + session.AppPlatform + " [IP: " + session.IP + "]",
 								"- Message: " + message.Data.ToString(Formatting.None)
 							});
 #endif

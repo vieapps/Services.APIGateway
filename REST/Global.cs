@@ -109,9 +109,13 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
+		static string _PublicJWTKey = null;
+
 		internal static string GenerateJWTKey()
 		{
-			return Global.JWTKey.GetHMACSHA512(Global.AESKey).ToBase64Url(false, true);
+			if (Global._PublicJWTKey == null)
+				Global._PublicJWTKey = Global.JWTKey.GetHMACSHA512(Global.AESKey).ToBase64Url(false, true);
+			return Global._PublicJWTKey;
 		}
 
 		static string _RSAKey = null;
@@ -431,31 +435,52 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		internal static async Task WriteLogsAsync(string correlationID, string objectName, List<string> logs, Exception exception = null, string serviceName = null)
+		internal static async Task WriteLogsAsync(string correlationID, string serviceName, string objectName, List<string> logs, string simpleStack, string fullStack)
 		{
-			// prepare
-			var stack = "";
-			if (exception != null)
-			{
-				stack = exception.StackTrace;
-				var inner = exception.InnerException;
-				int counter = 0;
-				while (inner != null)
-				{
-					counter++;
-					stack += "\r\n" + "-> Inner (" + counter.ToString() + "): ---->>>>" + "\r\n" + inner.StackTrace;
-					inner = inner.InnerException;
-				}
-				stack += "\r\n" + "-------------------------------------" + "\r\n";
-			}
-
-			// write logs
 			try
 			{
 				await Global.InitializeManagementServiceAsync();
-				await Global.ManagementService.WriteLogsAsync(correlationID, string.IsNullOrWhiteSpace(objectName) ? "APIGateway" : serviceName, (string.IsNullOrWhiteSpace(objectName) ? "APIGateway" : objectName).ToLower(), logs, stack);
+				await Global.ManagementService.WriteLogsAsync(correlationID, serviceName, objectName, logs, simpleStack, fullStack, Global.CancellationTokenSource.Token);
 			}
 			catch { }
+		}
+
+		internal static void WriteLogs(string correlationID, string serviceName, string objectName, List<string> logs, string simpleStack, string fullStack)
+		{
+			Task.Run(async () =>
+			{
+				await Global.WriteLogsAsync(correlationID, serviceName, objectName, logs, simpleStack, fullStack);
+			}).ConfigureAwait(false);
+		}
+
+		internal static async Task WriteLogsAsync(string correlationID, string objectName, List<string> logs, Exception exception = null, string serviceName = null)
+		{
+			// prepare
+			serviceName = string.IsNullOrWhiteSpace(serviceName)
+					? "APIGateway"
+					: serviceName;
+
+			var simpleStack = exception != null
+				? exception.StackTrace
+				: "";
+
+			var fullStack = "";
+			if (exception != null)
+			{
+				fullStack = exception.StackTrace;
+				var inner = exception.InnerException;
+				var counter = 0;
+				while (inner != null)
+				{
+					counter++;
+					fullStack += "\r\n" + "-> Inner (" + counter.ToString() + "): ---->>>>" + "\r\n" + inner.StackTrace;
+					inner = inner.InnerException;
+				}
+				fullStack += "\r\n" + "-------------------------------------" + "\r\n";
+			}
+
+			// write logs
+			await Global.WriteLogsAsync(correlationID, serviceName, objectName, logs, simpleStack, fullStack);
 		}
 
 		internal static async Task WriteLogsAsync(string correlationID, string objectName, string log, Exception exception = null)
@@ -626,20 +651,14 @@ namespace net.vieapps.Services.APIGateway
 				return;
 			}
 
-#if DEBUG || REQUESTLOGS || REWRITELOGS
-			var requestUrl = app.Context.Request.Url.Scheme + "://" + app.Context.Request.Url.Host + app.Context.Request.RawUrl;
-#endif
-
 #if DEBUG || REQUESTLOGS
 			var appInfo = app.Context.GetAppInfo();
-
 			Global.WriteLogs(new List<string>() {
-					"Begin process [" + app.Context.Request.HttpMethod + "]: " + requestUrl,
+					"Begin process [" + app.Context.Request.HttpMethod + "]: " + app.Context.Request.Url.Scheme + "://" + app.Context.Request.Url.Host + app.Context.Request.RawUrl,
 					"- Origin: " + appInfo.Item1 + " / " + appInfo.Item2 + " - " + appInfo.Item3,
 					"- IP: " + app.Context.Request.UserHostAddress,
-					"- Agent: " + app.Context.Request.UserAgent,
+					"- Agent: " + app.Context.Request.UserAgent
 				});
-
 			if (!executionFilePaths[0].IsEquals("rtu"))
 			{
 				app.Context.Items["StopWatch"] = new Stopwatch();
@@ -647,7 +666,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 #endif
 
-			// prepare url
+			// rewrite url
 			var url = app.Request.ApplicationPath + "Global.ashx";
 			if (Global.StaticSegments.Contains(executionFilePaths[0]))
 				url += "?request-of-static-resource=&path=" + app.Context.Request.RawUrl.UrlEncode();
@@ -661,26 +680,23 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			foreach (string key in app.Request.QueryString)
-				if (!string.IsNullOrWhiteSpace(key))
+				if (!string.IsNullOrWhiteSpace(key) && !key.IsEquals("service-name") && !key.IsEquals("object-name") && !key.IsEquals("object-identity"))
 					url += "&" + key + "=" + app.Request.QueryString[key].UrlEncode();
 
-			// rewrite url
 			app.Context.RewritePath(url);
-
-#if DEBUG || REWRITELOGS
-			Global.WriteLogs(new List<string>()
-				{
-					"Rewrite: " + requestUrl,
-					"=> " + url
-				});
-#endif
 		}
 
 		internal static void OnAppEndRequest(HttpApplication app)
 		{
+			if (app == null || app.Context == null || app.Context.Request == null || app.Context.Response == null || app.Context.Request.HttpMethod.Equals("OPTIONS"))
+				return;
+
+			// correlation
+			app.Response.Headers.Add("x-correlation-id", Global.GetCorrelationID(app.Context.Items));
+
 #if DEBUG || REQUESTLOGS
-			// add execution times
-			if (app != null && app.Context != null && app.Context.Request != null && !app.Context.Request.HttpMethod.Equals("OPTIONS") && app.Context.Items.Contains("StopWatch"))
+			// execution times
+			if (app.Context.Items.Contains("StopWatch"))
 			{
 				(app.Context.Items["StopWatch"] as Stopwatch).Stop();
 				var executionTimes = (app.Context.Items["StopWatch"] as Stopwatch).GetElapsedTimes();
@@ -688,10 +704,6 @@ namespace net.vieapps.Services.APIGateway
 				app.Response.Headers.Add("x-execution-times", executionTimes);
 			}
 #endif
-
-			// add correlation identity
-			if (app != null && app.Response != null && !app.Context.Request.HttpMethod.Equals("OPTIONS"))
-				app.Response.Headers.Add("x-correlation-id", Global.GetCorrelationID(app.Context.Items));
 		}
 		#endregion
 
@@ -917,20 +929,14 @@ namespace net.vieapps.Services.APIGateway
 			// write logs
 			if (writeLogs)
 			{
-				var logs = new List<string>()
-				{
-					message,
-					"Type: " + type
-				};
+				var logs = new List<string>() { "[" + type + "]: " + message };
 
-				if (!string.IsNullOrWhiteSpace(stack))
-					logs.Add("Stack:" + stack);
-
+				var fullStack = stack;
 				if (requestInfo != null)
-					logs.Add("Request:\r\n" + requestInfo.ToJson().ToString(Formatting.Indented));
+					fullStack += "\r\n\r\n" + "==> Request:\r\n" + requestInfo.ToJson().ToString(Formatting.Indented);
 
 				if (jsonException != null)
-					logs.Add("Details:\r\n" + jsonException.ToString(Formatting.Indented));
+					fullStack += "\r\n\r\n" + "==> Details:\r\n" + jsonException.ToString(Formatting.Indented);
 
 				var correlationID = requestInfo != null
 					? requestInfo.CorrelationID
@@ -942,17 +948,22 @@ namespace net.vieapps.Services.APIGateway
 					? requestInfo.ObjectName
 					: "unknown";
 
-				Global.WriteLogs(correlationID, objectName, logs, inner, serviceName);
+				Global.WriteLogs(correlationID, serviceName, objectName, logs, exception != null ? exception.StackTrace : "", fullStack);
 			}
 		}
 
-		internal static void ShowError(HttpContext context, Exception exception)
+		internal static void ShowError(HttpContext context, Exception exception, bool writeLogs = false)
 		{
 			if (exception is WampException)
 				Global.ShowError(context, exception as WampException, null);
 
 			else
 			{
+				// write logs
+				if (writeLogs)
+					Global.WriteLogs("", exception);
+
+				// show error
 				var type = "Unknown";
 				string stack = null;
 				Exception inner = null;
@@ -973,9 +984,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			var exception = app.Server.GetLastError();
 			app.Server.ClearError();
-
-			Global.WriteLogs("", exception);
-			Global.ShowError(app.Context, exception);
+			Global.ShowError(app.Context, exception, true);
 		}
 		#endregion
 
@@ -990,7 +999,7 @@ namespace net.vieapps.Services.APIGateway
 				DeviceID = UtilityService.GetAppParameter("x-device-id", header, query, ""),
 				AppName = appInfo.Item1,
 				AppPlatform = appInfo.Item2,
-				AppOrigin = appInfo.Item3
+				AppOrigin = appInfo.Item3,
 			};
 		}
 
@@ -1116,7 +1125,7 @@ namespace net.vieapps.Services.APIGateway
 			return JSONWebToken.Encode(payload, Global.GenerateJWTKey());
 		}
 
-		internal static async Task<string> ParseJSONWebTokenAsync(this Session session, string jwt, Func<Session, Task> checkAsync = null)
+		internal static string ParseJSONWebToken(this Session session, string jwt)
 		{
 			// parse JSON Web Token
 			JObject payload = null;
@@ -1186,10 +1195,8 @@ namespace net.vieapps.Services.APIGateway
 			if (!session.User.ID.Equals(userID))
 				throw new InvalidTokenException("Token is invalid (User identity is invalid)");
 
-			// check to see the session is registered or not
+			// assign identity of the session
 			session.SessionID = sessionID;
-			if (checkAsync != null)
-				await checkAsync(session);
 
 			// return access token
 			return accessToken;

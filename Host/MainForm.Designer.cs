@@ -47,6 +47,7 @@
 			// 
 			// ClearLogs
 			// 
+			this.ClearLogs.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
 			this.ClearLogs.Location = new System.Drawing.Point(740, 12);
 			this.ClearLogs.Name = "ClearLogs";
 			this.ClearLogs.Size = new System.Drawing.Size(246, 70);
@@ -57,6 +58,9 @@
 			// 
 			// Logs
 			// 
+			this.Logs.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
+            | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
 			this.Logs.Location = new System.Drawing.Point(12, 97);
 			this.Logs.MaxLength = 0;
 			this.Logs.Multiline = true;
@@ -84,10 +88,7 @@
 			this.Controls.Add(this.Logs);
 			this.Controls.Add(this.ClearLogs);
 			this.Controls.Add(this.ManageServices);
-			this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog;
 			this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
-			this.MaximizeBox = false;
-			this.MinimizeBox = false;
 			this.Name = "MainForm";
 			this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
 			this.Text = "VIEApps API Gateway";

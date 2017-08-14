@@ -62,21 +62,21 @@ namespace net.vieapps.Services.APIGateway
 		internal async Task StartAsync(string[] args = null)
 		{
 			// open channels
-			Global.WriteLog("Starting the API Gateway...");
+			Global.WriteLog("Starting the API Gateway..." + "\r\n");
 			await this.OpenIncomingChannelAsync(
 				(sender, arguments) =>
 				{
-					Global.WriteLog("The incoming connection is established" + "\r\n" + " - Session ID: " + arguments.SessionId);
+					Global.WriteLog("The incoming connection is established - Session ID: " + arguments.SessionId + "\r\n");
 					this._incommingChannelSessionID = arguments.SessionId;
 				},
 				(sender, arguments) =>
 				{
 					if (arguments.CloseType.Equals(SessionCloseType.Disconnection))
-						Global.WriteLog("The incoming connection is broken because the router is not found or the router is refused" + "\r\n" + " - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
+						Global.WriteLog("The incoming connection is broken because the router is not found or the router is refused - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString() + "\r\n");
 					else
 					{
 						if (this._channelAreClosedBySystem)
-							Global.WriteLog("The incoming connection is closed" + "\r\n" + " - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
+							Global.WriteLog("The incoming connection is closed - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString() + "\r\n");
 						else
 							this.ReOpenIncomingChannel(
 								123,
@@ -100,17 +100,17 @@ namespace net.vieapps.Services.APIGateway
 			await this.OpenOutgoingChannelAsync(
 				(sender, arguments) =>
 				{
-					Global.WriteLog("The outgoing connection is established" + "\r\n" + " - Session ID: " + arguments.SessionId);
+					Global.WriteLog("The outgoing connection is established - Session ID: " + arguments.SessionId + "\r\n");
 					this._outgoingChannelSessionID = arguments.SessionId;
 				},
 				(sender, arguments) =>
 				{
 					if (arguments.CloseType.Equals(SessionCloseType.Disconnection))
-						Global.WriteLog("The outgoing connection is broken because the router is not found or the router is refused" + "\r\n" + " - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
+						Global.WriteLog("The outgoing connection is broken because the router is not found or the router is refused - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
 					else
 					{
 						if (this._channelAreClosedBySystem)
-							Global.WriteLog("The outgoing connection is closed" + "\r\n" + " - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
+							Global.WriteLog("The outgoing connection is closed - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString() + "\r\n");
 						else
 							this.ReOpenOutgoingChannel(
 								123,
@@ -299,10 +299,10 @@ namespace net.vieapps.Services.APIGateway
 			{
 				this._managementService = new ManagementService();
 				await this._incommingChannel.RealmProxy.Services.RegisterCallee(new ManagementService(), new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin }));
-				Global.WriteLog("The management service is registered");
+				Global.WriteLog("The management service is registered" + "\r\n");
 
 				await this._incommingChannel.RealmProxy.Services.RegisterCallee(new RTUService(), new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin }));
-				Global.WriteLog("The real-time update (RTU) service is registered");
+				Global.WriteLog("The real-time update (RTU) service is registered" + "\r\n");
 			}
 
 			// register services

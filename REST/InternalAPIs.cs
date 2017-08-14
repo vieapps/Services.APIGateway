@@ -36,29 +36,45 @@ namespace net.vieapps.Services.APIGateway
 
 			// SPECIAL: process with sessions
 			var isSessionProccessed = requestInfo.ServiceName.IsEquals("users") && requestInfo.ObjectName.IsEquals("session");
+			var isSessionInitialized = isSessionProccessed && requestInfo.Verb.IsEquals("GET");
 
 			// authentication & authorization (working with JSON Web Token)
 			var accessToken = "";
 			try
 			{
+				// get token
 				var appToken = requestInfo.GetParameter("x-app-token");
-				if (!string.IsNullOrWhiteSpace(appToken))
+				if (string.IsNullOrWhiteSpace(appToken))
 				{
-					accessToken = await requestInfo.Session.ParseJSONWebTokenAsync(appToken, InternalAPIs.CheckSessionAsync);
-					if (requestInfo.Session.User != null)
-					{
-						var isVerifyRequired = !string.IsNullOrWhiteSpace(requestInfo.Session.User.ID)
-							? true
-							: isSessionProccessed && requestInfo.Verb.IsEquals("GET")
-								? !requestInfo.Query.ContainsKey("anonymous")
-								: true;
-
-						if (isVerifyRequired)
-							await InternalAPIs.VerifySessionAsync(requestInfo.Session, accessToken);
-					}
+					if (!isSessionProccessed)
+						throw new InvalidSessionException("Session is invalid (JSON Web Token is not found)");
+					else if (!requestInfo.Verb.IsEquals("GET"))
+						throw new InvalidSessionException("Session is invalid (JSON Web Token is not found)");
 				}
-				else if (!(isSessionProccessed && requestInfo.Verb.IsEquals("GET")))
-					throw new InvalidSessionException("Session is invalid (JSON Web Token is not found)");
+
+				// get access token
+				else
+					accessToken = requestInfo.Session.ParseJSONWebToken(appToken);
+
+				// check existing of the session
+				var existIsRequired = !isSessionProccessed || !requestInfo.Session.User.ID.Equals("")
+					|| (isSessionInitialized && requestInfo.Session.User.ID.Equals("") && requestInfo.Query.ContainsKey("anonymous"));
+
+				if (!await InternalAPIs.CheckSessionAsync(requestInfo.Session) && existIsRequired)
+					throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
+
+				// verify session
+				var verifyIsRequired = true;
+				if (isSessionInitialized && requestInfo.Session.User.ID.Equals(""))
+					verifyIsRequired = false;
+
+				if (verifyIsRequired)
+					await InternalAPIs.VerifySessionAsync(requestInfo.Session, accessToken);
+			}
+			catch (WampException ex)
+			{
+				Global.ShowError(context, ex, requestInfo);
+				return;
 			}
 			catch (Exception ex)
 			{
@@ -147,12 +163,17 @@ namespace net.vieapps.Services.APIGateway
 					}
 
 					// register the session of anonymous/visitor
-					else if (requestInfo.Verb.IsEquals("GET") && requestInfo.Query.ContainsKey("anonymous") && requestInfo.Session.User != null && string.IsNullOrWhiteSpace(requestInfo.Session.User.ID))
+					else if (isSessionInitialized && requestInfo.Query.ContainsKey("anonymous") && requestInfo.Session.User.ID.Equals(""))
 						requestInfo.Extra = new Dictionary<string, string>()
 						{
 							{ "SessionID", Global.AESDecrypt(requestInfo.Query["anonymous"], Global.AESKey.Reverse(), true).Encrypt() },
 							{ "AccessToken", accessToken.Encrypt() }
 						};
+				}
+				catch (WampException ex)
+				{
+					Global.ShowError(context, ex, requestInfo);
+					return;
 				}
 				catch (Exception ex)
 				{
@@ -160,11 +181,11 @@ namespace net.vieapps.Services.APIGateway
 					return;
 				}
 
-			// call the API
+			// do the process
 			try
 			{
-				var service = await InternalAPIs.GetServiceAsync(requestInfo.ServiceName.Trim().ToLower());
-				var json = await service.ProcessRequestAsync(requestInfo, Global.CancellationTokenSource.Token);
+				// call the service
+				var json = await InternalAPIs.CallServiceAsync(requestInfo);
 
 				// SPECIALS (POST): working with sessions
 				if (isSessionProccessed)
@@ -173,7 +194,7 @@ namespace net.vieapps.Services.APIGateway
 					if (requestInfo.Verb.IsEquals("POST"))
 					{
 						// get account information
-						requestInfo.Session.User = (await service.ProcessRequestAsync(
+						requestInfo.Session.User = (await InternalAPIs.CallServiceAsync(
 							new RequestInfo(requestInfo.Session, new User() { ID = (json["ID"] as JValue).Value.ToString() })
 							{
 								ServiceName = "users",
@@ -188,7 +209,7 @@ namespace net.vieapps.Services.APIGateway
 
 						// update access token
 						accessToken = requestInfo.Session.User.GetAccessToken();
-						await service.ProcessRequestAsync(
+						await InternalAPIs.CallServiceAsync(
 							new RequestInfo(requestInfo.Session)
 							{
 								Verb = "PUT",
@@ -218,7 +239,7 @@ namespace net.vieapps.Services.APIGateway
 						{
 							accessToken = (new User()).GetAccessToken();
 							requestInfo.Session.SessionID = (json["ID"] as JValue).Value.ToString();
-							json = await service.ProcessRequestAsync(
+							json = await InternalAPIs.CallServiceAsync(
 								new RequestInfo(requestInfo.Session, new User())
 								{
 									Verb = "GET",
@@ -239,13 +260,14 @@ namespace net.vieapps.Services.APIGateway
 					}
 				}
 
-				// normalize and write down
+				// normalize the result JSON
 				json = new JObject()
 				{
 					{ "Status", "OK" },
 					{ "Data", json }
 				};
 
+				// write down the JSON
 				context.Response.ContentType = "application/json";
 				await context.Response.Output.WriteAsync(json.ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None));
 			}
@@ -259,9 +281,15 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		#region Helper: get service
-		static async Task<IService> GetServiceAsync(string name)
+		#region Helper: get & call service
+		static async Task<JObject> CallServiceAsync(RequestInfo requestInfo)
 		{
+			var name = requestInfo.ServiceName.Trim().ToLower();
+
+#if DEBUG
+			Global.WriteLogs(requestInfo.CorrelationID, null, "Call the service [net.vieapps.services." + name + "]" + "\r\n" + requestInfo.ToJson().ToString(Formatting.Indented));
+#endif
+
 			if (!InternalAPIs.Services.TryGetValue(name, out IService service))
 			{
 				await Global.OpenOutgoingChannelAsync();
@@ -274,15 +302,24 @@ namespace net.vieapps.Services.APIGateway
 					}
 				}
 			}
-			return service;
+
+			var json = await service.ProcessRequestAsync(requestInfo, Global.CancellationTokenSource.Token);
+
+#if DEBUG
+			Global.WriteLogs(requestInfo.CorrelationID, null, "Result of the service [net.vieapps.services." + name + "]" + "\r\n" + json.ToString(Formatting.Indented));
+#endif
+
+			return json;
 		}
 		#endregion
 
-		#region Helper: check & verify session
-		internal static async Task CheckSessionAsync(Session session)
+		#region Helper: check/verify session & update session's JSON
+		internal static async Task<bool> CheckSessionAsync(Session session)
 		{
-			var service = await InternalAPIs.GetServiceAsync("users");
-			var result = await service.ProcessRequestAsync(new RequestInfo(session)
+			if (session == null || string.IsNullOrWhiteSpace(session.SessionID))
+				return false;
+
+			var result = await InternalAPIs.CallServiceAsync(new RequestInfo(session)
 			{
 				ServiceName = "users",
 				ObjectName = "mediator",
@@ -291,18 +328,12 @@ namespace net.vieapps.Services.APIGateway
 					{ "Exist", "" }
 				}
 			});
-
-			var isExisted = result != null && result["Existed"] != null && result["Existed"] is JValue
-				&& (result["Existed"] as JValue).Value  != null && (result["Existed"] as JValue).Value.CastAs<bool>() == true;
-
-			if (!isExisted)
-				throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
+			return result != null && result["Existed"] is JValue && (result["Existed"] as JValue).Value  != null && (result["Existed"] as JValue).Value.CastAs<bool>() == true;
 		}
 
 		internal static async Task VerifySessionAsync(Session session, string accessToken)
 		{
-			var service = await InternalAPIs.GetServiceAsync("users");
-			await service.ProcessRequestAsync(new RequestInfo(session)
+			await InternalAPIs.CallServiceAsync(new RequestInfo(session)
 			{
 				ServiceName = "users",
 				ObjectName = "mediator",
@@ -313,24 +344,11 @@ namespace net.vieapps.Services.APIGateway
 				}
 			});
 		}
-		#endregion
 
-		#region Helper: update JSON of session
 		static void UpdateSessionJson(this Session session, JObject json, string accessToken)
 		{
-			// check & initialize JSON
-			json = json ?? new JObject()
-			{
-				{ "ID", session.SessionID },
-				{ "DeviceID", session.DeviceID }
-			};
-
-			// encrypt the identity
 			json["ID"] = Global.AESEncrypt((json["ID"] as JValue).Value.ToString(), Global.AESKey.Reverse(), true);
-
-			session.User = session.User ?? new User();
 			json.Add(new JProperty("JWT", session.GetJSONWebToken(accessToken)));
-
 			json.Add(new JProperty("Keys", new JObject()
 			{
 				{

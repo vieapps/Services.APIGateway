@@ -47,15 +47,22 @@ namespace net.vieapps.Services.APIGateway
 		int _max = 10;
 		string _logsPath = "logs";
 
-		public Task WriteLogAsync(string correlationID, string serviceName, string objectName, string log, string stack, CancellationToken cancellationToken = default(CancellationToken))
+		public Task WriteLogAsync(string correlationID, string serviceName, string objectName, string log, string simpleStack = null, string fullStack = null, CancellationToken cancellationToken = default(CancellationToken))
 		{
-			return this.WriteLogsAsync(correlationID, serviceName, objectName, new List<string>() { log }, stack, cancellationToken);
+			return this.WriteLogsAsync(correlationID, serviceName, objectName, new List<string>() { log }, simpleStack, fullStack, cancellationToken);
 		}
 
-		public Task WriteLogsAsync(string correlationID, string serviceName, string objectName, List<string> logs, string stack, CancellationToken cancellationToken = default(CancellationToken))
+		public Task WriteLogsAsync(string correlationID, string serviceName, string objectName, List<string> logs, string simpleStack = null, string fullStack = null, CancellationToken cancellationToken = default(CancellationToken))
 		{
-			string path = serviceName.ToLower() + @"\" + serviceName.ToLower()
-				+ (!string.IsNullOrWhiteSpace(objectName) && !serviceName.IsEquals(objectName) ? "." + objectName.ToLower() : "");
+			string prefix = !string.IsNullOrWhiteSpace(serviceName)
+				? serviceName.ToLower()
+				: "apigateway";
+
+			string surfix = !string.IsNullOrWhiteSpace(serviceName) && !string.IsNullOrWhiteSpace(objectName) && !serviceName.IsEquals(objectName)
+				? "." + objectName.ToLower()
+				: "";
+
+			string path = prefix + @"\" + prefix + surfix;
 
 			if (!this._logs.TryGetValue(path, out Queue<string> svcLogs))
 				lock (this._logs)
@@ -67,15 +74,40 @@ namespace net.vieapps.Services.APIGateway
 					}
 				}
 
+			if (!string.IsNullOrWhiteSpace(simpleStack) || !string.IsNullOrWhiteSpace(fullStack))
+				svcLogs.Enqueue("----------------------------------------------");
+
+			var formLogs = "";
 			logs.ForEach(log =>
 			{
-				svcLogs.Enqueue(correlationID + "\t" + DateTime.Now.ToString("HH:mm:ss.fff") + "\t" + log + (string.IsNullOrWhiteSpace(stack) ? "" : "\r\n\t" + stack + "\r\n"));
+				var info = DateTime.Now.ToString("HH:mm:ss.fff") + "\t" + correlationID + "     \t" + log;
+				svcLogs.Enqueue(info);
 				if (!Global.AsService)
-					Global.Form.UpdateLogs(correlationID + "\t" + DateTime.Now.ToString("HH:mm:ss.fff") + "\t" + log + (string.IsNullOrWhiteSpace(stack) ? "" : "\r\n\t" + stack + "\r\n"));
+					formLogs += (!formLogs.Equals("") ? "\r\n" : "") + info;
 			});
+
+			if (!string.IsNullOrWhiteSpace(simpleStack))
+				svcLogs.Enqueue("\r\n" + "==> Stack:" + "\r\n" + simpleStack);
+
+			if (!string.IsNullOrWhiteSpace(fullStack))
+				svcLogs.Enqueue("\r\n" + "==> Stack (Full):" + "\r\n" + fullStack);
+
+			if (!string.IsNullOrWhiteSpace(simpleStack) || !string.IsNullOrWhiteSpace(fullStack))
+				svcLogs.Enqueue("----------------------------------------------");
 
 			if (svcLogs.Count >= this._max)
 				this.Flush(path, svcLogs);
+
+			if (!Global.AsService && !formLogs.Equals(""))
+			{
+				if (!string.IsNullOrWhiteSpace(simpleStack))
+					formLogs += "\r\n" + "==> Stack:" + "\r\n" + simpleStack;
+				formLogs = "----- ["
+					+ (!string.IsNullOrWhiteSpace(serviceName) ? serviceName.ToLower() : "APIGateway")
+					+ (!string.IsNullOrWhiteSpace(objectName) ? "." + objectName.ToLower() : "")
+					+ "] ----------" + "\r\n" + formLogs + "\r\n";
+				Global.Form.UpdateLogs(formLogs);
+			}
 
 			return Task.CompletedTask;
 		}

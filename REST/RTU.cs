@@ -21,46 +21,66 @@ namespace net.vieapps.Services.APIGateway
 {
 	internal static class RTU
 	{
-		internal static Dictionary<string, IDisposable> Subscribers = new Dictionary<string, IDisposable>();
 
-		#region Subscribers
-		internal static ISubject<UpdateMessage> GetSubject()
+		#region Attributes
+		internal static Dictionary<string, IDisposable> Updaters = new Dictionary<string, IDisposable>();
+
+		internal static int _WaitingTimes = 0;
+		internal static int WaitingTimes
 		{
-			return Global.OutgoingChannel?.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages");
+			get
+			{
+				if (RTU._WaitingTimes < 1)
+					try
+					{
+						RTU._WaitingTimes = UtilityService.GetAppSetting("WaitingTimes", "234").CastAs<int>();
+					}
+					catch
+					{
+						RTU._WaitingTimes = 234;
+					}
+				return RTU._WaitingTimes;
+			}
 		}
+		#endregion
 
-		internal static IDisposable RegisterSubscriber(string identity, ISubject<UpdateMessage> subject, Action<UpdateMessage> onNext, Action<Exception> onError)
+		#region Updaters
+		internal static IDisposable RegisterUpdater(string identity, Action<UpdateMessage> onNext, Action<Exception> onError)
 		{
 			identity = string.IsNullOrWhiteSpace(identity)
 				? UtilityService.GetUUID()
 				: identity;
 
-			if (!RTU.Subscribers.TryGetValue(identity, out IDisposable subscriber))
-				lock (RTU.Subscribers)
+			var subject = Global.IncommingChannel?.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages");
+			if (subject == null)
+				throw new InvalidAppOperationException("Cannot initialize the subject for fetching messages");
+
+			if (!RTU.Updaters.TryGetValue(identity, out IDisposable updater))
+				lock (RTU.Updaters)
 				{
-					if (!RTU.Subscribers.TryGetValue(identity, out subscriber))
+					if (!RTU.Updaters.TryGetValue(identity, out updater))
 					{
-						subscriber = subject.Subscribe(onNext, onError);
-						RTU.Subscribers.Add(identity, subscriber);
+						updater = subject.Subscribe(onNext, onError);
+						RTU.Updaters.Add(identity, updater);
 					}
 				}
 
-			return subscriber;
+			return updater;
 		}
 
-		internal static void UnregisterSubscriber(string identity, bool remove = true)
+		internal static void UnregisterUpdater(string identity, bool remove = true)
 		{
-			if (!string.IsNullOrWhiteSpace(identity) && RTU.Subscribers.ContainsKey(identity))
+			if (!string.IsNullOrWhiteSpace(identity) && RTU.Updaters.ContainsKey(identity))
 			{
-				RTU.Subscribers[identity].Dispose();
+				RTU.Updaters[identity].Dispose();
 				if (remove)
-					RTU.Subscribers.Remove(identity);
+					RTU.Updaters.Remove(identity);
 			}
 		}
 
-		internal static void StopSubscribers()
+		internal static void StopUpdaters()
 		{
-			RTU.Subscribers.ForEach(info =>
+			RTU.Updaters.ForEach(info =>
 			{
 				info.Value.Dispose();
 			});
@@ -105,10 +125,11 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// prepare client credential
+			var correlationID = Global.GetCorrelationID(context.Items);
 			try
 			{
 				var accessToken = session.ParseJSONWebToken(appToken);
-				if (!await InternalAPIs.CheckSessionAsync(session))
+				if (!await InternalAPIs.CheckSessionAsync(session, correlationID))
 					throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 			}
 			catch (Exception ex)
@@ -132,28 +153,12 @@ namespace net.vieapps.Services.APIGateway
 			if (context.QueryString["restart"] != null)
 				await Task.Delay(567);
 
-			// prepare subject to fetch message from WAMP router
-			ISubject<UpdateMessage> subject = null;
-			try
-			{
-				subject = RTU.GetSubject();
-				if (subject == null)
-					throw new InvalidAppOperationException("Cannot initialize the subject for fetching messages");
-			}
-			catch (Exception ex)
-			{
-				await context.SendAsync(ex);
-				return;
-			}
-
 			// fetch messages
-			var correlationID = Global.GetCorrelationID(context.Items);
 			var messages = new Queue<UpdateMessage>();
 			try
 			{
-				RTU.RegisterSubscriber(
+				RTU.RegisterUpdater(
 						session.SessionID,
-						subject,
 						message => messages.Enqueue(message),
 						ex => Global.WriteLogs(correlationID, "RTU", "Error occurred while fetching messages", ex)
 					);
@@ -182,7 +187,7 @@ namespace net.vieapps.Services.APIGateway
 				catch { }
 
 			// register online session
-			await session.RegisterOnlineAsync(session.IP);
+			await session.RegisterOnlineAsync();
 
 			// push messages to client's device
 			while (true)
@@ -192,14 +197,14 @@ namespace net.vieapps.Services.APIGateway
 				{
 					try
 					{
-						RTU.UnregisterSubscriber(session.SessionID);
+						RTU.UnregisterUpdater(session.SessionID);
 					}
 					catch (Exception ex)
 					{
 						Global.WriteLogs(correlationID, "RTU", "Error occurred while disposing subscriber: " + ex.Message, ex);
 					}
 
-					await session.UnregisterOnlineAsync(session.IP);
+					await session.UnregisterOnlineAsync();
 
 #if DEBUG || RTULOGS
 					Global.WriteLogs(correlationID, "RTU", new List<string>() {
@@ -238,7 +243,7 @@ namespace net.vieapps.Services.APIGateway
 				// wait
 				try
 				{
-					await Task.Delay(234, Global.CancellationTokenSource.Token);
+					await Task.Delay(RTU.WaitingTimes, Global.CancellationTokenSource.Token);
 				}
 				catch (OperationCanceledException)
 				{
@@ -315,17 +320,15 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
-		#region Register/Unregister online sessions
-		static Task RegisterOnlineAsync(this Session session, string ipAddress = null)
+		static Task RegisterOnlineAsync(this Session session)
 		{
 			return Task.CompletedTask;
 		}
 
-		static Task UnregisterOnlineAsync(this Session session, string ipAddress = null)
+		static Task UnregisterOnlineAsync(this Session session)
 		{
 			return Task.CompletedTask;
 		}
-		#endregion
 
 	}
 }

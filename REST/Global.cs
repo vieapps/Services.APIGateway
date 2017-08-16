@@ -210,7 +210,7 @@ namespace net.vieapps.Services.APIGateway
 		#region WAMP channels
 		internal static IWampChannel IncommingChannel = null, OutgoingChannel = null;
 		internal static long IncommingChannelSessionID = 0, OutgoingChannelSessionID = 0;
-		internal static bool ChannelAreClosedBySystem = false;
+		internal static bool ChannelsAreClosedBySystem = false;
 
 		static Tuple<string, string, bool> GetLocationInfo()
 		{
@@ -351,7 +351,7 @@ namespace net.vieapps.Services.APIGateway
 						Global.WriteLogs("The incoming connection is broken because the router is not found or the router is refused - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
 					else
 					{
-						if (Global.ChannelAreClosedBySystem)
+						if (Global.ChannelsAreClosedBySystem)
 							Global.WriteLogs("The incoming connection is closed - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
 						else
 							Global.ReOpenIncomingChannel(
@@ -379,7 +379,7 @@ namespace net.vieapps.Services.APIGateway
 						Global.WriteLogs("The outgoing connection is broken because the router is not found or the router is refused - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
 					else
 					{
-						if (Global.ChannelAreClosedBySystem)
+						if (Global.ChannelsAreClosedBySystem)
 							Global.WriteLogs("The outgoing connection is closed - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
 						else
 							Global.ReOpenOutgoingChannel(
@@ -583,8 +583,8 @@ namespace net.vieapps.Services.APIGateway
 		internal static void OnAppEnd()
 		{
 			Global.CancellationTokenSource.Cancel();
-			RTU.StopSubscribers();
-			Global.ChannelAreClosedBySystem = true;
+			RTU.StopUpdaters();
+			Global.ChannelsAreClosedBySystem = true;
 			Global.CloseIncomingChannel();
 			Global.CloseOutgoingChannel();
 		}
@@ -595,7 +595,8 @@ namespace net.vieapps.Services.APIGateway
 		{
 			// update default headers to allow access from everywhere
 			app.Context.Response.HeaderEncoding = Encoding.UTF8;
-			app.Context.Response.AddHeader("access-control-allow-origin", "*");
+			app.Context.Response.Headers.Add("access-control-allow-origin", "*");
+			app.Context.Response.Headers.Add("x-correlation-id", Global.GetCorrelationID(app.Context.Items));
 
 			// prepare
 			var executionFilePath = app.Request.AppRelativeCurrentExecutionFilePath;
@@ -609,11 +610,11 @@ namespace net.vieapps.Services.APIGateway
 			// update special headers on OPTIONS request
 			if (app.Context.Request.HttpMethod.Equals("OPTIONS"))
 			{
-				app.Context.Response.AddHeader("access-control-allow-methods", "HEAD,GET,POST,PUT,DELETE,OPTIONS");
+				app.Context.Response.Headers.Add("access-control-allow-methods", "HEAD,GET,POST,PUT,DELETE,OPTIONS");
 
 				var allowHeaders = app.Context.Request.Headers.Get("access-control-request-headers");
 				if (!string.IsNullOrWhiteSpace(allowHeaders))
-					app.Context.Response.AddHeader("access-control-allow-headers", allowHeaders);
+					app.Context.Response.Headers.Add("access-control-allow-headers", allowHeaders);
 
 				return;
 			}
@@ -688,20 +689,17 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static void OnAppEndRequest(HttpApplication app)
 		{
-			if (app == null || app.Context == null || app.Context.Request == null || app.Context.Response == null || app.Context.Request.HttpMethod.Equals("OPTIONS"))
-				return;
-
-			// correlation
-			app.Response.Headers.Add("x-correlation-id", Global.GetCorrelationID(app.Context.Items));
-
 #if DEBUG || REQUESTLOGS
-			// execution times
-			if (app.Context.Items.Contains("StopWatch"))
+			if (!app.Context.Request.HttpMethod.Equals("OPTIONS") && app.Context.Items.Contains("StopWatch"))
 			{
 				(app.Context.Items["StopWatch"] as Stopwatch).Stop();
 				var executionTimes = (app.Context.Items["StopWatch"] as Stopwatch).GetElapsedTimes();
 				Global.WriteLogs("End process - Execution times: " + executionTimes);
-				app.Response.Headers.Add("x-execution-times", executionTimes);
+				try
+				{
+					app.Response.Headers.Add("x-execution-times", executionTimes);
+				}
+				catch { }
 			}
 #endif
 		}

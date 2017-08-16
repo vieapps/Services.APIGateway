@@ -32,7 +32,8 @@ namespace net.vieapps.Services.APIGateway
 				ServiceName = string.IsNullOrWhiteSpace(context.Request.QueryString["service-name"]) ? "unknown" : context.Request.QueryString["service-name"],
 				ObjectName = string.IsNullOrWhiteSpace(context.Request.QueryString["object-name"]) ? "unknown" : context.Request.QueryString["object-name"],
 				Query = context.Request.QueryString.ToDictionary(),
-				Header = context.Request.Headers.ToDictionary()
+				Header = context.Request.Headers.ToDictionary(),
+				CorrelationID = Global.GetCorrelationID(context.Items)
 			};
 
 			// SPECIAL: process with sessions
@@ -61,7 +62,7 @@ namespace net.vieapps.Services.APIGateway
 				var existIsRequired = !isSessionProccessed || !requestInfo.Session.User.ID.Equals("")
 					|| (isSessionInitialized && requestInfo.Session.User.ID.Equals("") && requestInfo.Query.ContainsKey("anonymous"));
 
-				if (!await InternalAPIs.CheckSessionAsync(requestInfo.Session) && existIsRequired)
+				if (!await InternalAPIs.CheckSessionAsync(requestInfo.Session, requestInfo.CorrelationID) && existIsRequired)
 					throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 
 				// verify session
@@ -70,7 +71,7 @@ namespace net.vieapps.Services.APIGateway
 					verifyIsRequired = false;
 
 				if (verifyIsRequired)
-					await InternalAPIs.VerifySessionAsync(requestInfo.Session, accessToken);
+					await InternalAPIs.VerifySessionAsync(requestInfo.Session, accessToken, requestInfo.CorrelationID);
 			}
 			catch (WampException ex)
 			{
@@ -283,13 +284,10 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		#region Helper: get & call service
-		static async Task<JObject> CallServiceAsync(RequestInfo requestInfo)
+		internal static async Task<IService> GetServiceAsync(string name)
 		{
-			var name = requestInfo.ServiceName.Trim().ToLower();
-
-#if DEBUG
-			Global.WriteLogs(requestInfo.CorrelationID, null, "Call the service [net.vieapps.services." + name + "]" + "\r\n" + requestInfo.ToJson().ToString(Formatting.Indented));
-#endif
+			if (string.IsNullOrWhiteSpace(name))
+				return null;
 
 			if (!InternalAPIs.Services.TryGetValue(name, out IService service))
 			{
@@ -303,7 +301,18 @@ namespace net.vieapps.Services.APIGateway
 					}
 				}
 			}
+			return service;
+		}
 
+		internal static async Task<JObject> CallServiceAsync(RequestInfo requestInfo)
+		{
+			var name = requestInfo.ServiceName.Trim().ToLower();
+
+#if DEBUG
+			Global.WriteLogs(requestInfo.CorrelationID, null, "Call the service [net.vieapps.services." + name + "]" + "\r\n" + requestInfo.ToJson().ToString(Formatting.Indented));
+#endif
+
+			var service = await InternalAPIs.GetServiceAsync(name);
 			JObject json = null;
 			try
 			{
@@ -311,7 +320,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (WampSessionNotEstablishedException)
 			{
-				await Task.Delay(345);
+				await Task.Delay(456);
 				json = await service.ProcessRequestAsync(requestInfo, Global.CancellationTokenSource.Token);
 			}
 			catch (Exception)
@@ -328,7 +337,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Helper: check/verify session & update session's JSON
-		internal static async Task<bool> CheckSessionAsync(Session session)
+		internal static async Task<bool> CheckSessionAsync(Session session, string correlationID = null)
 		{
 			if (session == null || string.IsNullOrWhiteSpace(session.SessionID))
 				return false;
@@ -340,12 +349,13 @@ namespace net.vieapps.Services.APIGateway
 				Extra = new Dictionary<string, string>()
 				{
 					{ "Exist", "" }
-				}
+				},
+				CorrelationID = correlationID ?? UtilityService.GetUUID()
 			});
 			return result != null && result["Existed"] is JValue && (result["Existed"] as JValue).Value  != null && (result["Existed"] as JValue).Value.CastAs<bool>() == true;
 		}
 
-		internal static async Task VerifySessionAsync(Session session, string accessToken)
+		internal static async Task VerifySessionAsync(Session session, string accessToken, string correlationID = null)
 		{
 			await InternalAPIs.CallServiceAsync(new RequestInfo(session)
 			{
@@ -355,7 +365,8 @@ namespace net.vieapps.Services.APIGateway
 				{
 					{ "Verify", "" },
 					{ "AccessToken", accessToken.Encrypt() }
-				}
+				},
+				CorrelationID = correlationID ?? UtilityService.GetUUID()
 			});
 		}
 

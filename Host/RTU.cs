@@ -102,17 +102,17 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Send inter-communicate messages
-		Dictionary<string, ISubject<BaseMessage>> _communicateSubjects = new Dictionary<string, ISubject<BaseMessage>>();
+		Dictionary<string, ISubject<CommunicateMessage>> _communicateSubjects = new Dictionary<string, ISubject<CommunicateMessage>>();
 
-		ISubject<BaseMessage> GetCommunicateSubject(string serviceName)
+		ISubject<CommunicateMessage> GetCommunicateSubject(string serviceName)
 		{
-			var uri = "net.vieapps.rtu.communicate.messages." + serviceName.ToLower();
-			if (!this._communicateSubjects.TryGetValue(uri, out ISubject<BaseMessage> subject))
+			var uri = "net.vieapps.rtu.communicate.messages";
+			if (!this._communicateSubjects.TryGetValue(uri, out ISubject<CommunicateMessage> subject))
 				lock (this._communicateSubjects)
 				{
 					if (!this._communicateSubjects.TryGetValue(uri, out subject))
 					{
-						subject = Global.Component._outgoingChannel.RealmProxy.Services.GetSubject<BaseMessage>(uri);
+						subject = Global.Component._outgoingChannel.RealmProxy.Services.GetSubject<CommunicateMessage>(uri);
 						this._communicateSubjects.Add(uri, subject);
 					}
 				}
@@ -121,14 +121,18 @@ namespace net.vieapps.Services.APIGateway
 
 		public Task SendInterCommunicateMessageAsync(string serviceName, BaseMessage message, CancellationToken cancellationToken = default(CancellationToken))
 		{
-			if (!string.IsNullOrWhiteSpace(serviceName) && message != null)
+			return this.SendInterCommunicateMessageAsync(new CommunicateMessage(serviceName, message), cancellationToken);
+		}
+
+		public Task SendInterCommunicateMessageAsync(CommunicateMessage message, CancellationToken cancellationToken = default(CancellationToken))
+		{
+			if (message != null && !string.IsNullOrWhiteSpace(message.ServiceName))
 				try
 				{
-					this.GetCommunicateSubject(serviceName).OnNext(message);
+					this.GetCommunicateSubject(message.ServiceName).OnNext(message);
 #if DEBUG
 					Global.WriteLog(
 						"Publish an inter-communicate message successful" + "\r\n" +
-						"- Destination: net.vieapps.services." + serviceName.ToLower() + "\r\n" +
 						"- Message: " + message.Data.ToString(Formatting.None) + "\r\n"
 					);
 #endif
@@ -142,7 +146,27 @@ namespace net.vieapps.Services.APIGateway
 
 		public Task SendInterCommunicateMessagesAsync(string serviceName, List<BaseMessage> messages, CancellationToken cancellationToken = default(CancellationToken))
 		{
-			if (!string.IsNullOrWhiteSpace(serviceName) && messages != null && messages.Count > 0)
+			return !string.IsNullOrWhiteSpace(serviceName) && messages != null && messages.Count > 0
+				? this.SendInterCommunicateMessagesAsync(serviceName, messages.Select(msg => new CommunicateMessage(serviceName, msg)).ToList())
+				: Task.CompletedTask;
+		}
+
+		public Task SendInterCommunicateMessagesAsync(List<CommunicateMessage> messages, CancellationToken cancellationToken = default(CancellationToken))
+		{
+			var byServiceMessages = messages != null && messages.Count > 0
+				? messages.ToLookup(m => m.ServiceName)
+				: null;
+
+			if (byServiceMessages != null)
+				foreach (var msgs in byServiceMessages)
+					this.SendInterCommunicateMessagesAsync(msgs.Key, msgs.ToList());
+
+			return Task.CompletedTask;
+		}
+
+		Task SendInterCommunicateMessagesAsync(string serviceName, List<CommunicateMessage> messages)
+		{
+			if (messages != null && !string.IsNullOrWhiteSpace(serviceName))
 				try
 				{
 					var subject = this.GetCommunicateSubject(serviceName);
@@ -155,7 +179,6 @@ namespace net.vieapps.Services.APIGateway
 #if DEBUG
 								Global.WriteLog(
 									"Publish an inter-communicate message successful" + "\r\n" +
-									"- Destination: net.vieapps.services." + serviceName.ToLower() + "\r\n" +
 									"- Message: " + message.Data.ToString(Formatting.None) + "\r\n"
 								);
 #endif

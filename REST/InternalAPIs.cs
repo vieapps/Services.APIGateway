@@ -10,6 +10,7 @@ using Newtonsoft.Json.Linq;
 
 using WampSharp.V2;
 using WampSharp.V2.Core.Contracts;
+using WampSharp.V2.Client;
 
 using net.vieapps.Components.Utility;
 using net.vieapps.Components.Security;
@@ -303,7 +304,20 @@ namespace net.vieapps.Services.APIGateway
 				}
 			}
 
-			var json = await service.ProcessRequestAsync(requestInfo, Global.CancellationTokenSource.Token);
+			JObject json = null;
+			try
+			{
+				json = await service.ProcessRequestAsync(requestInfo, Global.CancellationTokenSource.Token);
+			}
+			catch (WampSessionNotEstablishedException)
+			{
+				await Task.Delay(345);
+				json = await service.ProcessRequestAsync(requestInfo, Global.CancellationTokenSource.Token);
+			}
+			catch (Exception)
+			{
+				throw;
+			}
 
 #if DEBUG
 			Global.WriteLogs(requestInfo.CorrelationID, null, "Result of the service [net.vieapps.services." + name + "]" + "\r\n" + json.ToString(Formatting.Indented));

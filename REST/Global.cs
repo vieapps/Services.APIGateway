@@ -986,7 +986,7 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static string GetJSONWebToken(this Session session, string accessToken = null)
 		{
-			return User.GetJSONWebToken(session.SessionID, session.User.ID, accessToken ?? session.User.GetAccessToken(), Global.AESKey, Global.GenerateJWTKey());
+			return User.GetJSONWebToken(session.User.ID, accessToken ?? session.User.GetAccessToken(), session.SessionID, Global.AESKey, Global.GenerateJWTKey());
 		}
 
 		internal static string ParseJSONWebToken(this Session session, string jwt)
@@ -1001,22 +1001,25 @@ namespace net.vieapps.Services.APIGateway
 			{
 				throw;
 			}
+			var userID = info.Item1;
+			var accessToken = info.Item2;
+			var sessionID = info.Item3;
 
 			// get user information
 			try
 			{
-				session.User = User.ParseAccessToken(info.Item3, Global.RSA, Global.AESKey);
+				session.User = User.ParseAccessToken(accessToken, Global.RSA, Global.AESKey);
 			}
 			catch (Exception ex)
 			{
 				throw new InvalidTokenException("Token is invalid (Access token is invalid)", ex);
 			}
 
-			if (!session.User.ID.Equals(info.Item2))
+			if (!session.User.ID.Equals(userID))
 				throw new InvalidTokenException("Token is invalid (User identity is invalid)");
 
 			// assign identity of the session
-			session.SessionID = info.Item1;
+			session.SessionID = sessionID;
 
 			// return access token
 			return info.Item3;

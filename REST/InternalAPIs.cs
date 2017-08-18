@@ -84,10 +84,13 @@ namespace net.vieapps.Services.APIGateway
 				return;
 			}
 
-			// prepare identity
+			// prepare session identity
 			requestInfo.Session.SessionID = string.IsNullOrWhiteSpace(requestInfo.Session.SessionID)
 				? UtilityService.GetUUID()
 				: requestInfo.Session.SessionID;
+
+			// prepare user principal
+			context.User = new UserPrincipal(requestInfo.Session.User);
 
 			// prepare body
 			if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT"))
@@ -149,8 +152,8 @@ namespace net.vieapps.Services.APIGateway
 
 						try
 						{
-							email = Global.RSADecrypt(email);
-							password = Global.RSADecrypt(password);
+							email = CryptoService.RSADecrypt(Global.RSA, email);
+							password = CryptoService.RSADecrypt(Global.RSA, password);
 						}
 						catch (Exception ex)
 						{
@@ -168,7 +171,7 @@ namespace net.vieapps.Services.APIGateway
 					else if (isSessionInitialized && requestInfo.Query.ContainsKey("anonymous") && requestInfo.Session.User.ID.Equals(""))
 						requestInfo.Extra = new Dictionary<string, string>()
 						{
-							{ "SessionID", Global.AESDecrypt(requestInfo.Query["anonymous"], Global.AESKey.Reverse(), true).Encrypt() },
+							{ "SessionID", requestInfo.Query["anonymous"].Decrypt(Global.AESKey.Reverse(), true).Encrypt() },
 							{ "AccessToken", accessToken.Encrypt() }
 						};
 				}
@@ -372,7 +375,7 @@ namespace net.vieapps.Services.APIGateway
 
 		static void UpdateSessionJson(this Session session, JObject json, string accessToken)
 		{
-			json["ID"] = Global.AESEncrypt((json["ID"] as JValue).Value.ToString(), Global.AESKey.Reverse(), true);
+			json["ID"] = (json["ID"] as JValue).Value.ToString().Encrypt(Global.AESKey.Reverse(), true);
 			json.Add(new JProperty("JWT", session.GetJSONWebToken(accessToken)));
 			json.Add(new JProperty("Keys", new JObject()
 			{

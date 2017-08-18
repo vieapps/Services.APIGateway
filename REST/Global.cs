@@ -144,9 +144,9 @@ namespace net.vieapps.Services.APIGateway
 					{
 						Global._RSA = CryptoService.CreateRSAInstance(Global.RSAKey.Decrypt());
 					}
-					catch (Exception ex)
+					catch (Exception)
 					{
-						throw ex;
+						throw;
 					}
 				return Global._RSA;
 			}
@@ -182,28 +182,6 @@ namespace net.vieapps.Services.APIGateway
 				}
 				return Global._RSAModulus;
 			}
-		}
-		#endregion
-
-		#region Encrypt/Decrypt
-		internal static string AESEncrypt(string data, string key = null, bool toHexa = false)
-		{
-			return data.Encrypt(string.IsNullOrWhiteSpace(key) ? Global.AESKey : key, toHexa);
-		}
-
-		internal static string AESDecrypt(string data, string key = null, bool isHexa = false)
-		{
-			return data.Decrypt(string.IsNullOrWhiteSpace(key) ? Global.AESKey : key, isHexa);
-		}
-
-		internal static string RSAEncrypt(string data)
-		{
-			return CryptoService.RSAEncrypt(Global.RSA, data);
-		}
-
-		internal static string RSADecrypt(string data)
-		{
-			return CryptoService.RSADecrypt(Global.RSA, data);
 		}
 		#endregion
 
@@ -708,30 +686,30 @@ namespace net.vieapps.Services.APIGateway
 		#region Pre excute handlers/send headers
 		internal static void OnAppPreHandlerExecute(HttpApplication app)
 		{
-			if (app == null || app.Context == null || app.Context.Request == null || app.Context.Request.HttpMethod.Equals("OPTIONS") || app.Context.Request.HttpMethod.Equals("HEAD"))
+			// check
+			if (app.Context.Request.HttpMethod.Equals("OPTIONS") || app.Context.Request.HttpMethod.Equals("HEAD"))
 				return;
 
 			// check
-			var acceptEncoding = app.Request.Headers["accept-encoding"];
+			var acceptEncoding = app.Context.Request.Headers["accept-encoding"];
 			if (string.IsNullOrWhiteSpace(acceptEncoding))
 				return;
 
 			// apply compression
-			var previousStream = app.Response.Filter;
-			acceptEncoding = acceptEncoding.ToLower();
+			var previousStream = app.Context.Response.Filter;
 
 			// deflate
 			if (acceptEncoding.IsContains("deflate") || acceptEncoding.Equals("*"))
 			{
-				app.Response.Filter = new DeflateStream(previousStream, CompressionMode.Compress);
-				app.Response.AppendHeader("content-encoding", "deflate");
+				app.Context.Response.Filter = new DeflateStream(previousStream, CompressionMode.Compress);
+				app.Context.Response.Headers.Add("content-encoding", "deflate");
 			}
 
 			// gzip
 			else if (acceptEncoding.IsContains("gzip"))
 			{
-				app.Response.Filter = new GZipStream(previousStream, CompressionMode.Compress);
-				app.Response.AppendHeader("content-encoding", "gzip");
+				app.Context.Response.Filter = new GZipStream(previousStream, CompressionMode.Compress);
+				app.Context.Response.Headers.Add("content-encoding", "gzip");
 			}
 		}
 
@@ -1001,203 +979,47 @@ namespace net.vieapps.Services.APIGateway
 			};
 		}
 
-		internal static string GetAccessToken(string userID, SystemRole userRole, List<string> userRoles, List<Privilege> privileges)
-		{
-			var token = new JObject()
-			{
-				{ "ID", userID },
-				{ "Role", userRole.ToString() }
-			};
-
-			if (userRoles != null && userRoles.Count > 0)
-				token.Add(new JProperty("Roles", userRoles));
-
-			if (privileges != null && privileges.Count > 0)
-				token.Add(new JProperty("Privileges", privileges));
-
-			var key = UtilityService.GetUUID();
-			token = new JObject()
-			{
-				{ "Key", Global.RSAEncrypt(key) },
-				{ "Data", Global.AESEncrypt(token.ToString(Formatting.None), key) }
-			};
-
-			return Global.AESEncrypt(token.ToString(Formatting.None));
-		}
-
 		internal static string GetAccessToken(this User user)
 		{
-			return Global.GetAccessToken(user.ID, user.Role, user.Roles, user.Privileges);
-		}
-
-		internal static User GetUser(this string accessToken)
-		{
-			// decrypt
-			string decrypted = "";
-			try
-			{
-				decrypted = Global.AESDecrypt(accessToken);
-			}
-			catch (Exception ex)
-			{
-				throw new InvalidTokenException("Cannot decrypt the access token", ex);
-			}
-
-			// parse JSON
-			JObject token = null;
-			try
-			{
-				token = JObject.Parse(decrypted);
-			}
-			catch (Exception ex)
-			{
-				throw new InvalidTokenException("Cannot parse the JSON", ex);
-			}
-
-			// check
-			if (token["Key"] == null || token["Data"] == null)
-				throw new InvalidTokenException();
-
-			// decrypt key
-			try
-			{
-				decrypted = Global.RSADecrypt((token["Key"] as JValue).Value.ToString());
-			}
-			catch (Exception ex)
-			{
-				throw new InvalidTokenException("Cannot decrypt the access token", ex);
-			}
-
-			// decrypt JSON
-			try
-			{
-				decrypted = Global.AESDecrypt((token["Data"] as JValue).Value.ToString(), decrypted);
-			}
-			catch (Exception ex)
-			{
-				throw new InvalidTokenException("Cannot decrypt the access token", ex);
-			}
-
-			// serialize from JSON
-			try
-			{
-				return decrypted.FromJson<User>();
-			}
-			catch (Exception ex)
-			{
-				throw new InvalidTokenException("Cannot deserialize parse the JSON", ex);
-			}
-		}
-
-		static string GetSignature(this string sessionID, string accessToken, string algorithm = "HS512")
-		{
-			var data = accessToken + "@" + sessionID;
-			algorithm = algorithm ?? "HS512";
-			switch (algorithm.ToLower())
-			{
-				case "hs1":
-					return data.GetHMACSHA1(Global.AESKey, false);
-
-				case "hs256":
-					return data.GetHMACSHA256(Global.AESKey, false);
-
-				case "hs384":
-					return data.GetHMACSHA384(Global.AESKey, false);
-
-				default:
-					return data.GetHMACSHA512(Global.AESKey, false);
-			}
+			return User.GetAccessToken(user, Global.RSA, Global.AESKey);
 		}
 
 		internal static string GetJSONWebToken(this Session session, string accessToken = null)
 		{
-			accessToken = accessToken ?? session.User.GetAccessToken();
-			var payload = new JObject()
-			{
-				{ "iat", DateTime.Now.ToUnixTimestamp() },
-				{ "jti", Global.AESEncrypt(session.SessionID, Global.AESKey.Reverse()) },
-				{ "uid", session.User.ID },
-				{ "jtk", accessToken },
-				{ "jts", session.SessionID.GetSignature(accessToken) }
-			};
-			return JSONWebToken.Encode(payload, Global.GenerateJWTKey());
+			return User.GetJSONWebToken(session.SessionID, session.User.ID, accessToken ?? session.User.GetAccessToken(), Global.AESKey, Global.GenerateJWTKey());
 		}
 
 		internal static string ParseJSONWebToken(this Session session, string jwt)
 		{
 			// parse JSON Web Token
-			JObject payload = null;
+			Tuple<string, string, string> info;
 			try
 			{
-				payload = JSONWebToken.DecodeAsJObject(jwt, Global.GenerateJWTKey());
+				info = User.ParseJSONWebToken(jwt, Global.AESKey, Global.GenerateJWTKey());
 			}
-			catch (InvalidTokenSignatureException)
+			catch (Exception)
 			{
 				throw;
 			}
-			catch (Exception ex)
-			{
-				throw new InvalidTokenException(ex);
-			}
-
-			// check issued time
-			var issuedAt = payload["iat"] != null
-				? (long)(payload["iat"] as JValue).Value
-				: DateTime.Now.AddDays(-30).ToUnixTimestamp();
-			if (DateTime.Now.ToUnixTimestamp() - issuedAt > 30)
-				throw new TokenExpiredException();
-
-			// get session identity
-			var sessionID = payload["jti"] != null
-				? (payload["jti"] as JValue).Value as string
-				: null;
-			if (string.IsNullOrWhiteSpace(sessionID))
-				throw new InvalidTokenException("Token is invalid (Identity is invalid)");
-
-			try
-			{
-				sessionID = Global.AESDecrypt(sessionID, Global.AESKey.Reverse());
-			}
-			catch (Exception ex)
-			{
-				throw new InvalidTokenException("Token is invalid (Identity is invalid)", ex);
-			}
-
-			// get access token
-			var accessToken = payload["jtk"] != null
-				? (payload["jtk"] as JValue).Value as string
-				: null;
-			if (string.IsNullOrWhiteSpace(accessToken))
-				throw new InvalidTokenException("Token is invalid (Access token is invalid)");
-
-			var signature = payload["jts"] != null
-				? (payload["jts"] as JValue).Value as string
-				: null;
-			if (string.IsNullOrWhiteSpace(signature) || !signature.Equals(sessionID.GetSignature(accessToken)))
-				throw new InvalidTokenSignatureException("Token is invalid (Signature is invalid)");
-
-			var userID = (payload["uid"] as JValue).Value as string;
-			if (userID == null)
-				throw new InvalidTokenException("Token is invalid (User identity is invalid)");
 
 			// get user information
 			try
 			{
-				session.User = accessToken.GetUser();
+				session.User = User.ParseAccessToken(info.Item3, Global.RSA, Global.AESKey);
 			}
 			catch (Exception ex)
 			{
 				throw new InvalidTokenException("Token is invalid (Access token is invalid)", ex);
 			}
 
-			if (!session.User.ID.Equals(userID))
+			if (!session.User.ID.Equals(info.Item2))
 				throw new InvalidTokenException("Token is invalid (User identity is invalid)");
 
 			// assign identity of the session
-			session.SessionID = sessionID;
+			session.SessionID = info.Item1;
 
 			// return access token
-			return accessToken;
+			return info.Item3;
 		}
 		#endregion
 

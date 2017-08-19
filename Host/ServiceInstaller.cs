@@ -1,6 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Configuration.Install;
 using System.ServiceProcess;
 
@@ -25,7 +23,7 @@ namespace net.vieapps.Services.APIGateway
 				StartType = ServiceStartMode.Automatic,
 				ServiceName = "VIEApps-API-Gateway",
 				DisplayName = "VIEApps API Gateway",
-				Description = "Gateway for routing requests of micro-services"
+				Description = "Gateway for routing requests of all microservices in the VIEApps NGX"
 			});
 
 			this.AfterInstall += new InstallEventHandler(this.StartServiceAfterInstall);

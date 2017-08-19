@@ -127,7 +127,7 @@ namespace net.vieapps.Services.APIGateway
 			var correlationID = Global.GetCorrelationID(context.Items);
 			try
 			{
-				var accessToken = session.ParseJSONWebToken(appToken);
+				session.ParseJSONWebToken(appToken);
 				if (!await InternalAPIs.CheckSessionAsync(session, correlationID))
 					throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 			}
@@ -165,7 +165,7 @@ namespace net.vieapps.Services.APIGateway
 #if DEBUG || RTULOGS
 				Global.WriteLogs(correlationID, "RTU", new List<string>() {
 					"The real-time updater of a client's device is started",
-					"- Account ID: " + (session.User.ID.Equals("") ? "Visitor" : session.User.ID),
+					"- Account: " + (session.User.ID.Equals("") ? "Visitor" : session.User.ID),
 					"- Session: " + session.SessionID + " @ " + session.DeviceID,
 					"- Info: " + session.AppName + " / " + session.AppPlatform  + " - " + session.AppOrigin + " [IP: " + session.IP + " - Agent: " + session.AppAgent + "]"
 				});
@@ -208,7 +208,7 @@ namespace net.vieapps.Services.APIGateway
 #if DEBUG || RTULOGS
 					Global.WriteLogs(correlationID, "RTU", new List<string>() {
 							"The real-time updater of a client's device is stopped",
-							"- Account ID: " + (session.User.ID.Equals("") ? "Visitor" : session.User.ID),
+							"- Account: " + (session.User.ID.Equals("") ? "Visitor" : session.User.ID),
 							"- Session: " + session.SessionID + " @ " + session.DeviceID,
 							"- Info: " + session.AppName + " / " + session.AppPlatform  + " - " + session.AppOrigin + " [IP: " + session.IP + " - Agent: " + session.AppAgent + "]"
 						});

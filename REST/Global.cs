@@ -242,9 +242,7 @@ namespace net.vieapps.Services.APIGateway
 			if (Global.IncommingChannel != null)
 				(new WampChannelReconnector(Global.IncommingChannel, async () =>
 				{
-					if (delay > 0)
-						await Task.Delay(delay);
-
+					await Task.Delay(delay > 0 ? delay : 0);
 					try
 					{
 						await Global.IncommingChannel.Open();
@@ -302,9 +300,7 @@ namespace net.vieapps.Services.APIGateway
 			if (Global.OutgoingChannel != null)
 				(new WampChannelReconnector(Global.OutgoingChannel, async () =>
 				{
-					if (delay > 0)
-						await Task.Delay(delay);
-
+					await Task.Delay(delay > 0 ? delay : 0);
 					try
 					{
 						await Global.OutgoingChannel.Open();
@@ -991,18 +987,20 @@ namespace net.vieapps.Services.APIGateway
 		internal static string ParseJSONWebToken(this Session session, string jwt)
 		{
 			// parse JSON Web Token
-			Tuple<string, string, string> info;
+			var userID = "";
+			var accessToken = "";
+			var sessionID = "";
 			try
 			{
-				info = User.ParseJSONWebToken(jwt, Global.AESKey, Global.GenerateJWTKey());
+				var info = User.ParseJSONWebToken(jwt, Global.AESKey, Global.GenerateJWTKey());
+				userID = info.Item1;
+				accessToken = info.Item2;
+				sessionID = info.Item3;
 			}
 			catch (Exception)
 			{
 				throw;
 			}
-			var userID = info.Item1;
-			var accessToken = info.Item2;
-			var sessionID = info.Item3;
 
 			// get user information
 			try
@@ -1021,7 +1019,7 @@ namespace net.vieapps.Services.APIGateway
 			session.SessionID = sessionID;
 
 			// return access token
-			return info.Item3;
+			return accessToken;
 		}
 		#endregion
 

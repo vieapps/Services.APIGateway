@@ -13,7 +13,7 @@ namespace net.vieapps.Services.APIGateway
 
 		string[] arguments = null;
 
-		void MainForm_Load(object sender, EventArgs e)
+		void MainForm_Load(object sender, EventArgs args)
 		{
 			Global.Component.Start(this.arguments);
 		}
@@ -25,7 +25,6 @@ namespace net.vieapps.Services.APIGateway
 
 		void ManageServices_Click(object sender, EventArgs args)
 		{
-			Global.Component.StopService("VIEApps.Services.Users.exe");
 		}
 
 		void ClearLogs_Click(object sender, EventArgs args)

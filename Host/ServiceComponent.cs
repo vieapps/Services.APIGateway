@@ -23,7 +23,7 @@ namespace net.vieapps.Services.APIGateway
 		#region Attributes
 		internal IWampChannel _incommingChannel = null, _outgoingChannel = null;
 		long _incommingChannelSessionID = 0, _outgoingChannelSessionID = 0;
-		bool _channelAreClosedBySystem = false;
+		bool _channelsAreClosedBySystem = false;
 
 		ManagementService _managementService = null;
 		internal List<string> _availableServices = null;
@@ -45,7 +45,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Start/Stop
-		internal void Start(string[] args = null, Func<Task> continueWith = null)
+		internal void Start(string[] args = null, Action nextAction = null, Func<Task> nextActionAsync = null)
 		{
 			Task.Run(async () =>
 			{
@@ -53,8 +53,23 @@ namespace net.vieapps.Services.APIGateway
 			})
 			.ContinueWith(async (task) =>
 			{
-				if (continueWith != null)
-					await continueWith().ConfigureAwait(false);
+				try
+				{
+					nextAction?.Invoke();
+				}
+				catch (Exception ex)
+				{
+					Global.WriteLog("Error occurred while running the next action (sync)", ex);
+				}
+				if (nextActionAsync != null)
+					try
+					{
+						await nextActionAsync().ConfigureAwait(false);
+					}
+					catch (Exception ex)
+					{
+						Global.WriteLog("Error occurred while running the next action (async)", ex);
+					}
 			})
 			.ConfigureAwait(false);
 		}
@@ -75,7 +90,7 @@ namespace net.vieapps.Services.APIGateway
 						Global.WriteLog("The incoming connection is broken because the router is not found or the router is refused - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString() + "\r\n");
 					else
 					{
-						if (this._channelAreClosedBySystem)
+						if (this._channelsAreClosedBySystem)
 							Global.WriteLog("The incoming connection is closed - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString() + "\r\n");
 						else
 							this.ReOpenIncomingChannel(
@@ -109,7 +124,7 @@ namespace net.vieapps.Services.APIGateway
 						Global.WriteLog("The outgoing connection is broken because the router is not found or the router is refused - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
 					else
 					{
-						if (this._channelAreClosedBySystem)
+						if (this._channelsAreClosedBySystem)
 							Global.WriteLog("The outgoing connection is closed - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString() + "\r\n");
 						else
 							this.ReOpenOutgoingChannel(
@@ -137,8 +152,7 @@ namespace net.vieapps.Services.APIGateway
 
 		internal void Stop()
 		{
-			if (this._managementService != null)
-				this._managementService.FlushAll();
+			this._managementService?.FlushAll();
 
 			this._runningServices.ForEach(info =>
 			{
@@ -147,7 +161,7 @@ namespace net.vieapps.Services.APIGateway
 			this._runningServices.Clear();
 			this.UpdateServicesInfo();
 
-			this._channelAreClosedBySystem = true;
+			this._channelsAreClosedBySystem = true;
 			this.CloseIncomingChannel();
 			this.CloseOutgoingChannel();
 		}
@@ -156,18 +170,9 @@ namespace net.vieapps.Services.APIGateway
 		#region Open/Close channels
 		protected virtual Tuple<string, string, bool> GetLocationInfo()
 		{
-			var address = ConfigurationManager.AppSettings["RouterAddress"];
-			if (string.IsNullOrWhiteSpace(address))
-				address = "ws://127.0.0.1:26429/";
-
-			var realm = ConfigurationManager.AppSettings["RouterRealm"];
-			if (string.IsNullOrWhiteSpace(realm))
-				realm = "VIEAppsRealm";
-
-			var mode = ConfigurationManager.AppSettings["RouterChannelsMode"];
-			if (string.IsNullOrWhiteSpace(mode))
-				mode = "MsgPack";
-
+			var address = UtilityService.GetAppSetting("RouterAddress", "ws://127.0.0.1:26429/");
+			var realm = UtilityService.GetAppSetting("RouterRealm", "VIEAppsRealm");
+			var mode = UtilityService.GetAppSetting("RouterChannelsMode", "MsgPack");
 			return new Tuple<string, string, bool>(address, realm, mode.IsEquals("json"));
 		}
 
@@ -211,9 +216,7 @@ namespace net.vieapps.Services.APIGateway
 			if (this._incommingChannel != null)
 				(new WampChannelReconnector(this._incommingChannel, async () =>
 				{
-					if (delay > 0)
-						await Task.Delay(delay);
-
+					await Task.Delay(delay > 0 ? delay : 0);
 					try
 					{
 						await this._incommingChannel.Open();
@@ -266,9 +269,7 @@ namespace net.vieapps.Services.APIGateway
 			if (this._outgoingChannel != null)
 				(new WampChannelReconnector(this._outgoingChannel, async () =>
 				{
-					if (delay > 0)
-						await Task.Delay(delay);
-
+					await Task.Delay(delay > 0 ? delay : 0);
 					try
 					{
 						await this._outgoingChannel.Open();
@@ -282,6 +283,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
+		#region Register & update info of services
 		internal async Task RegisterServicesAsync(string[] args = null)
 		{
 			// register helper services
@@ -298,7 +300,7 @@ namespace net.vieapps.Services.APIGateway
 			if (registerHelperServices)
 			{
 				this._managementService = new ManagementService();
-				await this._incommingChannel.RealmProxy.Services.RegisterCallee(new ManagementService(), new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin }));
+				await this._incommingChannel.RealmProxy.Services.RegisterCallee(this._managementService, new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin }));
 				Global.WriteLog("The management service is registered" + "\r\n");
 
 				await this._incommingChannel.RealmProxy.Services.RegisterCallee(new RTUService(), new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin }));
@@ -331,6 +333,7 @@ namespace net.vieapps.Services.APIGateway
 				.Select(info => info.Name)
 				.ToList();
 		}
+		#endregion
 
 		#region Start/Stop service
 		internal void StartService(string name, string arguments = null)

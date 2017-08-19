@@ -14,7 +14,6 @@ namespace net.vieapps.Services.APIGateway
 	public class ManagementService : IManagementService
 	{
 
-		#region Constructor
 		public ManagementService()
 		{
 #if DEBUG
@@ -35,12 +34,12 @@ namespace net.vieapps.Services.APIGateway
 				this._logsPath = UtilityService.GetAppSetting("LogsPath");
 			}
 			catch { }
+
 			if (string.IsNullOrWhiteSpace(this._logsPath))
 				this._logsPath = Directory.GetCurrentDirectory() + @"\logs";
 			else if (this._logsPath.EndsWith(@"\"))
 				this._logsPath = this._logsPath.Left(this._logsPath.Length - 1);
 		}
-		#endregion
 
 		#region Working with logs
 		Dictionary<string, Queue<string>> _logs = new Dictionary<string, Queue<string>>();

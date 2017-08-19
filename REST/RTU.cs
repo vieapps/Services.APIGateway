@@ -7,7 +7,6 @@ using System.Dynamic;
 using System.Web.WebSockets;
 using System.Net.WebSockets;
 
-using System.Reactive.Subjects;
 using System.Reactive.Linq;
 
 using Newtonsoft.Json;

@@ -75,12 +75,12 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (WampException ex)
 			{
-				Global.ShowError(context, ex, requestInfo);
+				context.ShowError(ex, requestInfo);
 				return;
 			}
 			catch (Exception ex)
 			{
-				Global.ShowError(context, ex);
+				context.ShowError(ex);
 				return;
 			}
 
@@ -177,12 +177,12 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (WampException ex)
 				{
-					Global.ShowError(context, ex, requestInfo);
+					context.ShowError(ex, requestInfo);
 					return;
 				}
 				catch (Exception ex)
 				{
-					Global.ShowError(context, ex);
+					context.ShowError(ex);
 					return;
 				}
 
@@ -278,11 +278,11 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (WampException ex)
 			{
-				Global.ShowError(context, ex, requestInfo);
+				context.ShowError(ex, requestInfo);
 			}
 			catch (Exception ex)
 			{
-				Global.ShowError(context, ex);
+				context.ShowError(ex);
 			}
 		}
 

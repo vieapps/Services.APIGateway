@@ -1,6 +1,5 @@
 ﻿#region Related components
 using System;
-using System.Configuration;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Specialized;
@@ -757,7 +756,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		internal static void ShowError(HttpContext context, int code, string message, string type, string stack, Exception inner)
+		internal static void ShowError(this HttpContext context, int code, string message, string type, string stack, Exception inner)
 		{
 			// prepare
 			var json = new JObject()
@@ -833,7 +832,7 @@ namespace net.vieapps.Services.APIGateway
 			return json;
 		}
 
-		internal static void ShowError(HttpContext context, WampException exception, RequestInfo requestInfo = null, bool writeLogs = true)
+		internal static void ShowError(this HttpContext context, WampException exception, RequestInfo requestInfo = null, bool writeLogs = true)
 		{
 			var code = 500;
 			var message = "";
@@ -900,7 +899,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// show error
-			Global.ShowError(context, code, message, type, stack, inner);
+			context.ShowError(code, message, type, stack, inner);
 
 			// write logs
 			if (writeLogs)
@@ -928,10 +927,10 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		internal static void ShowError(HttpContext context, Exception exception, bool writeLogs = false)
+		internal static void ShowError(this HttpContext context, Exception exception, bool writeLogs = false)
 		{
 			if (exception is WampException)
-				Global.ShowError(context, exception as WampException, null);
+				context.ShowError(exception as WampException, null);
 
 			else
 			{
@@ -952,7 +951,7 @@ namespace net.vieapps.Services.APIGateway
 						inner = exception.InnerException;
 					}
 				}
-				Global.ShowError(context, 500, exception != null ? exception.Message : "Unknown", type, stack, inner);
+				context.ShowError(exception != null ? exception.GetHttpStatusCode() : 500, exception != null ? exception.Message : "Unknown", type, stack, inner);
 			}
 		}
 
@@ -960,7 +959,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			var exception = app.Server.GetLastError();
 			app.Server.ClearError();
-			Global.ShowError(app.Context, exception, true);
+			app.Context.ShowError(exception, true);
 		}
 		#endregion
 
@@ -1070,11 +1069,11 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (FileNotFoundException ex)
 				{
-					Global.ShowError(context, 404, "Not found [" + path + "]", "FileNotFoundException", ex.StackTrace, ex.InnerException);
+					context.ShowError(404, "Not found [" + path + "]", "FileNotFoundException", ex.StackTrace, ex.InnerException);
 				}
 				catch (Exception ex)
 				{
-					Global.ShowError(context, ex);
+					context.ShowError(ex);
 				}
 			}
 
@@ -1086,7 +1085,7 @@ namespace net.vieapps.Services.APIGateway
 
 				// no information
 				if (string.IsNullOrWhiteSpace(serviceName))
-					Global.ShowError(context, new InvalidRequestException());
+					context.ShowError(new InvalidRequestException());
 
 				// external APIs
 				else if (ExternalAPIs.APIs.ContainsKey(serviceName))

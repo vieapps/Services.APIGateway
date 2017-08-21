@@ -839,7 +839,7 @@ namespace net.vieapps.Services.APIGateway
 
 			if (exception.ErrorUri.Equals("wamp.error.no_such_procedure") || exception.ErrorUri.Equals("wamp.error.callee_unregistered"))
 			{
-				if (exception.Arguments.Length > 0 && exception.Arguments[0] != null && exception.Arguments[0] is JValue)
+				if (exception.Arguments != null && exception.Arguments.Length > 0 && exception.Arguments[0] != null && exception.Arguments[0] is JValue)
 				{
 					message = (exception.Arguments[0] as JValue).Value.ToString();
 					var start = message.IndexOf("'");

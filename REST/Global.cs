@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
+using System.Net;
 using System.Text;
 using System.Linq;
 using System.Web;
@@ -1045,14 +1046,42 @@ namespace net.vieapps.Services.APIGateway
 			// static resources
 			else if (context.Request.QueryString["request-of-static-resource"] != null)
 			{
+				// check "If-Modified-Since" request to reduce traffict
+				var eTag = "StaticResource#" + context.Request.RawUrl.ToLower().GetMD5();
+				if (context.Request.Headers["If-Modified-Since"] != null && eTag.Equals(context.Request.Headers["If-None-Match"]))
+				{
+					context.Response.Cache.SetCacheability(HttpCacheability.Public);
+					context.Response.StatusCode = (int)HttpStatusCode.NotModified;
+					context.Response.StatusDescription = "Not Modified";
+					context.Response.Headers.Add("ETag", "\"" + eTag + "\"");
+					return;
+				}
+
+				// prepare
 				var path = context.Request.QueryString["path"];
 				if (string.IsNullOrWhiteSpace(path))
-					path = "~/temp/countries.json";
+					path = "~/data-files/meta/countries.json";
 				else if (path.IndexOf("?") > 0)
 					path = path.Left(path.IndexOf("?"));
 
+				// process
 				try
 				{
+					// check exist
+					var fileInfo = new FileInfo(context.Server.MapPath(path));
+					if (!fileInfo.Exists)
+						throw new FileNotFoundException();
+
+					// set cache policy
+					context.Response.Cache.SetCacheability(HttpCacheability.Public);
+					context.Response.Cache.SetExpires(DateTime.Now.AddDays(1));
+					context.Response.Cache.SetSlidingExpiration(true);
+					context.Response.Cache.SetOmitVaryStar(true);
+					context.Response.Cache.SetValidUntilExpires(true);
+					context.Response.Cache.SetLastModified(fileInfo.LastWriteTime);
+					context.Response.Cache.SetETag(eTag);
+
+					// write content
 					var contentType = path.IsEndsWith(".json") || path.IsEndsWith(".js")
 						? "application/" + (path.IsEndsWith(".js") ?"javascript" : "json")
 							: "text/"
@@ -1061,9 +1090,8 @@ namespace net.vieapps.Services.APIGateway
 									: path.IsEndsWith(".html") || path.IsEndsWith(".htm")
 										? "html"
 										: "plain");
-					context.Response.Cache.SetNoStore();
 					context.Response.ContentType = contentType;
-					await context.Response.Output.WriteAsync(await UtilityService.ReadTextFileAsync(context.Server.MapPath(path)));
+					await context.Response.Output.WriteAsync(await UtilityService.ReadTextFileAsync(fileInfo.FullName));
 				}
 				catch (FileNotFoundException ex)
 				{

@@ -30,7 +30,17 @@ namespace net.vieapps.Services.APIGateway
 {
 	internal static class Global
 	{
+
+		#region Attributes
 		internal static CancellationTokenSource CancellationTokenSource = new CancellationTokenSource();
+
+		internal static IWampChannel IncommingChannel = null, OutgoingChannel = null;
+		internal static long IncommingChannelSessionID = 0, OutgoingChannelSessionID = 0;
+		internal static bool ChannelsAreClosedBySystem = false;
+
+		static string _AESKey = null, _JWTKey = null, _PublicJWTKey = null, _RSAKey = null, _RSAExponent = null, _RSAModulus = null;
+		static RSACryptoServiceProvider _RSA = null;
+		#endregion
 
 		#region Get the app info
 		internal static Tuple<string, string, string> GetAppInfo(NameValueCollection header, NameValueCollection query, string agentString, string ipAddress, Uri urlReferrer)
@@ -69,8 +79,6 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Encryption keys
-		static string _AESKey = null;
-
 		/// <summary>
 		/// Geths the key for working with AES
 		/// </summary>
@@ -94,8 +102,6 @@ namespace net.vieapps.Services.APIGateway
 			return (Global.AESKey + (string.IsNullOrWhiteSpace(additional) ? "" : ":" + additional)).GenerateEncryptionKey(true, true, 128);
 		}
 
-		static string _JWTKey = null;
-
 		/// <summary>
 		/// Geths the key for working with JSON Web Token
 		/// </summary>
@@ -109,16 +115,12 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		static string _PublicJWTKey = null;
-
 		internal static string GenerateJWTKey()
 		{
 			if (Global._PublicJWTKey == null)
 				Global._PublicJWTKey = Global.JWTKey.GetHMACSHA512(Global.AESKey).ToBase64Url(false, true);
 			return Global._PublicJWTKey;
 		}
-
-		static string _RSAKey = null;
 
 		/// <summary>
 		/// Geths the key for working with RSA
@@ -132,8 +134,6 @@ namespace net.vieapps.Services.APIGateway
 				return Global._RSAKey;
 			}
 		}
-
-		static RSACryptoServiceProvider _RSA = null;
 
 		internal static RSACryptoServiceProvider RSA
 		{
@@ -152,8 +152,6 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		static string _RSAExponent = null;
-
 		internal static string RSAExponent
 		{
 			get
@@ -167,8 +165,6 @@ namespace net.vieapps.Services.APIGateway
 				return Global._RSAExponent;
 			}
 		}
-
-		static string _RSAModulus = null;
 
 		internal static string RSAModulus
 		{
@@ -186,10 +182,6 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region WAMP channels
-		internal static IWampChannel IncommingChannel = null, OutgoingChannel = null;
-		internal static long IncommingChannelSessionID = 0, OutgoingChannelSessionID = 0;
-		internal static bool ChannelsAreClosedBySystem = false;
-
 		static Tuple<string, string, bool> GetLocationInfo()
 		{
 			var address = UtilityService.GetAppSetting("RouterAddress", "ws://127.0.0.1:26429/");
@@ -643,7 +635,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// rewrite url
 			var url = app.Request.ApplicationPath + "Global.ashx";
-			if (Global.StaticSegments.Contains(executionFilePaths[0]))
+			if (Global.StaticSegments.Contains(executionFilePaths[0]) || executionFilePaths[0].IsEquals("meta"))
 				url += "?request-of-static-resource=&path=" + app.Context.Request.RawUrl.UrlEncode();
 			else
 			{
@@ -936,19 +928,11 @@ namespace net.vieapps.Services.APIGateway
 					Global.WriteLogs("", exception);
 
 				// show error
-				var type = "Unknown";
-				string stack = null;
-				Exception inner = null;
-				if (exception != null)
-				{
-					type = exception.GetType().ToString().ToArray('.').Last();
-					if (Global.IsShowErrorStacks)
-					{
-						stack = exception.StackTrace;
-						inner = exception.InnerException;
-					}
-				}
-				context.ShowError(exception != null ? exception.GetHttpStatusCode() : 500, exception != null ? exception.Message : "Unknown", type, stack, inner);
+				var message = exception != null ? exception.Message : "Unknown error";
+				var type = exception != null ? exception.GetType().ToString().ToArray('.').Last() : "Unknown";
+				string stack = exception != null && Global.IsShowErrorStacks ? exception.StackTrace : null;
+				Exception inner = exception != null && Global.IsShowErrorStacks ? exception.InnerException : null;
+				context.ShowError(exception != null ? exception.GetHttpStatusCode() : 500, message, type, stack, inner);
 			}
 		}
 
@@ -1060,15 +1044,31 @@ namespace net.vieapps.Services.APIGateway
 				// prepare
 				var path = context.Request.QueryString["path"];
 				if (string.IsNullOrWhiteSpace(path))
-					path = "~/data-files/meta/countries.json";
-				else if (path.IndexOf("?") > 0)
+					path = "~/data-files/meta-files/countries.json";
+
+				if (path.IndexOf("?") > 0)
 					path = path.Left(path.IndexOf("?"));
 
 				// process
 				try
 				{
+					// get information of the requested file
+					FileInfo fileInfo = null;
+					if (!path.IsStartsWith("/meta/"))
+						fileInfo = new FileInfo(context.Server.MapPath(path));
+
+					else
+					{
+						var filePath = UtilityService.GetAppSetting("MetaFilesPath");
+						if (string.IsNullOrEmpty(filePath))
+							filePath = HttpRuntime.AppDomainAppPath + @"\data-files\meta-files";
+						if (filePath.EndsWith(@"\"))
+							filePath = filePath.Left(filePath.Length - 1);
+
+						fileInfo = new FileInfo(filePath + path.Replace("/meta/", "/").Replace("/", @"\"));
+					}
+
 					// check exist
-					var fileInfo = new FileInfo(context.Server.MapPath(path));
 					if (!fileInfo.Exists)
 						throw new FileNotFoundException();
 

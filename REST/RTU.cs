@@ -79,10 +79,7 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static void StopUpdaters()
 		{
-			RTU.Updaters.ForEach(info =>
-			{
-				info.Value.Dispose();
-			});
+			RTU.Updaters.ForEach(info => info.Value.Dispose());
 		}
 		#endregion
 

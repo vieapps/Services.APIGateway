@@ -1061,7 +1061,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 						var filePath = UtilityService.GetAppSetting("MetaFilesPath");
 						if (string.IsNullOrEmpty(filePath))
-							filePath = HttpRuntime.AppDomainAppPath + @"\data-files\meta-files";
+							filePath = HttpRuntime.AppDomainAppPath + @"\data-files\meta";
 						if (filePath.EndsWith(@"\"))
 							filePath = filePath.Left(filePath.Length - 1);
 

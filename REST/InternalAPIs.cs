@@ -59,15 +59,15 @@ namespace net.vieapps.Services.APIGateway
 					accessToken = requestInfo.Session.ParseJSONWebToken(appToken);
 
 				// check existing of the session
-				var existIsRequired = !isSessionProccessed || !requestInfo.Session.User.ID.Equals("")
-					|| (isSessionInitialized && requestInfo.Session.User.ID.Equals("") && requestInfo.Query.ContainsKey("anonymous"));
+				var existIsRequired = !isSessionProccessed || (!requestInfo.Session.User.ID.Equals("") && !requestInfo.Session.User.ID.Equals(User.SystemAccountID))
+					|| (isSessionInitialized && (requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.ID.Equals(User.SystemAccountID)) && requestInfo.Query.ContainsKey("register"));
 
 				if (!await InternalAPIs.CheckSessionAsync(requestInfo.Session, requestInfo.CorrelationID) && existIsRequired)
 					throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 
 				// verify session
 				var verifyIsRequired = true;
-				if (isSessionInitialized && requestInfo.Session.User.ID.Equals(""))
+				if (isSessionInitialized && (requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.ID.Equals(User.SystemAccountID)))
 					verifyIsRequired = false;
 
 				if (verifyIsRequired)
@@ -99,19 +99,15 @@ namespace net.vieapps.Services.APIGateway
 					requestInfo.Body = await reader.ReadToEndAsync();
 				}
 
-			else if (requestInfo.Verb.IsEquals("GET"))
-			{
-				requestInfo.Body = context.Request.QueryString["request-body"];
-				if (!string.IsNullOrWhiteSpace(requestInfo.Body))
-					try
-					{
-						requestInfo.Body = requestInfo.Body.Url64Decode();
-					}
-					catch
-					{
-						requestInfo.Body = "";
-					}
-			}
+			else if (requestInfo.Verb.IsEquals("GET") && context.Request.QueryString["x-body"] != null)
+				try
+				{
+					requestInfo.Body = context.Request.QueryString["x-body"].Url64Decode();
+				}
+				catch
+				{
+					requestInfo.Body = "";
+				}
 
 			// SPECIALS (PRE): working with sessions
 			if (isSessionProccessed)
@@ -168,10 +164,10 @@ namespace net.vieapps.Services.APIGateway
 					}
 
 					// register the session of anonymous/visitor
-					else if (isSessionInitialized && requestInfo.Query.ContainsKey("anonymous") && requestInfo.Session.User.ID.Equals(""))
+					else if (isSessionInitialized && requestInfo.Query.ContainsKey("register") && (requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.ID.Equals(User.SystemAccountID)))
 						requestInfo.Extra = new Dictionary<string, string>()
 						{
-							{ "SessionID", requestInfo.Query["anonymous"].Decrypt(Global.AESKey.Reverse(), true).Encrypt() },
+							{ "SessionID", requestInfo.Query["register"].Decrypt(Global.AESKey.Reverse(), true).Encrypt() },
 							{ "AccessToken", accessToken.Encrypt() }
 						};
 				}
@@ -206,7 +202,8 @@ namespace net.vieapps.Services.APIGateway
 								ObjectName = "mediator",
 								Extra = new Dictionary<string, string>()
 								{
-									{ "Account", "" }
+									{ "Account", "" },
+									{ "Full", "" }
 								},
 								CorrelationID = requestInfo.CorrelationID
 							}

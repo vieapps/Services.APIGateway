@@ -916,10 +916,10 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		internal static void ShowError(this HttpContext context, Exception exception, bool writeLogs = false)
+		internal static void ShowError(this HttpContext context, Exception exception, RequestInfo requestInfo = null, bool writeLogs = false)
 		{
 			if (exception is WampException)
-				context.ShowError(exception as WampException, null);
+				context.ShowError(exception as WampException, requestInfo);
 
 			else
 			{
@@ -940,7 +940,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			var exception = app.Server.GetLastError();
 			app.Server.ClearError();
-			app.Context.ShowError(exception, true);
+			app.Context.ShowError(exception, null, true);
 		}
 		#endregion
 

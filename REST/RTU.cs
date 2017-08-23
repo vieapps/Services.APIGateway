@@ -89,8 +89,8 @@ namespace net.vieapps.Services.APIGateway
 			ExpandoObject request = null;
 			try
 			{
-				request = context.QueryString["request"] != null
-					? context.QueryString["request"].Url64Decode().ToExpandoObject()
+				request = context.QueryString["x-request"] != null
+					? context.QueryString["x-request"].Url64Decode().ToExpandoObject()
 					: new ExpandoObject();
 			}
 			catch (Exception ex)
@@ -146,7 +146,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// wait for few seconds before connecting to WAMP router because Reactive.NET needs few times
-			if (context.QueryString["restart"] != null)
+			if (context.QueryString["x-restart"] != null)
 				await Task.Delay(567);
 
 			// fetch messages
@@ -175,7 +175,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// ping message on re-start
-			if (context.QueryString["restart"] != null)
+			if (context.QueryString["x-restart"] != null)
 				try
 				{
 					await context.SendAsync(new UpdateMessage() { Type = "Ping", DeviceID = session.DeviceID });

@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Linq;
+using System.Text;
 using System.Dynamic;
 using System.Web.WebSockets;
 using System.Net.WebSockets;
@@ -32,11 +33,11 @@ namespace net.vieapps.Services.APIGateway
 				if (RTU._WaitingTimes < 1)
 					try
 					{
-						RTU._WaitingTimes = UtilityService.GetAppSetting("WaitingTimes", "234").CastAs<int>();
+						RTU._WaitingTimes = UtilityService.GetAppSetting("WaitingTimes", "123").CastAs<int>();
 					}
 					catch
 					{
-						RTU._WaitingTimes = 234;
+						RTU._WaitingTimes = 123;
 					}
 				return RTU._WaitingTimes;
 			}
@@ -79,7 +80,7 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static void StopUpdaters()
 		{
-			RTU.Updaters.ForEach(info => info.Value.Dispose());
+			RTU.Updaters.ForEach(updater => updater.Dispose());
 		}
 		#endregion
 
@@ -185,7 +186,7 @@ namespace net.vieapps.Services.APIGateway
 			// register online session
 			await session.RegisterOnlineAsync();
 
-			// push messages to client's device
+			// do the process
 			while (true)
 			{
 				// client is disconnected
@@ -213,7 +214,7 @@ namespace net.vieapps.Services.APIGateway
 					break;
 				}
 
-				// send messages
+				// push messages to client's device
 				while (messages.Count > 0)
 					try
 					{
@@ -236,7 +237,10 @@ namespace net.vieapps.Services.APIGateway
 						Global.WriteLogs(correlationID, "RTU", "Error occurred while pushing message to the subscriber's device", ex);
 					}
 
-				// wait
+				// process the request that sent from client (receive request  & call service)
+				await context.ProcessClientRequestAsync(session);
+
+				// wait for next cycle
 				try
 				{
 					await Task.Delay(RTU.WaitingTimes, Global.CancellationTokenSource.Token);
@@ -248,6 +252,40 @@ namespace net.vieapps.Services.APIGateway
 				catch (Exception) { }
 			}
 		}
+
+		#region Online status
+		static Task SendOnlineStatusAsync(this Session session, bool isOnline)
+		{
+			return session.User == null || session.User.ID.Equals("")
+				? Task.CompletedTask
+				: Global.SendInterCommunicateMessageAsync(new CommunicateMessage()
+					{
+						ServiceName = "users",
+						Type = "Account",
+						Data = new JObject()
+						{
+							{ "Verb", "Status" },
+							{ "UserID", session.User.ID },
+							{ "SessionID", session.SessionID },
+							{ "DeviceID", session.DeviceID },
+							{ "AppName", session.AppName },
+							{ "AppPlatform", session.AppPlatform },
+							{ "IP", session.IP },
+							{ "IsOnline", isOnline },
+						}
+					});
+		}
+
+		static Task RegisterOnlineAsync(this Session session)
+		{
+			return session.SendOnlineStatusAsync(true);
+		}
+
+		static Task UnregisterOnlineAsync(this Session session)
+		{
+			return session.SendOnlineStatusAsync(false);
+		}
+		#endregion
 
 		#region Send messages
 		static async Task SendAsync(this AspNetWebSocketContext context, UpdateMessage message)
@@ -316,15 +354,50 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
-		static Task RegisterOnlineAsync(this Session session)
+		#region Receive request & call services
+		static async Task ProcessClientRequestAsync(this AspNetWebSocketContext context, Session session)
 		{
-			return Task.CompletedTask;
-		}
+			var correlationID = UtilityService.GetUUID();
+			try
+			{
+				// receive message from client
+				var buffer = new ArraySegment<byte>(new byte[1024]);
+				var message = await context.WebSocket.ReceiveAsync(buffer, Global.CancellationTokenSource.Token);
+				var request = buffer.Array.GetString(message.Count).ToExpandoObject();
 
-		static Task UnregisterOnlineAsync(this Session session)
-		{
-			return Task.CompletedTask;
+				// parse request and call service
+				if (request != null)
+				{
+					// parse
+					var requestInfo = new RequestInfo(session)
+					{
+						ServiceName = request.Get<string>("ServiceName") ?? "unknown",
+						ObjectName = request.Get<string>("ObjectName") ?? "unknown",
+						Verb = request.Get<string>("Verb") ?? "GET",
+						Query = request.Get<Dictionary<string, string>>("Query"),
+						Header = request.Get<Dictionary<string, string>>("Header"),
+						Body = request.Get<string>("Body"),
+						Extra = request.Get<Dictionary<string, string>>("Header"),
+						CorrelationID = correlationID
+					};
+
+					// call service & send update message
+					var result = await InternalAPIs.CallServiceAsync(requestInfo);
+					await context.SendAsync(new UpdateMessage()
+					{
+						Type = requestInfo.ServiceName.GetCapitalizedFirstLetter() + "#" + requestInfo.ObjectName.GetCapitalizedFirstLetter(),
+						DeviceID = session.DeviceID,
+						Data = result
+					});
+				}
+			}
+			catch (OperationCanceledException) { }
+			catch (Exception ex)
+			{
+				await Global.WriteLogsAsync(correlationID, "RTU", "Error occurred while calling a service with real-time updater: " + ex.Message, ex);
+			}
 		}
+		#endregion
 
 	}
 }

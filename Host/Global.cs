@@ -1,10 +1,10 @@
 ﻿#region Related components
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+using System.IO;
+using System.Threading;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
+
+using net.vieapps.Components.Utility;
 #endregion
 
 namespace net.vieapps.Services.APIGateway
@@ -14,6 +14,11 @@ namespace net.vieapps.Services.APIGateway
 		internal static bool AsService = true;
 		internal static ServiceComponent Component = null;
 		internal static MainForm Form = null;
+
+		internal static CancellationTokenSource CancellationTokenSource = new CancellationTokenSource();
+		static string _LogsPath = null, _StatusPath = null, _EmailsPath = null, _WebHooksPath = null;
+		static string _EmailSmtpServer = null, _EmailSmtpServerEnableSsl = null, _EmailSmtpUser = null, _EmailSmtpUserPassword = null, _EmailDefaultSender = null;
+		static int _EmailSmtpServerPort = 0;
 
 		#region Working with logs
 		static EventLog EventLog = null;
@@ -54,73 +59,117 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
-		#region Working with processes
-		[DllImport("kernel32.dll")]
-		private static extern IntPtr OpenProcess(ProcessAccessFlags dwDesiredAccess, bool bInheritHandle, int dwProcessId);
-
-		[DllImport("kernel32.dll")]
-		private static extern bool QueryFullProcessImageName(IntPtr hprocess, int dwFlags, StringBuilder lpExeName, out int size);
-
-		[DllImport("kernel32.dll", SetLastError = true)]
-		private static extern bool CloseHandle(IntPtr hHandle);
-
-		[Flags]
-		private enum ProcessAccessFlags : uint
+		#region Get path for working with logs/emails/webhooks
+		static string GetPath(string name, string folder)
 		{
-			All = 0x1f0fff,
-			CreateThread = 2,
-			DupHandle = 0x40,
-			QueryInformation = 0x400,
-			ReadControl = 0x20000,
-			SetInformation = 0x200,
-			Synchronize = 0x100000,
-			Terminate = 1,
-			VMOperation = 8,
-			VMRead = 0x10,
-			VMWrite = 0x20
+			var path = UtilityService.GetAppSetting(name);
+			if (string.IsNullOrWhiteSpace(path))
+				path = Directory.GetCurrentDirectory() + @"\" + folder;
+			else if (path.EndsWith(@"\"))
+				path = path.Left(path.Length - 1);
+			return path;
 		}
 
-		internal static List<Tuple<int, string>> GetProcesses(string processExeFilename)
+		internal static string LogsPath
 		{
-			if (string.IsNullOrWhiteSpace(processExeFilename))
-				return null;
-
-			var processes = new List<Tuple<int, string>>();
-			foreach (var process in Process.GetProcesses())
+			get
 			{
-				var id = process.Id;
-				var handler = Global.OpenProcess(ProcessAccessFlags.QueryInformation, false, id);
-				if (handler != IntPtr.Zero)
-					try
-					{
-						var pathBuilder = new StringBuilder(0x400);
-						var capacity = pathBuilder.Capacity;
-						if (Global.QueryFullProcessImageName(handler, 0, pathBuilder, out capacity))
-						{
-							string processName = pathBuilder.ToString();
-							if (processName.ToLower().EndsWith(processExeFilename.ToLower()))
-								processes.Add(new Tuple<int, string>(id, processName));
-						}
-					}
-					catch { }
-					finally
-					{
-						Global.CloseHandle(handler);
-					}
+				if (Global._LogsPath == null)
+					Global._LogsPath = Global.GetPath("LogsPath", "logs");
+				return Global._LogsPath;
 			}
-
-			return processes;
 		}
 
-		internal static int GetProcessID(string processExeFilename, int excludedPID = 0)
+		internal static string StatusPath
 		{
-			if (string.IsNullOrWhiteSpace(processExeFilename))
-				return -1;
+			get
+			{
+				if (Global._StatusPath == null)
+					Global._StatusPath = Global.GetPath("StatusPath", "status");
+				return Global._StatusPath;
+			}
+		}
 
-			var process = Global.GetProcesses(processExeFilename).FirstOrDefault(info => excludedPID > 0 ? !info.Item1.Equals(excludedPID) : true);
-			return process == null
-				? -1
-				: process.Item1;
+		internal static string EmailsPath
+		{
+			get
+			{
+				if (Global._EmailsPath == null)
+					Global._EmailsPath = Global.GetPath("EmailsPath", "emails");
+				return Global._EmailsPath;
+			}
+		}
+
+		internal static string WebHooksPath
+		{
+			get
+			{
+				if (Global._WebHooksPath == null)
+					Global._WebHooksPath = Global.GetPath("WebHooksPath", "webhooks");
+				return Global._WebHooksPath;
+			}
+		}
+		#endregion
+
+		#region Email settings
+		internal static string EmailSmtpServer
+		{
+			get
+			{
+				if (Global._EmailSmtpServer == null)
+					Global._EmailSmtpServer = UtilityService.GetAppSetting("EmailSmtpServer", "localhost");
+				return Global._EmailSmtpServer;
+			}
+		}
+
+		internal static int EmailSmtpServerPort
+		{
+			get
+			{
+				if (Global._EmailSmtpServerPort < 1)
+					Global._EmailSmtpServerPort = UtilityService.GetAppSetting("EmailSmtpServerPort", "25").CastAs<int>();
+				return Global._EmailSmtpServerPort;
+			}
+		}
+
+		internal static string EmailSmtpUser
+		{
+			get
+			{
+				if (Global._EmailSmtpUser == null)
+					Global._EmailSmtpUser = UtilityService.GetAppSetting("EmailSmtpUser", "");
+				return Global._EmailSmtpUser;
+			}
+		}
+
+		internal static string EmailSmtpUserPassword
+		{
+			get
+			{
+				if (Global._EmailSmtpUserPassword == null)
+					Global._EmailSmtpUserPassword = UtilityService.GetAppSetting("EmailSmtpUserPassword", "");
+				return Global._EmailSmtpUserPassword;
+			}
+		}
+
+		internal static bool EmailSmtpServerEnableSsl
+		{
+			get
+			{
+				if (Global._EmailSmtpServerEnableSsl == null)
+					Global._EmailSmtpServerEnableSsl = UtilityService.GetAppSetting("EmailSmtpServerEnableSsl", "false");
+				return Global._EmailSmtpServerEnableSsl.IsEquals("true");
+			}
+		}
+
+		internal static string EmailDefaultSender
+		{
+			get
+			{
+				if (Global._EmailDefaultSender == null)
+					Global._EmailDefaultSender = UtilityService.GetAppSetting("EmailDefaultSender", "VIEApps.net <vieapps.net@gmail.com>");
+				return Global._EmailDefaultSender;
+			}
 		}
 		#endregion
 

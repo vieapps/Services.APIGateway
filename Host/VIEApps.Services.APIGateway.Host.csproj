@@ -218,12 +218,15 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Global.cs" />
+    <Compile Include="WebHookSender.cs" />
+    <Compile Include="MailSender.cs" />
     <Compile Include="MainForm.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="MainForm.Designer.cs">
       <DependentUpon>MainForm.cs</DependentUpon>
     </Compile>
+    <Compile Include="Messaging.cs" />
     <Compile Include="RTU.cs" />
     <Compile Include="Management.cs" />
     <Compile Include="Program.cs" />

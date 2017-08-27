@@ -38,6 +38,10 @@ namespace net.vieapps.Services.APIGateway
 		internal static long IncommingChannelSessionID = 0, OutgoingChannelSessionID = 0;
 		internal static bool ChannelsAreClosedBySystem = false;
 
+		internal static IDisposable InterCommunicationMessageUpdater = null;
+		internal static IManagementService ManagementService = null;
+		internal static IRTUService _RTUService = null;
+
 		static string _AESKey = null, _JWTKey = null, _PublicJWTKey = null, _RSAKey = null, _RSAExponent = null, _RSAModulus = null;
 		static RSACryptoServiceProvider _RSA = null;
 		#endregion
@@ -207,6 +211,12 @@ namespace net.vieapps.Services.APIGateway
 			Global.IncommingChannel.RealmProxy.Monitor.ConnectionEstablished += (sender, arguments) =>
 			{
 				Global.IncommingChannelSessionID = arguments.SessionId;
+				var subject = Global.IncommingChannel?.RealmProxy.Services.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages");
+				if (subject != null)
+					Global.InterCommunicationMessageUpdater = subject.Subscribe(
+						msg => Global.ProcessInterCommunicateMessage(msg),
+						ex => Global.WriteLogs(UtilityService.BlankUID, "RTU", "Error occurred while fetching inter-communicate message", ex)
+					);
 			};
 
 			if (onConnectionEstablished != null)
@@ -265,6 +275,14 @@ namespace net.vieapps.Services.APIGateway
 			Global.OutgoingChannel.RealmProxy.Monitor.ConnectionEstablished += (sender, arguments) =>
 			{
 				Global.OutgoingChannelSessionID = arguments.SessionId;
+				Task.Run(async () =>
+				{
+					try
+					{
+						await Global.InitializeRTUServiceAsync();
+					}
+					catch { }
+				}).ConfigureAwait(false);
 			};
 
 			if (onConnectionEstablished != null)
@@ -390,8 +408,6 @@ namespace net.vieapps.Services.APIGateway
 			return Global.GetCorrelationID(HttpContext.Current?.Items);
 		}
 
-		static IManagementService ManagementService = null;
-
 		internal static async Task InitializeManagementServiceAsync()
 		{
 			if (Global.ManagementService == null)
@@ -419,7 +435,7 @@ namespace net.vieapps.Services.APIGateway
 			}).ConfigureAwait(false);
 		}
 
-		internal static async Task WriteLogsAsync(string correlationID, string objectName, List<string> logs, Exception exception = null, string serviceName = null)
+		internal static Task WriteLogsAsync(string correlationID, string serviceName, string objectName, List<string> logs, Exception exception = null)
 		{
 			// prepare
 			serviceName = string.IsNullOrWhiteSpace(serviceName)
@@ -446,35 +462,45 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// write logs
-			await Global.WriteLogsAsync(correlationID, serviceName, objectName, logs, simpleStack, fullStack);
+			return Global.WriteLogsAsync(correlationID, serviceName, objectName, logs, simpleStack, fullStack);
 		}
 
-		internal static async Task WriteLogsAsync(string correlationID, string objectName, string log, Exception exception = null)
+		internal static Task WriteLogsAsync(string correlationID, string objectName, List<string> logs, Exception exception = null)
+		{
+			return Global.WriteLogsAsync(correlationID, null, objectName, logs, exception);
+		}
+
+		internal static Task WriteLogsAsync(string correlationID, string objectName, string log, Exception exception = null)
 		{
 			var logs = !string.IsNullOrEmpty(log)
 				? new List<string>() { log }
 				: exception != null
 					? new List<string>() { exception.Message + " [" + exception.GetType().ToString() + "]" }
 					: new List<string>();
-			await Global.WriteLogsAsync(correlationID, objectName, logs, exception);
+			return Global.WriteLogsAsync(correlationID, objectName, logs, exception);
 		}
 
-		internal static async Task WriteLogsAsync(List<string> logs, Exception exception = null)
+		internal static Task WriteLogsAsync(List<string> logs, Exception exception = null)
 		{
-			await Global.WriteLogsAsync(Global.GetCorrelationID(), null, logs, exception);
+			return Global.WriteLogsAsync(Global.GetCorrelationID(), null, logs, exception);
 		}
 
-		internal static async Task WriteLogsAsync(string log, Exception exception = null)
+		internal static Task WriteLogsAsync(string log, Exception exception = null)
 		{
-			await Global.WriteLogsAsync(Global.GetCorrelationID(), null, log, exception);
+			return Global.WriteLogsAsync(Global.GetCorrelationID(), null, log, exception);
 		}
 
-		internal static void WriteLogs(string correlationID, string objectName, List<string> logs, Exception exception = null, string serviceName = null)
+		internal static void WriteLogs(string correlationID, string serviceName, string objectName, List<string> logs, Exception exception = null)
 		{
 			Task.Run(async () =>
 			{
-				await Global.WriteLogsAsync(correlationID, objectName, logs, exception, serviceName);
+				await Global.WriteLogsAsync(correlationID, serviceName, objectName, logs, exception);
 			}).ConfigureAwait(false);
+		}
+
+		internal static void WriteLogs(string correlationID, string objectName, List<string> logs, Exception exception = null)
+		{
+			Global.WriteLogs(correlationID, null, objectName, logs, exception);
 		}
 
 		internal static void WriteLogs(string correlationID, string objectName, string log, Exception exception = null)
@@ -549,7 +575,9 @@ namespace net.vieapps.Services.APIGateway
 		internal static void OnAppEnd()
 		{
 			Global.CancellationTokenSource.Cancel();
+			Global.InterCommunicationMessageUpdater?.Dispose();
 			RTU.StopUpdaters();
+
 			Global.ChannelsAreClosedBySystem = true;
 			Global.CloseIncomingChannel();
 			Global.CloseOutgoingChannel();
@@ -1005,6 +1033,32 @@ namespace net.vieapps.Services.APIGateway
 
 			// return access token
 			return accessToken;
+		}
+		#endregion
+
+		#region Send & process inter-communicate message
+		static async Task InitializeRTUServiceAsync()
+		{
+			if (Global._RTUService == null)
+			{
+				await Global.OpenOutgoingChannelAsync();
+				Global._RTUService = Global.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>();
+			}
+		}
+
+		internal static async Task SendInterCommunicateMessageAsync(CommunicateMessage message)
+		{
+			try
+			{
+				await Global.InitializeRTUServiceAsync();
+				await Global._RTUService.SendInterCommunicateMessageAsync(message, Global.CancellationTokenSource.Token);
+			}
+			catch { }
+		}
+
+		static void ProcessInterCommunicateMessage(CommunicateMessage message)
+		{
+
 		}
 		#endregion
 

@@ -3,7 +3,6 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Configuration;
 using System.IO;
 
 using net.vieapps.Components.Utility;
@@ -21,30 +20,18 @@ namespace net.vieapps.Services.APIGateway
 #else
 			try
 			{
-				this._max = ConfigurationManager.AppSettings["MaxLogItems"].CastAs<int>();
+				this._max = UtilityService.GetAppSetting("MaxLogItems", "50").CastAs<int>();
 			}
 			catch
 			{
 				this._max = 10;
 			}
 #endif
-
-			try
-			{
-				this._logsPath = UtilityService.GetAppSetting("LogsPath");
-			}
-			catch { }
-
-			if (string.IsNullOrWhiteSpace(this._logsPath))
-				this._logsPath = Directory.GetCurrentDirectory() + @"\logs";
-			else if (this._logsPath.EndsWith(@"\"))
-				this._logsPath = this._logsPath.Left(this._logsPath.Length - 1);
 		}
 
 		#region Working with logs
 		Dictionary<string, Queue<string>> _logs = new Dictionary<string, Queue<string>>();
 		int _max = 10;
-		string _logsPath = "logs";
 
 		public Task WriteLogAsync(string correlationID, string serviceName, string objectName, string log, string simpleStack = null, string fullStack = null, CancellationToken cancellationToken = default(CancellationToken))
 		{
@@ -117,23 +104,17 @@ namespace net.vieapps.Services.APIGateway
 			while (logs.Count > 0)
 				lines.Add(logs.Dequeue());
 
-			if (!Directory.Exists(this._logsPath))
-				Directory.CreateDirectory(this._logsPath);
-
 			var info = path.ToArray('\\');
 
-			if (!Directory.Exists(this._logsPath + @"\" + info[0]))
-				Directory.CreateDirectory(this._logsPath + @"\" + info[0]);
+			if (!Directory.Exists(Global.LogsPath + @"\" + info[0]))
+				Directory.CreateDirectory(Global.LogsPath + @"\" + info[0]);
 
-			UtilityService.WriteTextFile(this._logsPath + @"\" + info[0] + @"\" + DateTime.Now.ToString("yyyy-MM-dd-HH") + "." + info[1] + ".txt", lines);
+			UtilityService.WriteTextFile(Global.LogsPath + @"\" + info[0] + @"\" + DateTime.Now.ToString("yyyy-MM-dd-HH") + "." + info[1] + ".txt", lines);
 		}
 
 		internal void FlushAll()
 		{
-			this._logs.ForEach(info =>
-			{
-				this.Flush(info.Key, info.Value);
-			});
+			this._logs.ForEach(info => this.Flush(info.Key, info.Value));
 		}
 		#endregion
 

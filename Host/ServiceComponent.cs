@@ -3,8 +3,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Diagnostics;
 using System.Threading.Tasks;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 using WampSharp.V2;
 using WampSharp.V2.Core.Contracts;
@@ -27,6 +28,10 @@ namespace net.vieapps.Services.APIGateway
 		ManagementService _managementService = null;
 		internal List<string> _availableServices = null;
 		internal Dictionary<string, int> _runningServices = new Dictionary<string, int>();
+		internal List<System.Timers.Timer> _timers = new List<System.Timers.Timer>();
+
+		MailSender _mailSender = null;
+		WebHookSender _webhookSender = null;
 		#endregion
 
 		#region Constructor & Destructor
@@ -98,7 +103,7 @@ namespace net.vieapps.Services.APIGateway
 								{
 									Global.WriteLog("Re-connect the incoming connection successful");
 								},
-								ex =>
+								(ex) =>
 								{
 									Global.WriteLog("Error occurred while re-connecting the incoming connection", ex);
 								}
@@ -132,7 +137,7 @@ namespace net.vieapps.Services.APIGateway
 								{
 									Global.WriteLog("Re-connect the outgoing connection successful");
 								},
-								ex =>
+								(ex) =>
 								{
 									Global.WriteLog("Error occurred while re-connecting the outgoing connection", ex);
 								}
@@ -145,20 +150,41 @@ namespace net.vieapps.Services.APIGateway
 				}
 			);
 
-			// register services
+			// register business services
 			await this.RegisterServicesAsync(args);
+
+			// initialize timers
+			var initializeTimers = true;
+			if (args != null && args.Length > 0)
+				for (var index = 0; index < args.Length; index++)
+					if (args[index].IsStartsWith("/timers:"))
+					{
+						if (args[index].IsEndsWith(":false"))
+							initializeTimers = false;
+						break;
+					}
+			if (initializeTimers)
+				this.InitializeTimers();
+
+			// prepare folder of logs/emails/webhooks
+			(Global.LogsPath + "," + Global.StatusPath + "," + Global.EmailsPath + "," + Global.WebHooksPath).ToArray()
+				.ForEach(path =>
+				{
+					if (!Directory.Exists(path))
+						Directory.CreateDirectory(path);
+				});
 		}
 
 		internal void Stop()
 		{
+			Global.CancellationTokenSource.Cancel();
 			this._managementService?.FlushAll();
 
-			this._runningServices.ForEach(info =>
-			{
-				this.StopService(info.Key, false, false);
-			});
-			this._runningServices.Clear();
-			this.UpdateServicesInfo();
+			MailSender.SaveMessages();
+			WebHookSender.SaveMessages();
+
+			this._timers.ForEach(timer => timer.Stop());
+			this._runningServices.ForEach(info => this.StopService(info.Key, false, false));
 
 			this._channelsAreClosedBySystem = true;
 			this.CloseIncomingChannel();
@@ -282,7 +308,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
-		#region Register & update info of services
+		#region Register & update info of business services
 		internal async Task RegisterServicesAsync(string[] args = null)
 		{
 			// register helper services
@@ -304,16 +330,14 @@ namespace net.vieapps.Services.APIGateway
 
 				await this._incommingChannel.RealmProxy.Services.RegisterCallee(new RTUService(), new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin }));
 				Global.WriteLog("The real-time update (RTU) service is registered" + "\r\n");
+
+				await this._incommingChannel.RealmProxy.Services.RegisterCallee(new MessagingService(), new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin }));
+				Global.WriteLog("The messaging service is registered" + "\r\n");
 			}
 
 			// register services
-			if (this._availableServices == null)
-				this.GetAvailableServices();
-
-			this._availableServices.ForEach(name =>
-			{
-				this.StartService(name);
-			});
+			this._availableServices = this._availableServices ?? this.GetAvailableServices();
+			this._availableServices.ForEach(name => this.StartService(name));
 
 			this.UpdateServicesInfo();
 		}
@@ -321,20 +345,20 @@ namespace net.vieapps.Services.APIGateway
 		internal void UpdateServicesInfo()
 		{
 			if (!Global.AsService)
-				Global.Form.UpdateServicesInfo(this._availableServices.Count, this._runningServices.Count);
+				Global.Form.UpdateServicesInfo(this._availableServices != null ? this._availableServices.Count : 0, this._runningServices != null ? this._runningServices.Count : 0);
 		}
 
-		internal void GetAvailableServices()
+		internal List<string> GetAvailableServices()
 		{
 			var current = Process.GetCurrentProcess().ProcessName + ".exe";
-			this._availableServices = UtilityService.GetFiles(Directory.GetCurrentDirectory(), "*.exe")
+			return UtilityService.GetFiles(Directory.GetCurrentDirectory(), "*.exe")
 				.Where(info => !info.Name.IsEquals(current))
 				.Select(info => info.Name)
 				.ToList();
 		}
 		#endregion
 
-		#region Start/Stop service
+		#region Start/Stop business service
 		internal void StartService(string name, string arguments = null)
 		{
 			if (string.IsNullOrWhiteSpace(name) || this._runningServices.ContainsKey(name.ToLower()))
@@ -345,7 +369,7 @@ namespace net.vieapps.Services.APIGateway
 				arguments,
 				(sender, args) =>
 				{
-					this._runningServices.Remove((sender as Process).StartInfo.FileName);
+					this.StopService((sender as Process).StartInfo.FileName);
 					try
 					{
 						Global.WriteLog(
@@ -375,9 +399,20 @@ namespace net.vieapps.Services.APIGateway
 			Global.WriteLog("The service [" + name + " - PID: " + process.Id.ToString() + "] is running...");
 		}
 
+		[DllImport("User32.dll", EntryPoint = "PostMessageA")]
+		private static extern bool PostMessage(IntPtr hWnd, uint msg, int wParam, int lParam);
+
 		internal void StopService(int processId)
 		{
-			UtilityService.KillProcess(processId);
+			try
+			{
+				UtilityService.KillProcess(processId, (process) => ServiceComponent.PostMessage(process.MainWindowHandle, 0x100, 0x0D, 0));
+			}
+			catch (Exception ex)
+			{
+				if (!ex.Message.IsStartsWith("Process with an Id of " + processId + " is not running."))
+					Global.WriteLog("Error occurred while stopping a service [" + processId + "]", ex);
+			}
 		}
 
 		internal void StopService(string name, bool clean = true, bool updateInfo = true)
@@ -385,11 +420,66 @@ namespace net.vieapps.Services.APIGateway
 			if (!string.IsNullOrWhiteSpace(name) && this._runningServices.ContainsKey(name.ToLower()))
 			{
 				this.StopService(this._runningServices[name.ToLower()]);
+
 				if (clean)
 					this._runningServices.Remove(name.ToLower());
+
 				if (updateInfo)
 					this.UpdateServicesInfo();
 			}
+		}
+		#endregion
+
+		#region Initialize timers for working with schedulers
+		void StartTimer(int interval, Action<object, System.Timers.ElapsedEventArgs> action, bool autoReset = true)
+		{
+			var timer = new System.Timers.Timer() { Interval = interval * 1000, AutoReset = autoReset };
+			timer.Elapsed += new System.Timers.ElapsedEventHandler(action);
+			timer.Start();
+			this._timers.Add(timer);
+		}
+
+		void InitializeTimers()
+		{
+			// send email messages (15 seconds)
+			this.StartTimer(15, (sender, args) =>
+			{
+				if (this._mailSender == null)
+					Task.Run(async () =>
+					{
+						this._mailSender = new MailSender();
+						try
+						{
+							await this._mailSender.ProcessAsync();
+						}
+						catch { }
+						finally
+						{
+							this._mailSender = null;
+						}
+					}).ConfigureAwait(false);
+			});
+
+			// send web hook messages (25 seconds)
+			this.StartTimer(25, (sender, args) =>
+			{
+				if (this._webhookSender == null)
+					Task.Run(async () =>
+					{
+						this._webhookSender = new WebHookSender();
+						try
+						{
+							await this._webhookSender.ProcessAsync();
+						}
+						catch { }
+						finally
+						{
+							this._webhookSender = null;
+						}
+					}).ConfigureAwait(false);
+			});
+
+			Global.WriteLog("The schedulers are registered" + "\r\n");
 		}
 		#endregion
 

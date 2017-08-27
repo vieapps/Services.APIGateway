@@ -36,63 +36,62 @@ namespace net.vieapps.Services.APIGateway
 				CorrelationID = Global.GetCorrelationID(context.Items)
 			};
 
-			// SPECIAL: process with sessions
-			var isSessionProccessed = requestInfo.ServiceName.IsEquals("users") && requestInfo.ObjectName.IsEquals("session");
-			var isSessionInitialized = isSessionProccessed && requestInfo.Verb.IsEquals("GET");
+			// for working with users (sessions, accounts, activations, ...)
+			bool isSessionProccessed = false, isSessionInitialized = false, isAccountProccessed = false, isActivationProccessed = false;
+			if (requestInfo.ServiceName.IsEquals("users"))
+			{
+				if ("session".IsEquals(requestInfo.ObjectName))
+				{
+					isSessionProccessed = true;
+					isSessionInitialized = requestInfo.Verb.IsEquals("GET");
+				}
+				else if ("account".IsEquals(requestInfo.ObjectName))
+					isAccountProccessed = true;
+				else if ("activate".IsEquals(requestInfo.ObjectName))
+					isActivationProccessed = true;
+			}
 
-			// authentication & authorization (working with JSON Web Token)
+			#region authentication & authorization (working with JSON Web Token)
 			var accessToken = "";
 			try
 			{
-				// get token
+				// prepare access token
+				var isSpecialUser = requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.ID.Equals(User.SystemAccountID);
+				var tokenIsRequired = isActivationProccessed
+					? false
+					: isSessionInitialized && isSpecialUser && !requestInfo.Query.ContainsKey("register")
+						? false
+						: true;
+
 				var appToken = requestInfo.GetParameter("x-app-token");
-				if (string.IsNullOrWhiteSpace(appToken))
-				{
-					if (!isSessionProccessed)
-						throw new InvalidSessionException("Session is invalid (JSON Web Token is not found)");
-					else if (!requestInfo.Verb.IsEquals("GET"))
-						throw new InvalidSessionException("Session is invalid (JSON Web Token is not found)");
-				}
-
-				// get access token
-				else
+				if (!string.IsNullOrWhiteSpace(appToken))
 					accessToken = requestInfo.Session.ParseJSONWebToken(appToken);
+				else if (tokenIsRequired)
+					throw new InvalidSessionException("Session is invalid (JSON Web Token is not found)");
 
-				// check existing of the session
-				var existIsRequired = !isSessionProccessed || (!requestInfo.Session.User.ID.Equals("") && !requestInfo.Session.User.ID.Equals(User.SystemAccountID))
-					|| (isSessionInitialized && (requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.ID.Equals(User.SystemAccountID)) && requestInfo.Query.ContainsKey("register"));
+				// validate access token
+				if (tokenIsRequired)
+				{
+					if (!await InternalAPIs.CheckSessionAsync(requestInfo.Session, requestInfo.CorrelationID))
+						throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 
-				if (!await InternalAPIs.CheckSessionAsync(requestInfo.Session, requestInfo.CorrelationID) && existIsRequired)
-					throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
-
-				// verify session
-				var verifyIsRequired = true;
-				if (isSessionInitialized && (requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.ID.Equals(User.SystemAccountID)))
-					verifyIsRequired = false;
-
-				if (verifyIsRequired)
-					await InternalAPIs.VerifySessionAsync(requestInfo.Session, accessToken, requestInfo.CorrelationID);
+					if (!isSessionInitialized || !(isSpecialUser && requestInfo.Query.ContainsKey("register")))
+						await InternalAPIs.VerifySessionAsync(requestInfo.Session, accessToken, requestInfo.CorrelationID);
+				}
 			}
-			catch (WampException ex)
+			catch (Exception ex)
 			{
 				context.ShowError(ex, requestInfo);
 				return;
 			}
-			catch (Exception ex)
-			{
-				context.ShowError(ex);
-				return;
-			}
+			#endregion
 
-			// prepare session identity
-			requestInfo.Session.SessionID = string.IsNullOrWhiteSpace(requestInfo.Session.SessionID)
-				? UtilityService.GetUUID()
-				: requestInfo.Session.SessionID;
-
-			// prepare user principal
+			// principal & identity
 			context.User = new UserPrincipal(requestInfo.Session.User);
+			if (string.IsNullOrWhiteSpace(requestInfo.Session.SessionID))
+				requestInfo.Session.SessionID = UtilityService.NewUID;
 
-			// prepare body
+			#region prepare body
 			if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT"))
 				using (var reader = new StreamReader(context.Request.InputStream, context.Request.ContentEncoding))
 				{
@@ -108,159 +107,93 @@ namespace net.vieapps.Services.APIGateway
 				{
 					requestInfo.Body = "";
 				}
+			#endregion
 
-			// SPECIALS (PRE): working with sessions
+			#region SPECIALS: working with sessions/accounts/activations
 			if (isSessionProccessed)
 				try
 				{
 					// sign-in
 					if (requestInfo.Verb.IsEquals("POST"))
-					{
-						var body = requestInfo.GetBodyExpando();
-						if (body == null)
-							throw new InvalidSessionException("Sign-in JSON is invalid (empty)");
+						requestInfo.PrepareSignIn();
 
-						if (!body.Has("Timestamp"))
-							throw new InvalidSessionException("Sign-in JSON is invalid (no timestamp)");
-
-						var timestamp = body.Get<long>("Timestamp");
-						if (DateTime.Now.ToUnixTimestamp() - timestamp > 30)
-							throw new SessionExpiredException("Sign-in JSON is invalid (expired)");
-
-						var email = body.Get<string>("Email");
-						var password = body.Get<string>("Password");
-						var sessionID = body.Get<string>("SessionToken");
-
-						if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password) || string.IsNullOrWhiteSpace(sessionID))
-							throw new InvalidSessionException("Sign-in JSON is invalid (email/password/token is null or empty)");
-
-						try
-						{
-							sessionID = sessionID.Decrypt(Global.AESKey, true);
-						}
-						catch (Exception ex)
-						{
-							throw new InvalidSessionException("Sign-in JSON is invalid (session token is invalid)", ex);
-						}
-
-						if (!sessionID.Equals(requestInfo.Session.SessionID))
-							throw new InvalidDataException("Sign-in JSON is invalid (session token is not issued by the system)");
-
-						try
-						{
-							email = CryptoService.RSADecrypt(Global.RSA, email);
-							password = CryptoService.RSADecrypt(Global.RSA, password);
-						}
-						catch (Exception ex)
-						{
-							throw new InvalidDataException("Sign-in JSON is invalid (account/password must be encrypted by RSA before sending)", ex);
-						}
-
-						requestInfo.Extra = new Dictionary<string, string>()
-						{
-							{ "Email", email.Encrypt() },
-							{ "Password", password.Encrypt() }
-						};
-					}
-
-					// register the session of anonymous/visitor
-					else if (isSessionInitialized && requestInfo.Query.ContainsKey("register") && (requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.ID.Equals(User.SystemAccountID)))
-						requestInfo.Extra = new Dictionary<string, string>()
-						{
-							{ "SessionID", requestInfo.Query["register"].Decrypt(Global.AESKey.Reverse(), true).Encrypt() },
-							{ "AccessToken", accessToken.Encrypt() }
-						};
+					// register the session
+					else if (isSessionInitialized)
+						requestInfo.PrepareSessionOnRegister(accessToken);
 				}
-				catch (WampException ex)
+				catch (Exception ex)
 				{
 					context.ShowError(ex, requestInfo);
 					return;
 				}
+
+			else if (isAccountProccessed)
+				try
+				{
+					if (requestInfo.Verb.IsEquals("PUT"))
+					{
+						// reset password
+						if ("reset".IsEquals(requestInfo.GetObjectIdentity()))
+							requestInfo.PrepareResetPassword();
+
+						// update password
+
+						// update email
+
+					}
+				}
 				catch (Exception ex)
 				{
-					context.ShowError(ex);
+					context.ShowError(ex, requestInfo);
 					return;
 				}
+			#endregion
 
-			// do the process
+			// process the request
 			try
 			{
 				// call the service
 				var json = await InternalAPIs.CallServiceAsync(requestInfo);
 
-				// SPECIALS (POST): working with sessions
-				if (isSessionProccessed)
+				#region SPECIALS: working with sessions/accounts/activations
+				if (isActivationProccessed)
 				{
+					requestInfo.Session.SessionID = (json["SessionID"] as JValue).Value as string;
+					requestInfo.Session.DeviceID = (json["DeviceID"] as JValue).Value as string;
+					accessToken = await requestInfo.PrepareUserInformationAsync((json["UserID"] as JValue).Value as string);
+					json = new JObject()
+					{
+						{ "ID", requestInfo.Session.SessionID },
+						{ "DeviceID", requestInfo.Session.DeviceID }
+					};
+					requestInfo.Session.UpdateSessionJson(json, accessToken);
+				}
+				else if (isSessionProccessed)
+				{
+					accessToken = null;
+
 					// sign-in
 					if (requestInfo.Verb.IsEquals("POST"))
 					{
-						// get account information
-						requestInfo.Session.User = (await InternalAPIs.CallServiceAsync(
-							new RequestInfo(requestInfo.Session, new User() { ID = (json["ID"] as JValue).Value.ToString() })
-							{
-								ServiceName = "users",
-								ObjectName = "mediator",
-								Extra = new Dictionary<string, string>()
-								{
-									{ "Account", "" },
-									{ "Full", "" }
-								},
-								CorrelationID = requestInfo.CorrelationID
-							}
-						)).FromJson<User>();
-
-						// update access token
-						accessToken = requestInfo.Session.User.GetAccessToken();
-						await InternalAPIs.CallServiceAsync(
-							new RequestInfo(requestInfo.Session)
-							{
-								Verb = "PUT",
-								ServiceName = "users",
-								ObjectName = "session",
-								Body = "{\"AccessToken\":\"" + accessToken.Encrypt() + "\"}",
-								CorrelationID = requestInfo.CorrelationID
-							}
-						);
-
-						// update output
+						accessToken = await requestInfo.PrepareUserInformationAsync((json["ID"] as JValue).Value as string);
 						json = new JObject()
 						{
 							{ "ID", requestInfo.Session.SessionID },
 							{ "DeviceID", requestInfo.Session.DeviceID }
 						};
-						requestInfo.Session.UpdateSessionJson(json, accessToken);
 					}
 
-					// other actions
-					else
+					// sign-out
+					else if (requestInfo.Verb.IsEquals("DELETE"))
 					{
-						accessToken = null;
-
-						// sign-out
-						if (requestInfo.Verb.IsEquals("DELETE"))
-						{
-							accessToken = (new User()).GetAccessToken();
-							requestInfo.Session.SessionID = (json["ID"] as JValue).Value.ToString();
-							json = await InternalAPIs.CallServiceAsync(
-								new RequestInfo(requestInfo.Session, new User())
-								{
-									Verb = "GET",
-									ServiceName = "users",
-									ObjectName = "session",
-									Extra = new Dictionary<string, string>()
-									{
-										{ "SessionID", requestInfo.Session.SessionID.Encrypt() },
-										{ "AccessToken", accessToken.Encrypt() }
-									},
-									CorrelationID = requestInfo.CorrelationID
-								}
-							);
-						}
-
-						// update output
-						requestInfo.Session.UpdateSessionJson(json, accessToken);
+						accessToken = (new User()).GetAccessToken();
+						json = await requestInfo.PrepareSessionOnSignOutAsync((json["ID"] as JValue).Value as string, accessToken);
 					}
+
+					// update session's JSON
+					requestInfo.Session.UpdateSessionJson(json, accessToken);
 				}
+				#endregion
 
 				// normalize the result JSON
 				json = new JObject()
@@ -273,13 +206,9 @@ namespace net.vieapps.Services.APIGateway
 				context.Response.ContentType = "application/json";
 				await context.Response.Output.WriteAsync(json.ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None));
 			}
-			catch (WampException ex)
-			{
-				context.ShowError(ex, requestInfo);
-			}
 			catch (Exception ex)
 			{
-				context.ShowError(ex);
+				context.ShowError(ex, requestInfo);
 			}
 		}
 
@@ -336,7 +265,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
-		#region Helper: check/verify session & update session's JSON
+		#region Helper: working with sessions
 		internal static async Task<bool> CheckSessionAsync(Session session, string correlationID = null)
 		{
 			if (session == null || string.IsNullOrWhiteSpace(session.SessionID))
@@ -346,10 +275,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				ServiceName = "users",
 				ObjectName = "mediator",
-				Extra = new Dictionary<string, string>()
-				{
-					{ "Exist", "" }
-				},
+				Extra = new Dictionary<string, string>() { { "Exist", "" } },
 				CorrelationID = correlationID ?? UtilityService.GetUUID()
 			});
 			return result != null && result["Existed"] is JValue && (result["Existed"] as JValue).Value  != null && (result["Existed"] as JValue).Value.CastAs<bool>() == true;
@@ -370,10 +296,34 @@ namespace net.vieapps.Services.APIGateway
 			});
 		}
 
+		static void PrepareSessionOnRegister(this RequestInfo requestInfo, string accessToken)
+		{
+			if (requestInfo.Query.ContainsKey("register") && (requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.ID.Equals(User.SystemAccountID)))
+				requestInfo.Extra = new Dictionary<string, string>()
+				{
+					{ "SessionID", requestInfo.Query["register"].Decrypt(Global.AESKey.Reverse(), true).Encrypt() },
+					{ "AccessToken", accessToken.Encrypt() }
+				};
+		}
+
+		static async Task<JObject> PrepareSessionOnSignOutAsync(this RequestInfo requestInfo, string sessionID, string accessToken)
+		{
+			return await InternalAPIs.CallServiceAsync(new RequestInfo(new Session(requestInfo.Session) { SessionID = sessionID, User = new User() })
+			{
+				ServiceName = "users",
+				ObjectName = "session",
+				Extra = new Dictionary<string, string>()
+				{
+					{ "SessionID", requestInfo.Session.SessionID.Encrypt() },
+					{ "AccessToken", accessToken.Encrypt() }
+				},
+				CorrelationID = requestInfo.CorrelationID
+			});
+		}
+
 		static void UpdateSessionJson(this Session session, JObject json, string accessToken)
 		{
-			json["ID"] = (json["ID"] as JValue).Value.ToString().Encrypt(Global.AESKey.Reverse(), true);
-			json.Add(new JProperty("JWT", session.GetJSONWebToken(accessToken)));
+			json["ID"] = session.SessionID.Encrypt(Global.AESKey.Reverse(), true);
 			json.Add(new JProperty("Keys", new JObject()
 			{
 				{
@@ -397,6 +347,160 @@ namespace net.vieapps.Services.APIGateway
 					Global.GenerateJWTKey()
 				}
 			}));
+			json.Add(new JProperty("JWT", session.GetJSONWebToken(accessToken)));
+		}
+		#endregion
+
+		#region Helper: working with accounts
+		static void PrepareSignIn(this RequestInfo requestInfo)
+		{
+			var body = requestInfo.GetBodyExpando();
+			if (body == null)
+				throw new InvalidSessionException("Sign-in JSON is invalid (empty)");
+
+			if (!body.Has("Timestamp"))
+				throw new InvalidSessionException("Sign-in JSON is invalid (no timestamp)");
+
+			var timestamp = body.Get<long>("Timestamp");
+			if (DateTime.Now.ToUnixTimestamp() - timestamp > 30)
+				throw new SessionExpiredException("Sign-in JSON is invalid (expired)");
+
+			var email = body.Get<string>("Email");
+			var password = body.Get<string>("Password");
+			var sessionID = body.Get<string>("Session");
+
+			if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password) || string.IsNullOrWhiteSpace(sessionID))
+				throw new InvalidSessionException("Sign-in JSON is invalid (email/password/token is null or empty)");
+
+			try
+			{
+				sessionID = sessionID.Decrypt(Global.GenerateEncryptionKey(requestInfo.Session.SessionID), Global.GenerateEncryptionIV(requestInfo.Session.SessionID));
+				sessionID = sessionID.Decrypt(Global.AESKey.Reverse(), true);
+			}
+			catch (Exception ex)
+			{
+				throw new InvalidSessionException("Sign-in JSON is invalid (session token is invalid)", ex);
+			}
+
+			if (!sessionID.Equals(requestInfo.Session.SessionID))
+				throw new InvalidDataException("Sign-in JSON is invalid (session token is not issued by the system)");
+
+			try
+			{
+				email = CryptoService.RSADecrypt(Global.RSA, email);
+				password = CryptoService.RSADecrypt(Global.RSA, password);
+			}
+			catch (Exception ex)
+			{
+				throw new InvalidDataException("Sign-in JSON is invalid (account/password must be encrypted by RSA before sending)", ex);
+			}
+
+			requestInfo.Extra = new Dictionary<string, string>()
+			{
+				{ "Email", email.Encrypt() },
+				{ "Password", password.Encrypt() }
+			};
+		}
+
+		static void PrepareResetPassword(this RequestInfo requestInfo)
+		{
+			var body = requestInfo.GetBodyExpando();
+			if (body == null)
+				throw new InvalidSessionException("Reset JSON is invalid (empty)");
+
+			if (!body.Has("Timestamp"))
+				throw new InvalidSessionException("Reset JSON is invalid (no timestamp)");
+
+			var timestamp = body.Get<long>("Timestamp");
+			if (DateTime.Now.ToUnixTimestamp() - timestamp > 30)
+				throw new SessionExpiredException("Reset JSON is invalid (expired)");
+
+			var email = body.Get<string>("Email");
+			var sessionID = body.Get<string>("Session");
+			var captcha = body.Get<string>("Captcha");
+
+			if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(sessionID) || string.IsNullOrWhiteSpace(captcha))
+				throw new InvalidSessionException("Reset JSON is invalid (email/token/captcha is null or empty)");
+
+			try
+			{
+				sessionID = sessionID.Decrypt(Global.GenerateEncryptionKey(requestInfo.Session.SessionID), Global.GenerateEncryptionIV(requestInfo.Session.SessionID));
+				sessionID = sessionID.Decrypt(Global.AESKey.Reverse(), true);
+			}
+			catch (Exception ex)
+			{
+				throw new InvalidSessionException("Reset JSON is invalid (session token is invalid)", ex);
+			}
+
+			if (!sessionID.Equals(requestInfo.Session.SessionID))
+				throw new InvalidDataException("Reset JSON is invalid (session token is not issued by the system)");
+
+			try
+			{
+				captcha = captcha.Decrypt(Global.GenerateEncryptionKey(requestInfo.Session.SessionID), Global.GenerateEncryptionIV(requestInfo.Session.SessionID));
+			}
+			catch (Exception ex)
+			{
+				throw new InvalidSessionException("Reset JSON is invalid (captcha is invalid)", ex);
+			}
+
+			try
+			{
+				var info = JObject.Parse(captcha);
+				if (!Captcha.IsCodeValid((info["Registered"] as JValue).Value as string, (info["Input"] as JValue).Value as string))
+					throw new InformationInvalidException("Captcha code is invalid");
+			}
+			catch (Exception)
+			{
+				throw;
+			}
+
+			try
+			{
+				email = CryptoService.RSADecrypt(Global.RSA, email);
+			}
+			catch (Exception ex)
+			{
+				throw new InvalidDataException("Reset JSON is invalid (email must be encrypted by RSA before sending)", ex);
+			}
+
+			requestInfo.Extra = new Dictionary<string, string>()
+			{
+				{ "Email", email.Encrypt() }
+			};
+		}
+
+		static async Task<string> PrepareUserInformationAsync(this RequestInfo requestInfo, string userID)
+		{
+			// get account information
+			var json = await InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session, new User() { ID = userID })
+			{
+				ServiceName = "users",
+				ObjectName = "mediator",
+				Extra = new Dictionary<string, string>()
+				{
+					{ "Account", "" },
+					{ "Full", "" }
+				},
+				CorrelationID = requestInfo.CorrelationID
+			});
+
+			// assign user information and get access token
+			requestInfo.Session.User = json.FromJson<User>();
+			var accessToken = requestInfo.Session.User.GetAccessToken();
+
+			// update access token
+			await InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session)
+			{
+				Verb = "PUT",
+				ServiceName = "users",
+				ObjectName = "session",
+				Body = "{\"AccessToken\":\"" + accessToken.Encrypt() + "\"}",
+				CorrelationID = requestInfo.CorrelationID
+			});
+
+			// return the access token
+			return accessToken;
 		}
 		#endregion
 

@@ -122,12 +122,12 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// prepare client credential
-			var correlationID = Global.GetCorrelationID(context.Items);
 			try
 			{
-				session.ParseJSONWebToken(appToken);
-				if (!await InternalAPIs.CheckSessionAsync(session, correlationID))
+				var accessToken = session.ParseJSONWebToken(appToken);
+				if (!await InternalAPIs.CheckSessionExistAsync(session))
 					throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
+				await InternalAPIs.VerifySessionIntegrityAsync(session, accessToken);
 			}
 			catch (Exception ex)
 			{
@@ -151,6 +151,7 @@ namespace net.vieapps.Services.APIGateway
 				await Task.Delay(567);
 
 			// fetch messages
+			var correlationID = Global.GetCorrelationID(context.Items);
 			var messages = new Queue<UpdateMessage>();
 			try
 			{
@@ -184,7 +185,7 @@ namespace net.vieapps.Services.APIGateway
 				catch { }
 
 			// register online session
-			await session.RegisterOnlineAsync();
+			await session.SendOnlineStatusAsync(true);
 
 			// do the process
 			while (true)
@@ -201,7 +202,7 @@ namespace net.vieapps.Services.APIGateway
 						Global.WriteLogs(correlationID, "RTU", "Error occurred while disposing subscriber: " + ex.Message, ex);
 					}
 
-					await session.UnregisterOnlineAsync();
+					await session.SendOnlineStatusAsync(false);
 
 #if DEBUG || RTULOGS
 					Global.WriteLogs(correlationID, "RTU", new List<string>() {
@@ -252,40 +253,6 @@ namespace net.vieapps.Services.APIGateway
 				catch (Exception) { }
 			}
 		}
-
-		#region Online status
-		static Task SendOnlineStatusAsync(this Session session, bool isOnline)
-		{
-			return session.User == null || session.User.ID.Equals("")
-				? Task.CompletedTask
-				: Global.SendInterCommunicateMessageAsync(new CommunicateMessage()
-					{
-						ServiceName = "users",
-						Type = "Account",
-						Data = new JObject()
-						{
-							{ "Verb", "Status" },
-							{ "UserID", session.User.ID },
-							{ "SessionID", session.SessionID },
-							{ "DeviceID", session.DeviceID },
-							{ "AppName", session.AppName },
-							{ "AppPlatform", session.AppPlatform },
-							{ "IP", session.IP },
-							{ "IsOnline", isOnline },
-						}
-					});
-		}
-
-		static Task RegisterOnlineAsync(this Session session)
-		{
-			return session.SendOnlineStatusAsync(true);
-		}
-
-		static Task UnregisterOnlineAsync(this Session session)
-		{
-			return session.SendOnlineStatusAsync(false);
-		}
-		#endregion
 
 		#region Send messages
 		static async Task SendAsync(this AspNetWebSocketContext context, UpdateMessage message)
@@ -365,30 +332,60 @@ namespace net.vieapps.Services.APIGateway
 				var message = await context.WebSocket.ReceiveAsync(buffer, Global.CancellationTokenSource.Token);
 				var request = buffer.Array.GetString(message.Count).ToExpandoObject();
 
-				// parse request and call service
+				// parse request and process
 				if (request != null)
 				{
-					// parse
-					var requestInfo = new RequestInfo(session)
+					var verb = request.Get<string>("Verb");
+					
+					// update session
+					if ("UpdateSession".IsEquals(verb))
 					{
-						ServiceName = request.Get<string>("ServiceName") ?? "unknown",
-						ObjectName = request.Get<string>("ObjectName") ?? "unknown",
-						Verb = request.Get<string>("Verb") ?? "GET",
-						Query = request.Get<Dictionary<string, string>>("Query"),
-						Header = request.Get<Dictionary<string, string>>("Header"),
-						Body = request.Get<string>("Body"),
-						Extra = request.Get<Dictionary<string, string>>("Header"),
-						CorrelationID = correlationID
-					};
+						var userID = request.Get<string>("UserID");
+						if (string.IsNullOrWhiteSpace(userID))
+							session.User = new User();
+						else
+						{
+							session.User.ID = userID;
+							session.User = (await InternalAPIs.CallServiceAsync(session, "users", "account")).FromJson<User>();
+						}
+						session.SessionID = request.Get<string>("SessionID");
+						await context.SendAsync(new UpdateMessage()
+						{
+							Type = "Ping", 
+							DeviceID = session.DeviceID, 
+							Data = new JObject()
+							{
+								{ "SessionID",  session.SessionID },
+								{ "UserID",  session.User.ID }
+							}
+						});
+					}
 
-					// call service & send update message
-					var result = await InternalAPIs.CallServiceAsync(requestInfo);
-					await context.SendAsync(new UpdateMessage()
+					// call service
+					else
 					{
-						Type = requestInfo.ServiceName.GetCapitalizedFirstLetter() + "#" + requestInfo.ObjectName.GetCapitalizedFirstLetter(),
-						DeviceID = session.DeviceID,
-						Data = result
-					});
+						// parse
+						var requestInfo = new RequestInfo(session)
+						{
+							ServiceName = request.Get<string>("ServiceName") ?? "unknown",
+							ObjectName = request.Get<string>("ObjectName") ?? "unknown",
+							Verb = verb ?? "GET",
+							Query = request.Get<Dictionary<string, string>>("Query"),
+							Header = request.Get<Dictionary<string, string>>("Header"),
+							Body = request.Get<string>("Body"),
+							Extra = request.Get<Dictionary<string, string>>("Header"),
+							CorrelationID = correlationID
+						};
+
+						// call service & send update message
+						var result = await InternalAPIs.CallServiceAsync(requestInfo);
+						await context.SendAsync(new UpdateMessage()
+						{
+							Type = requestInfo.ServiceName.GetCapitalizedFirstLetter() + "#" + requestInfo.ObjectName.GetCapitalizedFirstLetter(),
+							DeviceID = session.DeviceID,
+							Data = result
+						});
+					}
 				}
 			}
 			catch (OperationCanceledException) { }

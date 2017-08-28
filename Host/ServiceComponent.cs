@@ -184,7 +184,7 @@ namespace net.vieapps.Services.APIGateway
 			WebHookSender.SaveMessages();
 
 			this._timers.ForEach(timer => timer.Stop());
-			this._runningServices.ForEach(info => this.StopService(info.Key, false, false));
+			this._runningServices.ForEach(info => this.KillService(info.Key));
 
 			this._channelsAreClosedBySystem = true;
 			this.CloseIncomingChannel();
@@ -366,12 +366,14 @@ namespace net.vieapps.Services.APIGateway
 
 			var process = UtilityService.RunProcess(
 				name,
-				arguments,
+				(!string.IsNullOrEmpty(arguments) ? arguments + " " : "") + "/agc:r",
 				(sender, args) =>
 				{
-					this.StopService((sender as Process).StartInfo.FileName);
 					try
 					{
+						this._runningServices.Remove((sender as Process).StartInfo.FileName.ToLower());
+						if (!Global.AsService)
+							this.UpdateServicesInfo();
 						Global.WriteLog(
 							"----- [" + (sender as Process).StartInfo.FileName + " - PID: " + (sender as Process).Id.ToString() + "] ------------------" + "\r\n" +
 							"The sevice is stopped..." + "\r\n" +
@@ -399,34 +401,33 @@ namespace net.vieapps.Services.APIGateway
 			Global.WriteLog("The service [" + name + " - PID: " + process.Id.ToString() + "] is running...");
 		}
 
-		[DllImport("User32.dll", EntryPoint = "PostMessageA")]
-		private static extern bool PostMessage(IntPtr hWnd, uint msg, int wParam, int lParam);
-
-		internal void StopService(int processId)
-		{
-			try
-			{
-				UtilityService.KillProcess(processId, (process) => ServiceComponent.PostMessage(process.MainWindowHandle, 0x100, 0x0D, 0));
-			}
-			catch (Exception ex)
-			{
-				if (!ex.Message.IsStartsWith("Process with an Id of " + processId + " is not running."))
-					Global.WriteLog("Error occurred while stopping a service [" + processId + "]", ex);
-			}
-		}
-
-		internal void StopService(string name, bool clean = true, bool updateInfo = true)
+		internal void StopService(string name)
 		{
 			if (!string.IsNullOrWhiteSpace(name) && this._runningServices.ContainsKey(name.ToLower()))
-			{
-				this.StopService(this._runningServices[name.ToLower()]);
+				try
+				{
+					// call service one time to exit
+					UtilityService.RunProcess(name, "/agc:s");
 
-				if (clean)
+					// get process and kill if still run
+					UtilityService.KillProcess(Process.GetProcessById(this._runningServices[name.ToLower()]));
+
+					// update information
 					this._runningServices.Remove(name.ToLower());
+					if (!Global.AsService)
+						this.UpdateServicesInfo();
+				}
+				catch { }
+		}
 
-				if (updateInfo)
-					this.UpdateServicesInfo();
-			}
+		internal void KillService(string name)
+		{
+			if (!string.IsNullOrWhiteSpace(name) && this._runningServices.ContainsKey(name.ToLower()))
+				try
+				{
+					UtilityService.KillProcess(this._runningServices[name.ToLower()]);
+				}
+				catch { }
 		}
 		#endregion
 

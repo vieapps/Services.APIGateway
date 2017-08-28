@@ -24,6 +24,7 @@ using WampSharp.V2.Core.Contracts;
 
 using net.vieapps.Components.Utility;
 using net.vieapps.Components.Security;
+using net.vieapps.Components.Caching;
 #endregion
 
 namespace net.vieapps.Services.APIGateway
@@ -44,6 +45,10 @@ namespace net.vieapps.Services.APIGateway
 
 		static string _AESKey = null, _JWTKey = null, _PublicJWTKey = null, _RSAKey = null, _RSAExponent = null, _RSAModulus = null;
 		static RSACryptoServiceProvider _RSA = null;
+
+		static CacheManager _Cache = new CacheManager("VIEApps-API-Gateway", "Absolute", 120);
+
+		public static CacheManager Cache { get { return Global._Cache; } }
 		#endregion
 
 		#region Get the app info
@@ -98,7 +103,7 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static byte[] GenerateEncryptionKey(string additional = null)
 		{
-			return (Global.AESKey + (string.IsNullOrWhiteSpace(additional) ? "" : ":" + additional)).GenerateEncryptionKey(true, false, 256);
+			return (Global.AESKey + (string.IsNullOrWhiteSpace(additional) ? "" : ":" + additional)).GenerateEncryptionKey(false, false, 256);
 		}
 
 		internal static byte[] GenerateEncryptionIV(string additional = null)

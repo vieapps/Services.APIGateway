@@ -25,6 +25,7 @@ namespace net.vieapps.Services.APIGateway
 
 		void ManageServices_Click(object sender, EventArgs args)
 		{
+			//Global.Component.StopService("VIEApps.Services.Users.exe");
 		}
 
 		void ClearLogs_Click(object sender, EventArgs args)

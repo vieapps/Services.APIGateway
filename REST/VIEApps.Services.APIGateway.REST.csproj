@@ -14,7 +14,7 @@
     <RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
     <AssemblyName>VIEApps.Services.APIGateway</AssemblyName>
     <TargetFrameworkVersion>v4.7</TargetFrameworkVersion>
-    <UseIISExpress>true</UseIISExpress>
+    <UseIISExpress>false</UseIISExpress>
     <IISExpressSSLPort />
     <IISExpressAnonymousAuthentication />
     <IISExpressWindowsAuthentication />
@@ -148,6 +148,7 @@
     <Reference Include="System.Runtime, Version=4.1.1.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
       <HintPath>..\..\..\packages\System.Runtime.4.3.0\lib\net462\System.Runtime.dll</HintPath>
     </Reference>
+    <Reference Include="System.Runtime.Caching" />
     <Reference Include="System.Runtime.Extensions, Version=4.1.1.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
       <HintPath>..\..\..\packages\System.Runtime.Extensions.4.3.0\lib\net462\System.Runtime.Extensions.dll</HintPath>
     </Reference>
@@ -225,6 +226,10 @@
     <Content Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\..\Components\Caching\VIEApps.Components.Caching.csproj">
+      <Project>{98147bac-f0a1-48d8-9e1f-064dd227d281}</Project>
+      <Name>VIEApps.Components.Caching</Name>
+    </ProjectReference>
     <ProjectReference Include="..\..\..\Components\Security\VIEApps.Components.Security.csproj">
       <Project>{bf8597e1-3fdf-4d5e-b990-6f8bcd8bbc70}</Project>
       <Name>VIEApps.Components.Security</Name>
@@ -262,7 +267,7 @@
           <AutoAssignPort>True</AutoAssignPort>
           <DevelopmentServerPort>2404</DevelopmentServerPort>
           <DevelopmentServerVPath>/</DevelopmentServerVPath>
-          <IISUrl>http://localhost:2404/</IISUrl>
+          <IISUrl>http://local-apis.vieapps.net</IISUrl>
           <NTLMAuthentication>False</NTLMAuthentication>
           <UseCustomServer>False</UseCustomServer>
           <CustomServerUrl>

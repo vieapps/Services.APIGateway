@@ -364,26 +364,13 @@ namespace net.vieapps.Services.APIGateway
 					// call service
 					else
 					{
-						// parse the request
-						var requestInfo = new RequestInfo(session)
-						{
-							ServiceName = request.Get<string>("ServiceName") ?? "unknown",
-							ObjectName = request.Get<string>("ObjectName") ?? "unknown",
-							Verb = verb,
-							Query = request.Get<Dictionary<string, string>>("Query"),
-							Header = request.Get<Dictionary<string, string>>("Header"),
-							Body = request.Get<string>("Body"),
-							Extra = request.Get<Dictionary<string, string>>("Header"),
-							CorrelationID = correlationID
-						};
-
 						// call the service
-						var data = await InternalAPIs.CallServiceAsync(requestInfo);
+						var data = await InternalAPIs.CallServiceAsync(new RequestInfo(session, request.Get<string>("ServiceName"), request.Get<string>("ObjectName"), verb, request.Get<Dictionary<string, string>>("Query"), request.Get<Dictionary<string, string>>("Header"), request.Get<string>("Body"), request.Get<Dictionary<string, string>>("Header"), correlationID));
 
 						// send the update message
 						await context.SendAsync(new UpdateMessage()
 						{
-							Type = requestInfo.ServiceName.GetCapitalizedFirstLetter() + "#" + requestInfo.ObjectName.GetCapitalizedFirstLetter(),
+							Type = request.Get<string>("ServiceName").GetCapitalizedFirstLetter() + "#" + request.Get<string>("ObjectName").GetCapitalizedFirstLetter(),
 							DeviceID = session.DeviceID,
 							Data = data
 						}, verb);

@@ -296,38 +296,33 @@ namespace net.vieapps.Services.APIGateway
 			if ((requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.ID.Equals(User.SystemAccountID)))
 				try
 				{
+					// generate session
+					var session = new JObject()
+					{
+						{ "ID", requestInfo.Session.SessionID },
+						{ "IssuedAt", DateTime.Now },
+						{ "RenewedAt", DateTime.Now },
+						{ "ExpiredAt", DateTime.Now.AddDays(60) },
+						{ "UserID", requestInfo.Session.User.ID },
+						{ "AccessToken", accessToken },
+						{ "IP", requestInfo.Session.IP },
+						{ "DeviceID", requestInfo.Session.DeviceID },
+						{ "AppInfo", requestInfo.Session.AppName + " @ " + requestInfo.Session.AppPlatform },
+						{ "Online", true }
+					};
+
 					// initialize session
 					if (context.Request.QueryString["register"] == null)
 					{
 						// generate device identity
 						if (string.IsNullOrWhiteSpace(requestInfo.Session.DeviceID))
+						{
 							requestInfo.Session.DeviceID = "pwa@" + (requestInfo.Session.AppName + "/" + requestInfo.Session.AppPlatform + "@" + (requestInfo.Session.AppAgent ?? "N/A")).GetHMACSHA384(requestInfo.Session.SessionID, true);
+							session["DeviceID"] = requestInfo.Session.DeviceID;
+						}
 
-						// generate session
-						var session = new JObject()
-						{
-							{ "ID", requestInfo.Session.SessionID },
-							{ "IssuedAt", DateTime.Now },
-							{ "RenewedAt", DateTime.Now },
-							{ "ExpiredAt", DateTime.Now.AddDays(60) },
-							{ "UserID", requestInfo.Session.User.ID },
-							{ "AccessToken", accessToken },
-							{ "IP", requestInfo.Session.IP },
-							{ "DeviceID", requestInfo.Session.DeviceID },
-							{ "AppInfo", requestInfo.Session.AppName + " @ " + requestInfo.Session.AppPlatform },
-							{ "Online", true }
-						};
-						await Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None));
-
-						// response JSON
-						var json = new JObject()
-						{
-							{ "ID", requestInfo.Session.SessionID },
-							{ "DeviceID", requestInfo.Session.DeviceID }
-						};
-						requestInfo.Session.UpdateSessionJson(json, null);
-
-						await context.WriteResponseAsync(json);
+						// update cache
+						await Global.Cache.SetAbsoluteAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 2);
 					}
 
 					// register session
@@ -337,32 +332,21 @@ namespace net.vieapps.Services.APIGateway
 						if (!requestInfo.Session.SessionID.Equals(context.Request.QueryString["register"].Decrypt(Global.AESKey.Reverse(), true)))
 							throw new InvalidRequestException();
 
-						// update
-						var session = new JObject()
-						{
-							{ "ID", requestInfo.Session.SessionID },
-							{ "IssuedAt", DateTime.Now },
-							{ "RenewedAt", DateTime.Now },
-							{ "ExpiredAt", DateTime.Now.AddDays(60) },
-							{ "UserID", requestInfo.Session.User.ID },
-							{ "AccessToken", accessToken },
-							{ "IP", requestInfo.Session.IP },
-							{ "DeviceID", requestInfo.Session.DeviceID },
-							{ "AppInfo", requestInfo.Session.AppName + " @ " + requestInfo.Session.AppPlatform },
-							{ "Online", true }
-						};
-						await Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 180);
-
-						// response
-						var json = new JObject()
-						{
-							{ "ID", requestInfo.Session.SessionID },
-							{ "DeviceID", requestInfo.Session.DeviceID }
-						};
-						requestInfo.Session.UpdateSessionJson(json, accessToken);
-
-						await context.WriteResponseAsync(json);
+						// register with user service
+						await Task.WhenAll(
+								InternalAPIs.CallServiceAsync(requestInfo.Session, "users", "session", "POST", session.ToString(Formatting.None)),
+								Global.Cache.SetAbsoluteAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 180)
+							);
 					}
+
+					// response
+					var json = new JObject()
+					{
+						{ "ID", requestInfo.Session.SessionID },
+						{ "DeviceID", requestInfo.Session.DeviceID }
+					};
+					requestInfo.Session.UpdateSessionJson(json, accessToken);
+					await context.WriteResponseAsync(json);
 				}
 				catch (Exception ex)
 				{
@@ -392,16 +376,11 @@ namespace net.vieapps.Services.APIGateway
 					session["AppInfo"] = requestInfo.Session.AppName + " @ " + requestInfo.Session.AppPlatform;
 					session["Online"] = true;
 
-					await InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session)
-					{
-						ServiceName = "users",
-						ObjectName = "session",
-						Verb = "POST",
-						Body = session.ToString(Formatting.None),
-						CorrelationID = requestInfo.CorrelationID
-					});
-
-					await Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 180);
+					// register with user service
+					await Task.WhenAll(
+							InternalAPIs.CallServiceAsync(requestInfo.Session, "users", "session", "POST", session.ToString(Formatting.None)),
+							Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 180)
+						);
 
 					// response
 					var json = new JObject()
@@ -410,7 +389,6 @@ namespace net.vieapps.Services.APIGateway
 						{ "DeviceID", requestInfo.Session.DeviceID }
 					};
 					requestInfo.Session.UpdateSessionJson(json, accessToken);
-
 					await context.WriteResponseAsync(json);
 				}
 				catch (Exception ex)
@@ -558,7 +536,7 @@ namespace net.vieapps.Services.APIGateway
 					throw new InvalidRequestException();
 
 				// call service to perform sign out
-				await InternalAPIs.CallServiceAsync(requestInfo.Session, "users", "session", null, "DELETE");
+				await InternalAPIs.CallServiceAsync(requestInfo.Session, "users", "session", "DELETE");
 
 				await Task.WhenAll(
 						Global.Cache.RemoveAsync("Session#" + requestInfo.Session.SessionID),
@@ -608,17 +586,15 @@ namespace net.vieapps.Services.APIGateway
 		{
 			try
 			{
-				// call service to activate new password
-				var json = await InternalAPIs.CallServiceAsync(requestInfo, "users", "activate");
+				// call service to activate
+				var json = await InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session, "users", "activate", "GET", requestInfo.Query, requestInfo.Header, "", requestInfo.Extra, requestInfo.CorrelationID));
 
-				// update user
+				// update user information & get access token
 				requestInfo.Session.User = json.FromJson<User>();
-
-				// get access token
 				var accessToken = User.GetAccessToken(requestInfo.Session.User, Global.RSA, Global.AESKey);
 
-				// register a session
-				var session = new JObject()
+				// register the session
+				var session = (new JObject()
 				{
 					{ "ID", requestInfo.Session.SessionID },
 					{ "IssuedAt", DateTime.Now },
@@ -630,19 +606,10 @@ namespace net.vieapps.Services.APIGateway
 					{ "DeviceID", requestInfo.Session.DeviceID },
 					{ "AppInfo", requestInfo.Session.AppName + " @ " + requestInfo.Session.AppPlatform },
 					{ "Online", true }
-				};
-
-				await InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session)
-				{
-					ServiceName = "users",
-					ObjectName = "session",
-					Verb = "POST",
-					Body = session.ToString(Formatting.None),
-					CorrelationID = requestInfo.CorrelationID
-				});
-
+				}).ToString(Formatting.None);
 				await Task.WhenAll(
-						Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 180),
+						InternalAPIs.CallServiceAsync(requestInfo.Session, "users", "session", "POST", session),
+						Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session, 180),
 						requestInfo.Session.SendOnlineStatusAsync(true)
 					);
 
@@ -653,7 +620,6 @@ namespace net.vieapps.Services.APIGateway
 					{ "DeviceID", requestInfo.Session.DeviceID }
 				};
 				requestInfo.Session.UpdateSessionJson(json, accessToken);
-
 				await context.WriteResponseAsync(json);
 			}
 			catch (Exception ex)
@@ -672,15 +638,12 @@ namespace net.vieapps.Services.APIGateway
 			if (!string.IsNullOrWhiteSpace(json))
 				return JObject.Parse(json);
 
-			// special user
-			if (session.User.ID.Equals("") || session.User.ID.Equals(User.SystemAccountID))
-				return null;
-
 			// call service
 			try
 			{
 				var data = await InternalAPIs.CallServiceAsync(session, "users", "session");
-				await Global.Cache.SetAsync(key, data.ToString(Formatting.None));
+				if (data != null)
+					await Global.Cache.SetAbsoluteAsync(key, data.ToString(Formatting.None), 180);
 				return data;
 			}
 			catch
@@ -765,33 +728,9 @@ namespace net.vieapps.Services.APIGateway
 			return json;
 		}
 
-		internal static Task<JObject> CallServiceAsync(Session session, string serviceName, string objectName, string objectIdentity = null, string verb = "GET")
+		internal static Task<JObject> CallServiceAsync(Session session, string serviceName, string objectName, string verb = "GET", string body = null)
 		{
-			var requestInfo = new RequestInfo(session)
-			{
-				ServiceName = serviceName,
-				ObjectName = objectName,
-				Verb = verb ?? "GET",
-				CorrelationID = Global.GetCorrelationID()
-			};
-			if (!string.IsNullOrWhiteSpace(objectIdentity))
-				requestInfo.Query.Add("object-identity", objectIdentity);
-
-			return InternalAPIs.CallServiceAsync(requestInfo);
-		}
-
-		internal static Task<JObject> CallServiceAsync(RequestInfo requestInfo, string serviceName, string objectName, string verb = "GET")
-		{
-			return InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session)
-			{
-				ServiceName = serviceName,
-				ObjectName = objectName,
-				Verb = verb ?? "GET",
-				Query = requestInfo.Query,
-				Header = requestInfo.Header,
-				Extra = requestInfo.Extra,
-				CorrelationID = requestInfo.CorrelationID
-			});
+			return InternalAPIs.CallServiceAsync(new RequestInfo(session, serviceName, objectName, verb) { Body = body ?? "", CorrelationID = Global.GetCorrelationID() });
 		}
 		#endregion
 

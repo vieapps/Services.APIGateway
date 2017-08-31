@@ -255,9 +255,16 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		#region Send messages
-		static async Task SendAsync(this AspNetWebSocketContext context, UpdateMessage message)
+		static async Task SendAsync(this AspNetWebSocketContext context, UpdateMessage message, string verb = null)
 		{
-			await context.SendAsync(message.ToJson().ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None));
+			// prepare the message
+			var json = message.ToJson() as JObject;
+			json.Add(new JProperty("Status", "OK"));
+			if (!string.IsNullOrWhiteSpace(verb))
+				json.Add(new JProperty("Verb", verb));
+
+			// send the message
+			await context.SendAsync(json.ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None));
 		}
 
 		static async Task SendAsync(this AspNetWebSocketContext context, Exception exception)
@@ -296,6 +303,7 @@ namespace net.vieapps.Services.APIGateway
 			message = new JObject()
 			{
 				{ "Type", "Error" },
+				{ "Status", "Error" },
 				{ "Data", message }
 			};
 
@@ -330,46 +338,38 @@ namespace net.vieapps.Services.APIGateway
 				// receive message from client
 				var buffer = new ArraySegment<byte>(new byte[1024]);
 				var message = await context.WebSocket.ReceiveAsync(buffer, Global.CancellationTokenSource.Token);
-				var request = buffer.Array.GetString(message.Count).ToExpandoObject();
+
+				if (!message.MessageType.Equals(WebSocketMessageType.Text))
+					return;
 
 				// parse request and process
+				var request = buffer.Array.GetString(message.Count).ToExpandoObject();
 				if (request != null)
 				{
-					var verb = request.Get<string>("Verb");
-					
+					var verb = request.Get<string>("Verb") ?? "GET";
+
 					// update session
-					if ("UpdateSession".IsEquals(verb))
-					{
-						var userID = request.Get<string>("UserID");
-						if (string.IsNullOrWhiteSpace(userID))
-							session.User = new User();
-						else
+					if ("PATCH".IsEquals(verb) && !session.User.ID.Equals("") && !session.User.ID.Equals(User.SystemAccountID))
+						try
 						{
-							session.User.ID = userID;
-							session.User = (await InternalAPIs.CallServiceAsync(session, "users", "account")).FromJson<User>();
-						}
-						session.SessionID = request.Get<string>("SessionID");
-						await context.SendAsync(new UpdateMessage()
-						{
-							Type = "Ping", 
-							DeviceID = session.DeviceID, 
-							Data = new JObject()
+							var updatedSession = (await InternalAPIs.GetSessionAsync(session)).ToExpandoObject();
+							if (session.SessionID.Equals(updatedSession.Get<string>("SessionID")) && session.User.ID.Equals(updatedSession.Get<string>("UserID")))
 							{
-								{ "SessionID",  session.SessionID },
-								{ "UserID",  session.User.ID }
+								session.User.ID = updatedSession.Get<string>("UserID");
+								session.User = (await InternalAPIs.CallServiceAsync(session, "users", "account")).FromJson<User>();
 							}
-						});
-					}
+						}
+						catch { }
 
 					// call service
 					else
 					{
-						// parse
+						// parse the request
 						var requestInfo = new RequestInfo(session)
 						{
 							ServiceName = request.Get<string>("ServiceName") ?? "unknown",
 							ObjectName = request.Get<string>("ObjectName") ?? "unknown",
-							Verb = verb ?? "GET",
+							Verb = verb,
 							Query = request.Get<Dictionary<string, string>>("Query"),
 							Header = request.Get<Dictionary<string, string>>("Header"),
 							Body = request.Get<string>("Body"),
@@ -377,14 +377,16 @@ namespace net.vieapps.Services.APIGateway
 							CorrelationID = correlationID
 						};
 
-						// call service & send update message
-						var result = await InternalAPIs.CallServiceAsync(requestInfo);
+						// call the service
+						var data = await InternalAPIs.CallServiceAsync(requestInfo);
+
+						// send the update message
 						await context.SendAsync(new UpdateMessage()
 						{
 							Type = requestInfo.ServiceName.GetCapitalizedFirstLetter() + "#" + requestInfo.ObjectName.GetCapitalizedFirstLetter(),
 							DeviceID = session.DeviceID,
-							Data = result
-						});
+							Data = data
+						}, verb);
 					}
 				}
 			}

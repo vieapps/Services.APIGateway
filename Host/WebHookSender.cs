@@ -118,8 +118,7 @@ namespace net.vieapps.Services.APIGateway
 			var msg = WebHookSender.Messages[id].Message;
 			Global.WriteLog("The email has been sent" + "\r\n"
 				+ "- ID: " + msg.ID + "\r\n"
-				+ "- End-point: " + msg.EndpointURL
-			);
+				+ "- End-point: " + msg.EndpointURL, null, true, null, "webhook");
 			WebHookSender.Messages.Remove(id);
 		}
 
@@ -153,7 +152,7 @@ namespace net.vieapps.Services.APIGateway
 				log += "- Status: Update queue to re-send at [" + time.ToDTString() + "]";
 			}
 
-			Global.WriteLog(log, ex);
+			Global.WriteLog(log, ex, true, null, "webhook");
 		}
 		#endregion
 

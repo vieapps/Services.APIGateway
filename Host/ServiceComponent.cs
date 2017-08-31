@@ -25,7 +25,7 @@ namespace net.vieapps.Services.APIGateway
 		long _incommingChannelSessionID = 0, _outgoingChannelSessionID = 0;
 		bool _channelsAreClosedBySystem = false;
 
-		ManagementService _managementService = null;
+		internal ManagementService _managementService = null;
 		internal List<string> _availableServices = null;
 		internal Dictionary<string, int> _runningServices = new Dictionary<string, int>();
 		internal List<System.Timers.Timer> _timers = new List<System.Timers.Timer>();
@@ -184,7 +184,7 @@ namespace net.vieapps.Services.APIGateway
 			WebHookSender.SaveMessages();
 
 			this._timers.ForEach(timer => timer.Stop());
-			this._runningServices.ForEach(info => this.KillService(info.Key));
+			this._runningServices.Select(i => i.Value).ToList().ForEach(i => this.KillService(i));
 
 			this._channelsAreClosedBySystem = true;
 			this.CloseIncomingChannel();
@@ -420,14 +420,13 @@ namespace net.vieapps.Services.APIGateway
 				catch { }
 		}
 
-		internal void KillService(string name)
+		internal void KillService(int serviceProcessID)
 		{
-			if (!string.IsNullOrWhiteSpace(name) && this._runningServices.ContainsKey(name.ToLower()))
-				try
-				{
-					UtilityService.KillProcess(this._runningServices[name.ToLower()]);
-				}
-				catch { }
+			try
+			{
+				UtilityService.KillProcess(serviceProcessID);
+			}
+			catch { }
 		}
 		#endregion
 

@@ -23,7 +23,8 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static async Task ProcessRequestAsync(HttpContext context)
 		{
-			// prepare the requesting information
+
+			#region prepare the requesting information
 			var requestInfo = new RequestInfo()
 			{
 				Session = Global.GetSession(context.Request.Headers, context.Request.QueryString, context.Request.UserAgent, context.Request.UserHostAddress, context.Request.UrlReferrer),
@@ -45,10 +46,11 @@ namespace net.vieapps.Services.APIGateway
 					isSessionInitialized = requestInfo.Verb.IsEquals("GET");
 				}
 				else if ("account".IsEquals(requestInfo.ObjectName))
-					isAccountProccessed = requestInfo.Verb.IsEquals("PUT");
+					isAccountProccessed = requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT");
 				else if ("activate".IsEquals(requestInfo.ObjectName))
 					isActivationProccessed = requestInfo.Verb.IsEquals("GET");
 			}
+			#endregion
 
 			#region prepare token
 			var accessToken = "";
@@ -105,7 +107,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 			#endregion
 
-			#region [extra] update an account
+			#region [extra] prepare information of an account
 			if (isAccountProccessed)
 				try
 				{
@@ -113,6 +115,7 @@ namespace net.vieapps.Services.APIGateway
 					if (requestBody == null)
 						throw new InvalidSessionException("Request JSON is invalid (empty)");
 
+					// verify time-stamp
 					if (!requestBody.Has("Timestamp"))
 						throw new InvalidSessionException("Request JSON is invalid (no timestamp)");
 
@@ -120,6 +123,7 @@ namespace net.vieapps.Services.APIGateway
 					if (DateTime.Now.ToUnixTimestamp() - timestamp > 30)
 						throw new SessionExpiredException("Reset JSON is invalid (expired)");
 
+					// verify session token
 					var sessionID = requestBody.Get<string>("Session");
 					if (string.IsNullOrWhiteSpace(sessionID))
 						throw new InvalidSessionException("Request JSON is invalid (session token is null or empty)");
@@ -137,17 +141,10 @@ namespace net.vieapps.Services.APIGateway
 					if (!sessionID.Equals(requestInfo.Session.SessionID))
 						throw new InvalidDataException("Request JSON is invalid (session token is not issued by the system)");
 
+					// verify captcha
 					var captcha = requestBody.Get<string>("Captcha");
-					var email = requestBody.Get<string>("Email");
-					var oldPassword = requestBody.Get<string>("OldPassword");
-					var password = requestBody.Get<string>("Password");
-
-					// reset password
-					if ("reset".IsEquals(requestInfo.GetObjectIdentity()))
+					if (!string.IsNullOrWhiteSpace(captcha))
 					{
-						if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(captcha))
-							throw new InvalidSessionException("Request JSON is invalid (email/captcha is null or empty)");
-
 						try
 						{
 							captcha = captcha.Decrypt(Global.GenerateEncryptionKey(requestInfo.Session.SessionID), Global.GenerateEncryptionIV(requestInfo.Session.SessionID));
@@ -167,67 +164,87 @@ namespace net.vieapps.Services.APIGateway
 						{
 							throw;
 						}
+					}
 
+					// prepare email
+					var email = requestBody.Get<string>("Email");
+					if (!string.IsNullOrWhiteSpace(email))
 						try
 						{
 							email = CryptoService.RSADecrypt(Global.RSA, email);
+							requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>())
+							{
+								{ "Email", email.Encrypt() }
+							};
 						}
 						catch (Exception ex)
 						{
 							throw new InvalidDataException("Request JSON is invalid (email must be encrypted by RSA before sending)", ex);
 						}
 
-						requestInfo.Extra = new Dictionary<string, string>()
-						{
-							{ "Email", email.Encrypt() }
-						};
-					}
-
-					// update password
-					else if ("password".IsEquals(requestInfo.GetObjectIdentity()))
-					{
-						if (string.IsNullOrWhiteSpace(oldPassword) || string.IsNullOrWhiteSpace(password))
-							throw new InvalidSessionException("Request JSON is invalid (password is null or empty)");
-
+					// prepare password
+					var password = requestBody.Get<string>("Password");
+					if (!string.IsNullOrWhiteSpace(password))
 						try
 						{
-							oldPassword = CryptoService.RSADecrypt(Global.RSA, oldPassword);
 							password = CryptoService.RSADecrypt(Global.RSA, password);
+							requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>())
+							{
+								{ "Password", password.Encrypt() }
+							};
 						}
 						catch (Exception ex)
 						{
 							throw new InvalidDataException("Request JSON is invalid (password must be encrypted by RSA before sending)", ex);
 						}
 
-						requestInfo.Extra = new Dictionary<string, string>()
-						{
-							{ "OldPassword", oldPassword.Encrypt() },
-							{ "Password", password.Encrypt() }
-						};
-					}
-
-					// update email
-					else if ("email".IsEquals(requestInfo.GetObjectIdentity()))
-					{
-						if (string.IsNullOrWhiteSpace(oldPassword) || string.IsNullOrWhiteSpace(email))
-							throw new InvalidSessionException("Request JSON is invalid (password/email is null or empty)");
-
+					// prepare old-password
+					var oldPassword = requestBody.Get<string>("OldPassword");
+					if (!string.IsNullOrWhiteSpace(oldPassword))
 						try
 						{
 							oldPassword = CryptoService.RSADecrypt(Global.RSA, oldPassword);
-							email = CryptoService.RSADecrypt(Global.RSA, email);
+							requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>())
+							{
+								{ "OldPassword", oldPassword.Encrypt() }
+							};
 						}
 						catch (Exception ex)
 						{
-							throw new InvalidDataException("Request JSON is invalid (password/email must be encrypted by RSA before sending)", ex);
+							throw new InvalidDataException("Request JSON is invalid (password must be encrypted by RSA before sending)", ex);
 						}
 
-						requestInfo.Extra = new Dictionary<string, string>()
-						{
-							{ "OldPassword", oldPassword.Encrypt() },
-							{ "Email", email.Encrypt() }
-						};
+					// preapare
+					var objectIdentity = requestInfo.GetObjectIdentity();
+
+					// prepare to register/create new account
+					if (string.IsNullOrWhiteSpace(objectIdentity))
+					{
+						if (requestBody.Get<string>("Session").Equals(requestInfo.GetHeaderParameter("x-create")))
+							requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>())
+							{
+								{ "x-create", "" }
+							};
 					}
+
+					// prepare to invite
+					else if ("invite".IsEquals(objectIdentity))
+						requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>())
+						{
+							{ "x-invite", "" }
+						};
+
+					// prepare to reset password
+					else if ("reset".IsEquals(objectIdentity) && (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(captcha)))
+						throw new InvalidSessionException("Request JSON is invalid (email/captcha is null or empty)");
+
+					// prepare to update password
+					else if ("password".IsEquals(objectIdentity) && (string.IsNullOrWhiteSpace(oldPassword) || string.IsNullOrWhiteSpace(password)))
+						throw new InvalidSessionException("Request JSON is invalid (password is null or empty)");
+
+					// prepare to update email
+					else if ("email".IsEquals(objectIdentity) && (string.IsNullOrWhiteSpace(oldPassword) || string.IsNullOrWhiteSpace(email)))
+						throw new InvalidSessionException("Request JSON is invalid (password/email is null or empty)");
 				}
 				catch (Exception ex)
 				{
@@ -358,8 +375,8 @@ namespace net.vieapps.Services.APIGateway
 				{
 					// call service to get session
 					var session = await InternalAPIs.CallServiceAsync(requestInfo.Session, "users", "session");
-					var jsonUserID = session["UserID"];
-					var jsonAccessToken = session["AccessToken"];
+					var jsonUserID = session?["UserID"];
+					var jsonAccessToken = session?["AccessToken"];
 
 					// verify access token
 					if (jsonUserID == null || !(jsonUserID is JValue) || (jsonUserID as JValue).Value == null || !requestInfo.Session.User.ID.Equals((jsonUserID as JValue).Value as string))
@@ -647,7 +664,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Verify a session
-		static async Task<JObject> GetSessionAsync(Session session)
+		internal static async Task<JObject> GetSessionAsync(Session session)
 		{
 			// get from cached
 			var key = "Session#" + session.SessionID;
@@ -742,7 +759,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 #if DEBUG
-			Global.WriteLogs(requestInfo.CorrelationID, null, "Result of the service [net.vieapps.services." + name + "]" + "\r\n" + json.ToString(Formatting.Indented));
+			Global.WriteLogs(requestInfo.CorrelationID, null, "Result of the service [net.vieapps.services." + name + "]" + "\r\n" + (json != null ? json.ToString(Formatting.Indented) : "None"));
 #endif
 
 			return json;

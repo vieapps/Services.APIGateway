@@ -121,8 +121,7 @@ namespace net.vieapps.Services.APIGateway
 				+ "- ID: " + msg.ID + "\r\n"
 				+ "- From: " + msg.From + "\r\n"
 				+ "- To: " + msg.To + (!msg.Cc.Equals("") ? " / " + msg.Cc : "") + (!msg.Bcc.Equals("") ? " / " + msg.Bcc : "") + "\r\n"
-				+ "- Subject: " + msg.Subject
-			);
+				+ "- Subject: " + msg.Subject, null, true, null, "mail");
 			MailSender.Messages.Remove(id);
 		}
 
@@ -158,7 +157,7 @@ namespace net.vieapps.Services.APIGateway
 				log += "- Status: Update queue to re-send at [" + time.ToDTString() + "]";
 			}
 
-			Global.WriteLog(log, ex);
+			Global.WriteLog(log, ex, true, null, "mail");
 		}
 		#endregion
 

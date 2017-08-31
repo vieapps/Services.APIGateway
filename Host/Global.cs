@@ -47,15 +47,18 @@ namespace net.vieapps.Services.APIGateway
 			Global.EventLog.Dispose();
 		}
 
-		internal static void WriteLog(string log, Exception ex = null)
+		internal static void WriteLog(string log, Exception ex = null, bool writeFiles = false, string serviceName = null, string objectName = null)
 		{
+			// update logs
 			string msg = log + (ex != null ? "\r\n\r\n" + "Message: " + ex.Message + " [" + ex.GetType().ToString() + "]\r\n\r\n" + "Details: " + ex.StackTrace : "");
 			if (Global.AsService)
 				Global.EventLog.WriteEntry(msg, ex != null ? EventLogEntryType.Error : EventLogEntryType.Information);
 			else
-			{
 				Global.Form.UpdateLogs(msg);
-			}
+
+			// write into files
+			if (writeFiles)
+				Global.Component?._managementService?.WriteLog(serviceName, objectName, log);
 		}
 		#endregion
 

@@ -33,11 +33,6 @@ namespace net.vieapps.Services.APIGateway
 		Dictionary<string, Queue<string>> _logs = new Dictionary<string, Queue<string>>();
 		int _max = 10;
 
-		public Task WriteLogAsync(string correlationID, string serviceName, string objectName, string log, string simpleStack = null, string fullStack = null, CancellationToken cancellationToken = default(CancellationToken))
-		{
-			return this.WriteLogsAsync(correlationID, serviceName, objectName, new List<string>() { log }, simpleStack, fullStack, cancellationToken);
-		}
-
 		public Task WriteLogsAsync(string correlationID, string serviceName, string objectName, List<string> logs, string simpleStack = null, string fullStack = null, CancellationToken cancellationToken = default(CancellationToken))
 		{
 			string prefix = !string.IsNullOrWhiteSpace(serviceName)
@@ -96,6 +91,38 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			return Task.CompletedTask;
+		}
+
+		public Task WriteLogAsync(string correlationID, string serviceName, string objectName, string log, string simpleStack = null, string fullStack = null, CancellationToken cancellationToken = default(CancellationToken))
+		{
+			return this.WriteLogsAsync(correlationID, serviceName, objectName, new List<string>() { log }, simpleStack, fullStack, cancellationToken);
+		}
+
+		internal void WriteLogs(string correlationID, string serviceName, string objectName, List<string> logs, string simpleStack = null, string fullStack = null)
+		{
+			Task.Run(async () =>
+			{
+				try
+				{
+					await this.WriteLogsAsync(correlationID, serviceName, objectName, logs, simpleStack, fullStack);
+				}
+				catch { }
+			}).ConfigureAwait(false);
+		}
+
+		internal void WriteLogs(string serviceName, string objectName, List<string> logs, string simpleStack = null, string fullStack = null)
+		{
+			this.WriteLogs(UtilityService.NewUID, serviceName, objectName, logs, simpleStack, fullStack);
+		}
+
+		internal void WriteLog(string correlationID, string serviceName, string objectName, string log, string simpleStack = null, string fullStack = null)
+		{
+			this.WriteLogs(correlationID, serviceName, objectName, new List<string>() { log }, simpleStack, fullStack);
+		}
+
+		internal void WriteLog(string serviceName, string objectName, string log, string simpleStack = null, string fullStack = null)
+		{
+			this.WriteLogs(UtilityService.NewUID, serviceName, objectName, new List<string>() { log }, simpleStack, fullStack);
 		}
 
 		internal void Flush(string path, Queue<string> logs)

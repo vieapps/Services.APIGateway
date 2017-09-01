@@ -46,8 +46,9 @@ namespace net.vieapps.Services.APIGateway
 		static string _AESKey = null, _JWTKey = null, _PublicJWTKey = null, _RSAKey = null, _RSAExponent = null, _RSAModulus = null;
 		static RSACryptoServiceProvider _RSA = null;
 
-		static CacheManager _Cache = new CacheManager("VIEApps-API-Gateway", "Absolute", 120);
+		static HashSet<string> QueryExcluded = "service-name,object-name,object-identity,request-of-static-resource".ToHashSet();
 
+		static CacheManager _Cache = new CacheManager("VIEApps-API-Gateway", "Absolute", 120);
 		public static CacheManager Cache { get { return Global._Cache; } }
 		#endregion
 
@@ -566,6 +567,7 @@ namespace net.vieapps.Services.APIGateway
 			Global.StaticSegments = string.IsNullOrWhiteSpace(segments)
 				? new HashSet<string>()
 				: segments.Trim().ToLower().ToHashSet('|', true);
+			Global.StaticSegments.Append("statics");
 
 			// handling unhandled exception
 			AppDomain.CurrentDomain.UnhandledException += (sender, arguments) =>
@@ -668,7 +670,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// rewrite url
 			var url = app.Request.ApplicationPath + "Global.ashx";
-			if (Global.StaticSegments.Contains(executionFilePaths[0]) || executionFilePaths[0].IsEquals("meta"))
+			if (Global.StaticSegments.Contains(executionFilePaths[0]))
 				url += "?request-of-static-resource=&path=" + app.Context.Request.RawUrl.UrlEncode();
 			else
 			{
@@ -680,7 +682,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			foreach (string key in app.Request.QueryString)
-				if (!string.IsNullOrWhiteSpace(key) && !key.IsEquals("service-name") && !key.IsEquals("object-name") && !key.IsEquals("object-identity"))
+				if (!string.IsNullOrWhiteSpace(key) && !Global.QueryExcluded.Contains(key))
 					url += "&" + key + "=" + app.Request.QueryString[key].UrlEncode();
 
 			app.Context.RewritePath(url);
@@ -1103,7 +1105,7 @@ namespace net.vieapps.Services.APIGateway
 				// prepare
 				var path = context.Request.QueryString["path"];
 				if (string.IsNullOrWhiteSpace(path))
-					path = "~/data-files/meta-files/countries.json";
+					path = "~/data-files/statics/countries.json";
 
 				if (path.IndexOf("?") > 0)
 					path = path.Left(path.IndexOf("?"));
@@ -1112,22 +1114,23 @@ namespace net.vieapps.Services.APIGateway
 				try
 				{
 					// get information of the requested file
-					FileInfo fileInfo = null;
-					if (!path.IsStartsWith("/meta/"))
-						fileInfo = new FileInfo(context.Server.MapPath(path));
+					var filePath = "";
+					if (!path.IsStartsWith("/statics/"))
+						filePath = context.Server.MapPath(path);
 
 					else
 					{
-						var filePath = UtilityService.GetAppSetting("MetaFilesPath");
+						filePath = UtilityService.GetAppSetting("StaticFilesPath");
 						if (string.IsNullOrEmpty(filePath))
-							filePath = HttpRuntime.AppDomainAppPath + @"\data-files\meta";
+							filePath = HttpRuntime.AppDomainAppPath + @"\data-files\statics";
 						if (filePath.EndsWith(@"\"))
 							filePath = filePath.Left(filePath.Length - 1);
 
-						fileInfo = new FileInfo(filePath + path.Replace("/meta/", "/").Replace("/", @"\"));
+						filePath += path.Replace("/statics/", "/").Replace("/", @"\");
 					}
 
 					// check exist
+					var fileInfo = new FileInfo(filePath);
 					if (!fileInfo.Exists)
 						throw new FileNotFoundException();
 
@@ -1149,12 +1152,13 @@ namespace net.vieapps.Services.APIGateway
 									: path.IsEndsWith(".html") || path.IsEndsWith(".htm")
 										? "html"
 										: "plain");
+					var staticContent = await UtilityService.ReadTextFileAsync(fileInfo.FullName);
 					context.Response.ContentType = contentType;
-					await context.Response.Output.WriteAsync(await UtilityService.ReadTextFileAsync(fileInfo.FullName));
+					await context.Response.Output.WriteAsync(contentType.IsEquals("application/json") ? JObject.Parse(staticContent).ToString(Formatting.Indented) : staticContent);
 				}
 				catch (FileNotFoundException ex)
 				{
-					context.ShowError(404, "Not found [" + path + "]", "FileNotFoundException", ex.StackTrace, ex.InnerException);
+					context.ShowError((int)HttpStatusCode.NotFound, "Not found [" + path + "]", "FileNotFoundException", ex.StackTrace, ex.InnerException);
 				}
 				catch (Exception ex)
 				{

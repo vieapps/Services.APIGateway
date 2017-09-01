@@ -459,13 +459,15 @@ namespace net.vieapps.Services.APIGateway
 					CorrelationID = requestInfo.CorrelationID
 				});
 
-				// set user
+				// clear cached of current session
+				await Global.Cache.RemoveAsync("Session#" + requestInfo.Session.SessionID);
+				
+				// prepare session
 				requestInfo.Session.User = json.FromJson<User>();
-
-				// get access token
+				requestInfo.Session.SessionID = UtilityService.NewUID;
 				var accessToken = User.GetAccessToken(requestInfo.Session.User, Global.RSA, Global.AESKey);
 
-				// update session
+				// register new session
 				var session = new JObject()
 				{
 					{ "ID", requestInfo.Session.SessionID },
@@ -770,7 +772,7 @@ namespace net.vieapps.Services.APIGateway
 				? Task.CompletedTask
 				: Global.SendInterCommunicateMessageAsync(new CommunicateMessage()
 				{
-					ServiceName = "users",
+					ServiceName = "Users",
 					Type = "Account",
 					Data = new JObject()
 					{

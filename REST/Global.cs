@@ -14,6 +14,8 @@ using System.Text;
 using System.Linq;
 using System.Web;
 
+using System.Reactive.Subjects;
+
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -39,8 +41,9 @@ namespace net.vieapps.Services.APIGateway
 		internal static long IncommingChannelSessionID = 0, OutgoingChannelSessionID = 0;
 		internal static bool ChannelsAreClosedBySystem = false;
 
-		internal static IDisposable InterCommunicationMessageUpdater = null;
 		internal static IManagementService ManagementService = null;
+		internal static IDisposable InterCommunicationMessageUpdater = null;
+		internal static ISubject<UpdateMessage> RTUPublisher = null;
 		internal static IRTUService _RTUService = null;
 
 		static string _AESKey = null, _JWTKey = null, _PublicJWTKey = null, _RSAKey = null, _RSAExponent = null, _RSAModulus = null;
@@ -1050,6 +1053,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				await Global.OpenOutgoingChannelAsync();
 				Global._RTUService = Global.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>();
+				Global.RTUPublisher = Global.OutgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages");
 			}
 		}
 

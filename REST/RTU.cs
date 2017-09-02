@@ -52,16 +52,12 @@ namespace net.vieapps.Services.APIGateway
 				? UtilityService.GetUUID()
 				: identity;
 
-			var subject = Global.IncommingChannel?.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages");
-			if (subject == null)
-				throw new InvalidAppOperationException("Cannot initialize the subject for fetching messages");
-
 			if (!RTU.Updaters.TryGetValue(identity, out IDisposable updater))
 				lock (RTU.Updaters)
 				{
 					if (!RTU.Updaters.TryGetValue(identity, out updater))
 					{
-						updater = subject.Subscribe(onNext, onError);
+						updater = Global.IncommingChannel?.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages").Subscribe(onNext, onError);
 						RTU.Updaters.Add(identity, updater);
 					}
 				}
@@ -108,6 +104,7 @@ namespace net.vieapps.Services.APIGateway
 				return;
 			}
 
+			// prepare session
 			var session = Global.GetSession(context.Headers, context.QueryString, context.UserAgent, context.UserHostAddress, context.UrlReferrer);
 			if (request.Has("x-device-id"))
 				session.DeviceID = request.Get<string>("x-device-id");
@@ -122,7 +119,7 @@ namespace net.vieapps.Services.APIGateway
 				return;
 			}
 
-			// prepare client credential
+			// verify client credential
 			try
 			{
 				var accessToken = session.ParseJSONWebToken(appToken);
@@ -136,18 +133,7 @@ namespace net.vieapps.Services.APIGateway
 				return;
 			}
 
-			// connect to the router
-			try
-			{
-				await Global.OpenIncomingChannelAsync();
-			}
-			catch (Exception ex)
-			{
-				await context.SendAsync(new InvalidAppOperationException("Cannot open the channel of the real-time updater", ex));
-				return;
-			}
-
-			// wait for few seconds before connecting to WAMP router because Reactive.NET needs few times
+			// wait for few times before connecting to WAMP router because Reactive.NET needs times
 			if (context.QueryString["x-restart"] != null)
 				await Task.Delay(567);
 
@@ -211,6 +197,7 @@ namespace net.vieapps.Services.APIGateway
 				// client is disconnected
 				if (!context.WebSocket.State.Equals(WebSocketState.Open) || !context.IsClientConnected)
 				{
+					// update session status
 					if (mode.IsEquals("Receiver"))
 					{
 						try
@@ -247,6 +234,7 @@ namespace net.vieapps.Services.APIGateway
 							if (message.DeviceID.Equals("*") || message.DeviceID.IsEquals(session.DeviceID))
 							{
 								await context.SendAsync(message);
+
 #if DEBUG || RTULOGS
 								await Global.WriteLogsAsync(correlationID, "RTU", new List<string>() {
 									"Push the message to the subscriber's device successful",
@@ -254,15 +242,27 @@ namespace net.vieapps.Services.APIGateway
 									"- Device: " + session.DeviceID + " @ " + session.AppName + " / " + session.AppPlatform + " [IP: " + session.IP + "]",
 									"- Message: " + message.Data.ToString(Formatting.None)
 								});
-#endif
 							}
+						}
+						catch (OperationCanceledException)
+						{
+							break;
 						}
 						catch (Exception ex)
 						{
 							Global.WriteLogs(correlationID, "RTU", "Error occurred while pushing message to the subscriber's device", ex);
 						}
+#else
+							}
+						}
+						catch (OperationCanceledException)
+						{
+							break;
+						}
+						catch (Exception) { }
+#endif
 
-				// process the request of a service
+				// process the request
 				else
 					await context.ProcessClientRequestAsync(session);
 
@@ -279,7 +279,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		#region Send messages
+		#region Send messages to client device
 		static async Task SendAsync(this AspNetWebSocketContext context, UpdateMessage message)
 		{
 			// prepare the message
@@ -352,7 +352,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
-		#region Receive request & call services
+		#region Process the client request (call services and send update messages via real-time updater)
 		static async Task ProcessClientRequestAsync(this AspNetWebSocketContext context, Session session)
 		{
 			var correlationID = UtilityService.GetUUID();
@@ -360,13 +360,13 @@ namespace net.vieapps.Services.APIGateway
 			{
 				// receive message from client
 				var buffer = new ArraySegment<byte>(new byte[2048]);
-				var message = await context.WebSocket.ReceiveAsync(buffer, Global.CancellationTokenSource.Token);
+				var requestMessage = await context.WebSocket.ReceiveAsync(buffer, Global.CancellationTokenSource.Token);
 
-				if (!message.MessageType.Equals(WebSocketMessageType.Text))
+				if (!requestMessage.MessageType.Equals(WebSocketMessageType.Text))
 					return;
 
 				// parse request and process
-				var requestInfo = buffer.Array.GetString(message.Count).ToExpandoObject();
+				var requestInfo = buffer.Array.GetString(requestMessage.Count).ToExpandoObject();
 				if (requestInfo != null)
 				{
 					var serviceName = requestInfo.Get<string>("ServiceName");
@@ -376,7 +376,31 @@ namespace net.vieapps.Services.APIGateway
 
 					// update the session
 					if ("PATCH".IsEquals(verb) && "users".IsEquals(serviceName) && "session".IsEquals(objectName) && extra != null && extra.ContainsKey("x-rtu-session"))
-						await session.PatchAsync(extra["x-rtu-session"], correlationID);
+						try
+						{
+							var sessionInfo = (await InternalAPIs.CallServiceAsync(new Session(session)
+							{
+								SessionID = extra["x-rtu-session"].Decrypt(Global.AESKey.Reverse(), true)
+							}, "users", "session")).ToExpandoObject();
+
+							session.SessionID = sessionInfo.Get<string>("ID");
+							session.User.ID = sessionInfo.Get<string>("UserID");
+
+							session.User = session.User.ID.Equals("")
+								? new User() { Roles = new List<string>() { SystemRole.All.ToString() } }
+								: (await InternalAPIs.CallServiceAsync(session, "users", "account")).FromJson<User>();
+
+#if DEBUG || RTULOGS
+							Global.WriteLogs(correlationID, "RTU", "Patch a session successful" + "\r\n" + session.ToJson().ToString(Formatting.Indented));
+						}
+						catch (Exception ex)
+						{
+							Global.WriteLogs(correlationID, "RTU", "Error occurred while patching a session", ex);
+						}
+#else
+						}
+						catch { }
+#endif
 
 					// call service to update
 					else
@@ -389,24 +413,24 @@ namespace net.vieapps.Services.APIGateway
 						var objectIdentity = query != null && query.ContainsKey("object-identity")
 							? query["object-identity"]
 							: null;
+						var type = serviceName.GetCapitalizedFirstLetter() + "#" + objectName.GetCapitalizedFirstLetter()
+							+ (objectIdentity != null && !objectIdentity.IsValidUUID() ? "#" + objectIdentity.GetCapitalizedFirstLetter() : "");
 						var updateMessage = new UpdateMessage()
 						{
-							Type = serviceName.GetCapitalizedFirstLetter() + "#" + objectName.GetCapitalizedFirstLetter() + (objectIdentity != null && !objectIdentity.IsValidUUID() ? "#" + objectIdentity.GetCapitalizedFirstLetter() : ""),
+							Type = type,
 							DeviceID = session.DeviceID,
 							Data = data
 						};
 
 						// publish the update message
-						await Global.OpenOutgoingChannelAsync();
-						var subject = Global.OutgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages");
-						subject.OnNext(updateMessage);
+						Global.RTUPublisher.OnNext(updateMessage);
 
 #if DEBUG || RTULOGS
 						await Global.WriteLogsAsync(correlationID, "RTU", new List<string>() {
 							"Receive the request and process successful",
 							"- Session: " + session.SessionID,
 							"- Device: " + session.DeviceID + " @ " + session.AppName + " / " + session.AppPlatform + " [IP: " + session.IP + "]",
-							"- Request: " + buffer.Array.GetString(message.Count),
+							"- Request: " + buffer.Array.GetString(requestMessage.Count),
 							"- Result: " + data.ToString(Formatting.None)
 						});
 #endif
@@ -418,36 +442,6 @@ namespace net.vieapps.Services.APIGateway
 			{
 				await Global.WriteLogsAsync(correlationID, "RTU", "Error occurred while processing the request of a service with real-time updater: " + ex.Message, ex);
 			}
-		}
-
-		static async Task PatchAsync(this Session session, string sessionID, string correlationID)
-		{
-			try
-			{
-#if DEBUG
-				Global.WriteLogs(correlationID, "RTU", "Patch a session [" + sessionID + "]");
-#endif
-
-				var info = (await InternalAPIs.CallServiceAsync(new Session(session)
-				{
-					SessionID = sessionID.Decrypt(Global.AESKey.Reverse(), true)
-				}, "users", "session")).ToExpandoObject();
-
-				session.SessionID = info.Get<string>("ID");
-				session.User.ID = info.Get<string>("UserID");
-
-#if DEBUG
-				Global.WriteLogs(correlationID, "RTU", "Patch a session successful" + "\r\n" + session.ToJson().ToString(Formatting.Indented));
-#endif
-			}
-#if DEBUG
-			catch (Exception ex)
-			{
-				Global.WriteLogs(correlationID, "RTU", "Error occurred while patching a session", ex);
-			}
-#else
-			catch { }
-#endif
 		}
 		#endregion
 

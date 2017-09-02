@@ -365,12 +365,13 @@ namespace net.vieapps.Services.APIGateway
 					// verify access token
 					if (jsonUserID == null || !(jsonUserID is JValue) || (jsonUserID as JValue).Value == null || !requestInfo.Session.User.ID.Equals((jsonUserID as JValue).Value as string))
 						throw new InvalidTokenException();
-					else if (jsonAccessToken == null || !(jsonAccessToken is JValue) || (jsonAccessToken as JValue).Value == null || !accessToken.Equals((jsonAccessToken as JValue).Value as string))
+					else if (jsonAccessToken == null || !(jsonAccessToken is JValue) || (jsonAccessToken as JValue).Value == null || !accessToken.Equals(((jsonAccessToken as JValue).Value as string).Decrypt()))
 						throw new TokenRevokedException();
 
 					// update session
 					session["RenewedAt"] = DateTime.Now;
 					session["ExpiredAt"] = DateTime.Now.AddDays(60);
+					session["AccessToken"] = ((jsonAccessToken as JValue).Value as string).Decrypt();
 					session["IP"] = requestInfo.Session.IP;
 					session["DeviceID"] = requestInfo.Session.DeviceID;
 					session["AppInfo"] = requestInfo.Session.AppName + " @ " + requestInfo.Session.AppPlatform;
@@ -632,57 +633,50 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Verify a session
-		internal static async Task<JObject> GetSessionAsync(Session session)
-		{
-			// get from cached
-			var key = "Session#" + session.SessionID;
-			var json = await Global.Cache.GetAsync<string>(key);
-			if (!string.IsNullOrWhiteSpace(json))
-				return JObject.Parse(json);
-
-			// call service
-			try
-			{
-				var data = await InternalAPIs.CallServiceAsync(session, "users", "session");
-				if (data != null)
-					await Global.Cache.SetAbsoluteAsync(key, data.ToString(Formatting.None), 180);
-				return data;
-			}
-			catch
-			{
-				return null;
-			}
-		}
-
 		internal static async Task<bool> CheckSessionExistAsync(Session session)
 		{
+			// pre-check
 			if (session == null || string.IsNullOrWhiteSpace(session.SessionID))
 				return false;
-
-			if (await Global.Cache.ExistsAsync("Session#" + session.SessionID))
+			else if (await Global.Cache.ExistsAsync("Session#" + session.SessionID))
 				return true;
 
-			var data = await InternalAPIs.GetSessionAsync(session);
-			var id = data?["ID"];
-			return id != null && id is JValue && (id as JValue).Value != null && session.SessionID.IsEquals((id as JValue).Value as string);
+			// check with user service
+			var result = await InternalAPIs.CallServiceAsync(session, "users", "session", "GET", null, new Dictionary<string, string>()
+			{
+				{ "Exist", "" }
+			});
+
+			var isExisted = result?["Existed"];
+			return isExisted != null && isExisted is JValue && (isExisted as JValue).Value != null && (isExisted as JValue).Value.CastAs<bool>() == true;
 		}
 
 		internal static async Task VerifySessionIntegrityAsync(Session session, string accessToken)
 		{
+			// pre-check
 			if (session == null || string.IsNullOrWhiteSpace(session.SessionID))
 				throw new SessionNotFoundException();
 			else if (string.IsNullOrWhiteSpace(accessToken))
 				throw new TokenNotFoundException();
 
-			var data = await InternalAPIs.GetSessionAsync(session);
-			if (data == null)
-				throw new SessionNotFoundException();
+			// check with cached
+			var cached = await Global.Cache.GetAsync<string>("Session#" + session.SessionID);
+			if (!string.IsNullOrWhiteSpace(cached))
+			{
+				var info = cached.ToExpandoObject();
+				if (info.Get<DateTime>("ExpiredAt") < DateTime.Now)
+					throw new SessionExpiredException();
+				else if (!accessToken.Equals(info.Get<string>("AccessToken")))
+					throw new TokenRevokedException();
+			}
 
-			var info = data.ToExpandoObject();
-			if (info.Get<DateTime>("ExpiredAt") < DateTime.Now)
-				throw new SessionExpiredException();
-			else if (!accessToken.Equals(info.Get<string>("AccessToken")))
-				throw new TokenRevokedException();
+			// check with user service
+			else
+				await InternalAPIs.CallServiceAsync(session, "users", "session", "GET", null, new Dictionary<string, string>()
+				{
+					{ "Verify", "" },
+					{ "AccessToken", accessToken.Encrypt() }
+				});
 		}
 		#endregion
 
@@ -730,9 +724,14 @@ namespace net.vieapps.Services.APIGateway
 			return json;
 		}
 
-		internal static Task<JObject> CallServiceAsync(Session session, string serviceName, string objectName, string verb = "GET", string body = null)
+		internal static Task<JObject> CallServiceAsync(Session session, string serviceName, string objectName, string verb = "GET", string body = null, Dictionary<string, string> extra = null)
 		{
-			return InternalAPIs.CallServiceAsync(new RequestInfo(session, serviceName, objectName, verb) { Body = body ?? "", CorrelationID = Global.GetCorrelationID() });
+			return InternalAPIs.CallServiceAsync(new RequestInfo(session, serviceName, objectName, verb)
+			{
+				Body = body ?? "",
+				Extra = extra ?? new Dictionary<string, string>(),
+				CorrelationID = Global.GetCorrelationID()
+			});
 		}
 		#endregion
 

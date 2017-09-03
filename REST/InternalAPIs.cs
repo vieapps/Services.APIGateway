@@ -296,6 +296,11 @@ namespace net.vieapps.Services.APIGateway
 			if ((requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.ID.Equals(User.SystemAccountID)))
 				try
 				{
+					// prepare access token
+					accessToken = string.IsNullOrWhiteSpace(accessToken)
+						? User.GetAccessToken(requestInfo.Session.User, Global.RSA, Global.AESKey)
+						: accessToken;
+
 					// generate session
 					var session = new JObject()
 					{

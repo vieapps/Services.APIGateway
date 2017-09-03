@@ -614,7 +614,7 @@ namespace net.vieapps.Services.APIGateway
 			// update special headers on OPTIONS request
 			if (app.Context.Request.HttpMethod.Equals("OPTIONS"))
 			{
-				app.Context.Response.Headers.Add("access-control-allow-methods", "HEAD,GET,POST,PUT,DELETE,OPTIONS");
+				app.Context.Response.Headers.Add("access-control-allow-methods", "GET,POST,PUT,DELETE");
 
 				var allowHeaders = app.Context.Request.Headers.Get("access-control-request-headers");
 				if (!string.IsNullOrWhiteSpace(allowHeaders))

@@ -34,11 +34,11 @@ namespace net.vieapps.Services.APIGateway
 				if (RTU._WaitingInterval < 1)
 					try
 					{
-						RTU._WaitingInterval = UtilityService.GetAppSetting("RTUWaitingInterval", "123").CastAs<int>();
+						RTU._WaitingInterval = UtilityService.GetAppSetting("RTUWaitingInterval", "13").CastAs<int>();
 					}
 					catch
 					{
-						RTU._WaitingInterval = 123;
+						RTU._WaitingInterval = 13;
 					}
 				return RTU._WaitingInterval;
 			}
@@ -106,12 +106,9 @@ namespace net.vieapps.Services.APIGateway
 
 			// prepare session
 			var session = Global.GetSession(context.Headers, context.QueryString, context.UserAgent, context.UserHostAddress, context.UrlReferrer);
-			if (request.Has("x-device-id"))
-				session.DeviceID = request.Get<string>("x-device-id");
-			if (request.Has("x-app-name"))
-				session.AppName = request.Get<string>("x-app-name");
-			if (request.Has("x-app-platform"))
-				session.AppPlatform = request.Get<string>("x-app-platform");
+			session.DeviceID = request.Get("x-device-id", session.DeviceID);
+			session.AppName = request.Get("x-app-name", session.AppName);
+			session.AppPlatform = request.Get("x-app-platform", session.AppPlatform);
 
 			if (string.IsNullOrWhiteSpace(session.DeviceID))
 			{
@@ -135,17 +132,22 @@ namespace net.vieapps.Services.APIGateway
 
 			// wait for few times before connecting to WAMP router because Reactive.NET needs times
 			if (context.QueryString["x-restart"] != null)
-				await Task.Delay(567);
+				try
+				{
+					await Task.Delay(567, Global.CancellationTokenSource.Token);
+				}
+				catch
+				{
+					return;
+				}
 
-			// prepare working mode
+			// prepare to send/receive
 			var correlationID = Global.GetCorrelationID(context.Items);
-			var mode = session.SessionID.Encrypt(Global.AESKey.Reverse(), true).IsEquals(context.QueryString["x-mode"])
-				? "Sender"
-				: "Receiver";
+			var isReceiver = session.SessionID.Encrypt(Global.AESKey.Reverse(), true).IsEquals(context.QueryString["x-mode"]);
 
 			// fetch messages
 			Queue<UpdateMessage> messages = null;
-			if (mode.IsEquals("Receiver"))
+			if (!isReceiver)
 			{
 				messages = new Queue<UpdateMessage>();
 				try
@@ -163,15 +165,6 @@ namespace net.vieapps.Services.APIGateway
 						{
 							Global.WriteLogs(correlationID, "RTU", "Error occurred while fetching messages", ex);
 						});
-
-#if DEBUG || RTULOGS
-					Global.WriteLogs(correlationID, "RTU", new List<string>() {
-						"The real-time updater of a client's device is started",
-						"- Account: " + (session.User.ID.Equals("") ? "Visitor" : session.User.ID),
-						"- Session: " + session.SessionID + " @ " + session.DeviceID,
-						"- Info: " + session.AppName + " / " + session.AppPlatform  + " - " + session.AppOrigin + " [IP: " + session.IP + " - Agent: " + session.AppAgent + "]"
-					});
-#endif
 				}
 				catch (Exception ex)
 				{
@@ -179,11 +172,11 @@ namespace net.vieapps.Services.APIGateway
 					return;
 				}
 
-				// ping message on re-start
+				// send knock message on re-start
 				if (context.QueryString["x-restart"] != null)
 					try
 					{
-						await context.SendAsync(new UpdateMessage() { Type = "Ping", DeviceID = session.DeviceID });
+						await context.SendAsync(new UpdateMessage() { Type = "Knock", DeviceID = session.DeviceID });
 					}
 					catch { }
 
@@ -191,14 +184,51 @@ namespace net.vieapps.Services.APIGateway
 				await session.SendOnlineStatusAsync(true);
 			}
 
+#if DEBUG || RTULOGS || REQUESTLOGS
+			Global.WriteLogs(correlationID, "RTU", new List<string>() {
+				"The real-time updater of a client's device is started",
+				"- Mode: " + (isReceiver ? "Receiver" : "Sender"),
+				"- Account: " + (session.User.ID.Equals("") ? "Visitor" : session.User.ID),
+				"- Session: " + session.SessionID + " @ " + session.DeviceID,
+				"- Info: " + session.AppName + " / " + session.AppPlatform  + " - " + session.AppOrigin + " [IP: " + session.IP + " - Agent: " + session.AppAgent + "]"
+			});
+#endif
+
+			// checkpoint for sendping ping
+			var checkpoint = DateTime.Now;
+
 			// do the process
 			while (true)
 			{
-				// client is disconnected
-				if (!context.WebSocket.State.Equals(WebSocketState.Open) || !context.IsClientConnected)
+				// check the disconnected state
+				var isDisconnected = false;
+
+				// send ping message every 5 minutes when connected
+				if (!isReceiver && context.IsClientConnected && context.WebSocket.State.Equals(WebSocketState.Open) && (DateTime.Now - checkpoint).TotalMinutes > 4d)
+					try
+					{						
+						var identifier = UtilityService.NewUID;
+						await context.SendAsync(new UpdateMessage() { Type = "Ping", DeviceID = session.DeviceID, Data = new JValue(identifier) });
+
+						var clientMessage = await context.GetClientMessageAsync();
+						if (clientMessage.Equals("Pong:" + identifier))
+							checkpoint = DateTime.Now;
+						else
+							isDisconnected = true;
+					}
+					catch
+					{
+						isDisconnected = true;
+					}
+
+				// check the state on other cases
+				else
+					isDisconnected = !context.WebSocket.State.Equals(WebSocketState.Open) || !context.IsClientConnected;
+
+				// stop process when the connection is disconnected
+				if (isDisconnected)
 				{
-					// update session status
-					if (mode.IsEquals("Receiver"))
+					if (!isReceiver)
 					{
 						try
 						{
@@ -206,27 +236,26 @@ namespace net.vieapps.Services.APIGateway
 						}
 						catch (Exception ex)
 						{
-							Global.WriteLogs(correlationID, "RTU", "Error occurred while disposing subscriber: " + ex.Message, ex);
+							Global.WriteLogs(correlationID, "RTU", "Error occurred while disposing subscriber: " + ex.Message + " [" + ex.GetType().GetTypeName(true) + "]", ex);
 						}
 
 						await session.SendOnlineStatusAsync(false);
-
-#if DEBUG || RTULOGS
-						await Global.WriteLogsAsync(correlationID, "RTU", new List<string>() {
-							"The real-time updater of a client's device is stopped",
-							"- Account: " + (session.User.ID.Equals("") ? "Visitor" : session.User.ID),
-							"- Session: " + session.SessionID + " @ " + session.DeviceID,
-							"- Info: " + session.AppName + " / " + session.AppPlatform  + " - " + session.AppOrigin + " [IP: " + session.IP + " - Agent: " + session.AppAgent + "]"
-						});
-#endif
 					}
 
-					// drop the connection
-					break;
+#if DEBUG || RTULOGS || REQUESTLOGS
+					await Global.WriteLogsAsync(correlationID, "RTU", new List<string>() {
+						"The real-time updater of a client's device is stopped",
+						"- Mode: " + (isReceiver ? "Receiver" : "Sender"),
+						"- Account: " + (session.User.ID.Equals("") ? "Visitor" : session.User.ID),
+						"- Session: " + session.SessionID + " @ " + session.DeviceID,
+						"- Info: " + session.AppName + " / " + session.AppPlatform  + " - " + session.AppOrigin + " [IP: " + session.IP + " - Agent: " + session.AppAgent + "]"
+					});
+#endif
+					return;
 				}
 
 				// push messages to client's device
-				if (mode.IsEquals("Receiver"))
+				if (!isReceiver)
 					while (messages.Count > 0)
 						try
 						{
@@ -246,7 +275,7 @@ namespace net.vieapps.Services.APIGateway
 						}
 						catch (OperationCanceledException)
 						{
-							break;
+							return;
 						}
 						catch (Exception ex)
 						{
@@ -257,14 +286,25 @@ namespace net.vieapps.Services.APIGateway
 						}
 						catch (OperationCanceledException)
 						{
-							break;
+							return;
 						}
 						catch (Exception) { }
 #endif
 
 				// process the request
 				else
-					await context.ProcessClientRequestAsync(session);
+					try
+					{
+						await context.ProcessClientRequestAsync(session, await context.GetClientMessageAsync());
+					}
+					catch (OperationCanceledException)
+					{
+						return;
+					}
+					catch (Exception ex)
+					{
+						Global.WriteLogs(correlationID, "RTU", "Error occurred while process request: " + ex.Message + " [" + ex.GetType().GetTypeName(true) + "]", ex);
+					}
 
 				// wait for next interval
 				try
@@ -273,7 +313,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (OperationCanceledException)
 				{
-					break;
+					return;
 				}
 				catch (Exception) { }
 			}
@@ -353,94 +393,93 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Process the client request (call services and send update messages via real-time updater)
-		static async Task ProcessClientRequestAsync(this AspNetWebSocketContext context, Session session)
+		static async Task<string> GetClientMessageAsync(this AspNetWebSocketContext context)
 		{
-			var correlationID = UtilityService.GetUUID();
 			try
 			{
-				// receive message from client
-				var buffer = new ArraySegment<byte>(new byte[2048]);
-				var requestMessage = await context.WebSocket.ReceiveAsync(buffer, Global.CancellationTokenSource.Token);
-
-				if (!requestMessage.MessageType.Equals(WebSocketMessageType.Text))
-					return;
-
-				// parse request and process
-				var requestInfo = buffer.Array.GetString(requestMessage.Count).ToExpandoObject();
-				if (requestInfo != null)
-				{
-					var serviceName = requestInfo.Get<string>("ServiceName");
-					var objectName = requestInfo.Get<string>("ObjectName");
-					var verb = requestInfo.Get<string>("Verb") ?? "GET";
-					var extra = requestInfo.Get<Dictionary<string, string>>("Extra");
-
-					// update the session
-					if ("PATCH".IsEquals(verb) && "users".IsEquals(serviceName) && "session".IsEquals(objectName) && extra != null && extra.ContainsKey("x-rtu-session"))
-						try
-						{
-							var sessionInfo = (await InternalAPIs.CallServiceAsync(new Session(session)
-							{
-								SessionID = extra["x-rtu-session"].Decrypt(Global.AESKey.Reverse(), true)
-							}, "users", "session")).ToExpandoObject();
-
-							session.SessionID = sessionInfo.Get<string>("ID");
-							session.User.ID = sessionInfo.Get<string>("UserID");
-
-							session.User = session.User.ID.Equals("")
-								? new User() { Roles = new List<string>() { SystemRole.All.ToString() } }
-								: (await InternalAPIs.CallServiceAsync(session, "users", "account")).FromJson<User>();
-
-#if DEBUG || RTULOGS
-							Global.WriteLogs(correlationID, "RTU", "Patch a session successful" + "\r\n" + session.ToJson().ToString(Formatting.Indented));
-						}
-						catch (Exception ex)
-						{
-							Global.WriteLogs(correlationID, "RTU", "Error occurred while patching a session", ex);
-						}
-#else
-						}
-						catch { }
-#endif
-
-					// call service to update
-					else
-					{
-						// call the service
-						var query = requestInfo.Get<Dictionary<string, string>>("Query");
-						var data = await InternalAPIs.CallServiceAsync(new RequestInfo(session, serviceName, objectName, verb, query, requestInfo.Get<Dictionary<string, string>>("Header"), requestInfo.Get<string>("Body"), extra, correlationID));
-
-						// prepare the update message
-						var objectIdentity = query != null && query.ContainsKey("object-identity")
-							? query["object-identity"]
-							: null;
-						var type = serviceName.GetCapitalizedFirstLetter() + "#" + objectName.GetCapitalizedFirstLetter()
-							+ (objectIdentity != null && !objectIdentity.IsValidUUID() ? "#" + objectIdentity.GetCapitalizedFirstLetter() : "");
-						var updateMessage = new UpdateMessage()
-						{
-							Type = type,
-							DeviceID = session.DeviceID,
-							Data = data
-						};
-
-						// publish the update message
-						Global.RTUPublisher.OnNext(updateMessage);
-
-#if DEBUG || RTULOGS
-						await Global.WriteLogsAsync(correlationID, "RTU", new List<string>() {
-							"Receive the request and process successful",
-							"- Session: " + session.SessionID,
-							"- Device: " + session.DeviceID + " @ " + session.AppName + " / " + session.AppPlatform + " [IP: " + session.IP + "]",
-							"- Request: " + buffer.Array.GetString(requestMessage.Count),
-							"- Result: " + data.ToString(Formatting.None)
-						});
-#endif
-					}
-				}
+				var buffer = new ArraySegment<byte>(new byte[1024]);
+				var message = await context.WebSocket.ReceiveAsync(buffer, Global.CancellationTokenSource.Token);
+				return message.MessageType.Equals(WebSocketMessageType.Text)
+					? buffer.Array.GetString(message.Count)
+					: "";
 			}
-			catch (OperationCanceledException) { }
-			catch (Exception ex)
+			catch (WebSocketException ex)
 			{
-				await Global.WriteLogsAsync(correlationID, "RTU", "Error occurred while processing the request of a service with real-time updater: " + ex.Message, ex);
+				if (ex.Message.IsStartsWith("Reached the end of the file"))
+					return "";
+				throw ex;
+			}
+			catch (Exception)
+			{
+				throw;
+			}
+		}
+
+		static async Task ProcessClientRequestAsync(this AspNetWebSocketContext context, Session session, string requestMessage)
+		{
+			// parse request and process
+			var requestInfo = requestMessage?.ToExpandoObject();
+			if (requestInfo == null)
+				return;
+
+			var serviceName = requestInfo.Get<string>("ServiceName");
+			var objectName = requestInfo.Get<string>("ObjectName");
+			var verb = requestInfo.Get<string>("Verb") ?? "GET";
+			var extra = requestInfo.Get<Dictionary<string, string>>("Extra");
+			var correlationID = Global.GetCorrelationID(context.Items);
+
+			// update the session
+			if ("PATCH".IsEquals(verb) && "users".IsEquals(serviceName) && "session".IsEquals(objectName) && extra != null && extra.ContainsKey("x-rtu-session"))
+			{
+				var sessionInfo = (await InternalAPIs.CallServiceAsync(new Session(session)
+				{
+					SessionID = extra["x-rtu-session"].Decrypt(Global.AESKey.Reverse(), true)
+				}, "users", "session")).ToExpandoObject();
+
+				session.SessionID = sessionInfo.Get<string>("ID");
+				session.User.ID = sessionInfo.Get<string>("UserID");
+
+				session.User = session.User.ID.Equals("")
+					? new User() { Roles = new List<string>() { SystemRole.All.ToString() } }
+					: (await InternalAPIs.CallServiceAsync(session, "users", "account")).FromJson<User>();
+
+#if DEBUG || RTULOGS
+				Global.WriteLogs(correlationID, "RTU", "Patch a session successful" + "\r\n" + session.ToJson().ToString(Formatting.Indented));
+#endif
+			}
+
+			// call service to update
+			else
+			{
+				// call the service
+				var query = requestInfo.Get<Dictionary<string, string>>("Query");
+				var data = await InternalAPIs.CallServiceAsync(new RequestInfo(session, serviceName, objectName, verb, query, requestInfo.Get<Dictionary<string, string>>("Header"), requestInfo.Get<string>("Body"), extra, Global.GetCorrelationID(context.Items)));
+
+				// prepare the update message
+				var objectIdentity = query != null && query.ContainsKey("object-identity")
+					? query["object-identity"]
+					: null;
+				var type = serviceName.GetCapitalizedFirstLetter() + "#" + objectName.GetCapitalizedFirstLetter()
+					+ (objectIdentity != null && !objectIdentity.IsValidUUID() ? "#" + objectIdentity.GetCapitalizedFirstLetter() : "");
+				var updateMessage = new UpdateMessage()
+				{
+					Type = type,
+					DeviceID = session.DeviceID,
+					Data = data
+				};
+
+				// publish the update message
+				Global.RTUPublisher.OnNext(updateMessage);
+
+#if DEBUG || RTULOGS
+				await Global.WriteLogsAsync(correlationID, "RTU", new List<string>() {
+					"Receive the request and process successful",
+					"- Session: " + session.SessionID,
+					"- Device: " + session.DeviceID + " @ " + session.AppName + " / " + session.AppPlatform + " [IP: " + session.IP + "]",
+					"- Request: " + requestMessage,
+					"- Result: " + data.ToString(Formatting.None)
+				});
+#endif
 			}
 		}
 		#endregion

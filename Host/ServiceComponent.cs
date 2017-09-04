@@ -32,6 +32,8 @@ namespace net.vieapps.Services.APIGateway
 
 		MailSender _mailSender = null;
 		WebHookSender _webhookSender = null;
+
+		bool _registerHelperServices = true, _registerBusinessServices = true, _registerTimers = true;
 		#endregion
 
 		#region Constructor & Destructor
@@ -81,7 +83,8 @@ namespace net.vieapps.Services.APIGateway
 		internal async Task StartAsync(string[] args = null)
 		{
 			// open channels
-			Global.WriteLog("Starting the API Gateway..." + "\r\n");
+			Global.WriteLog("Start the API Gateway Hosting Service...");
+
 			await this.OpenIncomingChannelAsync(
 				(sender, arguments) =>
 				{
@@ -150,21 +153,31 @@ namespace net.vieapps.Services.APIGateway
 				}
 			);
 
-			// register business services
-			await this.RegisterServicesAsync(args);
-
-			// initialize timers
-			var initializeTimers = true;
-			if (args != null && args.Length > 0)
+			// prepare arguments
+#if !DEBUG
+			if (!Global.AsService && args != null)
 				for (var index = 0; index < args.Length; index++)
-					if (args[index].IsStartsWith("/timers:"))
-					{
-						if (args[index].IsEndsWith(":false"))
-							initializeTimers = false;
-						break;
-					}
-			if (initializeTimers)
-				this.InitializeTimers();
+				{
+					if (args[index].IsStartsWith("/helper-services:"))
+						this._registerHelperServices = args[index].IsEquals("/helper-services:true");
+					else if (args[index].IsStartsWith("/business-services:"))
+						this._registerBusinessServices = args[index].IsEquals("/business-services:true");
+					else if (args[index].IsStartsWith("/timers:"))
+						this._registerTimers = args[index].IsEquals("/timers:true");
+				}
+#endif
+
+			// register helper services
+			if (this._registerHelperServices)
+				await this.RegisterHelperServicesAsync();
+
+			// register business services
+			if (this._registerBusinessServices)
+				this.RegisterBusinessServices();
+
+			// register timers
+			if (this._registerTimers)
+				this.RegisterTimers();
 
 			// prepare folder of logs/emails/webhooks
 			(Global.LogsPath + "," + Global.StatusPath + "," + Global.EmailsPath + "," + Global.WebHooksPath).ToArray()
@@ -308,37 +321,14 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
-		#region Register & update info of business services
-		internal async Task RegisterServicesAsync(string[] args = null)
+		#region Register business services
+		internal void  RegisterBusinessServices()
 		{
-			// register helper services
-			var registerHelperServices = true;
-			if (args != null && args.Length > 0)
-				for (var index = 0; index < args.Length; index++)
-					if (args[index].IsStartsWith("/helper-services:"))
-					{
-						if (args[index].IsEndsWith(":false"))
-							registerHelperServices = false;
-						break;
-					}
-
-			if (registerHelperServices)
-			{
-				this._managementService = new ManagementService();
-				await this._incommingChannel.RealmProxy.Services.RegisterCallee(this._managementService, new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin }));
-				Global.WriteLog("The management service is registered" + "\r\n");
-
-				await this._incommingChannel.RealmProxy.Services.RegisterCallee(new RTUService(), new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin }));
-				Global.WriteLog("The real-time update (RTU) service is registered" + "\r\n");
-
-				await this._incommingChannel.RealmProxy.Services.RegisterCallee(new MessagingService(), new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin }));
-				Global.WriteLog("The messaging service is registered" + "\r\n");
-			}
-
-			// register services
+			// register
 			this._availableServices = this._availableServices ?? this.GetAvailableServices();
 			this._availableServices.ForEach(name => this.StartService(name));
 
+			// update info
 			this.UpdateServicesInfo();
 		}
 
@@ -366,7 +356,7 @@ namespace net.vieapps.Services.APIGateway
 
 			var process = UtilityService.RunProcess(
 				name,
-				(!string.IsNullOrEmpty(arguments) ? arguments + " " : "") + "/agc:r",
+				(!string.IsNullOrEmpty(arguments) ? arguments + " " : "") + "/agc:" + (Global.AsService ? "r" : "g"),
 				(sender, args) =>
 				{
 					try
@@ -407,10 +397,11 @@ namespace net.vieapps.Services.APIGateway
 				try
 				{
 					// call service one time to exit
-					UtilityService.RunProcess(name, "/agc:s");
+					if (Global.AsService)
+						UtilityService.RunProcess(name, "/agc:s");
 
-					// get process and kill if still run
-					UtilityService.KillProcess(Process.GetProcessById(this._runningServices[name.ToLower()]));
+					// kill the process if still running
+					this.KillService(this._runningServices[name.ToLower()]);
 
 					// update information
 					this._runningServices.Remove(name.ToLower());
@@ -430,7 +421,22 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
-		#region Initialize timers for working with schedulers
+		#region Register helper services
+		async Task RegisterHelperServicesAsync()
+		{
+			this._managementService = new ManagementService();
+			await this._incommingChannel.RealmProxy.Services.RegisterCallee(this._managementService, new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin }));
+			Global.WriteLog("The management service is registered");
+
+			await this._incommingChannel.RealmProxy.Services.RegisterCallee(new RTUService(), new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin }));
+			Global.WriteLog("The real-time update (RTU) service is registered");
+
+			await this._incommingChannel.RealmProxy.Services.RegisterCallee(new MessagingService(), new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin }));
+			Global.WriteLog("The messaging service is registered");
+		}
+		#endregion
+
+		#region Register timers for working with schedulers
 		void StartTimer(int interval, Action<object, System.Timers.ElapsedEventArgs> action, bool autoReset = true)
 		{
 			var timer = new System.Timers.Timer() { Interval = interval * 1000, AutoReset = autoReset };
@@ -439,7 +445,7 @@ namespace net.vieapps.Services.APIGateway
 			this._timers.Add(timer);
 		}
 
-		void InitializeTimers()
+		void RegisterTimers()
 		{
 			// send email messages (15 seconds)
 			this.StartTimer(15, (sender, args) =>
@@ -479,7 +485,7 @@ namespace net.vieapps.Services.APIGateway
 					}).ConfigureAwait(false);
 			});
 
-			Global.WriteLog("The schedulers are registered" + "\r\n");
+			Global.WriteLog("The schedulers are registered");
 		}
 		#endregion
 

@@ -20,11 +20,11 @@ namespace net.vieapps.Services.APIGateway
 #else
 			try
 			{
-				this._max = UtilityService.GetAppSetting("MaxLogItems", "50").CastAs<int>();
+				this._max = UtilityService.GetAppSetting("LogsMax", "13").CastAs<int>();
 			}
 			catch
 			{
-				this._max = 10;
+				this._max = 13;
 			}
 #endif
 		}

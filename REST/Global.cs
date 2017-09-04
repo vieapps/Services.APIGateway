@@ -46,6 +46,8 @@ namespace net.vieapps.Services.APIGateway
 		internal static ISubject<UpdateMessage> RTUPublisher = null;
 		internal static IRTUService _RTUService = null;
 
+		static Queue<Tuple<string, string, string, List<string>, string, string>> Logs = new Queue<Tuple<string, string, string, List<string>, string, string>>();
+
 		static string _AESKey = null, _JWTKey = null, _PublicJWTKey = null, _RSAKey = null, _RSAExponent = null, _RSAModulus = null;
 		static RSACryptoServiceProvider _RSA = null;
 
@@ -288,6 +290,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					try
 					{
+						await Global.InitializeManagementServiceAsync();
 						await Global.InitializeRTUServiceAsync();
 					}
 					catch { }
@@ -365,7 +368,7 @@ namespace net.vieapps.Services.APIGateway
 
 			await Global.OpenOutgoingChannelAsync(
 				(sender, arguments) => {
-					Global.WriteLogs("The outgoing connection is established - Session ID: " + arguments.SessionId);
+					Global.Logs.Enqueue(new Tuple<string, string, string, List<string>, string, string>(UtilityService.NewUID, "APIGateway", null, new List<string>() { "The outgoing connection is established - Session ID: " + arguments.SessionId }, null, null));
 				},
 				(sender, arguments) => {
 					if (arguments.CloseType.Equals(SessionCloseType.Disconnection))
@@ -387,7 +390,7 @@ namespace net.vieapps.Services.APIGateway
 					}
 				},
 				(sender, arguments) => {
-					Global.WriteLogs("Got an error of incoming connection: " + (arguments.Exception != null ? arguments.Exception.Message : "None"), arguments.Exception);
+					Global.WriteLogs("Got an error of outgoing connection: " + (arguments.Exception != null ? arguments.Exception.Message : "None"), arguments.Exception);
 				}
 			);
 		}
@@ -431,9 +434,17 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				await Global.InitializeManagementServiceAsync();
+				while (Global.Logs.Count > 0)
+				{
+					var log = Global.Logs.Dequeue();
+					await Global.ManagementService.WriteLogsAsync(log.Item1, log.Item2, log.Item3, log.Item4, log.Item5, log.Item6, Global.CancellationTokenSource.Token);
+				}
 				await Global.ManagementService.WriteLogsAsync(correlationID, serviceName, objectName, logs, simpleStack, fullStack, Global.CancellationTokenSource.Token);
 			}
-			catch { }
+			catch
+			{
+				Global.Logs.Enqueue(new Tuple<string, string, string, List<string>, string, string>(correlationID, serviceName, objectName, logs, simpleStack, fullStack));
+			}
 		}
 
 		internal static void WriteLogs(string correlationID, string serviceName, string objectName, List<string> logs, string simpleStack, string fullStack)

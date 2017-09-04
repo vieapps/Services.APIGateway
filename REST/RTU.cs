@@ -57,7 +57,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					if (!RTU.Updaters.TryGetValue(identity, out updater))
 					{
-						updater = Global.IncommingChannel?.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages").Subscribe(onNext, onError);
+						updater = Global.IncommingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages").Subscribe(onNext, onError);
 						RTU.Updaters.Add(identity, updater);
 					}
 				}
@@ -210,8 +210,8 @@ namespace net.vieapps.Services.APIGateway
 						var identifier = UtilityService.NewUID;
 						await context.SendAsync(new UpdateMessage() { Type = "Ping", DeviceID = session.DeviceID, Data = new JValue(identifier) });
 
-						var clientMessage = await context.GetClientMessageAsync();
-						if (clientMessage.Equals("Pong:" + identifier))
+						var message = await context.ReceiveAsync();
+						if (message.Equals("Pong:" + identifier))
 							checkpoint = DateTime.Now;
 						else
 							isDisconnected = true;
@@ -295,7 +295,7 @@ namespace net.vieapps.Services.APIGateway
 				else
 					try
 					{
-						await context.ProcessClientRequestAsync(session, await context.GetClientMessageAsync());
+						await context.CallServiceAsync(session, await context.ReceiveAsync());
 					}
 					catch (OperationCanceledException)
 					{
@@ -322,12 +322,7 @@ namespace net.vieapps.Services.APIGateway
 		#region Send messages to client device
 		static async Task SendAsync(this AspNetWebSocketContext context, UpdateMessage message)
 		{
-			// prepare the message
-			var json = message.ToJson() as JObject;
-			json.Add(new JProperty("Status", "OK"));
-
-			// send the message
-			await context.SendAsync(json.ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None));
+			await context.SendAsync(message.ToJson().ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None));
 		}
 
 		static async Task SendAsync(this AspNetWebSocketContext context, Exception exception)
@@ -336,9 +331,9 @@ namespace net.vieapps.Services.APIGateway
 			var correlationID = Global.GetCorrelationID(context.Items);
 			var message = new JObject()
 			{
+				{ "Type", exception.GetType().GetTypeName(true) },
 				{ "Message", exception.Message },
-				{ "CorrelationID", correlationID },
-				{ "Type", exception.GetType().ToString().ToArray('.').Last() },
+				{ "CorrelationID", correlationID }
 			};
 
 			if (Global.IsShowErrorStacks)
@@ -366,7 +361,6 @@ namespace net.vieapps.Services.APIGateway
 			message = new JObject()
 			{
 				{ "Type", "Error" },
-				{ "Status", "Error" },
 				{ "Data", message }
 			};
 
@@ -392,8 +386,8 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
-		#region Process the client request (call services and send update messages via real-time updater)
-		static async Task<string> GetClientMessageAsync(this AspNetWebSocketContext context)
+		#region Call services and send update messages
+		static async Task<string> ReceiveAsync(this AspNetWebSocketContext context)
 		{
 			try
 			{
@@ -415,7 +409,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		static async Task ProcessClientRequestAsync(this AspNetWebSocketContext context, Session session, string requestMessage)
+		static async Task CallServiceAsync(this AspNetWebSocketContext context, Session session, string requestMessage)
 		{
 			// parse request and process
 			var requestInfo = requestMessage?.ToExpandoObject();

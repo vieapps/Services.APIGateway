@@ -88,17 +88,17 @@ namespace net.vieapps.Services.APIGateway
 			await this.OpenIncomingChannelAsync(
 				(sender, arguments) =>
 				{
-					Global.WriteLog("The incoming connection is established - Session ID: " + arguments.SessionId + "\r\n");
+					Global.WriteLog("The incoming connection is established - Session ID: " + arguments.SessionId);
 					this._incommingChannelSessionID = arguments.SessionId;
 				},
 				(sender, arguments) =>
 				{
 					if (arguments.CloseType.Equals(SessionCloseType.Disconnection))
-						Global.WriteLog("The incoming connection is broken because the router is not found or the router is refused - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString() + "\r\n");
+						Global.WriteLog("The incoming connection is broken because the router is not found or the router is refused - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
 					else
 					{
 						if (this._channelsAreClosedBySystem)
-							Global.WriteLog("The incoming connection is closed - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString() + "\r\n");
+							Global.WriteLog("The incoming connection is closed - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
 						else
 							this.ReOpenIncomingChannel(
 								123,
@@ -122,7 +122,7 @@ namespace net.vieapps.Services.APIGateway
 			await this.OpenOutgoingChannelAsync(
 				(sender, arguments) =>
 				{
-					Global.WriteLog("The outgoing connection is established - Session ID: " + arguments.SessionId + "\r\n");
+					Global.WriteLog("The outgoing connection is established - Session ID: " + arguments.SessionId);
 					this._outgoingChannelSessionID = arguments.SessionId;
 				},
 				(sender, arguments) =>
@@ -132,7 +132,7 @@ namespace net.vieapps.Services.APIGateway
 					else
 					{
 						if (this._channelsAreClosedBySystem)
-							Global.WriteLog("The outgoing connection is closed - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString() + "\r\n");
+							Global.WriteLog("The outgoing connection is closed - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
 						else
 							this.ReOpenOutgoingChannel(
 								123,

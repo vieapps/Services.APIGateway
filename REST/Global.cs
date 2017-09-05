@@ -14,8 +14,6 @@ using System.Text;
 using System.Linq;
 using System.Web;
 
-using System.Reactive.Subjects;
-
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -1098,7 +1096,7 @@ namespace net.vieapps.Services.APIGateway
 				return;
 
 			// real-time update
-			else if (context.IsWebSocketRequest)
+			if (context.IsWebSocketRequest)
 				context.AcceptWebSocketRequest(RTU.ProcessRequestAsync);
 
 			// static resources

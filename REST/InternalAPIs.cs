@@ -777,10 +777,9 @@ namespace net.vieapps.Services.APIGateway
 				: Global.SendInterCommunicateMessageAsync(new CommunicateMessage()
 				{
 					ServiceName = "Users",
-					Type = "Account",
+					Type = "OnlineStatus",
 					Data = new JObject()
 					{
-						{ "Verb", "Status" },
 						{ "UserID", session.User.ID },
 						{ "SessionID", session.SessionID },
 						{ "DeviceID", session.DeviceID },

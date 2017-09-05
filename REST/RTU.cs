@@ -1,9 +1,9 @@
 ﻿#region Related components
 using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using System.Linq;
 using System.Dynamic;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using System.Web.WebSockets;
 using System.Net.WebSockets;
 using System.Reactive.Linq;
@@ -168,7 +168,10 @@ namespace net.vieapps.Services.APIGateway
 			if (context.QueryString["x-restart"] != null)
 				try
 				{
-					await context.SendAsync(new UpdateMessage() { Type = "Knock", DeviceID = session.DeviceID });
+					await context.SendAsync(new UpdateMessage()
+					{
+						Type = "Knock"
+					});
 				}
 				catch { }
 
@@ -176,48 +179,19 @@ namespace net.vieapps.Services.APIGateway
 			await session.SendOnlineStatusAsync(true);
 
 #if DEBUG || RTULOGS || REQUESTLOGS
-			Global.WriteLogs(correlationID, "RTU", new List<string>() {
+			Global.WriteLogs(correlationID, "RTU", new List<string>()
+			{
 				"The real-time updater of a client's device is started",
 				"- Account: " + (session.User.ID.Equals("") ? "Visitor" : session.User.ID),
 				"- Session: " + session.SessionID + " @ " + session.DeviceID,
-				"- Info: " + session.AppName + " / " + session.AppPlatform  + " - " + session.AppOrigin + " [IP: " + session.IP + " - Agent: " + session.AppAgent + "]"
+				"- App Info: " + session.AppName + " @ " + session.AppPlatform  + " - " + session.AppOrigin + " [IP: " + session.IP + " - Agent: " + session.AppAgent + "]"
 			});
 #endif
 
-			// checkpoint for sendping ping
-			//var checkpoint = DateTime.Now;
-
-			// do the process
+			// process
 			while (true)
 			{
-				/*
-				// check the disconnected state
-				var isDisconnected = false;
-
-				// send ping message every 5 minutes when connected
-				if (context.IsClientConnected && context.WebSocket.State.Equals(WebSocketState.Open) && (DateTime.Now - checkpoint).TotalSeconds > 4d)
-					try
-					{
-						var identifier = UtilityService.NewUID;
-						await context.SendAsync(new UpdateMessage() { Type = "Ping", DeviceID = session.DeviceID, Data = new JValue(identifier) });
-
-						var message = await context.ReceiveAsync();
-						if (message.Equals("Pong:" + identifier))
-							checkpoint = DateTime.Now;
-						else
-							isDisconnected = true;
-					}
-					catch
-					{
-						isDisconnected = true;
-					}
-
-				// check the state on other cases
-				else
-					isDisconnected = !context.WebSocket.State.Equals(WebSocketState.Open) || !context.IsClientConnected;
-				*/
-
-				// stop process when the connection is disconnected
+				// stop when disconnected
 				if (!context.WebSocket.State.Equals(WebSocketState.Open) || !context.IsClientConnected)
 				{
 					try
@@ -232,11 +206,12 @@ namespace net.vieapps.Services.APIGateway
 					await session.SendOnlineStatusAsync(false);
 
 #if DEBUG || RTULOGS || REQUESTLOGS
-					await Global.WriteLogsAsync(correlationID, "RTU", new List<string>() {
+					await Global.WriteLogsAsync(correlationID, "RTU", new List<string>()
+					{
 						"The real-time updater of a client's device is stopped",
 						"- Account: " + (session.User.ID.Equals("") ? "Visitor" : session.User.ID),
 						"- Session: " + session.SessionID + " @ " + session.DeviceID,
-						"- Info: " + session.AppName + " / " + session.AppPlatform  + " - " + session.AppOrigin + " [IP: " + session.IP + " - Agent: " + session.AppAgent + "]"
+						"- App Info: " + session.AppName + " @ " + session.AppPlatform  + " - " + session.AppOrigin + " [IP: " + session.IP + " - Agent: " + session.AppAgent + "]"
 					});
 #endif
 					return;
@@ -252,10 +227,11 @@ namespace net.vieapps.Services.APIGateway
 							await context.SendAsync(message);
 
 #if DEBUG || RTULOGS
-							await Global.WriteLogsAsync(correlationID, "RTU", new List<string>() {
+							await Global.WriteLogsAsync(correlationID, "RTU", new List<string>()
+							{
 								"Push the message to the subscriber's device successful",
-								"- Session: " + session.SessionID,
-								"- Device: " + session.DeviceID + " @ " + session.AppName + " / " + session.AppPlatform + " [IP: " + session.IP + "]",
+								"- Session: " + session.SessionID + " @ " + session.DeviceID,
+								"- App Info: " + session.AppName + " @ " + session.AppPlatform  + " - " + session.AppOrigin + " [IP: " + session.IP + " - Agent: " + session.AppAgent + "]",
 								"- Message: " + message.Data.ToString(Formatting.None)
 							});
 #endif
@@ -344,9 +320,9 @@ namespace net.vieapps.Services.APIGateway
 
 			// send & write logs
 			await Task.WhenAll(
-					context.SendAsync(message.ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None)),
-					Global.WriteLogsAsync(correlationID, "RTU", "Error occurred while processing with real-time updater: " + exception.Message, exception)
-				);
+				context.SendAsync(message.ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None)),
+				Global.WriteLogsAsync(correlationID, "RTU", "Error occurred while processing with real-time updater: " + exception.Message, exception)
+			);
 		}
 
 		static async Task SendAsync(this AspNetWebSocketContext context, string message)
@@ -369,7 +345,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			try
 			{
-				var buffer = new ArraySegment<byte>(new byte[1024]);
+				var buffer = new ArraySegment<byte>(new byte[4096]);
 				var message = await context.WebSocket.ReceiveAsync(buffer, Global.CancellationTokenSource.Token);
 				return message.MessageType.Equals(WebSocketMessageType.Text)
 					? buffer.Array.GetString(message.Count)
@@ -390,7 +366,7 @@ namespace net.vieapps.Services.APIGateway
 		static async Task CallServiceAsync(this AspNetWebSocketContext context, Session session, string requestMessage)
 		{
 			// parse request and process
-			var requestInfo = requestMessage.ToExpandoObject();
+			var requestInfo = requestMessage?.ToExpandoObject();
 			if (requestInfo == null)
 				return;
 
@@ -425,7 +401,7 @@ namespace net.vieapps.Services.APIGateway
 				await context.SendAsync(new UpdateMessage()
 				{
 					Type = "Flag",
-					Data = new JValue("push:" + session.DeviceID)
+					Data = new JValue(session.DeviceID)
 				});
 
 			// call service to process the request
@@ -436,26 +412,21 @@ namespace net.vieapps.Services.APIGateway
 				var data = await InternalAPIs.CallServiceAsync(new RequestInfo(session, serviceName, objectName, verb, query, requestInfo.Get<Dictionary<string, string>>("Header"), requestInfo.Get<string>("Body"), extra, correlationID));
 
 				// send the update message
-				var objectIdentity = query != null && query.ContainsKey("object-identity")
-					? query["object-identity"]
-					: null;
-
-				var type = serviceName.GetCapitalizedFirstLetter() + "#" + objectName.GetCapitalizedFirstLetter()
-					+ (objectIdentity != null && !objectIdentity.IsValidUUID() ? "#" + objectIdentity.GetCapitalizedFirstLetter() : "");
-
+				var objectIdentity = query != null && query.ContainsKey("object-identity") ? query["object-identity"] : null;
 				await context.SendAsync(new UpdateMessage()
 				{
-					Type = type,
+					Type = serviceName.GetCapitalizedFirstLetter() + "#" + objectName.GetCapitalizedFirstLetter() + (objectIdentity != null && !objectIdentity.IsValidUUID() ? "#" + objectIdentity.GetCapitalizedFirstLetter() : ""),
 					Data = data
 				});
 
 #if DEBUG || RTULOGS
-				await Global.WriteLogsAsync(correlationID, "RTU", new List<string>() {
+				await Global.WriteLogsAsync(correlationID, "RTU", new List<string>()
+				{
 					"Receive the request and process successful",
-					"- Session: " + session.SessionID,
-					"- Device: " + session.DeviceID + " @ " + session.AppName + " / " + session.AppPlatform + " [IP: " + session.IP + "]",
+					"- Session: " + session.SessionID + " @ " + session.DeviceID,
+					"- App Info: " + session.AppName + " @ " + session.AppPlatform  + " - " + session.AppOrigin + " [IP: " + session.IP + " - Agent: " + session.AppAgent + "]",
 					"- Request: " + requestMessage,
-					"- Result: " + data.ToString(Formatting.None)
+					"- Response: " + data.ToString(Formatting.None)
 				});
 #endif
 			}

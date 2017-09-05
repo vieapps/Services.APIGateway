@@ -322,7 +322,7 @@ namespace net.vieapps.Services.APIGateway
 						// generate device identity
 						if (string.IsNullOrWhiteSpace(requestInfo.Session.DeviceID))
 						{
-							requestInfo.Session.DeviceID = "pwa@" + (requestInfo.Session.AppName + "/" + requestInfo.Session.AppPlatform + "@" + (requestInfo.Session.AppAgent ?? "N/A")).GetHMACSHA384(requestInfo.Session.SessionID, true);
+							requestInfo.Session.DeviceID = (requestInfo.Session.AppName + "/" + requestInfo.Session.AppPlatform + "@" + (requestInfo.Session.AppAgent ?? "N/A")).GetHMACSHA384(requestInfo.Session.SessionID, true) + "@pwa";
 							session["DeviceID"] = requestInfo.Session.DeviceID;
 						}
 

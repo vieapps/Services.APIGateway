@@ -43,8 +43,7 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static IManagementService ManagementService = null;
 		internal static IDisposable InterCommunicationMessageUpdater = null;
-		internal static ISubject<UpdateMessage> RTUPublisher = null;
-		internal static IRTUService _RTUService = null;
+		internal static IRTUService RTUService = null;
 
 		static Queue<Tuple<string, string, string, List<string>, string, string>> Logs = new Queue<Tuple<string, string, string, List<string>, string, string>>();
 
@@ -1060,11 +1059,10 @@ namespace net.vieapps.Services.APIGateway
 		#region Send & process inter-communicate message
 		static async Task InitializeRTUServiceAsync()
 		{
-			if (Global._RTUService == null)
+			if (Global.RTUService == null)
 			{
 				await Global.OpenOutgoingChannelAsync();
-				Global._RTUService = Global.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>();
-				Global.RTUPublisher = Global.OutgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages");
+				Global.RTUService = Global.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>();
 			}
 		}
 
@@ -1073,7 +1071,7 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				await Global.InitializeRTUServiceAsync();
-				await Global._RTUService.SendInterCommunicateMessageAsync(message, Global.CancellationTokenSource.Token);
+				await Global.RTUService.SendInterCommunicateMessageAsync(message, Global.CancellationTokenSource.Token);
 			}
 			catch { }
 		}

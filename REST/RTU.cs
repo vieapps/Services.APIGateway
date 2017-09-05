@@ -390,9 +390,6 @@ namespace net.vieapps.Services.APIGateway
 		static async Task CallServiceAsync(this AspNetWebSocketContext context, Session session, string requestMessage)
 		{
 			// parse request and process
-			if (requestMessage.StartsWith("Pong:"))
-				return;
-
 			var requestInfo = requestMessage.ToExpandoObject();
 			if (requestInfo == null)
 				return;
@@ -423,29 +420,34 @@ namespace net.vieapps.Services.APIGateway
 #endif
 			}
 
-			// call service to update
+			// push all messages in the queue to client device
+			else if ("HEAD".IsEquals(verb) && "APIGateway".IsEquals(serviceName) && "RTU".IsEquals(objectName))
+				await context.SendAsync(new UpdateMessage()
+				{
+					Type = "Flag",
+					Data = new JValue("push:" + session.DeviceID)
+				});
+
+			// call service to process the request
 			else
 			{
 				// call the service
 				var query = requestInfo.Get<Dictionary<string, string>>("Query");
 				var data = await InternalAPIs.CallServiceAsync(new RequestInfo(session, serviceName, objectName, verb, query, requestInfo.Get<Dictionary<string, string>>("Header"), requestInfo.Get<string>("Body"), extra, correlationID));
 
-				// prepare the update message
+				// send the update message
 				var objectIdentity = query != null && query.ContainsKey("object-identity")
 					? query["object-identity"]
 					: null;
+
 				var type = serviceName.GetCapitalizedFirstLetter() + "#" + objectName.GetCapitalizedFirstLetter()
 					+ (objectIdentity != null && !objectIdentity.IsValidUUID() ? "#" + objectIdentity.GetCapitalizedFirstLetter() : "");
-				var updateMessage = new UpdateMessage()
+
+				await context.SendAsync(new UpdateMessage()
 				{
 					Type = type,
-					DeviceID = session.DeviceID,
 					Data = data
-				};
-
-				// publish the update message
-				await context.SendAsync(updateMessage);
-				//Global.RTUPublisher.OnNext(updateMessage);
+				});
 
 #if DEBUG || RTULOGS
 				await Global.WriteLogsAsync(correlationID, "RTU", new List<string>() {

@@ -1,11 +1,14 @@
 ﻿#region Related components
 using System;
-using System.Collections.Generic;
 using System.IO;
+using System.Xml;
 using System.Linq;
-using System.Threading.Tasks;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
+using System.Configuration;
+using System.Threading.Tasks;
+using System.Collections.Generic;
+
+using Newtonsoft.Json.Linq;
 
 using WampSharp.V2;
 using WampSharp.V2.Core.Contracts;
@@ -32,6 +35,9 @@ namespace net.vieapps.Services.APIGateway
 
 		MailSender _mailSender = null;
 		WebHookSender _webhookSender = null;
+		bool _isHouseKeeperRunning = false;
+		Dictionary<string, Tuple<string, string, bool>> _schedulers = new Dictionary<string, Tuple<string, string, bool>>();
+		List<Tuple<int, string>> _runningSchedulers = new List<Tuple<int, string>>();
 
 		bool _registerHelperServices = true, _registerBusinessServices = true, _registerTimers = true;
 		#endregion
@@ -155,16 +161,16 @@ namespace net.vieapps.Services.APIGateway
 
 			// prepare arguments
 #if !DEBUG
-			if (!Global.AsService && args != null)
-				for (var index = 0; index < args.Length; index++)
+			if (!Global.AsService)
+				args?.ForEach(arg =>
 				{
-					if (args[index].IsStartsWith("/helper-services:"))
-						this._registerHelperServices = args[index].IsEquals("/helper-services:true");
-					else if (args[index].IsStartsWith("/business-services:"))
-						this._registerBusinessServices = args[index].IsEquals("/business-services:true");
-					else if (args[index].IsStartsWith("/timers:"))
-						this._registerTimers = args[index].IsEquals("/timers:true");
-				}
+					if (arg.IsStartsWith("/helper-services:"))
+						this._registerHelperServices = arg.IsEquals("/helper-services:true");
+					else if (arg.IsStartsWith("/business-services:"))
+						this._registerBusinessServices = arg.IsEquals("/business-services:true");
+					else if (arg.IsStartsWith("/timers:"))
+						this._registerTimers = arg.IsEquals("/timers:true");
+				});
 #endif
 
 			// register helper services
@@ -180,7 +186,8 @@ namespace net.vieapps.Services.APIGateway
 				this.RegisterTimers();
 
 			// prepare folder of logs/emails/webhooks
-			(Global.LogsPath + "," + Global.StatusPath + "," + Global.EmailsPath + "," + Global.WebHooksPath).ToArray()
+			(Global.LogsPath + "," + Global.StatusPath + "," + Global.EmailsPath + "," + Global.WebHooksPath)
+				.ToArray()
 				.ForEach(path =>
 				{
 					if (!Directory.Exists(path))
@@ -197,7 +204,9 @@ namespace net.vieapps.Services.APIGateway
 			WebHookSender.SaveMessages();
 
 			this._timers.ForEach(timer => timer.Stop());
-			this._runningServices.Select(i => i.Value).ToList().ForEach(i => this.KillService(i));
+			this._runningServices.Select(s => s.Value)
+				.Concat(this._runningSchedulers.Select(s => s.Item1))
+				.ForEach(s => this.KillProcess(s));
 
 			this._channelsAreClosedBySystem = true;
 			this.CloseIncomingChannel();
@@ -396,12 +405,11 @@ namespace net.vieapps.Services.APIGateway
 			if (!string.IsNullOrWhiteSpace(name) && this._runningServices.ContainsKey(name.ToLower()))
 				try
 				{
-					// call service one time to exit
-					if (Global.AsService)
-						UtilityService.RunProcess(name, "/agc:s");
-
-					// kill the process if still running
-					this.KillService(this._runningServices[name.ToLower()]);
+					// stop the service
+					var processID = this._runningServices[name.ToLower()];
+					UtilityService.RunProcess(name, "/agc:s", (s, a) => {
+						this.KillProcess(processID);
+					});
 
 					// update information
 					this._runningServices.Remove(name.ToLower());
@@ -411,11 +419,11 @@ namespace net.vieapps.Services.APIGateway
 				catch { }
 		}
 
-		internal void KillService(int serviceProcessID)
+		internal void KillProcess(int processID)
 		{
 			try
 			{
-				UtilityService.KillProcess(serviceProcessID);
+				UtilityService.KillProcess(processID);
 			}
 			catch { }
 		}
@@ -437,15 +445,26 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Register timers for working with schedulers
+		void RegisterTimers()
+		{
+			this.RegisterMessagingTimers();
+			this.RegisterSchedulingTimers();
+			Global.WriteLog("The backgroud workers & schedulers are registered");
+		}
+
 		void StartTimer(int interval, Action<object, System.Timers.ElapsedEventArgs> action, bool autoReset = true)
 		{
-			var timer = new System.Timers.Timer() { Interval = interval * 1000, AutoReset = autoReset };
+			var timer = new System.Timers.Timer()
+			{
+				Interval = interval * 1000,
+				AutoReset = autoReset
+			};
 			timer.Elapsed += new System.Timers.ElapsedEventHandler(action);
 			timer.Start();
 			this._timers.Add(timer);
 		}
 
-		void RegisterTimers()
+		void RegisterMessagingTimers()
 		{
 			// send email messages (15 seconds)
 			this.StartTimer(15, (sender, args) =>
@@ -484,8 +503,154 @@ namespace net.vieapps.Services.APIGateway
 						}
 					}).ConfigureAwait(false);
 			});
+		}
 
-			Global.WriteLog("The schedulers are registered");
+		void RegisterSchedulingTimers()
+		{
+			// logs (5 minutes)
+			this.StartTimer(60 * 5, (sender, args) =>
+			{
+				this._managementService?.FlushAll();
+			});
+
+			// house keeper (2 hours)
+			this.StartTimer(60 * 60 * 2, (sender, args) =>
+			{
+				// stop if its still running
+				if (this._isHouseKeeperRunning)
+					return;
+
+				// prepare
+				this._isHouseKeeperRunning = true;
+				var stopwatch = new Stopwatch();
+				stopwatch.Start();
+
+				var paths = new HashSet<string>()
+				{
+					Global.LogsPath,
+					Global.StatusPath
+				};
+				paths.Append(UtilityService.GetAppSetting("HouseKeeper:CleaningFolders")?.ToHashSet('|') ?? new HashSet<string>());
+				Global.WriteLog("Start the house keeper..." + "\r\n\t" + "Folders:" + "\r\n\t=> " + paths.ToString("\r\n\t=> "));
+
+				var excludedSubFolders= UtilityService.GetAppSetting("HouseKeeper:ExcludedSubFolders")?.ToList('|');
+				var excludedFileExtensions = UtilityService.GetAppSetting("HouseKeeper:ExcludedFileExtensions")?.ToLower().ToHashSet('|');
+				var remainHours = UtilityService.GetAppSetting("HouseKeeper:RemainHours", "720").CastAs<int>();
+				var specialFileExtensions = UtilityService.GetAppSetting("HouseKeeper:SpecialFileExtensions")?.ToLower().ToHashSet('|');
+				var specialRemainHours = UtilityService.GetAppSetting("HouseKeeper:SpecialRemainHours", "12").CastAs<int>();
+
+				// process
+				var remainTime = DateTime.Now.AddHours(0 - remainHours);
+				var specialRemainTime = DateTime.Now.AddHours(0 - specialRemainHours);
+
+				int counter = 0;
+				paths.Select(path => new DirectoryInfo(path))
+					.Where(dir => dir.Exists)
+					.ForEach(dir =>
+					{
+						// delete old files
+						UtilityService.GetFiles(dir.FullName, "*.*", true, excludedSubFolders)
+							.Where(file => excludedFileExtensions == null || !excludedFileExtensions.Contains(file.Extension))
+							.ForEach(file =>
+							{
+								if (specialFileExtensions != null && specialFileExtensions.Contains(file.Extension))
+								{
+									if (file.LastWriteTime < specialRemainTime)
+										try
+										{
+											file.Delete();
+											counter++;
+										}
+										catch { }
+								}
+								else if (file.LastWriteTime < remainTime)
+									try
+									{
+										file.Delete();
+										counter++;
+									}
+									catch { }
+							});
+
+						// delete empty folders
+						dir.GetDirectories()
+							.Where(subDir =>{
+								var files = subDir.GetFiles();
+								return files == null || files.Length < 1;
+							})
+							.ForEach(subDir =>
+							{
+								try
+								{
+									subDir.Delete();
+								}
+								catch { }
+							});
+					});
+
+				stopwatch.Stop();
+				Global.WriteLog("The house keeper is completed." + "\r\n\t" + "- Total of cleaned files: " + counter.ToString("###,##0") + "\r\n\t" + "- Execution times: " + stopwatch.GetElapsedTimes());
+				this._isHouseKeeperRunning = false;
+			});
+
+			// hourly/daily tasks
+			if (ConfigurationManager.GetSection("net.vieapps.schedulers") is AppConfigurationSectionHandler config)
+				if (config.Section.SelectNodes("task") is XmlNodeList taskNodes)
+					foreach (XmlNode taskNode in taskNodes)
+					{
+						var settings = config.GetJson(taskNode);
+						var execute = settings["execute"] as JValue;
+						var arguments = settings["arguments"] as JValue;
+						var mode = settings["mode"] as JValue;
+
+						if (execute == null || string.IsNullOrWhiteSpace(execute.Value as string))
+							continue;
+
+						var info = new Tuple<string, string, bool>(
+							(execute.Value as string).Trim(),
+							(arguments.Value as string ?? "").Trim(),
+							"hour".IsEquals(mode.Value as string) ? true : false
+						);
+
+						var identity = (info.Item1 + "[" + arguments + "]").ToLower().GetMD5();
+						if (!this._schedulers.ContainsKey(identity))
+							this._schedulers.Add(identity, info);
+					}
+
+			this.StartTimer(60 * 60, (sender, args) =>
+			{
+				this._schedulers.ForEach(scheduler =>
+				{
+					var isAbleToRun = this._runningSchedulers.FirstOrDefault(info => info.Item2.Equals(scheduler.Key)) == null;
+					if (isAbleToRun)
+						isAbleToRun = scheduler.Value.Item3
+							? true
+							: DateTime.Now.Hour < 1;
+
+					if (isAbleToRun)
+					{
+						var response = "";
+						this._runningSchedulers.Add(new Tuple<int, string>(UtilityService.RunProcess(
+							scheduler.Value.Item1,
+							scheduler.Value.Item2,
+							(s, a) =>
+							{
+								Global.WriteLog(
+									"Task Scheduler is completed" + "\r\n\r\n" +
+									"- Command: " + (scheduler.Value.Item1 + " " + scheduler.Value.Item2).Trim() + "\r\n" +
+									"- Response: " + "\r\n" + response +
+									"- Excution time: " + ((s as Process).ExitTime - (s as Process).StartTime).TotalMilliseconds.CastAs<long>().GetElapsedTimes()
+								);
+								this._runningSchedulers.Remove(this._runningSchedulers.First(info => info.Item1 == (s as Process).Id));
+							},
+							(s, a) =>
+							{
+								response += !string.IsNullOrWhiteSpace(a.Data) ? "\r\n" + a.Data : "";
+							}
+						).Id, scheduler.Key));
+					}
+				});
+			});
 		}
 		#endregion
 

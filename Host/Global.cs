@@ -63,12 +63,12 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Get path for working with logs/emails/webhooks
-		static string GetPath(string name, string folder)
+		static string GetPath(string name, string folder, bool getDefaultIsNotFound = true)
 		{
 			var path = UtilityService.GetAppSetting(name);
-			if (string.IsNullOrWhiteSpace(path))
+			if (string.IsNullOrWhiteSpace(path) && getDefaultIsNotFound)
 				path = Directory.GetCurrentDirectory() + @"\" + folder;
-			else if (path.EndsWith(@"\"))
+			else if (!string.IsNullOrWhiteSpace(path) && path.EndsWith(@"\"))
 				path = path.Left(path.Length - 1);
 			return path;
 		}

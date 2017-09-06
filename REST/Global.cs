@@ -564,20 +564,9 @@ namespace net.vieapps.Services.APIGateway
 			}).ConfigureAwait(false);
 
 			// special segments
-			var segments = UtilityService.GetAppSetting("BypassSegments");
-			Global.BypassSegments = string.IsNullOrWhiteSpace(segments)
-				? new HashSet<string>()
-				: segments.Trim().ToLower().ToHashSet('|', true);
-
-			segments = UtilityService.GetAppSetting("HiddenSegments");
-			Global.HiddenSegments = string.IsNullOrWhiteSpace(segments)
-				? new HashSet<string>()
-				: segments.Trim().ToLower().ToHashSet('|', true);
-
-			segments = UtilityService.GetAppSetting("StaticSegments");
-			Global.StaticSegments = string.IsNullOrWhiteSpace(segments)
-				? new HashSet<string>()
-				: segments.Trim().ToLower().ToHashSet('|', true);
+			Global.BypassSegments = UtilityService.GetAppSetting("BypassSegments")?.Trim().ToLower().ToHashSet('|', true) ?? new HashSet<string>();
+			Global.HiddenSegments = UtilityService.GetAppSetting("HiddenSegments")?.Trim().ToLower().ToHashSet('|', true) ?? new HashSet<string>();
+			Global.StaticSegments = UtilityService.GetAppSetting("StaticSegments")?.Trim().ToLower().ToHashSet('|', true) ?? new HashSet<string>();
 			Global.StaticSegments.Append("statics");
 
 			// handling unhandled exception
@@ -1087,6 +1076,8 @@ namespace net.vieapps.Services.APIGateway
 	#region Global.ashx
 	public class GlobalHandler : HttpTaskAsyncHandler
 	{
+		public GlobalHandler() : base() { }
+
 		public override bool IsReusable { get { return true; } }
 
 		public override async Task ProcessRequestAsync(HttpContext context)

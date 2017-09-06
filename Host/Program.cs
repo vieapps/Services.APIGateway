@@ -1,7 +1,9 @@
-﻿using System;
+﻿#region Related components
+using System;
 using System.IO;
 using System.ServiceProcess;
 using System.Windows.Forms;
+#endregion
 
 namespace net.vieapps.Services.APIGateway
 {

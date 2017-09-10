@@ -37,6 +37,7 @@ namespace net.vieapps.Services.APIGateway
 					this._updateSubject.OnNext(message);
 #if DEBUG
 					Global.WriteLog(
+						"----- [RTU Service] ---------------" + "\r\n" +
 						"Publish an update message successful" + "\r\n" +
 						"- Device: " + message.DeviceID + "\r\n" +
 						"- Excluded: " + (string.IsNullOrWhiteSpace(message.ExcludedDeviceID) ? "None" : message.ExcludedDeviceID) + "\r\n" +
@@ -72,6 +73,7 @@ namespace net.vieapps.Services.APIGateway
 								this._updateSubject.OnNext(message);
 #if DEBUG
 								Global.WriteLog(
+									"----- [RTU Service] ---------------" + "\r\n" +
 									"Publish an update message successful" + "\r\n" +
 									"- Device: " + message.DeviceID + "\r\n" +
 									"- Excluded: " + (string.IsNullOrWhiteSpace(message.ExcludedDeviceID) ? "None" : message.ExcludedDeviceID) + "\r\n" +
@@ -85,6 +87,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 #if DEBUG
 						Global.WriteLog(
+							"----- [RTU Service] ---------------" + "\r\n" +
 							"Publish the update messages successful" + "\r\n" +
 							"- Device: " + deviceID + "\r\n" +
 							"- Excluded: " + (string.IsNullOrWhiteSpace(excludedDeviceID) ? "None" : excludedDeviceID) + "\r\n" +
@@ -132,6 +135,7 @@ namespace net.vieapps.Services.APIGateway
 					this.GetCommunicateSubject(message.ServiceName).OnNext(message);
 #if DEBUG
 					Global.WriteLog(
+						"----- [RTU Service] ---------------" + "\r\n" +
 						"Publish an inter-communicate message successful" + "\r\n" +
 						"- Message: " + message.Data.ToString(Formatting.None) + "\r\n"
 					);
@@ -178,6 +182,7 @@ namespace net.vieapps.Services.APIGateway
 								subject.OnNext(message);
 #if DEBUG
 								Global.WriteLog(
+									"----- [RTU Service] ---------------" + "\r\n" +
 									"Publish an inter-communicate message successful" + "\r\n" +
 									"- Message: " + message.Data.ToString(Formatting.None) + "\r\n"
 								);
@@ -189,6 +194,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 #if DEBUG
 						Global.WriteLog(
+							"----- [RTU Service] ---------------" + "\r\n" +
 							"Publish the inter-communicate messages successful" + "\r\n" +
 							"- Destination: net.vieapps.services." + serviceName.ToLower() + "\r\n" +
 							"- Total of messages: " + messages.Count.ToString() + "\r\n"

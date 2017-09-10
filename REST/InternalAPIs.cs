@@ -115,32 +115,6 @@ namespace net.vieapps.Services.APIGateway
 					if (requestBody == null)
 						throw new InvalidSessionException("Request JSON is invalid (empty)");
 
-					// verify time-stamp
-					if (!requestBody.Has("Timestamp"))
-						throw new InvalidSessionException("Request JSON is invalid (no timestamp)");
-
-					var timestamp = requestBody.Get<long>("Timestamp");
-					if (DateTime.Now.ToUnixTimestamp() - timestamp > 30)
-						throw new SessionExpiredException("Reset JSON is invalid (expired)");
-
-					// verify session token
-					var sessionID = requestBody.Get<string>("Session");
-					if (string.IsNullOrWhiteSpace(sessionID))
-						throw new InvalidSessionException("Request JSON is invalid (session token is null or empty)");
-
-					try
-					{
-						sessionID = sessionID.Decrypt(Global.GenerateEncryptionKey(requestInfo.Session.SessionID), Global.GenerateEncryptionIV(requestInfo.Session.SessionID));
-						sessionID = sessionID.Decrypt(Global.AESKey.Reverse(), true);
-					}
-					catch (Exception ex)
-					{
-						throw new InvalidSessionException("Request JSON is invalid (session token is invalid)", ex);
-					}
-
-					if (!sessionID.Equals(requestInfo.Session.SessionID))
-						throw new InvalidDataException("Request JSON is invalid (session token is not issued by the system)");
-
 					// verify captcha
 					var captcha = requestBody.Get<string>("Captcha");
 					if (!string.IsNullOrWhiteSpace(captcha))
@@ -220,7 +194,7 @@ namespace net.vieapps.Services.APIGateway
 					// prepare to register/create new account
 					if (string.IsNullOrWhiteSpace(objectIdentity))
 					{
-						if (requestBody.Get<string>("Session").Equals(requestInfo.GetHeaderParameter("x-create")))
+						if (requestInfo.Session.SessionID.Encrypt(Global.AESKey.Reverse(), true).Equals(requestInfo.GetHeaderParameter("x-create")))
 							requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>())
 							{
 								{ "x-create", "" }
@@ -271,10 +245,17 @@ namespace net.vieapps.Services.APIGateway
 			{
 				// prepare device identity
 				if (string.IsNullOrWhiteSpace(requestInfo.Session.DeviceID))
-					requestInfo.Session.DeviceID = "pwa@" + (requestInfo.Session.AppName + "/" + requestInfo.Session.AppPlatform + "@" + (requestInfo.Session.AppAgent ?? "N/A")).GetHMACSHA384(requestInfo.Session.SessionID, true);
+					requestInfo.Session.DeviceID = (requestInfo.Session.AppName + "/" + requestInfo.Session.AppPlatform + "@" + (requestInfo.Session.AppAgent ?? "N/A")).GetHMACSHA384(requestInfo.Session.SessionID, true) + "@pwa";
 
 				// activate
-				await InternalAPIs.ActivateAsync(context, requestInfo);
+				try
+				{
+					await InternalAPIs.ActivateAsync(context, requestInfo);
+				}
+				catch (Exception ex)
+				{
+					context.ShowError(ex, requestInfo);
+				}
 			}
 
 			// process the request of services
@@ -339,9 +320,9 @@ namespace net.vieapps.Services.APIGateway
 
 						// register with user service
 						await Task.WhenAll(
-								InternalAPIs.CallServiceAsync(requestInfo.Session, "users", "session", "POST", session.ToString(Formatting.None)),
-								Global.Cache.SetAbsoluteAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 180)
-							);
+							InternalAPIs.CallServiceAsync(requestInfo.Session, "users", "session", "POST", session.ToString(Formatting.None)),
+							Global.Cache.SetAbsoluteAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 180)
+						);
 					}
 
 					// response
@@ -384,9 +365,9 @@ namespace net.vieapps.Services.APIGateway
 
 					// register with user service
 					await Task.WhenAll(
-							InternalAPIs.CallServiceAsync(requestInfo.Session, "users", "session", "POST", session.ToString(Formatting.None)),
-							Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 180)
-						);
+						InternalAPIs.CallServiceAsync(requestInfo.Session, "users", "session", "POST", session.ToString(Formatting.None)),
+						Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 180)
+					);
 
 					// response
 					var json = new JObject()
@@ -414,32 +395,11 @@ namespace net.vieapps.Services.APIGateway
 				if (body == null)
 					throw new InvalidSessionException("Sign-in JSON is invalid (empty)");
 
-				if (!body.Has("Timestamp"))
-					throw new InvalidSessionException("Sign-in JSON is invalid (no timestamp)");
-
-				var timestamp = body.Get<long>("Timestamp");
-				if (DateTime.Now.ToUnixTimestamp() - timestamp > 30)
-					throw new SessionExpiredException("Sign-in JSON is invalid (expired)");
-
 				var email = body.Get<string>("Email");
 				var password = body.Get<string>("Password");
-				var sessionID = body.Get<string>("Session");
 
-				if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password) || string.IsNullOrWhiteSpace(sessionID))
-					throw new InvalidSessionException("Sign-in JSON is invalid (email/password/token is null or empty)");
-
-				try
-				{
-					sessionID = sessionID.Decrypt(Global.GenerateEncryptionKey(requestInfo.Session.SessionID), Global.GenerateEncryptionIV(requestInfo.Session.SessionID));
-					sessionID = sessionID.Decrypt(Global.AESKey.Reverse(), true);
-				}
-				catch (Exception ex)
-				{
-					throw new InvalidSessionException("Sign-in JSON is invalid (session token is invalid)", ex);
-				}
-
-				if (!sessionID.Equals(requestInfo.Session.SessionID))
-					throw new InvalidDataException("Sign-in JSON is invalid (session token is not issued by the system)");
+				if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
+					throw new InvalidSessionException("Sign-in JSON is invalid (email/password is null or empty)");
 
 				try
 				{
@@ -498,9 +458,9 @@ namespace net.vieapps.Services.APIGateway
 				});
 
 				await Task.WhenAll(
-						Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 180),
-						requestInfo.Session.SendOnlineStatusAsync(true)
-					);
+					Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 180),
+					requestInfo.Session.SendOnlineStatusAsync(true)
+				);
 
 				// response
 				json = new JObject()
@@ -547,9 +507,9 @@ namespace net.vieapps.Services.APIGateway
 				await InternalAPIs.CallServiceAsync(requestInfo.Session, "users", "session", "DELETE");
 
 				await Task.WhenAll(
-						Global.Cache.RemoveAsync("Session#" + requestInfo.Session.SessionID),
-						requestInfo.Session.SendOnlineStatusAsync(false)
-					);
+					Global.Cache.RemoveAsync("Session#" + requestInfo.Session.SessionID),
+					requestInfo.Session.SendOnlineStatusAsync(false)
+				);
 
 				// create a new session
 				requestInfo.Session.SessionID = UtilityService.NewUID;
@@ -592,48 +552,42 @@ namespace net.vieapps.Services.APIGateway
 		#region Activation
 		async static Task ActivateAsync(HttpContext context, RequestInfo requestInfo)
 		{
-			try
+			// call service to activate
+			var json = await InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session, "users", "activate", "GET", requestInfo.Query, requestInfo.Header, "", requestInfo.Extra, requestInfo.CorrelationID));
+
+			// update user information & get access token
+			requestInfo.Session.User = json.FromJson<User>();
+			var accessToken = User.GetAccessToken(requestInfo.Session.User, Global.RSA, Global.AESKey);
+
+			// register the session
+			var session = (new JObject()
 			{
-				// call service to activate
-				var json = await InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session, "users", "activate", "GET", requestInfo.Query, requestInfo.Header, "", requestInfo.Extra, requestInfo.CorrelationID));
+				{ "ID", requestInfo.Session.SessionID },
+				{ "IssuedAt", DateTime.Now },
+				{ "RenewedAt", DateTime.Now },
+				{ "ExpiredAt", DateTime.Now.AddDays(60) },
+				{ "UserID", requestInfo.Session.User.ID },
+				{ "AccessToken", accessToken },
+				{ "IP", requestInfo.Session.IP },
+				{ "DeviceID", requestInfo.Session.DeviceID },
+				{ "AppInfo", requestInfo.Session.AppName + " @ " + requestInfo.Session.AppPlatform },
+				{ "Online", true }
+			}).ToString(Formatting.None);
 
-				// update user information & get access token
-				requestInfo.Session.User = json.FromJson<User>();
-				var accessToken = User.GetAccessToken(requestInfo.Session.User, Global.RSA, Global.AESKey);
+			await Task.WhenAll(
+				InternalAPIs.CallServiceAsync(requestInfo.Session, "users", "session", "POST", session),
+				requestInfo.Session.SendOnlineStatusAsync(true),
+				Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session, 180)
+			);
 
-				// register the session
-				var session = (new JObject()
-				{
-					{ "ID", requestInfo.Session.SessionID },
-					{ "IssuedAt", DateTime.Now },
-					{ "RenewedAt", DateTime.Now },
-					{ "ExpiredAt", DateTime.Now.AddDays(60) },
-					{ "UserID", requestInfo.Session.User.ID },
-					{ "AccessToken", accessToken },
-					{ "IP", requestInfo.Session.IP },
-					{ "DeviceID", requestInfo.Session.DeviceID },
-					{ "AppInfo", requestInfo.Session.AppName + " @ " + requestInfo.Session.AppPlatform },
-					{ "Online", true }
-				}).ToString(Formatting.None);
-				await Task.WhenAll(
-						InternalAPIs.CallServiceAsync(requestInfo.Session, "users", "session", "POST", session),
-						Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session, 180),
-						requestInfo.Session.SendOnlineStatusAsync(true)
-					);
-
-				// response
-				json = new JObject()
-				{
-					{ "ID", requestInfo.Session.SessionID },
-					{ "DeviceID", requestInfo.Session.DeviceID }
-				};
-				requestInfo.Session.UpdateSessionJson(json, accessToken);
-				await context.WriteResponseAsync(json);
-			}
-			catch (Exception ex)
+			// response
+			json = new JObject()
 			{
-				context.ShowError(ex, requestInfo);
-			}
+				{ "ID", requestInfo.Session.SessionID },
+				{ "DeviceID", requestInfo.Session.DeviceID }
+			};
+			requestInfo.Session.UpdateSessionJson(json, accessToken);
+			await context.WriteResponseAsync(json);
 		}
 		#endregion
 
@@ -651,7 +605,6 @@ namespace net.vieapps.Services.APIGateway
 			{
 				{ "Exist", "" }
 			});
-
 			var isExisted = result?["Existed"];
 			return isExisted != null && isExisted is JValue && (isExisted as JValue).Value != null && (isExisted as JValue).Value.CastAs<bool>() == true;
 		}

@@ -580,7 +580,6 @@ namespace net.vieapps.Services.APIGateway
 				Global.StatusPath
 			};
 			paths.Append(UtilityService.GetAppSetting("HouseKeeper:Folders")?.ToHashSet('|') ?? new HashSet<string>());
-			Global.WriteLog("Start the house keeper..." + "\r\n=> " + paths.ToString("\r\n=> "));
 
 			var excludedSubFolders = UtilityService.GetAppSetting("HouseKeeper:ExcludedSubFolders")?.ToList('|');
 			var excludedFileExtensions = UtilityService.GetAppSetting("HouseKeeper:ExcludedFileExtensions")?.ToLower().ToHashSet('|') ?? new HashSet<string>();
@@ -624,7 +623,7 @@ namespace net.vieapps.Services.APIGateway
 
 			stopwatch.Stop();
 			Global.WriteLog(
-				"The process of house keeper is completed." + "\r\n" +
+				"The house keeper is complete the working..." + "\r\n\r\n=> " + paths.ToString("\r\n=> ") + "\r\n\r\n" +
 				"- Total of cleaned files: " + counter.ToString("###,##0") + "\r\n" +
 				"- Execution times: " + stopwatch.GetElapsedTimes()
 			);
@@ -646,7 +645,6 @@ namespace net.vieapps.Services.APIGateway
 			this._isTaskSchedulerRunning = true;
 			var stopwatch = new Stopwatch();
 			stopwatch.Start();
-			Global.WriteLog("Start the task scheduler...");
 
 			// run tasks
 			var index = 0;
@@ -663,9 +661,9 @@ namespace net.vieapps.Services.APIGateway
 					{
 						Global.WriteLog(
 							"The task is completed" + "\r\n" +
-							"- Execute: " + (task.Value.Item1 + " " + task.Value.Item2).Trim() + "\r\n" +
-							"- Results: " + "\r\n" + results + "\r\n" +
-							"- Excution times: " + ((sender as Process).ExitTime - (sender as Process).StartTime).TotalMilliseconds.CastAs<long>().GetElapsedTimes()
+							"- Excution times: " + ((sender as Process).ExitTime - (sender as Process).StartTime).TotalMilliseconds.CastAs<long>().GetElapsedTimes() + "\r\n" +
+							"- Command: [" + (task.Value.Item1 + " " + task.Value.Item2).Trim() + "]\r\n" +
+							"- Results: " + results
 						);
 						this._runningTasks.Remove(this._runningTasks.First(info => info.Item1 == (sender as Process).Id));
 						running = false;
@@ -699,8 +697,8 @@ namespace net.vieapps.Services.APIGateway
 			// stop
 			stopwatch.Stop();
 			Global.WriteLog(
-				"The task scheduler is completed." + "\r\n" +
-				"- Total of tasks: " + tasks.Count.ToString() + "\r\n" +
+				"The task scheduler was completed all tasks." + "\r\n" +
+				"- Number of tasks: " + tasks.Count.ToString() + "\r\n" +
 				"- Execution times: " + stopwatch.GetElapsedTimes()
 			);
 			this._isTaskSchedulerRunning = false;

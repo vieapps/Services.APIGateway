@@ -115,10 +115,7 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				// get app token
-				var request = context.QueryString["x-request"] != null
-					? context.QueryString["x-request"].Url64Decode().ToExpandoObject()
-					: new ExpandoObject();
-
+				var request = context.QueryString["x-request"]?.Url64Decode().ToExpandoObject() ?? new ExpandoObject();
 				string appToken = request.Get<string>("x-app-token");
 				if (string.IsNullOrWhiteSpace(appToken))
 				{

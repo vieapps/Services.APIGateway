@@ -661,7 +661,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 						Global.WriteLog(
 							"The task is completed" + "\r\n" +
-							"- Excution times: " + ((sender as Process).ExitTime - (sender as Process).StartTime).TotalMilliseconds.CastAs<long>().GetElapsedTimes() + "\r\n" +
+							"- Execution times: " + ((sender as Process).ExitTime - (sender as Process).StartTime).TotalMilliseconds.CastAs<long>().GetElapsedTimes() + "\r\n" +
 							"- Command: [" + (task.Value.Item1 + " " + task.Value.Item2).Trim() + "]\r\n" +
 							"- Results: " + results
 						);
@@ -678,7 +678,7 @@ namespace net.vieapps.Services.APIGateway
 				while (running)
 					try
 					{
-						await Task.Delay(456, Global.CancellationTokenSource.Token);
+						await Task.Delay(1234, Global.CancellationTokenSource.Token);
 					}
 					catch (OperationCanceledException)
 					{
@@ -697,7 +697,7 @@ namespace net.vieapps.Services.APIGateway
 			// stop
 			stopwatch.Stop();
 			Global.WriteLog(
-				"The task scheduler was completed all tasks." + "\r\n" +
+				"The task scheduler was completed with all tasks" + "\r\n" +
 				"- Number of tasks: " + tasks.Count.ToString() + "\r\n" +
 				"- Execution times: " + stopwatch.GetElapsedTimes()
 			);

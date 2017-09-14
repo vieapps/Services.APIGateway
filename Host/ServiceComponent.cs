@@ -162,15 +162,21 @@ namespace net.vieapps.Services.APIGateway
 			// prepare arguments
 #if !DEBUG
 			if (!Global.AsService)
-				args?.ForEach(arg =>
-				{
-					if (arg.IsStartsWith("/helper-services:"))
-						this._registerHelperServices = arg.IsEquals("/helper-services:true");
-					else if (arg.IsStartsWith("/business-services:"))
-						this._registerBusinessServices = arg.IsEquals("/business-services:true");
-					else if (arg.IsStartsWith("/timers:"))
-						this._registerTimers = arg.IsEquals("/timers:true");
-				});
+			{
+				this._registerHelperServices = this._registerBusinessServices = this._registerTimers = false;
+				if (args?.FirstOrDefault(a => a.IsEquals("/all")) != null)
+					this._registerHelperServices = this._registerBusinessServices = this._registerTimers = true;
+				else
+					args?.ForEach(arg =>
+					{
+						if (arg.IsStartsWith("/helper-services:"))
+							this._registerHelperServices = arg.IsEquals("/helper-services:true");
+						else if (arg.IsStartsWith("/business-services:"))
+							this._registerBusinessServices = arg.IsEquals("/business-services:true");
+						else if (arg.IsStartsWith("/timers:"))
+							this._registerTimers = arg.IsEquals("/timers:true");
+					});
+			}
 #endif
 
 			// register helper services
@@ -583,7 +589,7 @@ namespace net.vieapps.Services.APIGateway
 
 			var excludedSubFolders = UtilityService.GetAppSetting("HouseKeeper:ExcludedSubFolders")?.ToList('|');
 			var excludedFileExtensions = UtilityService.GetAppSetting("HouseKeeper:ExcludedFileExtensions")?.ToLower().ToHashSet('|') ?? new HashSet<string>();
-			var remainHours = UtilityService.GetAppSetting("HouseKeeper:RemainHours", "720").CastAs<int>();
+			var remainHours = UtilityService.GetAppSetting("HouseKeeper:RemainHours", "120").CastAs<int>();
 			var specialFileExtensions = UtilityService.GetAppSetting("HouseKeeper:SpecialFileExtensions")?.ToLower().ToHashSet('|') ?? new HashSet<string>();
 			var specialRemainHours = UtilityService.GetAppSetting("HouseKeeper:SpecialRemainHours", "12").CastAs<int>();
 

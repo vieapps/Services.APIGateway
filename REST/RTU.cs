@@ -75,7 +75,9 @@ namespace net.vieapps.Services.APIGateway
 				{
 					if (!RTU.Updaters.TryGetValue(identity, out updater))
 					{
-						updater = Global.IncommingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages").Subscribe(onNext, onError);
+						updater = Global.IncommingChannel.RealmProxy.Services
+							.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages")
+							.Subscribe(onNext, onError);
 						RTU.Updaters.Add(identity, updater);
 					}
 				}

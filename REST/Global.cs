@@ -40,7 +40,7 @@ namespace net.vieapps.Services.APIGateway
 		internal static bool ChannelsAreClosedBySystem = false;
 
 		internal static IManagementService ManagementService = null;
-		internal static IDisposable InterCommunicationMessageUpdater = null;
+		internal static IDisposable InterCommunicateMessageUpdater = null;
 		internal static IRTUService RTUService = null;
 
 		static Queue<Tuple<string, string, string, List<string>, string, string>> Logs = new Queue<Tuple<string, string, string, List<string>, string, string>>();
@@ -219,11 +219,11 @@ namespace net.vieapps.Services.APIGateway
 			Global.IncommingChannel.RealmProxy.Monitor.ConnectionEstablished += (sender, arguments) =>
 			{
 				Global.IncommingChannelSessionID = arguments.SessionId;
-				var subject = Global.IncommingChannel?.RealmProxy.Services.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages");
-				if (subject != null)
-					Global.InterCommunicationMessageUpdater = subject.Subscribe(
-						msg => Global.ProcessInterCommunicateMessage(msg),
-						ex => Global.WriteLogs(UtilityService.BlankUID, "RTU", "Error occurred while fetching inter-communicate message", ex)
+				Global.InterCommunicateMessageUpdater = Global.IncommingChannel.RealmProxy.Services
+					.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
+					.Subscribe(
+						message => Global.ProcessInterCommunicateMessage(message),
+						exception => Global.WriteLogs(UtilityService.BlankUID, "RTU", "Error occurred while fetching inter-communicate message", exception)
 					);
 			};
 
@@ -582,7 +582,7 @@ namespace net.vieapps.Services.APIGateway
 		internal static void OnAppEnd()
 		{
 			Global.CancellationTokenSource.Cancel();
-			Global.InterCommunicationMessageUpdater?.Dispose();
+			Global.InterCommunicateMessageUpdater?.Dispose();
 			RTU.StopUpdaters();
 
 			Global.ChannelsAreClosedBySystem = true;
@@ -1105,7 +1105,7 @@ namespace net.vieapps.Services.APIGateway
 				// prepare
 				var path = context.Request.QueryString["path"];
 				if (string.IsNullOrWhiteSpace(path))
-					path = "~/data-files/statics/countries.json";
+					path = "~/data-files/statics/geo/countries.json";
 
 				if (path.IndexOf("?") > 0)
 					path = path.Left(path.IndexOf("?"));

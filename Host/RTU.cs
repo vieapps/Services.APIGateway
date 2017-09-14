@@ -24,8 +24,7 @@ namespace net.vieapps.Services.APIGateway
 
 		void GetUpdateSubject()
 		{
-			if (this._updateSubject == null)
-				this._updateSubject = Global.Component._outgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages");
+			this._updateSubject = this._updateSubject ?? Global.Component._outgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages");
 		}
 
 		public Task SendUpdateMessageAsync(UpdateMessage message, CancellationToken cancellationToken = default(CancellationToken))
@@ -109,7 +108,7 @@ namespace net.vieapps.Services.APIGateway
 
 		ISubject<CommunicateMessage> GetCommunicateSubject(string serviceName)
 		{
-			var uri = "net.vieapps.rtu.communicate.messages";
+			var uri = "net.vieapps.rtu.communicate.messages." + serviceName.Trim().ToLower();
 			if (!this._communicateSubjects.TryGetValue(uri, out ISubject<CommunicateMessage> subject))
 				lock (this._communicateSubjects)
 				{

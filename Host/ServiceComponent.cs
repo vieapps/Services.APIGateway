@@ -96,6 +96,12 @@ namespace net.vieapps.Services.APIGateway
 				{
 					Global.WriteLog("The incoming connection is established - Session ID: " + arguments.SessionId);
 					this._incommingChannelSessionID = arguments.SessionId;
+					this._incommingChannel.RealmProxy.Services
+						.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
+						.Subscribe(
+							message => this.ProcessInterCommunicateMessage(message),
+							exception => Global.WriteLog("Error occurred while fetching inter-communicate message", exception)
+						);
 				},
 				(sender, arguments) =>
 				{
@@ -194,11 +200,8 @@ namespace net.vieapps.Services.APIGateway
 			// prepare folder of logs/emails/webhooks
 			(Global.LogsPath + "," + Global.StatusPath + "," + Global.EmailsPath + "," + Global.WebHooksPath)
 				.ToArray()
-				.ForEach(path =>
-				{
-					if (!Directory.Exists(path))
-						Directory.CreateDirectory(path);
-				});
+				.Where(path => !Directory.Exists(path))
+				.ForEach(path => Directory.CreateDirectory(path));
 		}
 
 		internal void Stop()
@@ -474,7 +477,7 @@ namespace net.vieapps.Services.APIGateway
 		void RegisterMessagingTimers()
 		{
 			// send email messages (15 seconds)
-			this.StartTimer(15, (s, a) =>
+			this.StartTimer(15, (sender, args) =>
 			{
 				if (this._mailSender == null)
 					Task.Run(async () =>
@@ -493,7 +496,7 @@ namespace net.vieapps.Services.APIGateway
 			});
 
 			// send web hook messages (25 seconds)
-			this.StartTimer(25, (s, a) =>
+			this.StartTimer(25, (sender, args) =>
 			{
 				if (this._webhookSender == null)
 					Task.Run(async () =>
@@ -560,13 +563,11 @@ namespace net.vieapps.Services.APIGateway
 
 			// run task scheduler on first-load
 			if (runTaskSchedulerOnFirstLoad)
-				this.StartTimer(5, (sender, args) =>
+				Task.Run(async () =>
 				{
-					Task.Run(async () =>
-					{
-						await this.RunTaskSchedulerAsync();
-					}).ConfigureAwait(false);
-				}, false);
+					await Task.Delay(1234);
+					await this.RunTaskSchedulerAsync();
+				}).ConfigureAwait(false);
 		}
 
 		void RunHouseKeeper()
@@ -603,28 +604,28 @@ namespace net.vieapps.Services.APIGateway
 				{
 					// delete old files
 					UtilityService.GetFiles(dir.FullName, "*.*", true, excludedSubFolders)
-					.Where(file => !excludedFileExtensions.Contains(file.Extension) && file.LastWriteTime < (specialFileExtensions.Contains(file.Extension) ? specialRemainTime : remainTime))
-					.ForEach(file =>
-					{
-						try
+						.Where(file => !excludedFileExtensions.Contains(file.Extension) && file.LastWriteTime < (specialFileExtensions.Contains(file.Extension) ? specialRemainTime : remainTime))
+						.ForEach(file =>
 						{
-							file.Delete();
-							counter++;
-						}
-						catch { }
-					});
+							try
+							{
+								file.Delete();
+								counter++;
+							}
+							catch { }
+						});
 
 					// delete empty folders
 					dir.GetDirectories()
-					.Where(subDir => subDir.GetFiles().Length < 1)
-					.ForEach(subDir =>
-					{
-						try
+						.Where(subDir => subDir.GetFiles().Length < 1)
+						.ForEach(subDir =>
 						{
-							subDir.Delete(true);
-						}
-						catch { }
-					});
+							try
+							{
+								subDir.Delete(true);
+							}
+							catch { }
+						});
 				});
 
 			stopwatch.Stop();
@@ -708,6 +709,13 @@ namespace net.vieapps.Services.APIGateway
 				"- Execution times: " + stopwatch.GetElapsedTimes()
 			);
 			this._isTaskSchedulerRunning = false;
+		}
+		#endregion
+
+		#region Process inter-communicate messages
+		void ProcessInterCommunicateMessage(CommunicateMessage message)
+		{
+
 		}
 		#endregion
 

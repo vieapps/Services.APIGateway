@@ -38,61 +38,50 @@ namespace net.vieapps.Services.APIGateway
 		#region Load & Save messages
 		internal static void LoadMessages()
 		{
+			WebHookSender.Messages = WebHookSender.Messages ?? new Dictionary<string, WebHookInfo>();
+
 			// previous messages
-			if (WebHookSender.Messages == null)
-			{
-				WebHookSender.Messages = new Dictionary<string, WebHookInfo>();
-				var filePath = Global.StatusPath + @"\webhooks.json";
-				if (File.Exists(filePath))
+			var filePath = Global.StatusPath + @"\webhooks.json";
+			if (File.Exists(filePath))
+				try
 				{
-					try
-					{
-						var msgs = JArray.Parse(UtilityService.ReadTextFile(filePath));
-						foreach (JObject msg in msgs)
-						{
-							var message = new WebHookMessage((msg["Message"] as JValue).Value as string);
-							var time = (DateTime)(msg["Time"] as JValue).Value;
-							var counters = (msg["Counters"] as JValue).Value.CastAs<int>();
-							WebHookSender.Messages.Add(message.ID, new WebHookInfo() { Message = message, Time = time, Counters = counters });
-						}
-					}
-					catch { }
+					var msgs = JArray.Parse(UtilityService.ReadTextFile(filePath));
 					File.Delete(filePath);
+
+					foreach (JObject msg in msgs)
+					{
+						var message = new WebHookMessage((msg["Message"] as JValue).Value as string);
+						var time = (DateTime)(msg["Time"] as JValue).Value;
+						var counters = (msg["Counters"] as JValue).Value.CastAs<int>();
+						WebHookSender.Messages.Add(message.ID, new WebHookInfo() { Message = message, Time = time, Counters = counters });
+					}
 				}
-			}
+				catch { }
 
 			// new messages
 			if (Directory.Exists(Global.WebHooksPath))
-			{
-				var files = UtilityService.GetFiles(Global.WebHooksPath, "*.msg");
-				files.ForEach(file =>
-				{
-					try
+				UtilityService.GetFiles(Global.WebHooksPath, "*.msg")
+					.ForEach(file =>
 					{
-						var msg = WebHookMessage.Load(file.FullName);
-						WebHookSender.Messages.Add(msg.ID, new WebHookInfo() { Message = msg, Time = msg.SendingTime, Counters = 0 });
-					}
-					catch { }
-					file.Delete();
-				});
-			}
+						try
+						{
+							var msg = WebHookMessage.Load(file.FullName);
+							WebHookSender.Messages.Add(msg.ID, new WebHookInfo() { Message = msg, Time = msg.SendingTime, Counters = 0 });
+						}
+						catch { }
+						file.Delete();
+					});
 		}
 
 		internal static void SaveMessages()
 		{
 			if (WebHookSender.Messages != null && WebHookSender.Messages.Count > 0)
-			{
-				var messages = WebHookSender.Messages.ToJArray(info =>
+				UtilityService.WriteTextFile(Global.StatusPath + @"\webhooks.json", WebHookSender.Messages.ToJArray(info => new JObject()
 				{
-					return new JObject()
-					{
 					{ "Time", info.Time },
 					{ "Counters", info.Counters },
 					{ "Message", info.Message.Encrypted }
-					};
-				});
-				UtilityService.WriteTextFile(Global.StatusPath + @"\webhooks.json", messages.ToString(Formatting.Indented));
-			}
+				}).ToString(Formatting.Indented));
 			WebHookSender.Messages = null;
 		}
 		#endregion
@@ -162,13 +151,9 @@ namespace net.vieapps.Services.APIGateway
 			WebHookSender.LoadMessages();
 
 			// send messages
-			var tasks = new List<Task>();
-			WebHookSender.Messages.ForEach(info =>
-			{
-				if (info.Time <= DateTime.Now)
-					tasks.Add(this.SendMessageAsync(info.Message, this.OnSuccess, this.OnError));
-			});
-			await Task.WhenAll(tasks);
+			await WebHookSender.Messages
+				.Where(e => e.Value.Time <= DateTime.Now)
+				.ForEachAsync((e, cancellationToken) => this.SendMessageAsync(e.Value.Message, this.OnSuccess, this.OnError));
 		}
 	}
 }

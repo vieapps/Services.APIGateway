@@ -2,7 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
-using System.Threading;
+using System.Linq;
 using System.Threading.Tasks;
 using System.IO;
 
@@ -39,61 +39,50 @@ namespace net.vieapps.Services.APIGateway
 		#region Load & Save messages
 		internal static void LoadMessages()
 		{
+			MailSender.Messages = MailSender.Messages ?? new Dictionary<string, MailInfo>();
+
 			// previous messages
-			if (MailSender.Messages == null)
-			{
-				MailSender.Messages = new Dictionary<string, MailInfo>();
-				var filePath = Global.StatusPath + @"\mails.json";
-				if (File.Exists(filePath))
+			var filePath = Global.StatusPath + @"\mails.json";
+			if (File.Exists(filePath))
+				try
 				{
-					try
-					{
-						var msgs = JArray.Parse(UtilityService.ReadTextFile(filePath));
-						foreach (JObject msg in msgs)
-						{
-							var message = new EmailMessage((msg["Message"] as JValue).Value as string);
-							var time = (DateTime)(msg["Time"] as JValue).Value;
-							var counters = (msg["Counters"] as JValue).Value.CastAs<int>();
-							MailSender.Messages.Add(message.ID, new MailInfo() { Message = message, Time = time, Counters = counters });
-						}
-					}
-					catch { }
+					var msgs = JArray.Parse(UtilityService.ReadTextFile(filePath));
 					File.Delete(filePath);
+
+					foreach (JObject msg in msgs)
+					{
+						var message = new EmailMessage((msg["Message"] as JValue).Value as string);
+						var time = (DateTime)(msg["Time"] as JValue).Value;
+						var counters = (msg["Counters"] as JValue).Value.CastAs<int>();
+						MailSender.Messages.Add(message.ID, new MailInfo() { Message = message, Time = time, Counters = counters });
+					}
 				}
-			}
+				catch { }
 
 			// new messages
 			if (Directory.Exists(Global.EmailsPath))
-			{
-				var files = UtilityService.GetFiles(Global.EmailsPath, "*.msg");
-				files.ForEach(file =>
-				{
-					try
+				UtilityService.GetFiles(Global.EmailsPath, "*.msg")
+					.ForEach(file =>
 					{
-						var msg = EmailMessage.Load(file.FullName);
-						MailSender.Messages.Add(msg.ID, new MailInfo() { Message = msg, Time = msg.SendingTime, Counters = 0 });
-					}
-					catch { }
-					file.Delete();
-				});
-			}
+						try
+						{
+							var msg = EmailMessage.Load(file.FullName);
+							MailSender.Messages.Add(msg.ID, new MailInfo() { Message = msg, Time = msg.SendingTime, Counters = 0 });
+						}
+						catch { }
+						file.Delete();
+					});
 		}
 
 		internal static void SaveMessages()
 		{
 			if (MailSender.Messages != null && MailSender.Messages.Count > 0)
-			{
-				var messages = MailSender.Messages.ToJArray(info =>
+				UtilityService.WriteTextFile(Global.StatusPath + @"\mails.json", MailSender.Messages.ToJArray(info => new JObject()
 				{
-					return new JObject()
-					{
 					{ "Time", info.Time },
 					{ "Counters", info.Counters },
 					{ "Message", info.Message.Encrypted }
-					};
-				});
-				UtilityService.WriteTextFile(Global.StatusPath + @"\mails.json", messages.ToString(Formatting.Indented));
-			}
+				}).ToString(Formatting.Indented));
 			MailSender.Messages = null;
 		}
 		#endregion
@@ -167,13 +156,9 @@ namespace net.vieapps.Services.APIGateway
 			MailSender.LoadMessages();
 
 			// send messages
-			var tasks = new List<Task>();
-			MailSender.Messages.ForEach((info, index) =>
-			{
-				if (info.Time <= DateTime.Now)
-					tasks.Add(this.SendMessageAsync(info.Message, index, this.OnSuccess, this.OnError));
-			});
-			await Task.WhenAll(tasks);
+			await MailSender.Messages
+				.Where(e => e.Value.Time <= DateTime.Now)
+				.ForEachAsync((e, index, cancellationToken) => this.SendMessageAsync(e.Value.Message, index, this.OnSuccess, this.OnError));
 		}
 	}
 }

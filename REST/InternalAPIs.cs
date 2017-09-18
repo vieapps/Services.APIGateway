@@ -262,7 +262,15 @@ namespace net.vieapps.Services.APIGateway
 			else
 				try
 				{
-					await context.WriteResponseAsync(await InternalAPIs.CallServiceAsync(requestInfo));
+					// process
+					var result = await InternalAPIs.CallServiceAsync(requestInfo);
+
+					// special: request to update sessions of an account
+					if (isAccountProccessed && requestInfo.Verb.IsEquals("PUT"))
+						await InternalAPIs.RequestUpdateSessionsAsync(requestInfo);
+
+					// response
+					await context.WriteResponseAsync(result);
 				}
 				catch (Exception ex)
 				{
@@ -638,6 +646,39 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
+		#region Update sessions (revoke)
+		internal static async Task RequestUpdateSessionsAsync(RequestInfo requestInfo)
+		{
+			// check
+			var userID = requestInfo.GetObjectIdentity();
+			if (string.IsNullOrWhiteSpace(userID) || !userID.IsValidUUID())
+				return;
+
+			// get user information
+			var json = await InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session)
+			{
+				ServiceName = "users",
+				ObjectName = "account",
+				Verb = "GET",
+				Query = requestInfo.Query,
+				CorrelationID = requestInfo.CorrelationID
+			});
+			var user = json.FromJson<User>();
+
+			// send inter-communicate message to tell services update old sessions with new access token
+			await Global.SendInterCommunicateMessageAsync(new CommunicateMessage()
+			{
+				ServiceName = "Users",
+				Type = "Session",
+				Data = new JObject()
+				{
+					{ "UserID", user.ID },
+					{ "AccessToken", User.GetAccessToken(user, Global.RSA, Global.AESKey).Encrypt() }
+				}
+			});
+		}
+		#endregion
+
 		#region Helper: call service
 		internal static async Task<JObject> CallServiceAsync(RequestInfo requestInfo)
 		{
@@ -694,7 +735,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Helper: working with response JSON, online status, ...
-		static void UpdateSessionJson(this Session session, JObject json, string accessToken)
+		internal static void UpdateSessionJson(this Session session, JObject json, string accessToken)
 		{
 			json["ID"] = session.SessionID.Encrypt(Global.AESKey.Reverse(), true);
 			json.Add(new JProperty("Keys", new JObject()

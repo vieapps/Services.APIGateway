@@ -89,6 +89,7 @@
 			this.Controls.Add(this.ClearLogs);
 			this.Controls.Add(this.ManageServices);
 			this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
+			this.MinimizeBox = false;
 			this.Name = "MainForm";
 			this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
 			this.Text = "VIEApps API Gateway";

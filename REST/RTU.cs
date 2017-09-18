@@ -365,6 +365,24 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Process request messages that sent from client devices
+		internal static void Publish(this UpdateMessage message)
+		{
+			if (RTU.Sender == null)
+				Task.Run(async () =>
+				{
+					try
+					{
+						await Global.OpenOutgoingChannelAsync();
+						RTU.Sender = Global.OutgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages");
+						RTU.Sender.OnNext(message);
+					}
+					catch { }
+				}).ConfigureAwait(false);
+
+			else
+				RTU.Sender.OnNext(message);
+		}
+
 		static async Task ProcesMessagesAsync(this AspNetWebSocketContext context, Session session)
 		{
 			while (true)
@@ -439,19 +457,12 @@ namespace net.vieapps.Services.APIGateway
 
 						// send the update message
 						var objectIdentity = query != null && query.ContainsKey("object-identity") ? query["object-identity"] : null;
-						var updateMessage = new UpdateMessage()
+						(new UpdateMessage()
 						{
 							Type = serviceName.GetCapitalizedFirstLetter() + "#" + objectName.GetCapitalizedFirstLetter() + (objectIdentity != null && !objectIdentity.IsValidUUID() ? "#" + objectIdentity.GetCapitalizedFirstLetter() : ""),
 							DeviceID = session.DeviceID,
 							Data = data
-						};
-
-						if (RTU.Sender == null)
-						{
-							await Global.OpenOutgoingChannelAsync();
-							RTU.Sender = Global.OutgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages");
-						}
-						RTU.Sender.OnNext(updateMessage);
+						}).Publish();
 
 #if DEBUG || RTULOGS
 						await Global.WriteLogsAsync(correlationID, "RTU.Processor", new List<string>()

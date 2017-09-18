@@ -28,6 +28,7 @@ namespace net.vieapps.Services.APIGateway
 		long _incommingChannelSessionID = 0, _outgoingChannelSessionID = 0;
 		bool _channelsAreClosedBySystem = false;
 
+		IDisposable _communicator = null;
 		internal ManagementService _managementService = null;
 		internal List<string> _availableServices = null;
 		internal Dictionary<string, int> _runningServices = new Dictionary<string, int>();
@@ -96,7 +97,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					Global.WriteLog("The incoming connection is established - Session ID: " + arguments.SessionId);
 					this._incommingChannelSessionID = arguments.SessionId;
-					this._incommingChannel.RealmProxy.Services
+					this._communicator = this._incommingChannel.RealmProxy.Services
 						.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
 						.Subscribe(
 							message => this.ProcessInterCommunicateMessage(message),
@@ -185,29 +186,30 @@ namespace net.vieapps.Services.APIGateway
 			}
 #endif
 
-			// register helper services
-			if (this._registerHelperServices)
-				await this.RegisterHelperServicesAsync();
-
-			// register business services
-			if (this._registerBusinessServices)
-				this.RegisterBusinessServices();
-
-			// register timers
-			if (this._registerTimers)
-				this.RegisterTimers();
-
 			// prepare folder of logs/emails/webhooks
 			(Global.LogsPath + "," + Global.StatusPath + "," + Global.EmailsPath + "," + Global.WebHooksPath)
 				.ToArray()
 				.Where(path => !Directory.Exists(path))
 				.ForEach(path => Directory.CreateDirectory(path));
+
+			// register helper services
+			if (this._registerHelperServices)
+				await this.RegisterHelperServicesAsync();
+
+			// register timers
+			if (this._registerTimers)
+				this.RegisterTimers();
+
+			// register business services
+			if (this._registerBusinessServices)
+				this.RegisterBusinessServices();
 		}
 
 		internal void Stop()
 		{
-			Global.CancellationTokenSource.Cancel();
+			this._communicator?.Dispose();
 			this._managementService?.FlushAll();
+			Global.CancellationTokenSource.Cancel();
 
 			MailSender.SaveMessages();
 			WebHookSender.SaveMessages();
@@ -354,7 +356,7 @@ namespace net.vieapps.Services.APIGateway
 		internal void UpdateServicesInfo()
 		{
 			if (!Global.AsService)
-				Global.Form.UpdateServicesInfo(this._availableServices != null ? this._availableServices.Count : 0, this._runningServices != null ? this._runningServices.Count : 0);
+				Global.Form.UpdateServicesInfo(this._availableServices.Count, this._runningServices.Count);
 		}
 
 		internal List<string> GetAvailableServices()
@@ -373,6 +375,7 @@ namespace net.vieapps.Services.APIGateway
 			if (string.IsNullOrWhiteSpace(name) || this._runningServices.ContainsKey(name.ToLower()))
 				return;
 
+			var serviceName = name.Replace(".exe", "").ToArray('.').Last().ToLower();
 			var process = UtilityService.RunProcess(
 				name,
 				(!string.IsNullOrEmpty(arguments) ? arguments + " " : "") + "/agc:" + (Global.AsService ? "r" : "g"),
@@ -384,7 +387,7 @@ namespace net.vieapps.Services.APIGateway
 						if (!Global.AsService)
 							this.UpdateServicesInfo();
 						Global.WriteLog(
-							"----- [" + (sender as Process).StartInfo.FileName + " - PID: " + (sender as Process).Id.ToString() + "] ------------------" + "\r\n" +
+							"----- [" + (sender as Process).StartInfo.FileName.Replace(".exe", "").ToArray('.').Last().ToLower() + "] -----" + "\r\n" +
 							"The sevice is stopped..." + "\r\n" +
 							"--------------------------------------------------------------------------------" + "\r\n"
 						);
@@ -397,7 +400,7 @@ namespace net.vieapps.Services.APIGateway
 						try
 						{
 							Global.WriteLog(
-								"----- [" + (sender as Process).StartInfo.FileName + " - PID: " + (sender as Process).Id.ToString() + "] ------------------" + "\r\n" +
+								"----- [" + (sender as Process).StartInfo.FileName.Replace(".exe", "").ToArray('.').Last().ToLower() + "] -----" + "\r\n" +
 								args.Data + "\r\n" +
 								"--------------------------------------------------------------------------------" + "\r\n"
 							);
@@ -407,7 +410,7 @@ namespace net.vieapps.Services.APIGateway
 			);
 
 			this._runningServices.Add(name.ToLower(), process.Id);
-			Global.WriteLog("The service [" + name + " - PID: " + process.Id.ToString() + "] is running...");
+			Global.WriteLog("The service [" + name.Replace(".exe", "").ToArray('.').Last().ToLower() + "] is starting - PID: " + process.Id.ToString());
 		}
 
 		internal void StopService(string name)
@@ -417,7 +420,8 @@ namespace net.vieapps.Services.APIGateway
 				{
 					// stop the service
 					var processID = this._runningServices[name.ToLower()];
-					UtilityService.RunProcess(name, "/agc:s", (s, a) => {
+					UtilityService.RunProcess(name, "/agc:s", (sender, args) =>
+					{
 						this.KillProcess(processID);
 					});
 

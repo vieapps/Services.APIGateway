@@ -1065,7 +1065,36 @@ namespace net.vieapps.Services.APIGateway
 
 		static void ProcessInterCommunicateMessage(CommunicateMessage message)
 		{
+			if (message.Type.Equals("Users#Session"))
+			{
+				var sessionID = (message.Data["Session"] as JValue).Value as string;
+				var user = (message.Data["User"] as JObject).FromJson<User>();
+				var deviceID = (message.Data["Device"] as JValue).Value as string;
+				var accessToken = ((message.Data["Token"] as JValue).Value as string).Decrypt();
 
+				Global.Cache.Remove("Session#" + sessionID);
+
+				var json = new JObject()
+				{
+					{ "ID", sessionID },
+					{ "UserID", user.ID },
+					{ "DeviceID", deviceID }
+				};
+
+				(new Session()
+				{
+					SessionID = sessionID,
+					DeviceID = deviceID,
+					User = user
+				}).UpdateSessionJson(json, accessToken);
+
+				(new UpdateMessage()
+				{
+					Type = "Users#Session",
+					DeviceID = deviceID,
+					Data = json
+				}).Publish();
+			}
 		}
 		#endregion
 

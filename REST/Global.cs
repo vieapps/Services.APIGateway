@@ -78,7 +78,7 @@ namespace net.vieapps.Services.APIGateway
 			var origin = header?["origin"];
 			if (string.IsNullOrWhiteSpace(origin))
 				origin = urlReferrer?.AbsoluteUri;
-			if (string.IsNullOrWhiteSpace(origin))
+			if (string.IsNullOrWhiteSpace(origin) || origin.IsEquals("file://"))
 				origin = ipAddress;
 
 			return new Tuple<string, string, string>(name, platform, origin);

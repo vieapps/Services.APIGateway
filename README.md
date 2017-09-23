@@ -1,5 +1,8 @@
 # Services.APIGateway
 The API Gateway of all microservices in the VIEApps NGX with two parts:
-- API Gateway with REST & websocket (real-time update)
-- Services Hosting: provide helper services and hosting service for all microservices
-- Messaging protocol: WAMP
+- REST: public API Gateway with REST & websocket (real-time update)
+- Host: provide helper services and hosting container for all microservices
+
+Others:
+- Messaging protocol: WAMP-proto with WampSharp
+- Authentication mechanisim: JSON Web Token

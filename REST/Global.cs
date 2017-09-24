@@ -582,6 +582,7 @@ namespace net.vieapps.Services.APIGateway
 		internal static void OnAppEnd()
 		{
 			Global.CancellationTokenSource.Cancel();
+			Global.CancellationTokenSource.Dispose();
 			Global.InterCommunicateMessageUpdater?.Dispose();
 			RTU.StopUpdaters();
 

@@ -54,6 +54,7 @@ namespace net.vieapps.Services.APIGateway
 		public void Dispose()
 		{
 			this.Stop();
+			GC.SuppressFinalize(this);
 		}
 		#endregion
 
@@ -207,10 +208,6 @@ namespace net.vieapps.Services.APIGateway
 
 		internal void Stop()
 		{
-			this._communicator?.Dispose();
-			this._managementService?.FlushAll();
-			Global.CancellationTokenSource.Cancel();
-
 			MailSender.SaveMessages();
 			WebHookSender.SaveMessages();
 
@@ -219,6 +216,11 @@ namespace net.vieapps.Services.APIGateway
 				.Concat(this._runningTasks.Select(s => s.Item1))
 				.ToList()
 				.ForEach(id => this.KillProcess(id));
+
+			this._communicator?.Dispose();
+			this._managementService?.FlushAll();
+			Global.CancellationTokenSource.Cancel();
+			Global.CancellationTokenSource.Dispose();
 
 			this._channelsAreClosedBySystem = true;
 			this.CloseIncomingChannel();

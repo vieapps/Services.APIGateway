@@ -489,11 +489,11 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static Task WriteLogsAsync(string correlationID, string objectName, string log, Exception exception = null)
 		{
-			var logs = !string.IsNullOrEmpty(log)
-				? new List<string>() { log }
-				: exception != null
-					? new List<string>() { exception.Message + " [" + exception.GetType().ToString() + "]" }
-					: new List<string>();
+			var logs = new List<string>();
+			if (!string.IsNullOrEmpty(log))
+				logs.Add(log);
+			if (exception != null)
+				logs.Add(exception.Message + " [" + exception.GetType().ToString() + "]");
 			return Global.WriteLogsAsync(correlationID, objectName, logs, exception);
 		}
 
@@ -522,11 +522,11 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static void WriteLogs(string correlationID, string objectName, string log, Exception exception = null)
 		{
-			var logs = !string.IsNullOrEmpty(log)
-				? new List<string>() { log }
-				: exception != null
-					? new List<string>() { exception.Message + " [" + exception.GetType().ToString() + "]" }
-					: new List<string>();
+			var logs = new List<string>();
+			if (!string.IsNullOrEmpty(log))
+				logs.Add(log);
+			if (exception != null)
+				logs.Add(exception.Message + " [" + exception.GetType().ToString() + "]");
 			Global.WriteLogs(correlationID, objectName, logs, exception);
 		}
 
@@ -952,7 +952,11 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
+#if DEBUG
+		internal static void ShowError(this HttpContext context, Exception exception, RequestInfo requestInfo = null, bool writeLogs = true)
+#else
 		internal static void ShowError(this HttpContext context, Exception exception, RequestInfo requestInfo = null, bool writeLogs = false)
+#endif
 		{
 			if (exception is WampException)
 				context.ShowError(exception as WampException, requestInfo);
@@ -960,14 +964,14 @@ namespace net.vieapps.Services.APIGateway
 			else
 			{
 				// write logs
-				if (writeLogs)
-					Global.WriteLogs("", exception);
+				if (writeLogs && exception != null)
+					Global.WriteLogs(Global.GetCorrelationID(context.Items), "Errors", "Error occurred while processing: " + exception.Message + "\r\n" + "===> Request:" + "\r\n" + requestInfo.ToJson().ToString(Formatting.Indented), exception);
 
 				// show error
 				var message = exception != null ? exception.Message : "Unknown error";
 				var type = exception != null ? exception.GetType().ToString().ToArray('.').Last() : "Unknown";
-				string stack = exception != null && Global.IsShowErrorStacks ? exception.StackTrace : null;
-				Exception inner = exception != null && Global.IsShowErrorStacks ? exception.InnerException : null;
+				var stack = exception != null && Global.IsShowErrorStacks ? exception.StackTrace : null;
+				var inner = exception != null && Global.IsShowErrorStacks ? exception.InnerException : null;
 				context.ShowError(exception != null ? exception.GetHttpStatusCode() : 500, message, type, stack, inner);
 			}
 		}

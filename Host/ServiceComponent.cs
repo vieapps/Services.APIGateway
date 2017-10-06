@@ -551,8 +551,13 @@ namespace net.vieapps.Services.APIGateway
 					}
 			}
 
-			// timer to flush logs (5 minutes)
-			this.StartTimer(60 * 5, (sender, args) =>
+#if DEBUG
+			// timer to flush logs (10 seconds)
+			this.StartTimer(10, (sender, args) =>
+#else
+			// timer to flush logs (3 minutes)
+			this.StartTimer(60 * 3, (sender, args) =>
+#endif
 			{
 				this._managementService?.FlushAll();
 			});

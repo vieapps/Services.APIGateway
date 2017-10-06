@@ -69,6 +69,7 @@
       <HintPath>..\..\..\packages\System.Collections.Specialized.4.3.0\lib\net46\System.Collections.Specialized.dll</HintPath>
     </Reference>
     <Reference Include="System.ComponentModel.Composition" />
+    <Reference Include="System.Configuration" />
     <Reference Include="System.Data" />
     <Reference Include="System.Data.Common">
       <HintPath>..\..\..\packages\System.Data.Common.4.3.0\lib\net451\System.Data.Common.dll</HintPath>
@@ -285,6 +286,32 @@
       <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
     </PropertyGroup>
     <Error Condition="!Exists('..\..\..\packages\NETStandard.Library.2.0.0\build\NETStandard.Library.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\..\packages\NETStandard.Library.2.0.0\build\NETStandard.Library.targets'))" />
+  </Target>
+  <!-- To resolve the "netfx.force.conflicts" -->
+  <Target Name="UpdateOriginalItemSpecs" AfterTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <ReferencePath>
+        <OriginalItemSpec>%(ReferencePath.FileName)</OriginalItemSpec>
+      </ReferencePath>
+    </ItemGroup>
+  </Target>
+  <Target Name="ReplaceNetFxNetStandardRefWithLib" AfterTargets="ImplicitlyExpandNETStandardFacades">
+    <ItemGroup>
+      <Reference Remove="@(_NETStandardLibraryNETFrameworkReference)" Condition="'%(FileName)' != 'netfx.force.conflicts'" />
+      <Reference Include="@(_NETStandardLibraryNETFrameworkLib)">
+        <Private>true</Private>
+      </Reference>
+    </ItemGroup>
+  </Target>
+  <Target Name="RemoveNetFxForceConflicts" AfterTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <ReferencePath Remove="@(ReferencePath)" Condition="'%(FileName)' == 'netfx.force.conflicts'" />
+    </ItemGroup>
+  </Target>
+  <Target Name="RemoveNetFxForceConflicts" BeforeTargets="BuiltProjectOutputGroupDependencies">
+    <ItemGroup>
+      <ReferencePath Remove="@(ReferencePath)" Condition="'%(FileName)' == 'netfx.force.conflicts'" />
+    </ItemGroup>
   </Target>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.

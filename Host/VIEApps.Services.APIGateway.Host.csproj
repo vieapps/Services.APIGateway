@@ -158,19 +158,19 @@
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml" />
     <Reference Include="WampSharp, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\..\..\packages\WampSharp.1.2.6.43-beta\lib\net45\WampSharp.dll</HintPath>
+      <HintPath>..\..\..\packages\WampSharp.1.2.6.44-beta\lib\net45\WampSharp.dll</HintPath>
     </Reference>
     <Reference Include="WampSharp.Default.Client, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\..\..\packages\WampSharp.Default.Client.1.2.6.43-beta\lib\net45\WampSharp.Default.Client.dll</HintPath>
+      <HintPath>..\..\..\packages\WampSharp.Default.Client.1.2.6.44-beta\lib\net45\WampSharp.Default.Client.dll</HintPath>
     </Reference>
     <Reference Include="WampSharp.NewtonsoftJson, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\..\..\packages\WampSharp.NewtonsoftJson.1.2.6.43-beta\lib\net45\WampSharp.NewtonsoftJson.dll</HintPath>
+      <HintPath>..\..\..\packages\WampSharp.NewtonsoftJson.1.2.6.44-beta\lib\net45\WampSharp.NewtonsoftJson.dll</HintPath>
     </Reference>
     <Reference Include="WampSharp.NewtonsoftMsgpack, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\..\..\packages\WampSharp.NewtonsoftMsgpack.1.2.6.43-beta\lib\net45\WampSharp.NewtonsoftMsgpack.dll</HintPath>
+      <HintPath>..\..\..\packages\WampSharp.NewtonsoftMsgpack.1.2.6.44-beta\lib\net45\WampSharp.NewtonsoftMsgpack.dll</HintPath>
     </Reference>
     <Reference Include="WampSharp.WebSocket4Net, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\..\..\packages\WampSharp.WebSocket4Net.1.2.6.43-beta\lib\net45\WampSharp.WebSocket4Net.dll</HintPath>
+      <HintPath>..\..\..\packages\WampSharp.WebSocket4Net.1.2.6.44-beta\lib\net45\WampSharp.WebSocket4Net.dll</HintPath>
     </Reference>
     <Reference Include="WebSocket4Net, Version=0.15.0.9, Culture=neutral, PublicKeyToken=eb4e154b696bf72a, processorArchitecture=MSIL">
       <HintPath>..\..\..\packages\WebSocket4Net.0.15.0\lib\net45\WebSocket4Net.dll</HintPath>

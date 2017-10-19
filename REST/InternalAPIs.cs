@@ -685,7 +685,7 @@ namespace net.vieapps.Services.APIGateway
 			var name = requestInfo.ServiceName.Trim().ToLower();
 
 #if DEBUG
-			Global.WriteLogs(requestInfo.CorrelationID, null, "Call the service [net.vieapps.services." + name + "]" + "\r\n" + requestInfo.ToJson().ToString(Formatting.Indented));
+			Global.WriteLogs(requestInfo.CorrelationID, null, "Call the service [net.vieapps.services." + name + "]" + "\r\n" + "Request ==>" + "\r\n" + requestInfo.ToJson().ToString(Formatting.Indented));
 #endif
 
 			if (!InternalAPIs.Services.TryGetValue(name, out IService service))
@@ -711,13 +711,16 @@ namespace net.vieapps.Services.APIGateway
 				await Task.Delay(567);
 				json = await service.ProcessRequestAsync(requestInfo, Global.CancellationTokenSource.Token);
 			}
-			catch (Exception)
+			catch (Exception ex)
 			{
-				throw;
+#if DEBUG
+				Global.WriteLogs(requestInfo.CorrelationID, null, "Error occurred while calling the service [net.vieapps.services." + name + "]: " + ex.Message + " [" + ex.GetType().ToString() + "]" + "\r\n" + "Stack: " + ex.StackTrace);
+#endif
+				throw ex;
 			}
 
 #if DEBUG
-			Global.WriteLogs(requestInfo.CorrelationID, null, "Result of the service [net.vieapps.services." + name + "]" + "\r\n" + (json != null ? json.ToString(Formatting.Indented) : "None"));
+			Global.WriteLogs(requestInfo.CorrelationID, null, "Result of the service [net.vieapps.services." + name + "]" + "\r\n" + "Results ==>" + "\r\n" + (json != null ? json.ToString(Formatting.Indented) : "None"));
 #endif
 
 			return json;

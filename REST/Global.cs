@@ -78,7 +78,7 @@ namespace net.vieapps.Services.APIGateway
 			var origin = header?["origin"];
 			if (string.IsNullOrWhiteSpace(origin))
 				origin = urlReferrer?.AbsoluteUri;
-			if (string.IsNullOrWhiteSpace(origin) || origin.IsEquals("file://"))
+			if (string.IsNullOrWhiteSpace(origin) || origin.IsStartsWith("file://") || origin.IsStartsWith("http://localhost"))
 				origin = ipAddress;
 
 			return new Tuple<string, string, string>(name, platform, origin);
@@ -659,8 +659,7 @@ namespace net.vieapps.Services.APIGateway
 			Global.WriteLogs(new List<string>() {
 					"Begin process [" + app.Context.Request.HttpMethod + "]: " + app.Context.Request.Url.Scheme + "://" + app.Context.Request.Url.Host + app.Context.Request.RawUrl,
 					"- Origin: " + appInfo.Item1 + " / " + appInfo.Item2 + " - " + appInfo.Item3,
-					"- IP: " + app.Context.Request.UserHostAddress,
-					"- Agent: " + app.Context.Request.UserAgent
+					"- IP: " + app.Context.Request.UserHostAddress + " [" + app.Context.Request.UserAgent + "]"
 				});
 			if (!executionFilePaths[0].IsEquals("rtu"))
 			{
@@ -1177,18 +1176,18 @@ namespace net.vieapps.Services.APIGateway
 					context.Response.Cache.SetLastModified(fileInfo.LastWriteTime);
 					context.Response.Cache.SetETag(eTag);
 
-					// write content
-					var contentType = path.IsEndsWith(".json") || path.IsEndsWith(".js")
-						? "application/" + (path.IsEndsWith(".js") ?"javascript" : "json")
-							: "text/"
-								+ (path.IsEndsWith(".css")
-									? "css"
-									: path.IsEndsWith(".html") || path.IsEndsWith(".htm")
-										? "html"
-										: "plain");
+					// prepare content
+					var staticMimeType = MimeMapping.GetMimeMapping(fileInfo.Name);
+					if (string.IsNullOrWhiteSpace(staticMimeType))
+						staticMimeType = "text/plain";
+
 					var staticContent = await UtilityService.ReadTextFileAsync(fileInfo.FullName);
-					context.Response.ContentType = contentType;
-					await context.Response.Output.WriteAsync(contentType.IsEquals("application/json") ? JObject.Parse(staticContent).ToString(Formatting.Indented) : staticContent);
+					if (staticMimeType.IsEndsWith("json"))
+						staticContent = JObject.Parse(staticContent).ToString(Formatting.Indented);
+
+					// write content
+					context.Response.ContentType = staticMimeType;
+					await context.Response.Output.WriteAsync(staticContent);
 				}
 				catch (FileNotFoundException ex)
 				{

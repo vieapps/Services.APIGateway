@@ -50,8 +50,8 @@ namespace net.vieapps.Services.APIGateway
 
 		static HashSet<string> QueryExcluded = "service-name,object-name,object-identity,request-of-static-resource".ToHashSet();
 
-		static CacheManager _Cache = new CacheManager("VIEApps-API-Gateway", "Absolute", 120);
-		public static CacheManager Cache { get { return Global._Cache; } }
+		static Cache _Cache = new Cache("VIEApps-API-Gateway", "Absolute", 120);
+		public static Cache Cache { get { return Global._Cache; } }
 		#endregion
 
 		#region Get the app info

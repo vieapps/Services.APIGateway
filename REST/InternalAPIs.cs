@@ -56,7 +56,7 @@ namespace net.vieapps.Services.APIGateway
 			var accessToken = "";
 			try
 			{
-				var isSpecialUser = requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.ID.Equals(User.SystemAccountID);
+				var isSpecialUser = requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.IsSystemAccount;
 				var tokenIsRequired = isActivationProccessed
 					? false
 					: isSessionInitialized && isSpecialUser && !requestInfo.Query.ContainsKey("register")
@@ -282,7 +282,7 @@ namespace net.vieapps.Services.APIGateway
 		async static Task RegisterSessionAsync(HttpContext context, RequestInfo requestInfo, string accessToken)
 		{
 			// session of visitor/system account
-			if ((requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.ID.Equals(User.SystemAccountID)))
+			if (requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.IsSystemAccount)
 				try
 				{
 					// prepare access token
@@ -316,7 +316,7 @@ namespace net.vieapps.Services.APIGateway
 						}
 
 						// update cache
-						await Global.Cache.SetAbsoluteAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 2);
+						await Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 2);
 					}
 
 					// register session
@@ -329,7 +329,7 @@ namespace net.vieapps.Services.APIGateway
 						// register with user service
 						await Task.WhenAll(
 							InternalAPIs.CallServiceAsync(requestInfo.Session, "users", "session", "POST", session.ToString(Formatting.None)),
-							Global.Cache.SetAbsoluteAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 180)
+							Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 180)
 						);
 					}
 
@@ -508,7 +508,7 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				// check
-				if ((requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.ID.Equals(User.SystemAccountID)))
+				if (requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.IsSystemAccount)
 					throw new InvalidRequestException();
 
 				// call service to perform sign out

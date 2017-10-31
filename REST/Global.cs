@@ -50,7 +50,7 @@ namespace net.vieapps.Services.APIGateway
 
 		static HashSet<string> QueryExcluded = "service-name,object-name,object-identity,request-of-static-resource".ToHashSet();
 
-		static Cache _Cache = new Cache("VIEApps-API-Gateway", "Absolute", 120);
+		static Cache _Cache = new Cache("VIEApps-API-Gateway", 120);
 		public static Cache Cache { get { return Global._Cache; } }
 		#endregion
 

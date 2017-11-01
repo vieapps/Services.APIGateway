@@ -1,8 +1,6 @@
-﻿using System.ServiceProcess;
-
-namespace net.vieapps.Services.APIGateway
+﻿namespace net.vieapps.Services.APIGateway
 {
-	partial class ServiceRunner : ServiceBase
+	partial class ServiceRunner : System.ServiceProcess.ServiceBase
 	{
 		public ServiceRunner()
 		{

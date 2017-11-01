@@ -1,9 +1,5 @@
-﻿#region Related components
-using System;
-using System.IO;
-using System.ServiceProcess;
+﻿using System;
 using System.Windows.Forms;
-#endregion
 
 namespace net.vieapps.Services.APIGateway
 {
@@ -16,14 +12,14 @@ namespace net.vieapps.Services.APIGateway
 			Global.AsService = !Environment.UserInteractive;
 			Global.Component = new ServiceComponent();
 
-			// run as Windows service
+			// run as a service of Windows
 			if (Global.AsService)
 			{
-				Directory.SetCurrentDirectory(AppDomain.CurrentDomain.BaseDirectory);
-				ServiceBase.Run(new ServiceRunner());
+				System.IO.Directory.SetCurrentDirectory(AppDomain.CurrentDomain.BaseDirectory);
+				System.ServiceProcess.ServiceBase.Run(new ServiceRunner());
 			}
 
-			// run as Windows app
+			// run as a desktop app of Windows
 			else
 			{
 				Application.EnableVisualStyles();

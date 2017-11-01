@@ -26,19 +26,17 @@ namespace net.vieapps.Services.APIGateway
 				Description = "Gateway for routing requests of all microservices in the VIEApps NGX"
 			});
 
-			this.AfterInstall += new InstallEventHandler(this.StartServiceAfterInstall);
-		}
-
-		void StartServiceAfterInstall(object sender, InstallEventArgs args)
-		{
-			try
+			this.AfterInstall += (sender, args) =>
 			{
-				using (var controller = new ServiceController("VIEApps-API-Gateway"))
+				try
 				{
-					controller.Start();
+					using (var controller = new ServiceController("VIEApps-API-Gateway"))
+					{
+						controller.Start();
+					}
 				}
-			}
-			catch { }
+				catch { }
+			};
 		}
 	}
 }

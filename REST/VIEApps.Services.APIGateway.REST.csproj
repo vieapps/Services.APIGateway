@@ -13,10 +13,10 @@
     <RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
     <AssemblyName>VIEApps.Services.APIGateway</AssemblyName>
     <TargetFrameworkVersion>v4.7.1</TargetFrameworkVersion>
+    <TargetFrameworkProfile />
     <UseGlobalApplicationHostFile />
     <NuGetPackageImportStamp>
     </NuGetPackageImportStamp>
-    <TargetFrameworkProfile />
     <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
     <UseIISExpress>true</UseIISExpress>
     <IISExpressSSLPort />
@@ -26,8 +26,8 @@
     <Use64BitIISExpress>true</Use64BitIISExpress>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-    <TransformWebConfigEnabled>False</TransformWebConfigEnabled>
-    <AutoParameterizationWebConfigConnectionStrings>False</AutoParameterizationWebConfigConnectionStrings>
+    <TransformWebConfigEnabled>false</TransformWebConfigEnabled>
+    <AutoParameterizationWebConfigConnectionStrings>false</AutoParameterizationWebConfigConnectionStrings>
     <DebugSymbols>true</DebugSymbols>
     <DebugType>full</DebugType>
     <Optimize>false</Optimize>
@@ -38,8 +38,8 @@
     <CodeAnalysisRuleSet>AllRules.ruleset</CodeAnalysisRuleSet>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <TransformWebConfigEnabled>False</TransformWebConfigEnabled>
-    <AutoParameterizationWebConfigConnectionStrings>False</AutoParameterizationWebConfigConnectionStrings>
+    <TransformWebConfigEnabled>false</TransformWebConfigEnabled>
+    <AutoParameterizationWebConfigConnectionStrings>false</AutoParameterizationWebConfigConnectionStrings>
     <DebugSymbols>true</DebugSymbols>
     <DebugType>pdbonly</DebugType>
     <Optimize>true</Optimize>
@@ -88,10 +88,10 @@
       <Version>10.0.3</Version>
     </PackageReference>
     <PackageReference Include="VIEApps.Components.Utility.AspNet">
-      <Version>10.1.0.3</Version>
+      <Version>10.1.1.1711</Version>
     </PackageReference>
     <PackageReference Include="VIEApps.Enyim.Caching">
-      <Version>1.1.0</Version>
+      <Version>1.1.2.1711</Version>
     </PackageReference>
   </ItemGroup>
   <PropertyGroup>

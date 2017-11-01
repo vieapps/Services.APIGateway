@@ -30,7 +30,8 @@ namespace net.vieapps.Services.APIGateway
 
 		IDisposable _communicator = null;
 		internal ManagementService _managementService = null;
-		internal List<string> _availableServices = null;
+		internal string _serviceHoster = UtilityService.GetAppSetting("ServiceHoster", "VIEApps.Services.APIGateway.Host.exe");
+		internal Dictionary<string, string> _availableServices = new Dictionary<string, string>();
 		internal Dictionary<string, int> _runningServices = new Dictionary<string, int>();
 		internal List<System.Timers.Timer> _timers = new List<System.Timers.Timer>();
 
@@ -91,7 +92,7 @@ namespace net.vieapps.Services.APIGateway
 		internal async Task StartAsync(string[] args = null)
 		{
 			// open channels
-			Global.WriteLog("Start the API Gateway Hosting Service...");
+			Global.WriteLog("Start the API Gateway...");
 
 			await this.OpenIncomingChannelAsync(
 				(sender, arguments) =>
@@ -347,9 +348,29 @@ namespace net.vieapps.Services.APIGateway
 		#region Register business services
 		internal void  RegisterBusinessServices()
 		{
+			// prepare
+			if (ConfigurationManager.GetSection("net.vieapps.services") is AppConfigurationSectionHandler config)
+				if (config.Section.SelectNodes("./add") is XmlNodeList nodes)
+					foreach (XmlNode node in nodes)
+					{
+						var info = config.GetJson(node);
+
+						var name = info["name"] != null
+							? (info["name"] as JValue).Value as string
+							: null;
+						var type = info["type"] != null
+							? (info["type"] as JValue).Value as string
+							: null;
+
+						if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(type))
+							this._availableServices[name.ToLower().Trim()] = type.Trim().Replace(" ", "");
+					}
+
 			// register
-			this._availableServices = this._availableServices ?? this.GetAvailableServices();
-			this._availableServices.ForEach(name => this.StartService(name));
+			if (File.Exists(this._serviceHoster))
+				this._availableServices.ForEach(s => this.StartService(s.Key));
+			else if (!Global.AsService)
+				Global.Form.UpdateLogs("The service hoster [" + this._serviceHoster + "] is not found");
 
 			// update info
 			this.UpdateServicesInfo();
@@ -360,49 +381,49 @@ namespace net.vieapps.Services.APIGateway
 			if (!Global.AsService)
 				Global.Form.UpdateServicesInfo(this._availableServices.Count, this._runningServices.Count);
 		}
-
-		internal List<string> GetAvailableServices()
-		{
-			var current = Process.GetCurrentProcess().ProcessName + ".exe";
-			return UtilityService.GetFiles(Directory.GetCurrentDirectory(), "*.exe")
-				.Where(info => !info.Name.IsEquals(current))
-				.Select(info => info.Name)
-				.ToList();
-		}
 		#endregion
 
 		#region Start/Stop business service
 		internal void StartService(string name, string arguments = null)
 		{
-			if (string.IsNullOrWhiteSpace(name) || this._runningServices.ContainsKey(name.ToLower()))
+			if (string.IsNullOrWhiteSpace(name) || this._availableServices.ContainsKey(name.ToLower()))
 				return;
 
-			var serviceName = name.Replace(".exe", "").ToArray('.').Last().ToLower();
+			arguments = (!string.IsNullOrEmpty(arguments) ? arguments + " " : "")
+				+ "/agc:" + (Global.AsService ? "r" : "g") + " /svc:" + this._availableServices[name.ToLower()] + " /svn:" + name.ToLower();
+
+			Global.WriteLog("The service [" + name.ToLower() + "] is starting...");
 			var process = UtilityService.RunProcess(
-				name,
-				(!string.IsNullOrEmpty(arguments) ? arguments + " " : "") + "/agc:" + (Global.AsService ? "r" : "g"),
+				this._serviceHoster,
+				arguments,
 				(sender, args) =>
 				{
 					try
 					{
-						this._runningServices.Remove((sender as Process).StartInfo.FileName.ToLower());
+						var svcName = (sender as Process).StartInfo.Arguments.Split(' ').FirstOrDefault(a => a.IsStartsWith("/svn:"));
+						if (!string.IsNullOrWhiteSpace(svcName))
+						{
+							this._runningServices.Remove(svcName.ToLower());
+							Global.WriteLog(
+								"----- [" + svcName.ToLower() + "] -----" + "\r\n" +
+								"The sevice is stopped..." + "\r\n" +
+								"--------------------------------------------------------------------------------" + "\r\n"
+							);
+						}
+
 						if (!Global.AsService)
 							this.UpdateServicesInfo();
-						Global.WriteLog(
-							"----- [" + (sender as Process).StartInfo.FileName.Replace(".exe", "").ToArray('.').Last().ToLower() + "] -----" + "\r\n" +
-							"The sevice is stopped..." + "\r\n" +
-							"--------------------------------------------------------------------------------" + "\r\n"
-						);
 					}
 					catch { }
 				},
 				(sender, args) =>
 				{
-					if (!string.IsNullOrWhiteSpace(args.Data))
+					var svcName = (sender as Process).StartInfo.Arguments.Split(' ').FirstOrDefault(a => a.IsStartsWith("/svn:"));
+					if (!string.IsNullOrWhiteSpace(svcName) && !string.IsNullOrWhiteSpace(args.Data))
 						try
 						{
 							Global.WriteLog(
-								"----- [" + (sender as Process).StartInfo.FileName.Replace(".exe", "").ToArray('.').Last().ToLower() + "] -----" + "\r\n" +
+								"----- [" + svcName.ToLower() + "] -----" + "\r\n" +
 								args.Data + "\r\n" +
 								"--------------------------------------------------------------------------------" + "\r\n"
 							);
@@ -411,8 +432,11 @@ namespace net.vieapps.Services.APIGateway
 				}
 			);
 
-			this._runningServices.Add(name.ToLower(), process.Id);
-			Global.WriteLog("The service [" + name.Replace(".exe", "").ToArray('.').Last().ToLower() + "] is starting - PID: " + process.Id.ToString());
+			this._runningServices[name.ToLower()] = process.Id;
+			Global.WriteLog("The service [" + name.ToLower() + "] is started - PID: " + process.Id.ToString());
+
+			if (!Global.AsService)
+				this.UpdateServicesInfo();
 		}
 
 		internal void StopService(string name)
@@ -422,10 +446,16 @@ namespace net.vieapps.Services.APIGateway
 				{
 					// stop the service
 					var processID = this._runningServices[name.ToLower()];
-					UtilityService.RunProcess(name, "/agc:s", (sender, args) =>
-					{
-						this.KillProcess(processID);
-					});
+					var arguments = "/agc:s /svc:" + this._availableServices[name.ToLower()] + " /svn:" + name.ToLower();
+
+					UtilityService.RunProcess(
+						this._serviceHoster,
+						arguments,
+						(sender, args) =>
+						{
+							this.KillProcess(processID);
+						}
+					);
 
 					// update information
 					this._runningServices.Remove(name.ToLower());

@@ -386,11 +386,10 @@ namespace net.vieapps.Services.APIGateway
 		#region Start/Stop business service
 		internal void StartService(string name, string arguments = null)
 		{
-			if (string.IsNullOrWhiteSpace(name) || this._availableServices.ContainsKey(name.ToLower()))
+			if (string.IsNullOrWhiteSpace(name) || !this._availableServices.ContainsKey(name.ToLower()) || this._runningServices.ContainsKey(name.ToLower()))
 				return;
 
-			arguments = (!string.IsNullOrEmpty(arguments) ? arguments + " " : "")
-				+ "/agc:" + (Global.AsService ? "r" : "g") + " /svc:" + this._availableServices[name.ToLower()] + " /svn:" + name.ToLower();
+			arguments = (arguments ?? "") + " /agc:" + (Global.AsService ? "r" : "g") + " /svc:" + this._availableServices[name.ToLower()] + " /svn:" + name.ToLower();
 
 			Global.WriteLog("The service [" + name.ToLower() + "] is starting...");
 			var process = UtilityService.RunProcess(
@@ -403,9 +402,9 @@ namespace net.vieapps.Services.APIGateway
 						var svcName = (sender as Process).StartInfo.Arguments.Split(' ').FirstOrDefault(a => a.IsStartsWith("/svn:"));
 						if (!string.IsNullOrWhiteSpace(svcName))
 						{
-							this._runningServices.Remove(svcName.ToLower());
+							this._runningServices.Remove(svcName.ToLower().Replace("/svn:", ""));
 							Global.WriteLog(
-								"----- [" + svcName.ToLower() + "] -----" + "\r\n" +
+								"----- [" + svcName.ToLower().Replace("/svn:", "") + "] -----" + "\r\n" +
 								"The sevice is stopped..." + "\r\n" +
 								"--------------------------------------------------------------------------------" + "\r\n"
 							);
@@ -423,7 +422,7 @@ namespace net.vieapps.Services.APIGateway
 						try
 						{
 							Global.WriteLog(
-								"----- [" + svcName.ToLower() + "] -----" + "\r\n" +
+								"----- [" + svcName.ToLower().Replace("/svn:", "") + "] -----" + "\r\n" +
 								args.Data + "\r\n" +
 								"--------------------------------------------------------------------------------" + "\r\n"
 							);

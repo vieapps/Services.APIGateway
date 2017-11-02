@@ -11,49 +11,57 @@ namespace net.vieapps.Services.APIGateway
 {
 	class Program
 	{
-		internal static IServiceComponent Component = null;
-		internal static bool AsService = false;
+		static IServiceComponent ServiceComponent = null;
+		static bool IsUserInteractive = false;
 
 		static void Main(string[] args)
 		{
-			// get type of service
-			var apiType = args?.FirstOrDefault(a => a.IsStartsWith("/svc:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/svc:", "");
-
-			// get flag to run or stop (when called from API Gateway)
+			// prepare
 			var apiCall = args?.FirstOrDefault(a => a.IsStartsWith("/agc:"));
 			var apiCallToStop = apiCall != null && apiCall.IsEquals("/agc:s");
-			Program.AsService = apiCall != null;
+			var typeName = args?.FirstOrDefault(a => a.IsStartsWith("/svc:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/svc:", "");
+
+			Program.IsUserInteractive = apiCall == null;
 
 			// initialize the instance of service component
-			if (string.IsNullOrWhiteSpace(apiType))
+			if (string.IsNullOrWhiteSpace(typeName))
 			{
-				Console.WriteLine("VIEApps NGX API Gateway Hosting.....");
+				Console.WriteLine("VIEApps NGX API Gateway - Service Hosting v10.1");
 				Console.WriteLine("");
-				Console.WriteLine("\tSyntax: VIEApps.Services.APIGateway.Host.exe /svc:<service-namespace,service-assembly>");
-				Console.WriteLine("\tEx: VIEApps.Services.APIGateway.Host.exe /svc:net.vieapps.Services.System,VIEAApps.Services.System");
+				Console.WriteLine("Syntax: VIEApps.Services.APIGateway.Host.exe /svc:<service-component-namespace,service-assembly>");
+				Console.WriteLine("");
+				Console.WriteLine("Ex.: VIEApps.Services.APIGateway.Host.exe /svc:net.vieapps.Services.Systems.ServiceComponent,VIEAApps.Services.Systems");
+				if (Program.IsUserInteractive)
+					Console.ReadKey();
 				return;
 			}
 
-			var svcType = Type.GetType(apiType);
-			if (svcType == null)
+			var serviceType = Type.GetType(typeName);
+			if (serviceType == null)
 			{
-				Console.WriteLine("The type is not found [" + apiType + "]");
+				Console.WriteLine("The type of the service component is not found [" + typeName + "]");
+				if (Program.IsUserInteractive)
+					Console.ReadKey();
 				return;
 			}
 
-			Program.Component = svcType.CreateInstance() as IServiceComponent;
-			if (Program.Component == null || !(Program.Component is IService))
+			Program.ServiceComponent = serviceType.CreateInstance() as IServiceComponent;
+			if (Program.ServiceComponent == null || !(Program.ServiceComponent is IService))
 			{
-				Console.WriteLine("The type is invalid [" + svcType.GetTypeName() + "]");
+				Console.WriteLine("The type of the service component is invalid [" + serviceType.GetTypeName() + "]");
+				if (Program.IsUserInteractive)
+					Console.ReadKey();
 				return;
 			}
+			else
+				Program.ServiceComponent.IsUserInteractive = Program.IsUserInteractive;
 
-			// prepare the signal to start/stop
+			// prepare the signal to start/stop when the service was called from API Gateway
 			EventWaitHandle waitHandle = null;
-			if (Program.AsService)
+			if (!Program.IsUserInteractive)
 			{
 				// get the flag of the existing instance
-				waitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, (Program.Component as IService).ServiceURI, out bool createdNew);
+				waitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, (Program.ServiceComponent as IService).ServiceURI, out bool createdNew);
 				
 				// process the call to stop
 				if (apiCallToStop)
@@ -63,16 +71,16 @@ namespace net.vieapps.Services.APIGateway
 						waitHandle.Set();
 
 					// then exit
-					Program.Component.Dispose();
+					Program.ServiceComponent.Dispose();
 					return;
 				}
 			}
 
 			// start the service component
-			if (!Program.AsService)
+			if (Program.IsUserInteractive)
 			{
 				Console.OutputEncoding = System.Text.Encoding.UTF8;
-				Console.WriteLine("Starting the service [" + (Program.Component as IService).ServiceURI + "]");
+				Console.WriteLine("Starting the service [" + (Program.ServiceComponent as IService).ServiceURI + "]");
 				Console.WriteLine("=====> Press RETURN to terminate...");
 			}
 
@@ -80,23 +88,22 @@ namespace net.vieapps.Services.APIGateway
 			var initializeRepository = !string.IsNullOrWhiteSpace(apiInitRepository) && apiInitRepository.IsEquals("false")
 				? false
 				: true;
-			Program.Component.Start(args, initializeRepository);
+			Program.ServiceComponent.Start(args, initializeRepository);
 
 			// wait for exit
-			if (Program.AsService)
-			{
-				waitHandle.WaitOne();
-				Program.Component.Dispose();
-			}
-			else
+			if (Program.IsUserInteractive)
 			{
 				Program.ConsoleEventHandler = new ConsoleEventDelegate(Program.ConsoleEventCallback);
 				Program.SetConsoleCtrlHandler(Program.ConsoleEventHandler, true);
 				Console.ReadLine();
 			}
+			else
+			{
+				waitHandle.WaitOne();
+				Program.ServiceComponent.Dispose();
+			}
 		}
 
-		#region Closing event handler
 		static bool ConsoleEventCallback(int eventCode)
 		{
 			switch (eventCode)
@@ -105,7 +112,7 @@ namespace net.vieapps.Services.APIGateway
 				case 1:		// Ctrl + Break
 				case 2:		// Close
 				case 6:		// Shutdown
-					Program.Component.Dispose();
+					Program.ServiceComponent.Dispose();
 					break;
 			}
 			return false;
@@ -115,11 +122,9 @@ namespace net.vieapps.Services.APIGateway
 		static ConsoleEventDelegate ConsoleEventHandler;
 
 		// invokes
-		private delegate bool ConsoleEventDelegate(int eventCode);
+		delegate bool ConsoleEventDelegate(int eventCode);
 
 		[DllImport("kernel32.dll", SetLastError = true)]
 		static extern bool SetConsoleCtrlHandler(ConsoleEventDelegate callback, bool add);
-		#endregion
-
 	}
 }

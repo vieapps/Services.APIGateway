@@ -50,7 +50,6 @@
     <CodeAnalysisRuleSet>AllRules.ruleset</CodeAnalysisRuleSet>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="netstandard" />
     <Reference Include="System" />
     <Reference Include="System.Configuration" />
     <Reference Include="System.Web" />
@@ -78,20 +77,8 @@
     <Content Include="web.config" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.NETCore.Platforms">
-      <Version>2.0.0</Version>
-    </PackageReference>
-    <PackageReference Include="NETStandard.Library">
-      <Version>2.0.1</Version>
-    </PackageReference>
-    <PackageReference Include="Newtonsoft.Json">
-      <Version>10.0.3</Version>
-    </PackageReference>
     <PackageReference Include="VIEApps.Components.Utility.AspNet">
       <Version>10.1.1.1711</Version>
-    </PackageReference>
-    <PackageReference Include="VIEApps.Enyim.Caching">
-      <Version>1.1.2.1711</Version>
     </PackageReference>
   </ItemGroup>
   <PropertyGroup>

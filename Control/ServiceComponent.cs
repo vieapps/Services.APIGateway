@@ -390,22 +390,29 @@ namespace net.vieapps.Services.APIGateway
 			if (string.IsNullOrWhiteSpace(name) || !this._availableServices.ContainsKey(name.ToLower()) || this._runningServices.ContainsKey(name.ToLower()))
 				return;
 
-			arguments = (arguments ?? "") + " /agc:" + (Global.AsService ? "r" : "g") + " /svc:" + this._availableServices[name.ToLower()] + " /svn:" + name.ToLower();
+			var serviceHoster = this._serviceHoster;
+			var serviceType = this._availableServices[name.ToLower()];
+			if (serviceType.IsEndsWith(",x86"))
+			{
+				serviceHoster = serviceHoster.Replace(StringComparison.OrdinalIgnoreCase, ".exe", ".x86.exe");
+				serviceType = serviceType.Left(serviceType.Length - 4);
+			}
+			var serviceArguments = (arguments ?? "") + " /agc:" + (Global.AsService ? "r" : "g") + " /svc:" + serviceType + " /svn:" + name.ToLower();
 
 			Global.WriteLog("The service [" + name.ToLower() + "] is starting...");
 			var process = UtilityService.RunProcess(
-				this._serviceHoster,
-				arguments,
+				serviceHoster,
+				serviceArguments,
 				(sender, args) =>
 				{
 					try
 					{
-						var svcName = (sender as Process).StartInfo.Arguments.Split(' ').FirstOrDefault(a => a.IsStartsWith("/svn:"));
-						if (!string.IsNullOrWhiteSpace(svcName))
+						var serviceName = (sender as Process).StartInfo.Arguments.Split(' ').FirstOrDefault(a => a.IsStartsWith("/svn:"));
+						if (!string.IsNullOrWhiteSpace(serviceName))
 						{
-							this._runningServices.Remove(svcName.ToLower().Replace("/svn:", ""));
+							this._runningServices.Remove(serviceName.ToLower().Replace("/svn:", ""));
 							Global.WriteLog(
-								"----- [" + svcName.ToLower().Replace("/svn:", "") + "] -----" + "\r\n" +
+								"----- [" + serviceName.ToLower().Replace("/svn:", "") + "] -----" + "\r\n" +
 								"The sevice is stopped..." + "\r\n" +
 								"--------------------------------------------------------------------------------" + "\r\n"
 							);
@@ -418,12 +425,12 @@ namespace net.vieapps.Services.APIGateway
 				},
 				(sender, args) =>
 				{
-					var svcName = (sender as Process).StartInfo.Arguments.Split(' ').FirstOrDefault(a => a.IsStartsWith("/svn:"));
-					if (!string.IsNullOrWhiteSpace(svcName) && !string.IsNullOrWhiteSpace(args.Data))
+					var serviceName = (sender as Process).StartInfo.Arguments.Split(' ').FirstOrDefault(a => a.IsStartsWith("/svn:"));
+					if (!string.IsNullOrWhiteSpace(serviceName) && !string.IsNullOrWhiteSpace(args.Data))
 						try
 						{
 							Global.WriteLog(
-								"----- [" + svcName.ToLower().Replace("/svn:", "") + "] -----" + "\r\n" +
+								"----- [" + serviceName.ToLower().Replace("/svn:", "") + "] -----" + "\r\n" +
 								args.Data + "\r\n" +
 								"--------------------------------------------------------------------------------" + "\r\n"
 							);
@@ -446,11 +453,18 @@ namespace net.vieapps.Services.APIGateway
 				{
 					// stop the service
 					var processID = this._runningServices[name.ToLower()];
-					var arguments = "/agc:s /svc:" + this._availableServices[name.ToLower()] + " /svn:" + name.ToLower();
+					var serviceHoster = this._serviceHoster;
+					var serviceType = this._availableServices[name.ToLower()];
+					if (serviceType.IsEndsWith(",x86"))
+					{
+						serviceHoster = serviceHoster.Replace(StringComparison.OrdinalIgnoreCase, ".exe", ".x86.exe");
+						serviceType = serviceType.Left(serviceType.Length - 4);
+					}
+					var serviceArguments = "/agc:s /svc:" + serviceType + " /svn:" + name.ToLower();
 
 					UtilityService.RunProcess(
-						this._serviceHoster,
-						arguments,
+						serviceHoster,
+						serviceArguments,
 						(sender, args) =>
 						{
 							this.KillProcess(processID);

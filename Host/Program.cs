@@ -3,6 +3,7 @@ using System;
 using System.Linq;
 using System.Threading;
 using System.Runtime.InteropServices;
+using System.Diagnostics;
 
 using Newtonsoft.Json;
 
@@ -18,14 +19,6 @@ namespace net.vieapps.Services.APIGateway
 
 		static void Main(string[] args)
 		{
-			// Json.NET
-			JsonConvert.DefaultSettings = () => new JsonSerializerSettings()
-			{
-				Formatting = Newtonsoft.Json.Formatting.Indented,
-				ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
-				DateTimeZoneHandling = DateTimeZoneHandling.Local
-			};
-
 			// prepare
 			var apiCall = args?.FirstOrDefault(a => a.IsStartsWith("/agc:"));
 			var apiCallToStop = apiCall != null && apiCall.IsEquals("/agc:s");
@@ -68,6 +61,14 @@ namespace net.vieapps.Services.APIGateway
 			else
 				Program.ServiceComponent.IsUserInteractive = Program.IsUserInteractive;
 
+			// prepare default settings of Json.NET
+			JsonConvert.DefaultSettings = () => new JsonSerializerSettings()
+			{
+				Formatting = Newtonsoft.Json.Formatting.Indented,
+				ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
+				DateTimeZoneHandling = DateTimeZoneHandling.Local
+			};
+
 			// prepare the signal to start/stop when the service was called from API Gateway
 			EventWaitHandle waitHandle = null;
 			if (!Program.IsUserInteractive)
@@ -87,11 +88,10 @@ namespace net.vieapps.Services.APIGateway
 					return;
 				}
 			}
+			else
+				Console.WriteLine("The service [" + (Program.ServiceComponent as IService).ServiceURI + "] is starting...");
 
 			// start the service component
-			if (Program.IsUserInteractive)
-				Console.WriteLine("Starting the service [" + (Program.ServiceComponent as IService).ServiceURI + "]");
-
 			var initRepository = args?.FirstOrDefault(a => a.IsStartsWith("/repository:"));
 			Program.ServiceComponent.Start(args, !string.IsNullOrWhiteSpace(initRepository) && initRepository.IsEquals("false") ? false : true);
 
@@ -100,6 +100,8 @@ namespace net.vieapps.Services.APIGateway
 			{
 				Program.ConsoleEventHandler = new ConsoleEventDelegate(Program.ConsoleEventCallback);
 				Program.SetConsoleCtrlHandler(Program.ConsoleEventHandler, true);
+
+				Console.WriteLine("The service [" + (Program.ServiceComponent as IService).ServiceURI + "] is started. PID: " + Process.GetCurrentProcess().Id);
 				Console.WriteLine("=====> Press RETURN to terminate...");
 				Console.ReadLine();
 			}

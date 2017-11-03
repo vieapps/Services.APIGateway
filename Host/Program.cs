@@ -4,6 +4,8 @@ using System.Linq;
 using System.Threading;
 using System.Runtime.InteropServices;
 
+using Newtonsoft.Json;
+
 using net.vieapps.Components.Utility;
 #endregion
 
@@ -16,12 +18,22 @@ namespace net.vieapps.Services.APIGateway
 
 		static void Main(string[] args)
 		{
+			// Json.NET
+			JsonConvert.DefaultSettings = () => new JsonSerializerSettings()
+			{
+				Formatting = Newtonsoft.Json.Formatting.Indented,
+				ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
+				DateTimeZoneHandling = DateTimeZoneHandling.Local
+			};
+
 			// prepare
 			var apiCall = args?.FirstOrDefault(a => a.IsStartsWith("/agc:"));
 			var apiCallToStop = apiCall != null && apiCall.IsEquals("/agc:s");
 			var typeName = args?.FirstOrDefault(a => a.IsStartsWith("/svc:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/svc:", "");
 
 			Program.IsUserInteractive = apiCall == null;
+			if (Program.IsUserInteractive)
+				Console.OutputEncoding = System.Text.Encoding.UTF8;
 
 			// initialize the instance of service component
 			if (string.IsNullOrWhiteSpace(typeName))
@@ -32,7 +44,7 @@ namespace net.vieapps.Services.APIGateway
 				Console.WriteLine("");
 				Console.WriteLine("Ex.: VIEApps.Services.APIGateway.Host.exe /svc:net.vieapps.Services.Systems.ServiceComponent,VIEAApps.Services.Systems");
 				if (Program.IsUserInteractive)
-					Console.ReadKey();
+					Console.ReadLine();
 				return;
 			}
 
@@ -41,7 +53,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				Console.WriteLine("The type of the service component is not found [" + typeName + "]");
 				if (Program.IsUserInteractive)
-					Console.ReadKey();
+					Console.ReadLine();
 				return;
 			}
 
@@ -50,7 +62,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				Console.WriteLine("The type of the service component is invalid [" + serviceType.GetTypeName() + "]");
 				if (Program.IsUserInteractive)
-					Console.ReadKey();
+					Console.ReadLine();
 				return;
 			}
 			else
@@ -78,23 +90,17 @@ namespace net.vieapps.Services.APIGateway
 
 			// start the service component
 			if (Program.IsUserInteractive)
-			{
-				Console.OutputEncoding = System.Text.Encoding.UTF8;
 				Console.WriteLine("Starting the service [" + (Program.ServiceComponent as IService).ServiceURI + "]");
-				Console.WriteLine("=====> Press RETURN to terminate...");
-			}
 
-			var apiInitRepository = args?.FirstOrDefault(a => a.IsStartsWith("/repository:"));
-			var initializeRepository = !string.IsNullOrWhiteSpace(apiInitRepository) && apiInitRepository.IsEquals("false")
-				? false
-				: true;
-			Program.ServiceComponent.Start(args, initializeRepository);
+			var initRepository = args?.FirstOrDefault(a => a.IsStartsWith("/repository:"));
+			Program.ServiceComponent.Start(args, !string.IsNullOrWhiteSpace(initRepository) && initRepository.IsEquals("false") ? false : true);
 
 			// wait for exit
 			if (Program.IsUserInteractive)
 			{
 				Program.ConsoleEventHandler = new ConsoleEventDelegate(Program.ConsoleEventCallback);
 				Program.SetConsoleCtrlHandler(Program.ConsoleEventHandler, true);
+				Console.WriteLine("=====> Press RETURN to terminate...");
 				Console.ReadLine();
 			}
 			else

@@ -25,16 +25,17 @@ namespace net.vieapps.Services.APIGateway
 
 		#region Attributes
 		internal IWampChannel _incommingChannel = null, _outgoingChannel = null;
-		long _incommingChannelSessionID = 0, _outgoingChannelSessionID = 0;
-		bool _channelsAreClosedBySystem = false;
+		internal long _incommingChannelSessionID = 0, _outgoingChannelSessionID = 0;
+		internal bool _channelsAreClosedBySystem = false;
 
-		IDisposable _communicator = null;
+		internal IDisposable _communicator = null;
 		internal ManagementService _managementService = null;
-		internal string _serviceHoster = UtilityService.GetAppSetting("ServiceHoster", "VIEApps.Services.APIGateway.Host.exe");
-		internal Dictionary<string, string> _availableServices = new Dictionary<string, string>();
-		internal Dictionary<string, int> _runningServices = new Dictionary<string, int>();
-		internal List<System.Timers.Timer> _timers = new List<System.Timers.Timer>();
 
+		string _serviceHoster = UtilityService.GetAppSetting("ServiceHoster", "VIEApps.Services.APIGateway.Host.exe");
+		Dictionary<string, string> _availableServices = new Dictionary<string, string>();
+		Dictionary<string, int> _runningServices = new Dictionary<string, int>();
+
+		List<System.Timers.Timer> _timers = new List<System.Timers.Timer>();
 		MailSender _mailSender = null;
 		WebHookSender _webhookSender = null;
 		bool _isHouseKeeperRunning = false, _isTaskSchedulerRunning = false;
@@ -216,7 +217,7 @@ namespace net.vieapps.Services.APIGateway
 			this._runningServices.Select(s => s.Value)
 				.Concat(this._runningTasks.Select(s => s.Item1))
 				.ToList()
-				.ForEach(id => this.KillProcess(id));
+				.ForEach(pid => this.KillProcess(pid));
 
 			this._communicator?.Dispose();
 			this._managementService?.FlushAll();
@@ -230,7 +231,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Open/Close channels
-		protected virtual Tuple<string, string, bool> GetLocationInfo()
+		Tuple<string, string, bool> GetLocationInfo()
 		{
 			var address = UtilityService.GetAppSetting("RouterAddress", "ws://127.0.0.1:26429/");
 			var realm = UtilityService.GetAppSetting("RouterRealm", "VIEAppsRealm");
@@ -268,12 +269,12 @@ namespace net.vieapps.Services.APIGateway
 		{
 			if (this._incommingChannel != null)
 			{
-				this._incommingChannel.Close("The incoming channel is closed when stop the API Gateway Hosting Service", new GoodbyeDetails());
+				this._incommingChannel.Close("The incoming channel is closed when stop the API Gateway Services Controller", new GoodbyeDetails());
 				this._incommingChannel = null;
 			}
 		}
 
-		protected void ReOpenIncomingChannel(int delay = 0, Action onSuccess = null, Action<Exception> onError = null)
+		void ReOpenIncomingChannel(int delay = 0, Action onSuccess = null, Action<Exception> onError = null)
 		{
 			if (this._incommingChannel != null)
 				(new WampChannelReconnector(this._incommingChannel, async () =>
@@ -321,12 +322,12 @@ namespace net.vieapps.Services.APIGateway
 		{
 			if (this._outgoingChannel != null)
 			{
-				this._outgoingChannel.Close("The outgoing channel is closed when stop the API Gateway Hosting Service", new GoodbyeDetails());
+				this._outgoingChannel.Close("The outgoing channel is closed when stop the API Gateway Services Controller", new GoodbyeDetails());
 				this._outgoingChannel = null;
 			}
 		}
 
-		protected void ReOpenOutgoingChannel(int delay = 0, Action onSuccess = null, Action<Exception> onError = null)
+		void ReOpenOutgoingChannel(int delay = 0, Action onSuccess = null, Action<Exception> onError = null)
 		{
 			if (this._outgoingChannel != null)
 				(new WampChannelReconnector(this._outgoingChannel, async () =>
@@ -346,7 +347,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Register business services
-		internal void  RegisterBusinessServices()
+		void  RegisterBusinessServices()
 		{
 			// prepare
 			if (ConfigurationManager.GetSection("net.vieapps.services") is AppConfigurationSectionHandler config)
@@ -376,7 +377,7 @@ namespace net.vieapps.Services.APIGateway
 			this.UpdateServicesInfo();
 		}
 
-		internal void UpdateServicesInfo()
+		void UpdateServicesInfo()
 		{
 			if (!Global.AsService)
 				Global.Form.UpdateServicesInfo(this._availableServices.Count, this._runningServices.Count);
@@ -384,7 +385,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Start/Stop business service
-		internal void StartService(string name, string arguments = null)
+		void StartService(string name, string arguments = null)
 		{
 			if (string.IsNullOrWhiteSpace(name) || !this._availableServices.ContainsKey(name.ToLower()) || this._runningServices.ContainsKey(name.ToLower()))
 				return;
@@ -438,7 +439,7 @@ namespace net.vieapps.Services.APIGateway
 				this.UpdateServicesInfo();
 		}
 
-		internal void StopService(string name)
+		void StopService(string name)
 		{
 			if (!string.IsNullOrWhiteSpace(name) && this._runningServices.ContainsKey(name.ToLower()))
 				try
@@ -464,7 +465,7 @@ namespace net.vieapps.Services.APIGateway
 				catch { }
 		}
 
-		internal void KillProcess(int processID)
+		void KillProcess(int processID)
 		{
 			try
 			{
@@ -657,12 +658,12 @@ namespace net.vieapps.Services.APIGateway
 
 					// delete empty folders
 					dir.GetDirectories()
-						.Where(subDir => subDir.GetFiles().Length < 1)
-						.ForEach(subDir =>
+						.Where(d => d.GetFiles().Length < 1)
+						.ForEach(d =>
 						{
 							try
 							{
-								subDir.Delete(true);
+								d.Delete(true);
 							}
 							catch { }
 						});
@@ -729,7 +730,7 @@ namespace net.vieapps.Services.APIGateway
 					}
 					catch (OperationCanceledException)
 					{
-						UtilityService.KillProcess(this._runningTasks.First(info => info.Item2 == task.Key).Item1);
+						this.KillProcess(this._runningTasks.First(t => t.Item2 == task.Key).Item1);
 						return;
 					}
 					catch (Exception)

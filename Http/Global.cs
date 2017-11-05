@@ -243,7 +243,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			if (Global.IncommingChannel != null)
 			{
-				Global.IncommingChannel.Close("The incoming channel is closed when stop the API Gateway REST Service", new GoodbyeDetails());
+				Global.IncommingChannel.Close("The incoming channel is closed when stop the API Gateway HTTP Service", new GoodbyeDetails());
 				Global.IncommingChannel = null;
 			}
 		}
@@ -310,7 +310,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			if (Global.OutgoingChannel != null)
 			{
-				Global.OutgoingChannel.Close("The outgoing channel is closed when stop the API Gateway REST Service", new GoodbyeDetails());
+				Global.OutgoingChannel.Close("The outgoing channel is closed when stop the API Gateway HTTP Service", new GoodbyeDetails());
 				Global.OutgoingChannel = null;
 			}
 		}
@@ -337,15 +337,15 @@ namespace net.vieapps.Services.APIGateway
 		{
 			await Global.OpenIncomingChannelAsync(
 				(sender, arguments) => {
-					Global.WriteLogs("The incoming connection is established - Session ID: " + arguments.SessionId);
+					Global.WriteLogs($"The incoming connection is established - Session ID: {arguments.SessionId}");
 				},
 				(sender, arguments) => {
 					if (arguments.CloseType.Equals(SessionCloseType.Disconnection))
-						Global.WriteLogs("The incoming connection is broken because the router is not found or the router is refused - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
+						Global.WriteLogs($"The incoming connection is broken because the router is not found or the router is refused - Session ID: {arguments.SessionId}\r\n- Reason: {(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)} - {arguments.CloseType}");
 					else
 					{
 						if (Global.ChannelsAreClosedBySystem)
-							Global.WriteLogs("The incoming connection is closed - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
+							Global.WriteLogs($"The incoming connection is closed - Session ID: {arguments.SessionId}\r\n- Reason: {(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)} - {arguments.CloseType}");
 						else
 							Global.ReOpenIncomingChannel(
 								123,
@@ -359,21 +359,21 @@ namespace net.vieapps.Services.APIGateway
 					}
 				},
 				(sender, arguments) => {
-					Global.WriteLogs("Got an error of incoming connection: " + (arguments.Exception != null ? arguments.Exception.Message : "None"), arguments.Exception);
+					Global.WriteLogs($"Got an error of incoming connection: {(arguments.Exception != null ? arguments.Exception.Message : "None")}", arguments.Exception);
 				}
 			);
 
 			await Global.OpenOutgoingChannelAsync(
 				(sender, arguments) => {
-					Global.Logs.Enqueue(new Tuple<string, string, string, List<string>, string, string>(UtilityService.NewUID, "APIGateway", null, new List<string>() { "The outgoing connection is established - Session ID: " + arguments.SessionId }, null, null));
+					Global.Logs.Enqueue(new Tuple<string, string, string, List<string>, string, string>(UtilityService.NewUID, "APIGateway", null, new List<string>() { $"The outgoing connection is established - Session ID: {arguments.SessionId}" }, null, null));
 				},
 				(sender, arguments) => {
 					if (arguments.CloseType.Equals(SessionCloseType.Disconnection))
-						Global.WriteLogs("The outgoing connection is broken because the router is not found or the router is refused - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
+						Global.WriteLogs($"The outgoing connection is broken because the router is not found or the router is refused - Session ID: {arguments.SessionId}\r\n- Reason: {(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)} - {arguments.CloseType}");
 					else
 					{
 						if (Global.ChannelsAreClosedBySystem)
-							Global.WriteLogs("The outgoing connection is closed - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
+							Global.WriteLogs($"The outgoing connection is closed - Session ID: {arguments.SessionId}\r\n- Reason: {(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)} - {arguments.CloseType}");
 						else
 							Global.ReOpenOutgoingChannel(
 								123,
@@ -387,7 +387,7 @@ namespace net.vieapps.Services.APIGateway
 					}
 				},
 				(sender, arguments) => {
-					Global.WriteLogs("Got an error of outgoing connection: " + (arguments.Exception != null ? arguments.Exception.Message : "None"), arguments.Exception);
+					Global.WriteLogs($"Got an error of outgoing connection: {(arguments.Exception != null ? arguments.Exception.Message : "None")}", arguments.Exception);
 				}
 			);
 		}
@@ -472,7 +472,7 @@ namespace net.vieapps.Services.APIGateway
 				while (inner != null)
 				{
 					counter++;
-					fullStack += "\r\n" + "-> Inner (" + counter.ToString() + "): ---->>>>" + "\r\n" + inner.StackTrace;
+					fullStack += "\r\n" + $"-> Inner ({counter}): ---->>>>" + "\r\n" + inner.StackTrace;
 					inner = inner.InnerException;
 				}
 				fullStack += "\r\n" + "-------------------------------------" + "\r\n";
@@ -576,7 +576,7 @@ namespace net.vieapps.Services.APIGateway
 			};
 
 			stopwatch.Stop();
-			Global.WriteLogs("*** The API Gateway is ready for serving. The app is initialized in " + stopwatch.GetElapsedTimes());
+			Global.WriteLogs($"*** The API Gateway is ready for serving. The app is initialized in {stopwatch.GetElapsedTimes()}");
 		}
 
 		internal static void OnAppEnd()
@@ -657,9 +657,9 @@ namespace net.vieapps.Services.APIGateway
 #if DEBUG || REQUESTLOGS
 			var appInfo = app.Context.GetAppInfo();
 			Global.WriteLogs(new List<string>() {
-					"Begin process [" + app.Context.Request.HttpMethod + "]: " + app.Context.Request.Url.Scheme + "://" + app.Context.Request.Url.Host + app.Context.Request.RawUrl,
-					"- Origin: " + appInfo.Item1 + " / " + appInfo.Item2 + " - " + appInfo.Item3,
-					"- IP: " + app.Context.Request.UserHostAddress + " [" + app.Context.Request.UserAgent + "]"
+					$"Begin process [{app.Context.Request.HttpMethod}]: {app.Context.Request.Url.Scheme}://{app.Context.Request.Url.Host + app.Context.Request.RawUrl}",
+					$"- Origin: {appInfo.Item1} / {appInfo.Item2} - {appInfo.Item3}",
+					$"- IP: {app.Context.Request.UserHostAddress} [{app.Context.Request.UserAgent}]"
 				});
 			if (!executionFilePaths[0].IsEquals("rtu"))
 			{
@@ -695,7 +695,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				(app.Context.Items["StopWatch"] as Stopwatch).Stop();
 				var executionTimes = (app.Context.Items["StopWatch"] as Stopwatch).GetElapsedTimes();
-				Global.WriteLogs("End process - Execution times: " + executionTimes);
+				Global.WriteLogs($"End process - Execution times: {executionTimes}");
 				try
 				{
 					app.Response.Headers.Add("x-execution-times", executionTimes);
@@ -872,7 +872,7 @@ namespace net.vieapps.Services.APIGateway
 					message = (exception.Arguments[0] as JValue).Value.ToString();
 					var start = message.IndexOf("'");
 					var end = message.IndexOf("'", start + 1);
-					message = "The requested service is not found [" + message.Substring(start + 1, end - start - 1).Replace("'", "") + "]";
+					message = $"The requested service is not found [{message.Substring(start + 1, end - start - 1).Replace("'", "")}]";
 				}
 				else
 					message = "The requested service is not found";
@@ -888,7 +888,7 @@ namespace net.vieapps.Services.APIGateway
 					foreach (var info in exception.Arguments[0] as JObject)
 					{
 						if (info.Value != null && info.Value is JValue && (info.Value as JValue).Value != null)
-							stack += (stack.Equals("") ? "" : "\r\n" + "----- Inner (" + info.Key + ") --------------------" + "\r\n")
+							stack += (stack.Equals("") ? "" : "\r\n" + $"----- Inner ({info.Key}) --------------------" + "\r\n")
 								+ (info.Value as JValue).Value.ToString();
 					}
 
@@ -905,7 +905,7 @@ namespace net.vieapps.Services.APIGateway
 
 				message = jsonException != null
 					? (jsonException["Message"] as JValue).Value.ToString()
-					: "Error occurred while processing with the service [net.vieapps.services." + (requestInfo != null ? requestInfo.ServiceName.ToLower() : "unknown") + "]";
+					: $"Error occurred while processing with the service [net.vieapps.services.{(requestInfo != null ? requestInfo.ServiceName.ToLower() : "unknown")}]";
 
 				type = jsonException != null
 					? (jsonException["Type"] as JValue).Value.ToString().ToArray('.').Last()
@@ -964,7 +964,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				// write logs
 				if (writeLogs && exception != null)
-					Global.WriteLogs(Global.GetCorrelationID(context.Items), "Errors", "Error occurred while processing: " + exception.Message + "\r\n" + "===> Request:" + "\r\n" + requestInfo.ToJson().ToString(Formatting.Indented), exception);
+					Global.WriteLogs(Global.GetCorrelationID(context.Items), "Errors", $"Error occurred while processing: {exception.Message}" + "\r\n" + "===> Request:" + "\r\n" + requestInfo.ToJson().ToString(Formatting.Indented), exception);
 
 				// show error
 				var message = exception != null ? exception.Message : "Unknown error";
@@ -1191,7 +1191,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (FileNotFoundException ex)
 				{
-					context.ShowError((int)HttpStatusCode.NotFound, "Not found [" + path + "]", "FileNotFoundException", ex.StackTrace, ex.InnerException);
+					context.ShowError((int)HttpStatusCode.NotFound, $"Not found [{path}]", "FileNotFoundException", ex.StackTrace, ex.InnerException);
 				}
 				catch (Exception ex)
 				{

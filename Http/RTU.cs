@@ -215,7 +215,7 @@ namespace net.vieapps.Services.APIGateway
 			// send & write logs
 			await Task.WhenAll(
 				context.SendAsync(message.ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None)),
-				Global.WriteLogsAsync(correlationID, "RTU", "Error occurred while processing with real-time updater: " + exception.Message, exception)
+				Global.WriteLogsAsync(correlationID, "RTU", $"Error occurred while processing with real-time updater: {exception.Message}", exception)
 			);
 		}
 
@@ -229,7 +229,7 @@ namespace net.vieapps.Services.APIGateway
 				catch (OperationCanceledException) { }
 				catch (Exception ex)
 				{
-					await Global.WriteLogsAsync(Global.GetCorrelationID(context.Items), "RTU", "Error occurred while sending message via WebSocket: " + ex.Message, ex);
+					await Global.WriteLogsAsync(Global.GetCorrelationID(context.Items), "RTU", $"Error occurred while sending message via WebSocket: {ex.Message}", ex);
 				}
 		}
 		#endregion
@@ -249,12 +249,12 @@ namespace net.vieapps.Services.APIGateway
 						messages.Enqueue(message);
 
 #if DEBUG || RTULOGS
-						Global.WriteLogs(correlationID, "RTU.Pusher", "Got an update message: " + message.ToJson().ToString(Formatting.None));
+						Global.WriteLogs(correlationID, "RTU.Pusher", $"Got an update message: {message.ToJson().ToString(Formatting.None)}");
 #endif
 					},
 					(ex) =>
 					{
-						Global.WriteLogs(correlationID, "RTU.Pusher", "Error occurred while fetching messages: " + ex.Message + " [" + ex.GetType().GetTypeName(true) + "]", ex);
+						Global.WriteLogs(correlationID, "RTU.Pusher", $"Error occurred while fetching messages: {ex.Message} [{ex.GetType().GetTypeName(true)}]", ex);
 					});
 			}
 			catch (Exception ex)
@@ -283,7 +283,7 @@ namespace net.vieapps.Services.APIGateway
 				"The real-time updater of a client's device is started",
 				"- Account: " + (session.User.ID.Equals("") ? "Visitor" : session.User.ID),
 				"- Session: " + session.SessionID + " @ " + session.DeviceID,
-				"- App Info: " + session.AppName + " @ " + session.AppPlatform  + " - " + session.AppOrigin + " [IP: " + session.IP + " - Agent: " + session.AppAgent + "]"
+				"- App Info: " + session.AppName + " @ " + session.AppPlatform  + " - " + session.AppOrigin + $" [IP: {session.IP} - Agent: {session.AppAgent}]"
 			});
 #endif
 
@@ -299,7 +299,7 @@ namespace net.vieapps.Services.APIGateway
 					}
 					catch (Exception ex)
 					{
-						Global.WriteLogs(correlationID, "RTU.Pusher", "Error occurred while disposing subscriber: " + ex.Message + " [" + ex.GetType().GetTypeName(true) + "]", ex);
+						Global.WriteLogs(correlationID, "RTU.Pusher", $"Error occurred while disposing subscriber: {ex.Message} [{ex.GetType().GetTypeName(true)}]", ex);
 					}
 
 					await session.SendOnlineStatusAsync(false);
@@ -310,7 +310,7 @@ namespace net.vieapps.Services.APIGateway
 						"The real-time updater of a client's device is stopped",
 						"- Account: " + (session.User.ID.Equals("") ? "Visitor" : session.User.ID),
 						"- Session: " + session.SessionID + " @ " + session.DeviceID,
-						"- App Info: " + session.AppName + " @ " + session.AppPlatform  + " - " + session.AppOrigin + " [IP: " + session.IP + " - Agent: " + session.AppAgent + "]"
+						"- App Info: " + session.AppName + " @ " + session.AppPlatform  + " - " + session.AppOrigin + $" [IP: {session.IP} - Agent: {session.AppAgent}]"
 					});
 #endif
 					return;
@@ -330,7 +330,7 @@ namespace net.vieapps.Services.APIGateway
 							{
 								"Push the message to the subscriber's device successful",
 								"- Session: " + session.SessionID + " @ " + session.DeviceID,
-								"- App Info: " + session.AppName + " @ " + session.AppPlatform  + " - " + session.AppOrigin + " [IP: " + session.IP + " - Agent: " + session.AppAgent + "]",
+								"- App Info: " + session.AppName + " @ " + session.AppPlatform  + " - " + session.AppOrigin + $" [IP: {session.IP} - Agent: {session.AppAgent}]",
 								"- Message: " + message.Data.ToString(Formatting.None)
 							});
 #endif
@@ -345,7 +345,7 @@ namespace net.vieapps.Services.APIGateway
 							{
 								"Error occurred while pushing message to the subscriber's device",
 								"- Message: " + message.ToJson().ToString(Formatting.None),
-								"- Error: " + ex.Message + " [" + ex.GetType().GetTypeName(true) + "]"
+								$"- Error: {ex.Message} [{ex.GetType().GetTypeName(true)}]"
 							}, ex);
 						}
 				}
@@ -469,7 +469,7 @@ namespace net.vieapps.Services.APIGateway
 						{
 							"Process the client messages successful",
 							"- Session: " + session.SessionID + " @ " + session.DeviceID,
-							"- App Info: " + session.AppName + " @ " + session.AppPlatform  + " - " + session.AppOrigin + " [IP: " + session.IP + " - Agent: " + session.AppAgent + "]",
+							"- App Info: " + session.AppName + " @ " + session.AppPlatform  + " - " + session.AppOrigin + $" [IP: {session.IP} - Agent: {session.AppAgent}]",
 							"- Request: " + requestMessage ?? "None",
 							"- Response: " + data.ToString(Formatting.None)
 						});
@@ -486,7 +486,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 						"Error occurred while processing the client messages",
 						"- Session: " + session.SessionID + " @ " + session.DeviceID,
-						"- App Info: " + session.AppName + " @ " + session.AppPlatform  + " - " + session.AppOrigin + " [IP: " + session.IP + " - Agent: " + session.AppAgent + "]",
+						"- App Info: " + session.AppName + " @ " + session.AppPlatform  + " - " + session.AppOrigin + $" [IP: {session.IP} - Agent: {session.AppAgent}]",
 						"- Request: " + requestMessage ?? "None",
 						"- Error: " + ex.Message + " [" + ex.GetType().GetTypeName(true) + "]"
 					}, ex);

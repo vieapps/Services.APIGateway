@@ -157,8 +157,8 @@ namespace net.vieapps.Services.APIGateway
 
 			// send messages
 			await MailSender.Messages
-				.Where(e => e.Value.Time <= DateTime.Now)
-				.ForEachAsync((e, index, cancellationToken) => this.SendMessageAsync(e.Value.Message, index, this.OnSuccess, this.OnError));
+				.Where(kvp => kvp.Value.Time <= DateTime.Now)
+				.ForEachAsync((kvp, index, cancellationToken) => this.SendMessageAsync(kvp.Value.Message, index, this.OnSuccess, this.OnError));
 		}
 	}
 }

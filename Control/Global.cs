@@ -27,8 +27,8 @@ namespace net.vieapps.Services.APIGateway
 		{
 			if (Global.EventLog == null)
 			{
-				string logName = "Application";
-				string logSource = "VIEApps API Gateway";
+				var logName = "Application";
+				var logSource = "VIEApps API Gateway";
 
 				if (!EventLog.SourceExists(logSource))
 					EventLog.CreateEventSource(logSource, logName);
@@ -77,9 +77,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			get
 			{
-				if (Global._LogsPath == null)
-					Global._LogsPath = Global.GetPath("LogsPath", "logs");
-				return Global._LogsPath;
+				return Global._LogsPath ?? (Global._LogsPath = Global.GetPath("LogsPath", "logs"));
 			}
 		}
 
@@ -87,9 +85,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			get
 			{
-				if (Global._StatusPath == null)
-					Global._StatusPath = Global.GetPath("StatusPath", "status");
-				return Global._StatusPath;
+				return Global._StatusPath ?? (Global._StatusPath = Global.GetPath("StatusPath", "status"));
 			}
 		}
 
@@ -97,9 +93,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			get
 			{
-				if (Global._EmailsPath == null)
-					Global._EmailsPath = Global.GetPath("EmailsPath", "emails");
-				return Global._EmailsPath;
+				return Global._EmailsPath ?? (Global._EmailsPath = Global.GetPath("EmailsPath", "emails"));
 			}
 		}
 
@@ -107,9 +101,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			get
 			{
-				if (Global._WebHooksPath == null)
-					Global._WebHooksPath = Global.GetPath("WebHooksPath", "webhooks");
-				return Global._WebHooksPath;
+				return Global._WebHooksPath ?? (Global._WebHooksPath = Global.GetPath("WebHooksPath", "webhooks"));
 			}
 		}
 		#endregion

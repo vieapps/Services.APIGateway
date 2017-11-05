@@ -371,7 +371,7 @@ namespace net.vieapps.Services.APIGateway
 			if (File.Exists(this._serviceHoster))
 				this._availableServices.ForEach(s => this.StartService(s.Key));
 			else if (!Global.AsService)
-				Global.Form.UpdateLogs("The service hoster [" + this._serviceHoster + "] is not found");
+				Global.Form.UpdateLogs($"The service hoster [{this._serviceHoster}] is not found");
 
 			// update info
 			this.UpdateServicesInfo();
@@ -385,7 +385,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Start/Stop business service
-		void StartService(string name, string arguments = null)
+		internal void StartService(string name, string arguments = null)
 		{
 			if (string.IsNullOrWhiteSpace(name) || !this._availableServices.ContainsKey(name.ToLower()) || this._runningServices.ContainsKey(name.ToLower()))
 				return;
@@ -397,9 +397,9 @@ namespace net.vieapps.Services.APIGateway
 				serviceHoster = serviceHoster.Replace(StringComparison.OrdinalIgnoreCase, ".exe", ".x86.exe");
 				serviceType = serviceType.Left(serviceType.Length - 4);
 			}
-			var serviceArguments = (arguments ?? "") + " /agc:" + (Global.AsService ? "r" : "g") + " /svc:" + serviceType + " /svn:" + name.ToLower();
+			var serviceArguments = (arguments ?? "") + $" /agc:{(Global.AsService ? "r" : "g")} /svc:{serviceType} /svn:{name.ToLower()}";
 
-			Global.WriteLog("The service [" + name.ToLower() + "] is starting...");
+			Global.WriteLog($"The service [{name.ToLower()}] is starting...");
 			var process = UtilityService.RunProcess(
 				serviceHoster,
 				serviceArguments,
@@ -412,7 +412,7 @@ namespace net.vieapps.Services.APIGateway
 						{
 							this._runningServices.Remove(serviceName.ToLower().Replace("/svn:", ""));
 							Global.WriteLog(
-								"----- [" + serviceName.ToLower().Replace("/svn:", "") + "] -----" + "\r\n" +
+								$"----- [{serviceName.ToLower().Replace("/svn:", "")}] -----" + "\r\n" +
 								"The sevice is stopped..." + "\r\n" +
 								"--------------------------------------------------------------------------------" + "\r\n"
 							);
@@ -430,7 +430,7 @@ namespace net.vieapps.Services.APIGateway
 						try
 						{
 							Global.WriteLog(
-								"----- [" + serviceName.ToLower().Replace("/svn:", "") + "] -----" + "\r\n" +
+								$"----- [{serviceName.ToLower().Replace("/svn:", "")}] -----" + "\r\n" +
 								args.Data + "\r\n" +
 								"--------------------------------------------------------------------------------" + "\r\n"
 							);
@@ -440,13 +440,13 @@ namespace net.vieapps.Services.APIGateway
 			);
 
 			this._runningServices[name.ToLower()] = process.Id;
-			Global.WriteLog("The service [" + name.ToLower() + "] is started - PID: " + process.Id.ToString());
+			Global.WriteLog($"The service [{name.ToLower()}] is started - PID: {process.Id}");
 
 			if (!Global.AsService)
 				this.UpdateServicesInfo();
 		}
 
-		void StopService(string name)
+		internal void StopService(string name)
 		{
 			if (!string.IsNullOrWhiteSpace(name) && this._runningServices.ContainsKey(name.ToLower()))
 				try
@@ -460,7 +460,7 @@ namespace net.vieapps.Services.APIGateway
 						serviceHoster = serviceHoster.Replace(StringComparison.OrdinalIgnoreCase, ".exe", ".x86.exe");
 						serviceType = serviceType.Left(serviceType.Length - 4);
 					}
-					var serviceArguments = "/agc:s /svc:" + serviceType + " /svn:" + name.ToLower();
+					var serviceArguments = $"/agc:s /svc:{serviceType} /svn:{name.ToLower()}";
 
 					UtilityService.RunProcess(
 						serviceHoster,

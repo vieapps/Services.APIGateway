@@ -136,16 +136,16 @@ namespace net.vieapps.Services.APIGateway
 
 				// verify client credential
 				var accessToken = session.ParseJSONWebToken(appToken);
-				if (!await InternalAPIs.CheckSessionExistAsync(session))
+				if (!await InternalAPIs.CheckSessionExistAsync(session).ConfigureAwait(false))
 					throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
-				await InternalAPIs.VerifySessionIntegrityAsync(session, accessToken);
+				await InternalAPIs.VerifySessionIntegrityAsync(session, accessToken).ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
 				if (ex is TokenNotFoundException || ex is InvalidTokenException || ex is InvalidTokenSignatureException || ex is InvalidSessionException)
-					await context.SendAsync(ex);
+					await context.SendAsync(ex).ConfigureAwait(false);
 				else
-					await context.SendAsync(new InvalidTokenException("The token is invalid", ex));
+					await context.SendAsync(new InvalidTokenException("The token is invalid", ex)).ConfigureAwait(false);
 				return;
 			}
 
@@ -162,15 +162,15 @@ namespace net.vieapps.Services.APIGateway
 
 			// do the process
 			if (session.SessionID.Encrypt(Global.AESKey.Reverse(), true).IsEquals(context.QueryString["x-receiver"]))
-				await context.ProcesMessagesAsync(session);
+				await context.ProcesMessagesAsync(session).ConfigureAwait(false);
 			else
-				await context.PushMessagesAsync(session);
+				await context.PushMessagesAsync(session).ConfigureAwait(false);
 		}
 
 		#region Send messages via web socket
 		static async Task SendAsync(this AspNetWebSocketContext context, UpdateMessage message)
 		{
-			await context.SendAsync(message.ToJson().ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None));
+			await context.SendAsync(message.ToJson().ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None)).ConfigureAwait(false);
 		}
 
 		static async Task SendAsync(this AspNetWebSocketContext context, Exception exception)
@@ -216,7 +216,7 @@ namespace net.vieapps.Services.APIGateway
 			await Task.WhenAll(
 				context.SendAsync(message.ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None)),
 				Global.WriteLogsAsync(correlationID, "RTU", $"Error occurred while processing with real-time updater: {exception.Message}", exception)
-			);
+			).ConfigureAwait(false);
 		}
 
 		static async Task SendAsync(this AspNetWebSocketContext context, string message)
@@ -224,12 +224,12 @@ namespace net.vieapps.Services.APIGateway
 			if (context.WebSocket.State.Equals(WebSocketState.Open))
 				try
 				{
-					await context.WebSocket.SendAsync(new ArraySegment<byte>(message.ToBytes()), WebSocketMessageType.Text, true, Global.CancellationTokenSource.Token);
+					await context.WebSocket.SendAsync(new ArraySegment<byte>(message.ToBytes()), WebSocketMessageType.Text, true, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				}
 				catch (OperationCanceledException) { }
 				catch (Exception ex)
 				{
-					await Global.WriteLogsAsync(Global.GetCorrelationID(context.Items), "RTU", $"Error occurred while sending message via WebSocket: {ex.Message}", ex);
+					await Global.WriteLogsAsync(Global.GetCorrelationID(context.Items), "RTU", $"Error occurred while sending message via WebSocket: {ex.Message}", ex).ConfigureAwait(false);
 				}
 		}
 		#endregion
@@ -259,7 +259,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-				await context.SendAsync(new InvalidAppOperationException("Cannot start the subscriber of updating messages", ex));
+				await context.SendAsync(new InvalidAppOperationException("Cannot start the subscriber of updating messages", ex)).ConfigureAwait(false);
 				return;
 			}
 
@@ -270,12 +270,12 @@ namespace net.vieapps.Services.APIGateway
 					await context.SendAsync(new UpdateMessage()
 					{
 						Type = "Knock"
-					});
+					}).ConfigureAwait(false);
 				}
 				catch { }
 
 			// register online session
-			await session.SendOnlineStatusAsync(true);
+			await session.SendOnlineStatusAsync(true).ConfigureAwait(false);
 
 #if DEBUG || RTULOGS || REQUESTLOGS
 			Global.WriteLogs(correlationID, "RTU.Pusher", new List<string>()
@@ -302,7 +302,7 @@ namespace net.vieapps.Services.APIGateway
 						Global.WriteLogs(correlationID, "RTU.Pusher", $"Error occurred while disposing subscriber: {ex.Message} [{ex.GetType().GetTypeName(true)}]", ex);
 					}
 
-					await session.SendOnlineStatusAsync(false);
+					await session.SendOnlineStatusAsync(false).ConfigureAwait(false);
 
 #if DEBUG || RTULOGS || REQUESTLOGS
 					await Global.WriteLogsAsync(correlationID, "RTU.Pusher", new List<string>()
@@ -311,7 +311,7 @@ namespace net.vieapps.Services.APIGateway
 						"- Account: " + (session.User.ID.Equals("") ? "Visitor" : session.User.ID),
 						"- Session: " + session.SessionID + " @ " + session.DeviceID,
 						"- App Info: " + session.AppName + " @ " + session.AppPlatform  + " - " + session.AppOrigin + $" [IP: {session.IP} - Agent: {session.AppAgent}]"
-					});
+					}).ConfigureAwait(false);
 #endif
 					return;
 				}
@@ -332,7 +332,7 @@ namespace net.vieapps.Services.APIGateway
 								"- Session: " + session.SessionID + " @ " + session.DeviceID,
 								"- App Info: " + session.AppName + " @ " + session.AppPlatform  + " - " + session.AppOrigin + $" [IP: {session.IP} - Agent: {session.AppAgent}]",
 								"- Message: " + message.Data.ToString(Formatting.None)
-							});
+							}).ConfigureAwait(false);
 #endif
 						}
 						catch (OperationCanceledException)
@@ -353,7 +353,7 @@ namespace net.vieapps.Services.APIGateway
 				// wait for next interval
 				try
 				{
-					await Task.Delay(RTU.PushInterval, Global.CancellationTokenSource.Token);
+					await Task.Delay(RTU.PushInterval, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				}
 				catch (OperationCanceledException)
 				{
@@ -372,7 +372,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					try
 					{
-						await Global.OpenOutgoingChannelAsync();
+						await Global.OpenOutgoingChannelAsync().ConfigureAwait(false);
 						RTU.Sender = Global.OutgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages");
 						RTU.Sender.OnNext(message);
 					}
@@ -434,14 +434,14 @@ namespace net.vieapps.Services.APIGateway
 						var sessionInfo = (await InternalAPIs.CallServiceAsync(new Session(session)
 						{
 							SessionID = extra["x-session"].Decrypt(Global.AESKey.Reverse(), true)
-						}, "users", "session")).ToExpandoObject();
+						}, "users", "session").ConfigureAwait(false)).ToExpandoObject();
 
 						session.SessionID = sessionInfo.Get<string>("ID");
 						session.User.ID = sessionInfo.Get<string>("UserID");
 
 						session.User = session.User.ID.Equals("")
 							? new User() { Roles = new List<string>() { SystemRole.All.ToString() } }
-							: (await InternalAPIs.CallServiceAsync(session, "users", "account")).FromJson<User>();
+							: (await InternalAPIs.CallServiceAsync(session, "users", "account").ConfigureAwait(false)).FromJson<User>();
 
 #if DEBUG || RTULOGS
 						Global.WriteLogs(correlationID, "RTU.Processor", "Patch a session successful" + "\r\n" + session.ToJson().ToString(Formatting.Indented));
@@ -453,7 +453,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 						// call the service
 						var query = requestInfo.Get<Dictionary<string, string>>("Query");
-						var data = await InternalAPIs.CallServiceAsync(new RequestInfo(session, serviceName, objectName, verb, query, requestInfo.Get<Dictionary<string, string>>("Header"), requestInfo.Get<string>("Body"), extra, correlationID));
+						var data = await InternalAPIs.CallServiceAsync(new RequestInfo(session, serviceName, objectName, verb, query, requestInfo.Get<Dictionary<string, string>>("Header"), requestInfo.Get<string>("Body"), extra, correlationID)).ConfigureAwait(false);
 
 						// send the update message
 						var objectIdentity = query != null && query.ContainsKey("object-identity") ? query["object-identity"] : null;
@@ -472,7 +472,7 @@ namespace net.vieapps.Services.APIGateway
 							"- App Info: " + session.AppName + " @ " + session.AppPlatform  + " - " + session.AppOrigin + $" [IP: {session.IP} - Agent: {session.AppAgent}]",
 							"- Request: " + requestMessage ?? "None",
 							"- Response: " + data.ToString(Formatting.None)
-						});
+						}).ConfigureAwait(false);
 #endif
 					}
 				}
@@ -495,7 +495,7 @@ namespace net.vieapps.Services.APIGateway
 				// wait for next interval
 				try
 				{
-					await Task.Delay(RTU.ProcessInterval, Global.CancellationTokenSource.Token);
+					await Task.Delay(RTU.ProcessInterval, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				}
 				catch (OperationCanceledException)
 				{

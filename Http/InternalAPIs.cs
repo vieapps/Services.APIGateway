@@ -52,6 +52,10 @@ namespace net.vieapps.Services.APIGateway
 			}
 			#endregion
 
+#if DEBUG
+			Global.WriteLogs(requestInfo.CorrelationID, "InternalAPIs", $"Process the request ==>\r\n{requestInfo.ToJson().ToString(Formatting.Indented)}");
+#endif
+
 			#region prepare token
 			var accessToken = "";
 			try
@@ -71,11 +75,11 @@ namespace net.vieapps.Services.APIGateway
 
 				if (tokenIsRequired)
 				{
-					if (!await InternalAPIs.CheckSessionExistAsync(requestInfo.Session))
+					if (!await InternalAPIs.CheckSessionExistAsync(requestInfo.Session).ConfigureAwait(false))
 						throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 
 					if (!isSessionInitialized || !(isSpecialUser && requestInfo.Query.ContainsKey("register")))
-						await InternalAPIs.VerifySessionIntegrityAsync(requestInfo.Session, accessToken);
+						await InternalAPIs.VerifySessionIntegrityAsync(requestInfo.Session, accessToken).ConfigureAwait(false);
 				}
 			}
 			catch (Exception ex)
@@ -231,11 +235,11 @@ namespace net.vieapps.Services.APIGateway
 			if (isSessionProccessed)
 			{
 				if (requestInfo.Verb.IsEquals("GET"))
-					await InternalAPIs.RegisterSessionAsync(context, requestInfo, accessToken);
+					await InternalAPIs.RegisterSessionAsync(context, requestInfo, accessToken).ConfigureAwait(false);
 				else if (requestInfo.Verb.IsEquals("POST"))
-					await InternalAPIs.SignSessionInAsync(context, requestInfo);
+					await InternalAPIs.SignSessionInAsync(context, requestInfo).ConfigureAwait(false);
 				else if (requestInfo.Verb.IsEquals("DELETE"))
-					await InternalAPIs.SignSessionOutAsync(context, requestInfo);
+					await InternalAPIs.SignSessionOutAsync(context, requestInfo).ConfigureAwait(false);
 				else
 					context.ShowError(new MethodNotAllowedException(requestInfo.Verb), requestInfo);
 			}
@@ -250,7 +254,7 @@ namespace net.vieapps.Services.APIGateway
 				// activate
 				try
 				{
-					await InternalAPIs.ActivateAsync(context, requestInfo);
+					await InternalAPIs.ActivateAsync(context, requestInfo).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -263,14 +267,14 @@ namespace net.vieapps.Services.APIGateway
 				try
 				{
 					// process
-					var result = await InternalAPIs.CallServiceAsync(requestInfo);
+					var result = await InternalAPIs.CallServiceAsync(requestInfo).ConfigureAwait(false);
 
 					// special: request to update sessions of an account
 					if (isAccountProccessed && requestInfo.Verb.IsEquals("PUT"))
-						await InternalAPIs.RequestUpdateSessionsAsync(requestInfo);
+						await InternalAPIs.RequestUpdateSessionsAsync(requestInfo).ConfigureAwait(false);
 
 					// response
-					await context.WriteResponseAsync(result);
+					await context.WriteResponseAsync(result).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -316,7 +320,7 @@ namespace net.vieapps.Services.APIGateway
 						}
 
 						// update cache
-						await Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 2);
+						await Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 2).ConfigureAwait(false);
 					}
 
 					// register session
@@ -330,7 +334,7 @@ namespace net.vieapps.Services.APIGateway
 						await Task.WhenAll(
 							InternalAPIs.CallServiceAsync(requestInfo.Session, "users", "session", "POST", session.ToString(Formatting.None)),
 							Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 180)
-						);
+						).ConfigureAwait(false);
 					}
 
 					// response
@@ -340,7 +344,7 @@ namespace net.vieapps.Services.APIGateway
 						{ "DeviceID", requestInfo.Session.DeviceID }
 					};
 					requestInfo.Session.UpdateSessionJson(json, accessToken);
-					await context.WriteResponseAsync(json);
+					await context.WriteResponseAsync(json).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -375,7 +379,7 @@ namespace net.vieapps.Services.APIGateway
 					await Task.WhenAll(
 						InternalAPIs.CallServiceAsync(requestInfo.Session, "users", "session", "POST", session.ToString(Formatting.None)),
 						Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 180)
-					);
+					).ConfigureAwait(false);
 
 					// response
 					var json = new JObject()
@@ -384,7 +388,7 @@ namespace net.vieapps.Services.APIGateway
 						{ "DeviceID", requestInfo.Session.DeviceID }
 					};
 					requestInfo.Session.UpdateSessionJson(json, accessToken);
-					await context.WriteResponseAsync(json);
+					await context.WriteResponseAsync(json).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -431,10 +435,10 @@ namespace net.vieapps.Services.APIGateway
 						{ "Password", password.Encrypt() }
 					}).ToString(Formatting.None),
 					CorrelationID = requestInfo.CorrelationID
-				});
+				}).ConfigureAwait(false);
 
 				// clear cached of current session
-				await Global.Cache.RemoveAsync("Session#" + requestInfo.Session.SessionID);
+				await Global.Cache.RemoveAsync("Session#" + requestInfo.Session.SessionID).ConfigureAwait(false);
 				
 				// prepare session
 				requestInfo.Session.User = json.FromJson<User>();
@@ -463,12 +467,12 @@ namespace net.vieapps.Services.APIGateway
 					Verb = "POST",
 					Body = session.ToString(Formatting.None),
 					CorrelationID = requestInfo.CorrelationID
-				});
+				}).ConfigureAwait(false);
 
 				await Task.WhenAll(
 					Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 180),
 					requestInfo.Session.SendOnlineStatusAsync(true)
-				);
+				).ConfigureAwait(false);
 
 				// response
 				json = new JObject()
@@ -479,9 +483,9 @@ namespace net.vieapps.Services.APIGateway
 				requestInfo.Session.UpdateSessionJson(json, accessToken);
 
 				await Task.WhenAll(
-						context.WriteResponseAsync(json),
-						Global.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP)
-					);
+					context.WriteResponseAsync(json),
+					Global.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP)
+				).ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
@@ -492,9 +496,9 @@ namespace net.vieapps.Services.APIGateway
 				attempt++;
 
 				await Task.WhenAll(
-						Task.Delay(567 + ((attempt - 1) * 5000)),
-						Global.Cache.SetAsync("Attempt#" + requestInfo.Session.IP, attempt)
-					);
+					Task.Delay(567 + ((attempt - 1) * 5000)),
+					Global.Cache.SetAsync("Attempt#" + requestInfo.Session.IP, attempt)
+				).ConfigureAwait(false);
 
 				// show error
 				context.ShowError(ex, requestInfo);
@@ -517,7 +521,7 @@ namespace net.vieapps.Services.APIGateway
 				await Task.WhenAll(
 					Global.Cache.RemoveAsync("Session#" + requestInfo.Session.SessionID),
 					requestInfo.Session.SendOnlineStatusAsync(false)
-				);
+				).ConfigureAwait(false);
 
 				// create a new session
 				requestInfo.Session.SessionID = UtilityService.NewUID;
@@ -548,7 +552,7 @@ namespace net.vieapps.Services.APIGateway
 				};
 				requestInfo.Session.UpdateSessionJson(json, accessToken);
 
-				await context.WriteResponseAsync(json);
+				await context.WriteResponseAsync(json).ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
@@ -561,7 +565,7 @@ namespace net.vieapps.Services.APIGateway
 		async static Task ActivateAsync(HttpContext context, RequestInfo requestInfo)
 		{
 			// call service to activate
-			var json = await InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session, "users", "activate", "GET", requestInfo.Query, requestInfo.Header, "", requestInfo.Extra, requestInfo.CorrelationID));
+			var json = await InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session, "users", "activate", "GET", requestInfo.Query, requestInfo.Header, "", requestInfo.Extra, requestInfo.CorrelationID)).ConfigureAwait(false);
 
 			// update user information & get access token
 			requestInfo.Session.User = json.FromJson<User>();
@@ -586,7 +590,7 @@ namespace net.vieapps.Services.APIGateway
 				InternalAPIs.CallServiceAsync(requestInfo.Session, "users", "session", "POST", session),
 				requestInfo.Session.SendOnlineStatusAsync(true),
 				Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session, 180)
-			);
+			).ConfigureAwait(false);
 
 			// response
 			json = new JObject()
@@ -595,7 +599,7 @@ namespace net.vieapps.Services.APIGateway
 				{ "DeviceID", requestInfo.Session.DeviceID }
 			};
 			requestInfo.Session.UpdateSessionJson(json, accessToken);
-			await context.WriteResponseAsync(json);
+			await context.WriteResponseAsync(json).ConfigureAwait(false);
 		}
 		#endregion
 
@@ -612,7 +616,7 @@ namespace net.vieapps.Services.APIGateway
 			var result = await InternalAPIs.CallServiceAsync(session, "users", "session", "GET", null, new Dictionary<string, string>()
 			{
 				{ "Exist", "" }
-			});
+			}).ConfigureAwait(false);
 			var isExisted = result?["Existed"];
 			return isExisted != null && isExisted is JValue && (isExisted as JValue).Value != null && (isExisted as JValue).Value.CastAs<bool>() == true;
 		}
@@ -642,7 +646,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					{ "Verify", "" },
 					{ "AccessToken", accessToken.Encrypt() }
-				});
+				}).ConfigureAwait(false);
 		}
 		#endregion
 
@@ -662,7 +666,7 @@ namespace net.vieapps.Services.APIGateway
 				Verb = "GET",
 				Query = requestInfo.Query,
 				CorrelationID = requestInfo.CorrelationID
-			});
+			}).ConfigureAwait(false);
 			var user = json.FromJson<User>();
 
 			// send inter-communicate message to tell services update old sessions with new access token
@@ -675,7 +679,7 @@ namespace net.vieapps.Services.APIGateway
 					{ "UserID", user.ID },
 					{ "AccessToken", User.GetAccessToken(user, Global.RSA, Global.AESKey).Encrypt() }
 				}
-			});
+			}).ConfigureAwait(false);
 		}
 		#endregion
 
@@ -690,7 +694,7 @@ namespace net.vieapps.Services.APIGateway
 
 			if (!InternalAPIs.Services.TryGetValue(name, out IService service))
 			{
-				await Global.OpenOutgoingChannelAsync();
+				await Global.OpenOutgoingChannelAsync().ConfigureAwait(false);
 				lock (InternalAPIs.Services)
 				{
 					if (!InternalAPIs.Services.TryGetValue(name, out service))
@@ -704,12 +708,12 @@ namespace net.vieapps.Services.APIGateway
 			JObject json = null;
 			try
 			{
-				json = await service.ProcessRequestAsync(requestInfo, Global.CancellationTokenSource.Token);
+				json = await service.ProcessRequestAsync(requestInfo, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 			}
 			catch (WampSessionNotEstablishedException)
 			{
 				await Task.Delay(567);
-				json = await service.ProcessRequestAsync(requestInfo, Global.CancellationTokenSource.Token);
+				json = await service.ProcessRequestAsync(requestInfo, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
@@ -795,7 +799,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				{ "Status", "OK" },
 				{ "Data", json }
-			}).ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None));
+			}).ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None)).ConfigureAwait(false);
 		}
 		#endregion
 

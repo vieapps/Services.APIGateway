@@ -65,7 +65,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			Task.Run(async () =>
 			{
-				await this.StartAsync(args);
+				await this.StartAsync(args).ConfigureAwait(false);
 			})
 			.ContinueWith(async (task) =>
 			{
@@ -233,7 +233,7 @@ namespace net.vieapps.Services.APIGateway
 		#region Open/Close channels
 		Tuple<string, string, bool> GetLocationInfo()
 		{
-			var address = UtilityService.GetAppSetting("RouterAddress", "ws://127.0.0.1:26429/");
+			var address = UtilityService.GetAppSetting("RouterAddress", "ws://127.0.0.1:16429/");
 			var realm = UtilityService.GetAppSetting("RouterRealm", "VIEAppsRealm");
 			var mode = UtilityService.GetAppSetting("RouterChannelsMode", "MsgPack");
 			return new Tuple<string, string, bool>(address, realm, mode.IsEquals("json"));
@@ -262,7 +262,7 @@ namespace net.vieapps.Services.APIGateway
 			if (onConnectionError != null)
 				this._incommingChannel.RealmProxy.Monitor.ConnectionError += new EventHandler<WampConnectionErrorEventArgs>(onConnectionError);
 
-			await this._incommingChannel.Open();
+			await this._incommingChannel.Open().ConfigureAwait(false);
 		}
 
 		public void CloseIncomingChannel()
@@ -282,7 +282,7 @@ namespace net.vieapps.Services.APIGateway
 					await Task.Delay(delay > 0 ? delay : 0);
 					try
 					{
-						await this._incommingChannel.Open();
+						await this._incommingChannel.Open().ConfigureAwait(false);
 						onSuccess?.Invoke();
 					}
 					catch (Exception ex)
@@ -315,7 +315,7 @@ namespace net.vieapps.Services.APIGateway
 			if (onConnectionError != null)
 				this._outgoingChannel.RealmProxy.Monitor.ConnectionError += new EventHandler<WampConnectionErrorEventArgs>(onConnectionError);
 
-			await this._outgoingChannel.Open();
+			await this._outgoingChannel.Open().ConfigureAwait(false);
 		}
 
 		public void CloseOutgoingChannel()
@@ -335,7 +335,7 @@ namespace net.vieapps.Services.APIGateway
 					await Task.Delay(delay > 0 ? delay : 0);
 					try
 					{
-						await this._outgoingChannel.Open();
+						await this._outgoingChannel.Open().ConfigureAwait(false);
 						onSuccess?.Invoke();
 					}
 					catch (Exception ex)
@@ -354,7 +354,7 @@ namespace net.vieapps.Services.APIGateway
 				if (config.Section.SelectNodes("./add") is XmlNodeList nodes)
 					foreach (XmlNode node in nodes)
 					{
-						var info = config.GetJson(node);
+						var info = node.ToJson();
 
 						var name = info["name"] != null
 							? (info["name"] as JValue).Value as string
@@ -493,13 +493,13 @@ namespace net.vieapps.Services.APIGateway
 		async Task RegisterHelperServicesAsync()
 		{
 			this._managementService = new ManagementService();
-			await this._incommingChannel.RealmProxy.Services.RegisterCallee(this._managementService, new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin }));
+			await this._incommingChannel.RealmProxy.Services.RegisterCallee(this._managementService, new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin })).ConfigureAwait(false);
 			Global.WriteLog("The management service is registered");
 
-			await this._incommingChannel.RealmProxy.Services.RegisterCallee(new RTUService(), new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin }));
+			await this._incommingChannel.RealmProxy.Services.RegisterCallee(new RTUService(), new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin })).ConfigureAwait(false);
 			Global.WriteLog("The real-time update (RTU) service is registered");
 
-			await this._incommingChannel.RealmProxy.Services.RegisterCallee(new MessagingService(), new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin }));
+			await this._incommingChannel.RealmProxy.Services.RegisterCallee(new MessagingService(), new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin })).ConfigureAwait(false);
 			Global.WriteLog("The messaging service is registered");
 		}
 		#endregion
@@ -575,7 +575,7 @@ namespace net.vieapps.Services.APIGateway
 				if (config.Section.SelectNodes("task") is XmlNodeList taskNodes)
 					foreach (XmlNode taskNode in taskNodes)
 					{
-						var settings = config.GetJson(taskNode);
+						var settings = taskNode.ToJson();
 						var execute = settings["execute"] as JValue;
 						var arguments = settings["arguments"] as JValue;
 						var time = settings["time"] as JValue;

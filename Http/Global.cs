@@ -50,7 +50,7 @@ namespace net.vieapps.Services.APIGateway
 
 		static HashSet<string> QueryExcluded = "service-name,object-name,object-identity,request-of-static-resource".ToHashSet();
 
-		static Cache _Cache = new Cache("VIEApps-API-Gateway", 120);
+		static Cache _Cache = new Cache("VIEApps-API-Gateway", 120, UtilityService.GetAppSetting("CacheProvider"));
 		public static Cache Cache { get { return Global._Cache; } }
 		#endregion
 
@@ -196,7 +196,7 @@ namespace net.vieapps.Services.APIGateway
 		#region WAMP channels
 		static Tuple<string, string, bool> GetLocationInfo()
 		{
-			var address = UtilityService.GetAppSetting("RouterAddress", "ws://127.0.0.1:26429/");
+			var address = UtilityService.GetAppSetting("RouterAddress", "ws://127.0.0.1:16429/");
 			var realm = UtilityService.GetAppSetting("RouterRealm", "VIEAppsRealm");
 			var mode = UtilityService.GetAppSetting("RouterChannelsMode", "MsgPack");
 			return new Tuple<string, string, bool>(address, realm, mode.IsEquals("json"));
@@ -236,7 +236,7 @@ namespace net.vieapps.Services.APIGateway
 			if (onConnectionError != null)
 				Global.IncommingChannel.RealmProxy.Monitor.ConnectionError += new EventHandler<WampConnectionErrorEventArgs>(onConnectionError);
 
-			await Global.IncommingChannel.Open();
+			await Global.IncommingChannel.Open().ConfigureAwait(false);
 		}
 
 		internal static void CloseIncomingChannel()
@@ -256,7 +256,7 @@ namespace net.vieapps.Services.APIGateway
 					await Task.Delay(delay > 0 ? delay : 0);
 					try
 					{
-						await Global.IncommingChannel.Open();
+						await Global.IncommingChannel.Open().ConfigureAwait(false);
 						onSuccess?.Invoke();
 					}
 					catch (Exception ex)
@@ -287,8 +287,8 @@ namespace net.vieapps.Services.APIGateway
 				{
 					try
 					{
-						await Global.InitializeManagementServiceAsync();
-						await Global.InitializeRTUServiceAsync();
+						await Global.InitializeManagementServiceAsync().ConfigureAwait(false);
+						await Global.InitializeRTUServiceAsync().ConfigureAwait(false);
 					}
 					catch { }
 				}).ConfigureAwait(false);
@@ -303,7 +303,7 @@ namespace net.vieapps.Services.APIGateway
 			if (onConnectionError != null)
 				Global.OutgoingChannel.RealmProxy.Monitor.ConnectionError += new EventHandler<WampConnectionErrorEventArgs>(onConnectionError);
 
-			await Global.OutgoingChannel.Open();
+			await Global.OutgoingChannel.Open().ConfigureAwait(false);
 		}
 
 		internal static void CloseOutgoingChannel()
@@ -323,7 +323,7 @@ namespace net.vieapps.Services.APIGateway
 					await Task.Delay(delay > 0 ? delay : 0);
 					try
 					{
-						await Global.OutgoingChannel.Open();
+						await Global.OutgoingChannel.Open().ConfigureAwait(false);
 						onSuccess?.Invoke();
 					}
 					catch (Exception ex)
@@ -361,7 +361,7 @@ namespace net.vieapps.Services.APIGateway
 				(sender, arguments) => {
 					Global.WriteLogs($"Got an error of incoming connection: {(arguments.Exception != null ? arguments.Exception.Message : "None")}", arguments.Exception);
 				}
-			);
+			).ConfigureAwait(false);
 
 			await Global.OpenOutgoingChannelAsync(
 				(sender, arguments) => {
@@ -389,7 +389,7 @@ namespace net.vieapps.Services.APIGateway
 				(sender, arguments) => {
 					Global.WriteLogs($"Got an error of outgoing connection: {(arguments.Exception != null ? arguments.Exception.Message : "None")}", arguments.Exception);
 				}
-			);
+			).ConfigureAwait(false);
 		}
 		#endregion
 
@@ -421,7 +421,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			if (Global.ManagementService == null)
 			{
-				await Global.OpenOutgoingChannelAsync();
+				await Global.OpenOutgoingChannelAsync().ConfigureAwait(false);
 				Global.ManagementService = Global.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IManagementService>();
 			}
 		}
@@ -430,13 +430,13 @@ namespace net.vieapps.Services.APIGateway
 		{
 			try
 			{
-				await Global.InitializeManagementServiceAsync();
+				await Global.InitializeManagementServiceAsync().ConfigureAwait(false);
 				while (Global.Logs.Count > 0)
 				{
 					var log = Global.Logs.Dequeue();
-					await Global.ManagementService.WriteLogsAsync(log.Item1, log.Item2, log.Item3, log.Item4, log.Item5, log.Item6, Global.CancellationTokenSource.Token);
+					await Global.ManagementService.WriteLogsAsync(log.Item1, log.Item2, log.Item3, log.Item4, log.Item5, log.Item6, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				}
-				await Global.ManagementService.WriteLogsAsync(correlationID, serviceName, objectName, logs, simpleStack, fullStack, Global.CancellationTokenSource.Token);
+				await Global.ManagementService.WriteLogsAsync(correlationID, serviceName, objectName, logs, simpleStack, fullStack, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 			}
 			catch
 			{
@@ -448,7 +448,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			Task.Run(async () =>
 			{
-				await Global.WriteLogsAsync(correlationID, serviceName, objectName, logs, simpleStack, fullStack);
+				await Global.WriteLogsAsync(correlationID, serviceName, objectName, logs, simpleStack, fullStack).ConfigureAwait(false);
 			}).ConfigureAwait(false);
 		}
 
@@ -511,7 +511,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			Task.Run(async () =>
 			{
-				await Global.WriteLogsAsync(correlationID, serviceName, objectName, logs, exception);
+				await Global.WriteLogsAsync(correlationID, serviceName, objectName, logs, exception).ConfigureAwait(false);
 			}).ConfigureAwait(false);
 		}
 
@@ -1181,13 +1181,13 @@ namespace net.vieapps.Services.APIGateway
 					if (string.IsNullOrWhiteSpace(staticMimeType))
 						staticMimeType = "text/plain";
 
-					var staticContent = await UtilityService.ReadTextFileAsync(fileInfo.FullName);
+					var staticContent = await UtilityService.ReadTextFileAsync(fileInfo.FullName).ConfigureAwait(false);
 					if (staticMimeType.IsEndsWith("json"))
 						staticContent = JObject.Parse(staticContent).ToString(Formatting.Indented);
 
 					// write content
 					context.Response.ContentType = staticMimeType;
-					await context.Response.Output.WriteAsync(staticContent);
+					await context.Response.Output.WriteAsync(staticContent).ConfigureAwait(false);
 				}
 				catch (FileNotFoundException ex)
 				{
@@ -1211,11 +1211,11 @@ namespace net.vieapps.Services.APIGateway
 
 				// external APIs
 				else if (ExternalAPIs.APIs.ContainsKey(serviceName))
-					await ExternalAPIs.ProcessRequestAsync(context);
+					await ExternalAPIs.ProcessRequestAsync(context).ConfigureAwait(false);
 
 				// internal APIs
 				else
-					await InternalAPIs.ProcessRequestAsync(context);
+					await InternalAPIs.ProcessRequestAsync(context).ConfigureAwait(false);
 			}
 		}
 	}

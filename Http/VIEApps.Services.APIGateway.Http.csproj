@@ -22,6 +22,7 @@
     <IISExpressWindowsAuthentication />
     <IISExpressUseClassicPipelineMode />
     <Use64BitIISExpress>true</Use64BitIISExpress>
+    <UseGlobalApplicationHostFile />
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <TransformWebConfigEnabled>false</TransformWebConfigEnabled>
@@ -76,7 +77,7 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="VIEApps.Components.Utility.AspNet">
-      <Version>10.1.1.1711</Version>
+      <Version>10.1.3.1712</Version>
     </PackageReference>
   </ItemGroup>
   <PropertyGroup>

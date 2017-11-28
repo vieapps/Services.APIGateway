@@ -8,6 +8,11 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 
+#if DEBUG
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
+#endif
+
 using Newtonsoft.Json;
 
 using net.vieapps.Components.Utility;
@@ -60,6 +65,20 @@ namespace net.vieapps.Services.APIGateway
 				return;
 			}
 
+			// prepare logging
+			var loggerFactory = new ServiceCollection()
+				.AddLogging(builder =>
+				{
+#if DEBUG
+					builder.SetMinimumLevel(LogLevel.Debug);
+#else
+					builder.SetMinimumLevel(LogLevel.Information);
+#endif
+					builder.AddConsole();
+				})
+				.BuildServiceProvider()
+				.GetService<ILoggerFactory>();
+
 			// initialize the instance of service component
 			var serviceType = Type.GetType(typeName);
 			if (serviceType == null)
@@ -89,6 +108,9 @@ namespace net.vieapps.Services.APIGateway
 				DateTimeZoneHandling = DateTimeZoneHandling.Local
 			};
 
+			// logger
+			var logger = loggerFactory.CreateLogger(Program.ServiceComponent.GetType());
+
 			// prepare the signal to start/stop when the service was called from API Gateway
 			EventWaitHandle waitHandle = null;
 			if (!Program.IsUserInteractive)
@@ -109,7 +131,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 			}
 			else
-				Console.WriteLine($"The service [{(Program.ServiceComponent as IService).ServiceURI}] is starting...");
+				logger.LogInformation($"The service [{(Program.ServiceComponent as IService).ServiceURI}] is starting...");
 
 			// start the service component
 			var initRepository = args?.FirstOrDefault(a => a.IsStartsWith("/repository:"));
@@ -120,9 +142,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				Program.ConsoleEventHandler = new ConsoleEventDelegate(Program.ConsoleEventCallback);
 				Program.SetConsoleCtrlHandler(Program.ConsoleEventHandler, true);
-
-				Console.WriteLine($"The service [{(Program.ServiceComponent as IService).ServiceURI}] is started. PID: {Process.GetCurrentProcess().Id}");
-				Console.WriteLine("=====> Press RETURN to terminate...");
+				logger.LogInformation($"The service [{(Program.ServiceComponent as IService).ServiceURI}] is started. PID: {Process.GetCurrentProcess().Id}\r\n=====> Press RETURN to terminate...");
 				Console.ReadLine();
 			}
 			else

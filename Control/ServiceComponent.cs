@@ -10,17 +10,18 @@ using System.Collections.Generic;
 
 using Newtonsoft.Json.Linq;
 
+using WampSharp.Core.Listener;
 using WampSharp.V2;
+using WampSharp.V2.Rpc;
 using WampSharp.V2.Core.Contracts;
 using WampSharp.V2.Realm;
-using WampSharp.Core.Listener;
 
 using net.vieapps.Components.Utility;
 #endregion
 
 namespace net.vieapps.Services.APIGateway
 {
-	internal class ServiceComponent : IDisposable
+	internal class ServiceComponent : IServiceManager, IDisposable
 	{
 
 		#region Attributes
@@ -29,10 +30,10 @@ namespace net.vieapps.Services.APIGateway
 		internal bool _channelsAreClosedBySystem = false;
 
 		internal IDisposable _communicator = null;
-		internal ManagementService _managementService = null;
+		internal ManagementService _loggingService = null;
 
 		string _serviceHoster = UtilityService.GetAppSetting("ServiceHoster", "VIEApps.Services.APIGateway.Host.exe");
-		Dictionary<string, string> _availableServices = new Dictionary<string, string>();
+		Dictionary<string, string> _availableServices = null;
 		Dictionary<string, int> _runningServices = new Dictionary<string, int>();
 
 		List<System.Timers.Timer> _timers = new List<System.Timers.Timer>();
@@ -93,7 +94,7 @@ namespace net.vieapps.Services.APIGateway
 		internal async Task StartAsync(string[] args = null)
 		{
 			// open channels
-			Global.WriteLog("Start the API Gateway...");
+			Global.WriteLog("Start the API Gateway Services Controller...");
 
 			await this.OpenIncomingChannelAsync(
 				(sender, arguments) =>
@@ -133,7 +134,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					Global.WriteLog("Got an error of incoming connection: " + (arguments.Exception != null ? arguments.Exception.Message : "None"), arguments.Exception);
 				}
-			);
+			).ConfigureAwait(false);
 
 			await this.OpenOutgoingChannelAsync(
 				(sender, arguments) =>
@@ -167,7 +168,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					Global.WriteLog("Got an error of incoming connection: " + (arguments.Exception != null ? arguments.Exception.Message : "None"), arguments.Exception);
 				}
-			);
+			).ConfigureAwait(false);
 
 			// prepare arguments
 #if !DEBUG
@@ -196,6 +197,9 @@ namespace net.vieapps.Services.APIGateway
 				.ForEach(path => Directory.CreateDirectory(path));
 
 			// register helper services
+			this._loggingService = new ManagementService();
+			await this._incommingChannel.RealmProxy.Services.RegisterCallee(this, new RegistrationInterceptor()).ConfigureAwait(false);
+			Global.WriteLog("The centralized managing service is registered");
 			if (this._registerHelperServices)
 				await this.RegisterHelperServicesAsync();
 
@@ -220,7 +224,7 @@ namespace net.vieapps.Services.APIGateway
 				.ForEach(pid => this.KillProcess(pid));
 
 			this._communicator?.Dispose();
-			this._managementService?.FlushAll();
+			this._loggingService?.FlushAll();
 			Global.CancellationTokenSource.Cancel();
 			Global.CancellationTokenSource.Dispose();
 
@@ -346,30 +350,15 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
-		#region Register business services
-		void  RegisterBusinessServices()
+		#region Start/Stop business service
+		void RegisterBusinessServices()
 		{
-			// prepare
-			if (ConfigurationManager.GetSection("net.vieapps.services") is AppConfigurationSectionHandler config)
-				if (config.Section.SelectNodes("./add") is XmlNodeList nodes)
-					foreach (XmlNode node in nodes)
-					{
-						var info = node.ToJson();
+			// get services
+			this.GetAvailableBusinessServices();
 
-						var name = info["name"] != null
-							? (info["name"] as JValue).Value as string
-							: null;
-						var type = info["type"] != null
-							? (info["type"] as JValue).Value as string
-							: null;
-
-						if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(type))
-							this._availableServices[name.ToLower().Trim()] = type.Trim().Replace(" ", "");
-					}
-
-			// register
+			// start all services
 			if (File.Exists(this._serviceHoster))
-				this._availableServices.ForEach(s => this.StartService(s.Key));
+				this._availableServices.ForEach(s => this.StartBusinessService(s.Key));
 			else if (!Global.AsService)
 				Global.Form.UpdateLogs($"The service hoster [{this._serviceHoster}] is not found");
 
@@ -382,10 +371,31 @@ namespace net.vieapps.Services.APIGateway
 			if (!Global.AsService)
 				Global.Form.UpdateServicesInfo(this._availableServices.Count, this._runningServices.Count);
 		}
-		#endregion
 
-		#region Start/Stop business service
-		internal void StartService(string name, string arguments = null)
+		public Dictionary<string, string> GetAvailableBusinessServices()
+		{
+			if (this._availableServices == null)
+			{
+				this._availableServices = new Dictionary<string, string>();
+				if (ConfigurationManager.GetSection("net.vieapps.services") is AppConfigurationSectionHandler config)
+					if (config.Section.SelectNodes("./add") is XmlNodeList services)
+						foreach (XmlNode service in services)
+						{
+							var name = service.Attributes["name"]?.Value;
+							var type = service.Attributes["type"]?.Value;
+							if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(type))
+								this._availableServices[name.ToLower().Trim()] = type.Trim().Replace(" ", "");
+						}
+			}
+			return this._availableServices;
+		}
+
+		public List<string> GetRunningBusinessServices()
+		{
+			return this._runningServices.Select(kvp => kvp.Key).ToList();
+		}
+
+		public void StartBusinessService(string name, string arguments = null)
 		{
 			if (string.IsNullOrWhiteSpace(name) || !this._availableServices.ContainsKey(name.ToLower()) || this._runningServices.ContainsKey(name.ToLower()))
 				return;
@@ -446,7 +456,7 @@ namespace net.vieapps.Services.APIGateway
 				this.UpdateServicesInfo();
 		}
 
-		internal void StopService(string name)
+		public void StopBusinessService(string name)
 		{
 			if (!string.IsNullOrWhiteSpace(name) && this._runningServices.ContainsKey(name.ToLower()))
 				try
@@ -492,15 +502,15 @@ namespace net.vieapps.Services.APIGateway
 		#region Register helper services
 		async Task RegisterHelperServicesAsync()
 		{
-			this._managementService = new ManagementService();
-			await this._incommingChannel.RealmProxy.Services.RegisterCallee(this._managementService, new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin })).ConfigureAwait(false);
-			Global.WriteLog("The management service is registered");
+			this._loggingService = new ManagementService();
+			await this._incommingChannel.RealmProxy.Services.RegisterCallee(this._loggingService, new RegistrationInterceptor()).ConfigureAwait(false);
+			Global.WriteLog("The centralized logging service is registered");
 
-			await this._incommingChannel.RealmProxy.Services.RegisterCallee(new RTUService(), new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin })).ConfigureAwait(false);
+			await this._incommingChannel.RealmProxy.Services.RegisterCallee(new MessagingService(), new RegistrationInterceptor()).ConfigureAwait(false);
+			Global.WriteLog("The centralized messaging service is registered");
+
+			await this._incommingChannel.RealmProxy.Services.RegisterCallee(new RTUService(), new RegistrationInterceptor()).ConfigureAwait(false);
 			Global.WriteLog("The real-time update (RTU) service is registered");
-
-			await this._incommingChannel.RealmProxy.Services.RegisterCallee(new MessagingService(), new CalleeRegistrationInterceptor(new RegisterOptions() { Invoke = WampInvokePolicy.Roundrobin })).ConfigureAwait(false);
-			Global.WriteLog("The messaging service is registered");
 		}
 		#endregion
 
@@ -603,7 +613,7 @@ namespace net.vieapps.Services.APIGateway
 			this.StartTimer(60 * 3, (sender, args) =>
 #endif
 			{
-				this._managementService?.FlushAll();
+				this._loggingService?.FlushAll();
 			});
 
 			// timer to run house keeper & task scheduler (hourly)
@@ -775,4 +785,22 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 	}
+
+	#region Service Manager
+	public interface IServiceManager
+	{
+		[WampProcedure("net.vieapps.apigateway.controller.available")]
+		Dictionary<string, string> GetAvailableBusinessServices();
+
+		[WampProcedure("net.vieapps.apigateway.controller.running")]
+		List<string> GetRunningBusinessServices();
+
+		[WampProcedure("net.vieapps.apigateway.controller.start")]
+		void StartBusinessService(string name, string arguments = null);
+
+		[WampProcedure("net.vieapps.apigateway.controller.stop")]
+		void StopBusinessService(string name);
+	}
+	#endregion
+
 }

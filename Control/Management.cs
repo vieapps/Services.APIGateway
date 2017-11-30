@@ -10,7 +10,7 @@ using net.vieapps.Components.Utility;
 
 namespace net.vieapps.Services.APIGateway
 {
-	public class ManagementService : IManagementService
+	public class ManagementService : ILoggingService
 	{
 
 		public ManagementService()

@@ -65,20 +65,6 @@ namespace net.vieapps.Services.APIGateway
 				return;
 			}
 
-			// prepare logging
-			var loggerFactory = new ServiceCollection()
-				.AddLogging(builder =>
-				{
-#if DEBUG
-					builder.SetMinimumLevel(LogLevel.Debug);
-#else
-					builder.SetMinimumLevel(LogLevel.Information);
-#endif
-					builder.AddConsole();
-				})
-				.BuildServiceProvider()
-				.GetService<ILoggerFactory>();
-
 			// initialize the instance of service component
 			var serviceType = Type.GetType(typeName);
 			if (serviceType == null)
@@ -108,8 +94,20 @@ namespace net.vieapps.Services.APIGateway
 				DateTimeZoneHandling = DateTimeZoneHandling.Local
 			};
 
-			// logger
-			var logger = loggerFactory.CreateLogger(Program.ServiceComponent.GetType());
+			// prepare logging
+			var logger = new ServiceCollection()
+				.AddLogging(builder =>
+				{
+#if DEBUG
+					builder.SetMinimumLevel(LogLevel.Debug);
+#else
+					builder.SetMinimumLevel(LogLevel.Information);
+#endif
+					builder.AddConsole();
+				})
+				.BuildServiceProvider()
+				.GetService<ILoggerFactory>()
+				.CreateLogger(Program.ServiceComponent.GetType());
 
 			// prepare the signal to start/stop when the service was called from API Gateway
 			EventWaitHandle waitHandle = null;

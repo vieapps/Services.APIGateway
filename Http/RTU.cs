@@ -75,7 +75,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					if (!RTU.Updaters.TryGetValue(identity, out updater))
 					{
-						updater = Global.IncommingChannel.RealmProxy.Services
+						updater = Base.AspNet.Global.IncommingChannel.RealmProxy.Services
 							.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages")
 							.Subscribe(onNext, onError);
 						RTU.Updaters.Add(identity, updater);
@@ -153,7 +153,7 @@ namespace net.vieapps.Services.APIGateway
 			if (context.QueryString["x-restart"] != null)
 				try
 				{
-					await Task.Delay(567, Global.CancellationTokenSource.Token);
+					await Task.Delay(567, Base.AspNet.Global.CancellationTokenSource.Token);
 				}
 				catch
 				{
@@ -161,7 +161,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 
 			// do the process
-			if (session.SessionID.Encrypt(Global.AESKey.Reverse(), true).IsEquals(context.QueryString["x-receiver"]))
+			if (session.SessionID.Encrypt(Base.AspNet.Global.AESKey.Reverse(), true).IsEquals(context.QueryString["x-receiver"]))
 				await context.ProcesMessagesAsync(session).ConfigureAwait(false);
 			else
 				await context.PushMessagesAsync(session).ConfigureAwait(false);
@@ -176,7 +176,7 @@ namespace net.vieapps.Services.APIGateway
 		static async Task SendAsync(this AspNetWebSocketContext context, Exception exception)
 		{
 			// prepare
-			var correlationID = Global.GetCorrelationID(context.Items);
+			var correlationID = Base.AspNet.Global.GetCorrelationID(context.Items);
 			var message = new JObject()
 			{
 				{ "Type", exception.GetType().GetTypeName(true) },
@@ -215,7 +215,7 @@ namespace net.vieapps.Services.APIGateway
 			// send & write logs
 			await Task.WhenAll(
 				context.SendAsync(message.ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None)),
-				Global.WriteLogsAsync(correlationID, "RTU", $"Error occurred while processing with real-time updater: {exception.Message}", exception)
+				Base.AspNet.Global.WriteLogsAsync(correlationID, "RTU", $"Error occurred while processing with real-time updater: {exception.Message}", exception)
 			).ConfigureAwait(false);
 		}
 
@@ -224,12 +224,12 @@ namespace net.vieapps.Services.APIGateway
 			if (context.WebSocket.State.Equals(WebSocketState.Open))
 				try
 				{
-					await context.WebSocket.SendAsync(new ArraySegment<byte>(message.ToBytes()), WebSocketMessageType.Text, true, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+					await context.WebSocket.SendAsync(new ArraySegment<byte>(message.ToBytes()), WebSocketMessageType.Text, true, Base.AspNet.Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				}
 				catch (OperationCanceledException) { }
 				catch (Exception ex)
 				{
-					await Global.WriteLogsAsync(Global.GetCorrelationID(context.Items), "RTU", $"Error occurred while sending message via WebSocket: {ex.Message}", ex).ConfigureAwait(false);
+					await Base.AspNet.Global.WriteLogsAsync(Base.AspNet.Global.GetCorrelationID(context.Items), "RTU", $"Error occurred while sending message via WebSocket: {ex.Message}", ex).ConfigureAwait(false);
 				}
 		}
 		#endregion
@@ -238,7 +238,7 @@ namespace net.vieapps.Services.APIGateway
 		static async Task PushMessagesAsync(this AspNetWebSocketContext context, Session session)
 		{
 			// fetch messages
-			var correlationID = Global.GetCorrelationID(context.Items);
+			var correlationID = Base.AspNet.Global.GetCorrelationID(context.Items);
 			var messages = new ConcurrentQueue<UpdateMessage>();
 			try
 			{
@@ -249,12 +249,12 @@ namespace net.vieapps.Services.APIGateway
 						messages.Enqueue(message);
 
 #if DEBUG || RTULOGS
-						Global.WriteLogs(correlationID, "RTU.Pusher", $"Got an update message: {message.ToJson().ToString(Formatting.None)}");
+						Base.AspNet.Global.WriteLogs(correlationID, "RTU.Pusher", $"Got an update message: {message.ToJson().ToString(Formatting.None)}");
 #endif
 					},
 					(ex) =>
 					{
-						Global.WriteLogs(correlationID, "RTU.Pusher", $"Error occurred while fetching messages: {ex.Message} [{ex.GetType().GetTypeName(true)}]", ex);
+						Base.AspNet.Global.WriteLogs(correlationID, "RTU.Pusher", $"Error occurred while fetching messages: {ex.Message} [{ex.GetType().GetTypeName(true)}]", ex);
 					});
 			}
 			catch (Exception ex)
@@ -278,7 +278,7 @@ namespace net.vieapps.Services.APIGateway
 			await session.SendOnlineStatusAsync(true).ConfigureAwait(false);
 
 #if DEBUG || RTULOGS || REQUESTLOGS
-			Global.WriteLogs(correlationID, "RTU.Pusher", new List<string>()
+			Base.AspNet.Global.WriteLogs(correlationID, "RTU.Pusher", new List<string>()
 			{
 				"The real-time updater of a client's device is started",
 				"- Account: " + (session.User.ID.Equals("") ? "Visitor" : session.User.ID),
@@ -299,13 +299,13 @@ namespace net.vieapps.Services.APIGateway
 					}
 					catch (Exception ex)
 					{
-						Global.WriteLogs(correlationID, "RTU.Pusher", $"Error occurred while disposing subscriber: {ex.Message} [{ex.GetType().GetTypeName(true)}]", ex);
+						Base.AspNet.Global.WriteLogs(correlationID, "RTU.Pusher", $"Error occurred while disposing subscriber: {ex.Message} [{ex.GetType().GetTypeName(true)}]", ex);
 					}
 
 					await session.SendOnlineStatusAsync(false).ConfigureAwait(false);
 
 #if DEBUG || RTULOGS || REQUESTLOGS
-					await Global.WriteLogsAsync(correlationID, "RTU.Pusher", new List<string>()
+					await Base.AspNet.Global.WriteLogsAsync(correlationID, "RTU.Pusher", new List<string>()
 					{
 						"The real-time updater of a client's device is stopped",
 						"- Account: " + (session.User.ID.Equals("") ? "Visitor" : session.User.ID),
@@ -326,7 +326,7 @@ namespace net.vieapps.Services.APIGateway
 							await context.SendAsync(message);
 
 #if DEBUG || RTULOGS
-							await Global.WriteLogsAsync(correlationID, "RTU.Pusher", new List<string>()
+							await Base.AspNet.Global.WriteLogsAsync(correlationID, "RTU.Pusher", new List<string>()
 							{
 								"Push the message to the subscriber's device successful",
 								"- Session: " + session.SessionID + " @ " + session.DeviceID,
@@ -341,7 +341,7 @@ namespace net.vieapps.Services.APIGateway
 						}
 						catch (Exception ex)
 						{
-							Global.WriteLogs(correlationID, "RTU.Pusher", new List<string>()
+							Base.AspNet.Global.WriteLogs(correlationID, "RTU.Pusher", new List<string>()
 							{
 								"Error occurred while pushing message to the subscriber's device",
 								"- Message: " + message.ToJson().ToString(Formatting.None),
@@ -353,7 +353,7 @@ namespace net.vieapps.Services.APIGateway
 				// wait for next interval
 				try
 				{
-					await Task.Delay(RTU.PushInterval, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+					await Task.Delay(RTU.PushInterval, Base.AspNet.Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				}
 				catch (OperationCanceledException)
 				{
@@ -372,8 +372,8 @@ namespace net.vieapps.Services.APIGateway
 				{
 					try
 					{
-						await Global.OpenOutgoingChannelAsync().ConfigureAwait(false);
-						RTU.Sender = Global.OutgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages");
+						await Base.AspNet.Global.OpenOutgoingChannelAsync().ConfigureAwait(false);
+						RTU.Sender = Base.AspNet.Global.OutgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages");
 						RTU.Sender.OnNext(message);
 					}
 					catch { }
@@ -392,7 +392,7 @@ namespace net.vieapps.Services.APIGateway
 					return;
 
 				// prepare the request
-				var correlationID = Global.GetCorrelationID(context.Items);
+				var correlationID = Base.AspNet.Global.GetCorrelationID(context.Items);
 				var requestMessage = "";
 				try
 				{
@@ -400,7 +400,7 @@ namespace net.vieapps.Services.APIGateway
 					try
 					{
 						var buffer = new ArraySegment<byte>(new byte[4096]);
-						var message = await context.WebSocket.ReceiveAsync(buffer, Global.CancellationTokenSource.Token);
+						var message = await context.WebSocket.ReceiveAsync(buffer, Base.AspNet.Global.CancellationTokenSource.Token);
 						requestMessage = message.MessageType.Equals(WebSocketMessageType.Text)
 							? buffer.Array.GetString(message.Count)
 							: null;
@@ -433,7 +433,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 						var sessionInfo = (await InternalAPIs.CallServiceAsync(new Session(session)
 						{
-							SessionID = extra["x-session"].Decrypt(Global.AESKey.Reverse(), true)
+							SessionID = extra["x-session"].Decrypt(Base.AspNet.Global.AESKey.Reverse(), true)
 						}, "users", "session").ConfigureAwait(false)).ToExpandoObject();
 
 						session.SessionID = sessionInfo.Get<string>("ID");
@@ -444,7 +444,7 @@ namespace net.vieapps.Services.APIGateway
 							: (await InternalAPIs.CallServiceAsync(session, "users", "account").ConfigureAwait(false)).FromJson<User>();
 
 #if DEBUG || RTULOGS
-						Global.WriteLogs(correlationID, "RTU.Processor", "Patch a session successful" + "\r\n" + session.ToJson().ToString(Formatting.Indented));
+						Base.AspNet.Global.WriteLogs(correlationID, "RTU.Processor", "Patch a session successful" + "\r\n" + session.ToJson().ToString(Formatting.Indented));
 #endif
 					}
 
@@ -465,7 +465,7 @@ namespace net.vieapps.Services.APIGateway
 						}).Publish();
 
 #if DEBUG || RTULOGS
-						await Global.WriteLogsAsync(correlationID, "RTU.Processor", new List<string>()
+						await Base.AspNet.Global.WriteLogsAsync(correlationID, "RTU.Processor", new List<string>()
 						{
 							"Process the client messages successful",
 							"- Session: " + session.SessionID + " @ " + session.DeviceID,
@@ -482,7 +482,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					Global.WriteLogs(correlationID, "RTU.Processor", new List<string>()
+					Base.AspNet.Global.WriteLogs(correlationID, "RTU.Processor", new List<string>()
 					{
 						"Error occurred while processing the client messages",
 						"- Session: " + session.SessionID + " @ " + session.DeviceID,
@@ -495,7 +495,7 @@ namespace net.vieapps.Services.APIGateway
 				// wait for next interval
 				try
 				{
-					await Task.Delay(RTU.ProcessInterval, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+					await Task.Delay(RTU.ProcessInterval, Base.AspNet.Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				}
 				catch (OperationCanceledException)
 				{

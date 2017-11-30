@@ -33,7 +33,7 @@ namespace net.vieapps.Services.APIGateway
 				ObjectName = string.IsNullOrWhiteSpace(context.Request.QueryString["object-name"]) ? "unknown" : context.Request.QueryString["object-name"],
 				Query = context.Request.QueryString.ToDictionary(),
 				Header = context.Request.Headers.ToDictionary(),
-				CorrelationID = Global.GetCorrelationID(context.Items)
+				CorrelationID = Base.AspNet.Global.GetCorrelationID(context.Items)
 			};
 
 			bool isSessionProccessed = false, isSessionInitialized = false, isAccountProccessed = false, isActivationProccessed = false;
@@ -53,7 +53,7 @@ namespace net.vieapps.Services.APIGateway
 			#endregion
 
 #if DEBUG
-			Global.WriteLogs(requestInfo.CorrelationID, "InternalAPIs", $"Process the request ==>\r\n{requestInfo.ToJson().ToString(Formatting.Indented)}");
+			Base.AspNet.Global.WriteLogs(requestInfo.CorrelationID, "Services", $"InternalAPIs: Process the request ==>\r\n{requestInfo.ToJson().ToString(Formatting.Indented)}");
 #endif
 
 			#region prepare token
@@ -84,7 +84,12 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-				context.ShowError(ex, requestInfo);
+#if DEBUG
+				Base.AspNet.Global.WriteLogs(requestInfo.CorrelationID, "Security", $"Error occurred while preparing token: {ex.Message}" + "\r\n" + "===> Request:" + "\r\n" + requestInfo.ToJson().ToString(Formatting.Indented), ex);
+#else
+				Base.AspNet.Global.WriteLogs(requestInfo.CorrelationID, "Security", $"Error occurred while preparing token: {ex.Message}" + "\r\n" + "===> Request:" + "\r\n" + requestInfo.ToJson().ToString(Formatting.None), ex);
+#endif
+				context.ShowError(ex, requestInfo, false);
 				return;
 			}
 			#endregion
@@ -97,7 +102,7 @@ namespace net.vieapps.Services.APIGateway
 			if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT"))
 				using (var reader = new StreamReader(context.Request.InputStream, context.Request.ContentEncoding))
 				{
-					requestInfo.Body = await reader.ReadToEndAsync();
+					requestInfo.Body = await reader.ReadToEndAsync().ConfigureAwait(false);
 				}
 
 			else if (requestInfo.Verb.IsEquals("GET") && context.Request.QueryString["x-body"] != null)
@@ -125,7 +130,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 						try
 						{
-							captcha = captcha.Decrypt(Global.GenerateEncryptionKey(requestInfo.Session.SessionID), Global.GenerateEncryptionIV(requestInfo.Session.SessionID));
+							captcha = captcha.Decrypt(Base.AspNet.Global.GenerateEncryptionKey(requestInfo.Session.SessionID), Base.AspNet.Global.GenerateEncryptionIV(requestInfo.Session.SessionID));
 						}
 						catch (Exception ex)
 						{
@@ -149,7 +154,7 @@ namespace net.vieapps.Services.APIGateway
 					if (!string.IsNullOrWhiteSpace(email))
 						try
 						{
-							email = CryptoService.RSADecrypt(Global.RSA, email);
+							email = CryptoService.RSADecrypt(Base.AspNet.Global.RSA, email);
 							requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>())
 							{
 								{ "Email", email.Encrypt() }
@@ -165,7 +170,7 @@ namespace net.vieapps.Services.APIGateway
 					if (!string.IsNullOrWhiteSpace(password))
 						try
 						{
-							password = CryptoService.RSADecrypt(Global.RSA, password);
+							password = CryptoService.RSADecrypt(Base.AspNet.Global.RSA, password);
 							requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>())
 							{
 								{ "Password", password.Encrypt() }
@@ -181,7 +186,7 @@ namespace net.vieapps.Services.APIGateway
 					if (!string.IsNullOrWhiteSpace(oldPassword))
 						try
 						{
-							oldPassword = CryptoService.RSADecrypt(Global.RSA, oldPassword);
+							oldPassword = CryptoService.RSADecrypt(Base.AspNet.Global.RSA, oldPassword);
 							requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>())
 							{
 								{ "OldPassword", oldPassword.Encrypt() }
@@ -198,7 +203,7 @@ namespace net.vieapps.Services.APIGateway
 					// prepare to register/create new account
 					if (string.IsNullOrWhiteSpace(objectIdentity))
 					{
-						if (requestInfo.Session.SessionID.Encrypt(Global.AESKey.Reverse(), true).Equals(requestInfo.GetHeaderParameter("x-create")))
+						if (requestInfo.Session.SessionID.Encrypt(Base.AspNet.Global.AESKey.Reverse(), true).Equals(requestInfo.GetHeaderParameter("x-create")))
 							requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>())
 							{
 								{ "x-create", "" }
@@ -226,7 +231,8 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					context.ShowError(ex, requestInfo);
+					Base.AspNet.Global.WriteLogs(requestInfo.CorrelationID, "Security", $"Error occurred while processing account: {ex.Message}" + "\r\n" + "===> Request:" + "\r\n" + requestInfo.ToJson().ToString(Formatting.Indented), ex);
+					context.ShowError(ex, requestInfo, false);
 					return;
 				}
 			#endregion
@@ -258,7 +264,8 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					context.ShowError(ex, requestInfo);
+					Base.AspNet.Global.WriteLogs(requestInfo.CorrelationID, "Security", $"Error occurred while activating: {ex.Message}" + "\r\n" + "===> Request:" + "\r\n" + requestInfo.ToJson().ToString(Formatting.Indented), ex);
+					context.ShowError(ex, requestInfo, false);
 				}
 			}
 
@@ -291,7 +298,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					// prepare access token
 					accessToken = string.IsNullOrWhiteSpace(accessToken)
-						? User.GetAccessToken(requestInfo.Session.User, Global.RSA, Global.AESKey)
+						? User.GetAccessToken(requestInfo.Session.User, Base.AspNet.Global.RSA, Base.AspNet.Global.AESKey)
 						: accessToken;
 
 					// generate session
@@ -327,7 +334,7 @@ namespace net.vieapps.Services.APIGateway
 					else
 					{
 						// validate
-						if (!requestInfo.Session.SessionID.Equals(context.Request.QueryString["register"].Decrypt(Global.AESKey.Reverse(), true)))
+						if (!requestInfo.Session.SessionID.Equals(context.Request.QueryString["register"].Decrypt(Base.AspNet.Global.AESKey.Reverse(), true)))
 							throw new InvalidRequestException();
 
 						// register with user service
@@ -348,7 +355,8 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					context.ShowError(ex, requestInfo);
+					Base.AspNet.Global.WriteLogs(requestInfo.CorrelationID, "Security", $"Error occurred while registering session: {ex.Message}" + "\r\n" + "===> Request:" + "\r\n" + requestInfo.ToJson().ToString(Formatting.Indented), ex);
+					context.ShowError(ex, requestInfo, false);
 				}
 
 			// session of authenticated account
@@ -392,7 +400,8 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					context.ShowError(ex, requestInfo);
+					Base.AspNet.Global.WriteLogs(requestInfo.CorrelationID, "Security", $"Error occurred while registering session: {ex.Message}" + "\r\n" + "===> Request:" + "\r\n" + requestInfo.ToJson().ToString(Formatting.Indented), ex);
+					context.ShowError(ex, requestInfo, false);
 				}
 		}
 		#endregion
@@ -415,8 +424,8 @@ namespace net.vieapps.Services.APIGateway
 
 				try
 				{
-					email = CryptoService.RSADecrypt(Global.RSA, email);
-					password = CryptoService.RSADecrypt(Global.RSA, password);
+					email = CryptoService.RSADecrypt(Base.AspNet.Global.RSA, email);
+					password = CryptoService.RSADecrypt(Base.AspNet.Global.RSA, password);
 				}
 				catch (Exception ex)
 				{
@@ -443,7 +452,7 @@ namespace net.vieapps.Services.APIGateway
 				// prepare session
 				requestInfo.Session.User = json.FromJson<User>();
 				requestInfo.Session.SessionID = UtilityService.NewUID;
-				var accessToken = User.GetAccessToken(requestInfo.Session.User, Global.RSA, Global.AESKey);
+				var accessToken = User.GetAccessToken(requestInfo.Session.User, Base.AspNet.Global.RSA, Base.AspNet.Global.AESKey);
 
 				// register new session
 				var session = new JObject()
@@ -501,7 +510,8 @@ namespace net.vieapps.Services.APIGateway
 				).ConfigureAwait(false);
 
 				// show error
-				context.ShowError(ex, requestInfo);
+				Base.AspNet.Global.WriteLogs(requestInfo.CorrelationID, "Security", $"Error occurred while signing-in session: {ex.Message}" + "\r\n" + "===> Request:" + "\r\n" + requestInfo.ToJson().ToString(Formatting.Indented), ex);
+				context.ShowError(ex, requestInfo, false);
 			}
 		}
 		#endregion
@@ -528,7 +538,7 @@ namespace net.vieapps.Services.APIGateway
 				requestInfo.Session.User = new User();
 
 				// register the new session of visitor
-				var accessToken = User.GetAccessToken(requestInfo.Session.User, Global.RSA, Global.AESKey);
+				var accessToken = User.GetAccessToken(requestInfo.Session.User, Base.AspNet.Global.RSA, Base.AspNet.Global.AESKey);
 				var session = new JObject()
 				{
 					{ "ID", requestInfo.Session.SessionID },
@@ -556,7 +566,8 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-				context.ShowError(ex, requestInfo);
+				Base.AspNet.Global.WriteLogs(requestInfo.CorrelationID, "Security", $"Error occurred while signing-out session: {ex.Message}" + "\r\n" + "===> Request:" + "\r\n" + requestInfo.ToJson().ToString(Formatting.Indented), ex);
+				context.ShowError(ex, requestInfo, false);
 			}
 		}
 		#endregion
@@ -569,7 +580,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// update user information & get access token
 			requestInfo.Session.User = json.FromJson<User>();
-			var accessToken = User.GetAccessToken(requestInfo.Session.User, Global.RSA, Global.AESKey);
+			var accessToken = User.GetAccessToken(requestInfo.Session.User, Base.AspNet.Global.RSA, Base.AspNet.Global.AESKey);
 
 			// register the session
 			var session = (new JObject()
@@ -677,7 +688,7 @@ namespace net.vieapps.Services.APIGateway
 				Data = new JObject()
 				{
 					{ "UserID", user.ID },
-					{ "AccessToken", User.GetAccessToken(user, Global.RSA, Global.AESKey).Encrypt() }
+					{ "AccessToken", User.GetAccessToken(user, Base.AspNet.Global.RSA, Base.AspNet.Global.AESKey).Encrypt() }
 				}
 			}).ConfigureAwait(false);
 		}
@@ -689,17 +700,17 @@ namespace net.vieapps.Services.APIGateway
 			var name = requestInfo.ServiceName.Trim().ToLower();
 
 #if DEBUG
-			Global.WriteLogs(requestInfo.CorrelationID, null, "Call the service [net.vieapps.services." + name + "]" + "\r\n" + "Request ==>" + "\r\n" + requestInfo.ToJson().ToString(Formatting.Indented));
+			Base.AspNet.Global.WriteLogs(requestInfo.CorrelationID, "Services", "InternalAPIs: Call the service [net.vieapps.services." + name + "]" + "\r\n" + "Request ==>" + "\r\n" + requestInfo.ToJson().ToString(Formatting.Indented));
 #endif
 
 			if (!InternalAPIs.Services.TryGetValue(name, out IService service))
 			{
-				await Global.OpenOutgoingChannelAsync().ConfigureAwait(false);
+				await Base.AspNet.Global.OpenOutgoingChannelAsync().ConfigureAwait(false);
 				lock (InternalAPIs.Services)
 				{
 					if (!InternalAPIs.Services.TryGetValue(name, out service))
 					{
-						service = Global.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IService>(new CachedCalleeProxyInterceptor(new ProxyInterceptor(name)));
+						service = Base.AspNet.Global.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IService>(new CachedCalleeProxyInterceptor(new ProxyInterceptor(name)));
 						InternalAPIs.Services.Add(name, service);
 					}
 				}
@@ -708,23 +719,21 @@ namespace net.vieapps.Services.APIGateway
 			JObject json = null;
 			try
 			{
-				json = await service.ProcessRequestAsync(requestInfo, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+				json = await service.ProcessRequestAsync(requestInfo, Base.AspNet.Global.CancellationTokenSource.Token).ConfigureAwait(false);
 			}
 			catch (WampSessionNotEstablishedException)
 			{
 				await Task.Delay(567);
-				json = await service.ProcessRequestAsync(requestInfo, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+				json = await service.ProcessRequestAsync(requestInfo, Base.AspNet.Global.CancellationTokenSource.Token).ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
-#if DEBUG
-				Global.WriteLogs(requestInfo.CorrelationID, null, "Error occurred while calling the service [net.vieapps.services." + name + "]: " + ex.Message + " [" + ex.GetType().ToString() + "]" + "\r\n" + "Stack: " + ex.StackTrace);
-#endif
+				Base.AspNet.Global.WriteLogs(requestInfo.CorrelationID, "Errors", "InternalAPIs: Error occurred while calling the service [net.vieapps.services." + name + "]: " + ex.Message + " [" + ex.GetType().ToString() + "]" + "\r\n" + "Stack: " + ex.StackTrace);
 				throw ex;
 			}
 
 #if DEBUG
-			Global.WriteLogs(requestInfo.CorrelationID, null, "Result of the service [net.vieapps.services." + name + "]" + "\r\n" + "Results ==>" + "\r\n" + (json != null ? json.ToString(Formatting.Indented) : "None"));
+			Base.AspNet.Global.WriteLogs(requestInfo.CorrelationID, "Services", "InternalAPIs: Result of the service [net.vieapps.services." + name + "]" + "\r\n" + "Results ==>" + "\r\n" + (json != null ? json.ToString(Formatting.Indented) : "None"));
 #endif
 
 			return json;
@@ -736,7 +745,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				Body = body ?? "",
 				Extra = extra ?? new Dictionary<string, string>(),
-				CorrelationID = Global.GetCorrelationID()
+				CorrelationID = Base.AspNet.Global.GetCorrelationID()
 			});
 		}
 		#endregion
@@ -744,28 +753,28 @@ namespace net.vieapps.Services.APIGateway
 		#region Helper: working with response JSON, online status, ...
 		internal static void UpdateSessionJson(this Session session, JObject json, string accessToken)
 		{
-			json["ID"] = session.SessionID.Encrypt(Global.AESKey.Reverse(), true);
+			json["ID"] = session.SessionID.Encrypt(Base.AspNet.Global.AESKey.Reverse(), true);
 			json.Add(new JProperty("Keys", new JObject()
 			{
 				{
 					"RSA",
 					new JObject()
 					{
-						{ "Exponent", Global.RSAExponent },
-						{ "Modulus", Global.RSAModulus }
+						{ "Exponent", Base.AspNet.Global.RSAExponent },
+						{ "Modulus", Base.AspNet.Global.RSAModulus }
 					}
 				},
 				{
 					"AES",
 					new JObject()
 					{
-						{ "Key", Global.GenerateEncryptionKey(session.SessionID).ToHexa() },
-						{ "IV", Global.GenerateEncryptionIV(session.SessionID).ToHexa() }
+						{ "Key", Base.AspNet.Global.GenerateEncryptionKey(session.SessionID).ToHexa() },
+						{ "IV", Base.AspNet.Global.GenerateEncryptionIV(session.SessionID).ToHexa() }
 					}
 				},
 				{
 					"JWT",
-					Global.GenerateJWTKey()
+					Base.AspNet.Global.GenerateJWTKey()
 				}
 			}));
 			json.Add(new JProperty("JWT", session.GetJSONWebToken(accessToken)));

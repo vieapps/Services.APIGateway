@@ -58,7 +58,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// write into files
 			if (writeFiles)
-				Global.Component?._managementService?.WriteLog(serviceName, objectName, log);
+				Global.Component?._loggingService?.WriteLog(serviceName, objectName, log);
 		}
 		#endregion
 

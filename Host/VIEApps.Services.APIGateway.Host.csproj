@@ -61,10 +61,10 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="MySqlConnector">
-      <Version>0.32.0</Version>
+      <Version>0.33.1</Version>
     </PackageReference>
     <PackageReference Include="Npgsql">
-      <Version>3.2.5</Version>
+      <Version>3.2.6</Version>
     </PackageReference>
     <PackageReference Include="Oracle.ManagedDataAccess">
       <Version>12.2.1100</Version>

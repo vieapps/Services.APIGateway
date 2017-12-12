@@ -153,7 +153,8 @@ namespace net.vieapps.Services.APIGateway
 			// send messages
 			await WebHookSender.Messages
 				.Where(kvp => kvp.Value.Time <= DateTime.Now)
-				.ForEachAsync((kvp, cancellationToken) => this.SendMessageAsync(kvp.Value.Message, this.OnSuccess, this.OnError));
+				.ForEachAsync((kvp, cancellationToken) => this.SendMessageAsync(kvp.Value.Message, this.OnSuccess, this.OnError))
+				.ConfigureAwait(false);
 		}
 	}
 }

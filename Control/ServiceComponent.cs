@@ -30,7 +30,7 @@ namespace net.vieapps.Services.APIGateway
 		internal bool _channelsAreClosedBySystem = false;
 
 		internal IDisposable _communicator = null;
-		internal ManagementService _loggingService = null;
+		internal LoggingService _loggingService = null;
 
 		string _serviceHoster = UtilityService.GetAppSetting("ServiceHoster", "VIEApps.Services.APIGateway.Host.exe");
 		Dictionary<string, string> _availableServices = null;
@@ -197,7 +197,7 @@ namespace net.vieapps.Services.APIGateway
 				.ForEach(path => Directory.CreateDirectory(path));
 
 			// register helper services
-			this._loggingService = new ManagementService();
+			this._loggingService = new LoggingService();
 			await this._incommingChannel.RealmProxy.Services.RegisterCallee(this, new RegistrationInterceptor()).ConfigureAwait(false);
 			Global.WriteLog("The centralized managing service is registered");
 			if (this._registerHelperServices)
@@ -502,7 +502,7 @@ namespace net.vieapps.Services.APIGateway
 		#region Register helper services
 		async Task RegisterHelperServicesAsync()
 		{
-			this._loggingService = new ManagementService();
+			this._loggingService = new LoggingService();
 			await this._incommingChannel.RealmProxy.Services.RegisterCallee(this._loggingService, new RegistrationInterceptor()).ConfigureAwait(false);
 			Global.WriteLog("The centralized logging service is registered");
 
@@ -545,7 +545,7 @@ namespace net.vieapps.Services.APIGateway
 						this._mailSender = new MailSender();
 						try
 						{
-							await this._mailSender.ProcessAsync();
+							await this._mailSender.ProcessAsync().ConfigureAwait(false);
 						}
 						catch { }
 						finally
@@ -564,7 +564,7 @@ namespace net.vieapps.Services.APIGateway
 						this._webhookSender = new WebHookSender();
 						try
 						{
-							await this._webhookSender.ProcessAsync();
+							await this._webhookSender.ProcessAsync().ConfigureAwait(false);
 						}
 						catch { }
 						finally
@@ -606,8 +606,8 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 #if DEBUG
-			// timer to flush logs (10 seconds)
-			this.StartTimer(10, (sender, args) =>
+			// timer to flush logs (5 seconds)
+			this.StartTimer(5, (sender, args) =>
 #else
 			// timer to flush logs (3 minutes)
 			this.StartTimer(60 * 3, (sender, args) =>
@@ -622,7 +622,7 @@ namespace net.vieapps.Services.APIGateway
 				this.RunHouseKeeper();
 				Task.Run(async () =>
 				{
-					await this.RunTaskSchedulerAsync();
+					await this.RunTaskSchedulerAsync().ConfigureAwait(false);
 				}).ConfigureAwait(false);
 			});
 
@@ -631,7 +631,7 @@ namespace net.vieapps.Services.APIGateway
 				Task.Run(async () =>
 				{
 					await Task.Delay(1234);
-					await this.RunTaskSchedulerAsync();
+					await this.RunTaskSchedulerAsync().ConfigureAwait(false);
 				}).ConfigureAwait(false);
 		}
 
@@ -750,7 +750,7 @@ namespace net.vieapps.Services.APIGateway
 				while (running)
 					try
 					{
-						await Task.Delay(1234, Global.CancellationTokenSource.Token);
+						await Task.Delay(1234, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 					}
 					catch (OperationCanceledException)
 					{

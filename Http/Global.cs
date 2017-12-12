@@ -1,21 +1,18 @@
 ﻿#region Related components
 using System;
+using System.Net;
+using System.Text;
+using System.Web;
+using System.IO;
+using System.IO.Compression;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Diagnostics;
-using System.IO;
-using System.IO.Compression;
-using System.Net;
-using System.Text;
-using System.Linq;
-using System.Web;
 
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-
-using WampSharp.V2.Core.Contracts;
 
 using net.vieapps.Components.Utility;
 using net.vieapps.Components.Security;
@@ -80,7 +77,10 @@ namespace net.vieapps.Services.APIGateway
 								await Base.AspNet.Global.InitializeLoggingServiceAsync().ConfigureAwait(false);
 								await Base.AspNet.Global.InitializeRTUServiceAsync().ConfigureAwait(false);
 							}
-							catch { }
+							catch (Exception ex)
+							{
+								Base.AspNet.Global.WriteLogs("Error occurred while initializing helper services", ex);
+							}
 						}).ConfigureAwait(false);
 					}
 				);
@@ -93,9 +93,9 @@ namespace net.vieapps.Services.APIGateway
 			Global.StaticSegments.Append("statics");
 
 			// handling unhandled exception
-			AppDomain.CurrentDomain.UnhandledException += (sender, arguments) =>
+			AppDomain.CurrentDomain.UnhandledException += (sender, args) =>
 			{
-				Base.AspNet.Global.WriteLogs("An unhandled exception is thrown", arguments.ExceptionObject as Exception);
+				Base.AspNet.Global.WriteLogs("An unhandled exception is thrown", args.ExceptionObject as Exception);
 			};
 
 			stopwatch.Stop();
@@ -106,6 +106,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			Base.AspNet.Global.CancellationTokenSource.Cancel();
 			Base.AspNet.Global.CancellationTokenSource.Dispose();
+
 			Global.InterCommunicateMessageUpdater?.Dispose();
 			RTU.StopUpdaters();
 
@@ -126,7 +127,7 @@ namespace net.vieapps.Services.APIGateway
 			if (executionFilePath.StartsWith("~/"))
 				executionFilePath = executionFilePath.Right(executionFilePath.Length - 2);
 
-			var executionFilePaths = string.IsNullOrEmpty(executionFilePath)
+			var executionFilePaths = string.IsNullOrWhiteSpace(executionFilePath)
 				? new string[] {""}
 				: executionFilePath.ToLower().ToArray('/', true);
 
@@ -177,11 +178,12 @@ namespace net.vieapps.Services.APIGateway
 
 #if DEBUG || REQUESTLOGS
 			var appInfo = app.Context.GetAppInfo();
-			Base.AspNet.Global.WriteLogs(new List<string>() {
-					$"Begin process [{app.Context.Request.HttpMethod}]: {app.Context.Request.Url.Scheme}://{app.Context.Request.Url.Host + app.Context.Request.RawUrl}",
-					$"- Origin: {appInfo.Item1} / {appInfo.Item2} - {appInfo.Item3}",
-					$"- IP: {app.Context.Request.UserHostAddress} [{app.Context.Request.UserAgent}]"
-				});
+			var logs = new List<string>() {
+				$"Begin process [{app.Context.Request.HttpMethod}]: {app.Context.Request.Url.Scheme}://{app.Context.Request.Url.Host + app.Context.Request.RawUrl}",
+				$"- Origin: {appInfo.Item1} / {appInfo.Item2} - {appInfo.Item3}",
+				$"- IP: {app.Context.Request.UserHostAddress} [{app.Context.Request.UserAgent}]"
+			};
+
 			if (!executionFilePaths[0].IsEquals("rtu"))
 			{
 				app.Context.Items["StopWatch"] = new Stopwatch();
@@ -195,7 +197,7 @@ namespace net.vieapps.Services.APIGateway
 				url += "?request-of-static-resource=&path=" + app.Context.Request.RawUrl.UrlEncode();
 			else
 			{
-				url += "?service-name=" + executionFilePaths[0].GetANSIUri();
+				url += "?service-name=" + (!string.IsNullOrWhiteSpace(executionFilePaths[0]) ? executionFilePaths[0].GetANSIUri() : "");
 				if (executionFilePaths.Length > 1)
 					url += "&object-name=" + executionFilePaths[1].GetANSIUri();
 				if (executionFilePaths.Length > 2)
@@ -205,6 +207,11 @@ namespace net.vieapps.Services.APIGateway
 			foreach (string key in app.Request.QueryString)
 				if (!string.IsNullOrWhiteSpace(key) && !Global.QueryExcluded.Contains(key))
 					url += "&" + key + "=" + app.Request.QueryString[key].UrlEncode();
+
+#if DEBUG || REQUESTLOGS
+			logs.Add($"Rewrite URL: [{app.Context.Request.Url.Scheme}://{app.Context.Request.Url.Host + app.Context.Request.RawUrl}] ==> [{app.Context.Request.Url.Scheme}://{app.Context.Request.Url.Host + url}]");
+			Base.AspNet.Global.WriteLogs(logs);
+#endif
 
 			app.Context.RewritePath(url);
 		}
@@ -304,9 +311,10 @@ namespace net.vieapps.Services.APIGateway
 		internal static void ShowError(this HttpContext context, int code, string message, string type, string stack, Exception inner)
 		{
 			// prepare
+			var isDangerous = message.Contains("potentially dangerous");
 			var json = new JObject()
 			{
-				{ "Message", message.Contains("potentially dangerous") ? "Invalid" : message },
+				{ "Message", isDangerous ? "Invalid" : message },
 				{ "Type", type },
 				{ "Verb", context.Request.HttpMethod },
 				{ "CorrelationID", Base.AspNet.Global.GetCorrelationID(context.Items) }
@@ -355,93 +363,21 @@ namespace net.vieapps.Services.APIGateway
 			context.Response.ClearContent();
 			context.Response.Output.Write(json.ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None));
 
-			if (message.Contains("potentially dangerous"))
+			// end response with dangerous requests
+			if (isDangerous)
 				context.Response.End();
 		}
 
-		static JObject GetJsonException(JObject exception)
+		internal static void ShowError(this HttpContext context, WampSharp.V2.Core.Contracts.WampException exception, RequestInfo requestInfo = null, bool writeLogs = true)
 		{
-			var json = new JObject()
-			{
-				{ "Message", exception["Message"] },
-				{ "Type", exception["ClassName"] },
-				{ "Method", exception["ExceptionMethod"] },
-				{ "Source", exception["Source"] },
-				{ "Stack", exception["StackTraceString"] },
-			};
-
-			var inner = exception["InnerException"];
-			if (inner != null && inner is JObject)
-				json.Add(new JProperty("InnerException", Global.GetJsonException(inner as JObject)));
-
-			return json;
-		}
-
-		internal static void ShowError(this HttpContext context, WampException exception, RequestInfo requestInfo = null, bool writeLogs = true)
-		{
-			var code = 500;
-			var message = "";
-			var type = "";
-			var stack = "";
-			Exception inner = null;
-			JObject jsonException = null;
-
-			if (exception.ErrorUri.Equals("wamp.error.no_such_procedure") || exception.ErrorUri.Equals("wamp.error.callee_unregistered"))
-			{
-				if (exception.Arguments != null && exception.Arguments.Length > 0 && exception.Arguments[0] != null && exception.Arguments[0] is JValue)
-				{
-					message = (exception.Arguments[0] as JValue).Value.ToString();
-					var start = message.IndexOf("'");
-					var end = message.IndexOf("'", start + 1);
-					message = $"The requested service is not found [{message.Substring(start + 1, end - start - 1).Replace("'", "")}]";
-				}
-				else
-					message = "The requested service is not found";
-
-				type = "ServiceNotFoundException";
-				stack = exception.StackTrace;
-				inner = exception;
-				code = 404;
-			}
-			else if (exception.ErrorUri.Equals("wamp.error.runtime_error"))
-			{
-				if (exception.Arguments != null && exception.Arguments.Length > 0 && exception.Arguments[0] != null && exception.Arguments[0] is JObject)
-					foreach (var info in exception.Arguments[0] as JObject)
-					{
-						if (info.Value != null && info.Value is JValue && (info.Value as JValue).Value != null)
-							stack += (stack.Equals("") ? "" : "\r\n" + $"----- Inner ({info.Key}) --------------------" + "\r\n")
-								+ (info.Value as JValue).Value.ToString();
-					}
-
-				if (requestInfo == null && exception.Arguments != null && exception.Arguments.Length > 2 && exception.Arguments[2] != null && exception.Arguments[2] is JObject)
-				{
-					var info = (exception.Arguments[2] as JObject).First;
-					if (info != null && info is JProperty && (info as JProperty).Name.Equals("RequestInfo") && (info as JProperty).Value != null && (info as JProperty).Value is JObject)
-						requestInfo = ((info as JProperty).Value as JToken).FromJson<RequestInfo>();
-				}
-
-				jsonException = exception.Arguments != null && exception.Arguments.Length > 4 && exception.Arguments[4] != null && exception.Arguments[4] is JObject
-					? Global.GetJsonException(exception.Arguments[4] as JObject)
-					: null;
-
-				message = jsonException != null
-					? (jsonException["Message"] as JValue).Value.ToString()
-					: $"Error occurred while processing with the service [net.vieapps.services.{(requestInfo != null ? requestInfo.ServiceName.ToLower() : "unknown")}]";
-
-				type = jsonException != null
-					? (jsonException["Type"] as JValue).Value.ToString().ToArray('.').Last()
-					: "ServiceOperationException";
-
-				inner = exception;
-			}
-
-			else
-			{
-				message = exception.Message;
-				type = exception.GetType().ToString().ToArray('.').Last();
-				stack = exception.StackTrace;
-				inner = exception.InnerException;
-			}
+			// prepare
+			var details = exception.GetDetails(requestInfo);
+			var code = details.Item1;
+			var message = details.Item2;
+			var type = details.Item3;
+			var stack = details.Item4;
+			var inner = details.Item5;
+			var jsonException = details.Item6;
 
 			// show error
 			context.ShowError(code, message, type, stack, inner);
@@ -451,12 +387,12 @@ namespace net.vieapps.Services.APIGateway
 			{
 				var logs = new List<string>() { "[" + type + "]: " + message };
 
-				var fullStack = stack;
+				var fullStack = "";
 				if (requestInfo != null)
-					fullStack += "\r\n\r\n" + "==> Request:\r\n" + requestInfo.ToJson().ToString(Formatting.Indented);
+					fullStack += "\r\n" + "==> Request:\r\n" + requestInfo.ToJson().ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None);
 
 				if (jsonException != null)
-					fullStack += "\r\n\r\n" + "==> Details:\r\n" + jsonException.ToString(Formatting.Indented);
+					fullStack += "\r\n" + "==> Response:\r\n" + jsonException.ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None);
 
 				var correlationID = requestInfo != null
 					? requestInfo.CorrelationID
@@ -474,14 +410,14 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static void ShowError(this HttpContext context, Exception exception, RequestInfo requestInfo = null, bool writeLogs = true)
 		{
-			if (exception is WampException)
-				context.ShowError(exception as WampException, requestInfo, writeLogs);
+			if (exception is WampSharp.V2.Core.Contracts.WampException)
+				context.ShowError(exception as WampSharp.V2.Core.Contracts.WampException, requestInfo, writeLogs);
 
 			else
 			{
 				// write logs
 				if (writeLogs && exception != null)
-					Base.AspNet.Global.WriteLogs(Base.AspNet.Global.GetCorrelationID(context.Items), "Errors", $"Error occurred while processing: {exception.Message}" + "\r\n" + "===> Request:" + "\r\n" + requestInfo.ToJson().ToString(Formatting.Indented), exception);
+					Base.AspNet.Global.WriteLogs(Base.AspNet.Global.GetCorrelationID(context.Items), "Errors", $"Error occurred while processing (Request: {requestInfo?.ToJson().ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None) ?? "None"})", exception);
 
 				// show error
 				var message = exception != null ? exception.Message : "Unknown error";
@@ -569,7 +505,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			try
 			{
-				await Base.AspNet.Global.RTUService.SendInterCommunicateMessageAsync(message, Base.AspNet.Global.CancellationTokenSource.Token);
+				await Base.AspNet.Global.RTUService.SendInterCommunicateMessageAsync(message, Base.AspNet.Global.CancellationTokenSource.Token).ConfigureAwait(false);
 			}
 			catch { }
 		}
@@ -688,7 +624,7 @@ namespace net.vieapps.Services.APIGateway
 					if (string.IsNullOrWhiteSpace(staticMimeType))
 						staticMimeType = "text/plain";
 
-					var staticContent = await UtilityService.ReadTextFileAsync(fileInfo.FullName).ConfigureAwait(false);
+					var staticContent = await UtilityService.ReadTextFileAsync(fileInfo).ConfigureAwait(false);
 					if (staticMimeType.IsEndsWith("json"))
 						staticContent = JObject.Parse(staticContent).ToString(Formatting.Indented);
 

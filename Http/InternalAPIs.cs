@@ -52,8 +52,8 @@ namespace net.vieapps.Services.APIGateway
 			}
 			#endregion
 
-#if DEBUG
-			Base.AspNet.Global.WriteLogs(requestInfo.CorrelationID, "Services", $"InternalAPIs: Process the request ==>\r\n{requestInfo.ToJson().ToString(Formatting.Indented)}");
+#if DEBUG || PROCESSLOGS
+			await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Internal", $"Begin process [{context.Request.HttpMethod}]: {context.Request.Url.Scheme}://{context.Request.Url.Host + context.Request.RawUrl} ({context.Request.UserHostAddress})").ConfigureAwait(false);
 #endif
 
 			#region prepare token
@@ -84,11 +84,10 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-#if DEBUG
-				Base.AspNet.Global.WriteLogs(requestInfo.CorrelationID, "Security", $"Error occurred while preparing token: {ex.Message}" + "\r\n" + "===> Request:" + "\r\n" + requestInfo.ToJson().ToString(Formatting.Indented), ex);
-#else
-				Base.AspNet.Global.WriteLogs(requestInfo.CorrelationID, "Security", $"Error occurred while preparing token: {ex.Message}" + "\r\n" + "===> Request:" + "\r\n" + requestInfo.ToJson().ToString(Formatting.None), ex);
+#if DEBUG || PROCESSLOGS
+				await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Internal", "Error occurred while preparing token", ex).ConfigureAwait(false);
 #endif
+				await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Security.Errors", "Error occurred while preparing token", ex).ConfigureAwait(false);
 				context.ShowError(ex, requestInfo, false);
 				return;
 			}
@@ -115,6 +114,10 @@ namespace net.vieapps.Services.APIGateway
 					requestInfo.Body = "";
 				}
 			#endregion
+
+#if DEBUG || PROCESSLOGS
+			await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Internal", $"Request ==>\r\n{requestInfo.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
+#endif
 
 			#region [extra] prepare information of an account
 			if (isAccountProccessed)
@@ -231,8 +234,11 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					Base.AspNet.Global.WriteLogs(requestInfo.CorrelationID, "Security", $"Error occurred while processing account: {ex.Message}" + "\r\n" + "===> Request:" + "\r\n" + requestInfo.ToJson().ToString(Formatting.Indented), ex);
-					context.ShowError(ex, requestInfo, false);
+#if DEBUG || PROCESSLOGS
+					await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Internal", "Error occurred while processing account", ex).ConfigureAwait(false);
+#endif
+					await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Security.Errors", "Error occurred while processing account", ex).ConfigureAwait(false);
+					context.ShowError(ex, requestInfo);
 					return;
 				}
 			#endregion
@@ -247,7 +253,7 @@ namespace net.vieapps.Services.APIGateway
 				else if (requestInfo.Verb.IsEquals("DELETE"))
 					await InternalAPIs.SignSessionOutAsync(context, requestInfo).ConfigureAwait(false);
 				else
-					context.ShowError(new MethodNotAllowedException(requestInfo.Verb), requestInfo);
+					context.ShowError(new MethodNotAllowedException(requestInfo.Verb), requestInfo, false);
 			}
 
 			// process the request of activation
@@ -264,8 +270,11 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					Base.AspNet.Global.WriteLogs(requestInfo.CorrelationID, "Security", $"Error occurred while activating: {ex.Message}" + "\r\n" + "===> Request:" + "\r\n" + requestInfo.ToJson().ToString(Formatting.Indented), ex);
-					context.ShowError(ex, requestInfo, false);
+#if DEBUG || PROCESSLOGS
+					await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Internal", "Error occurred while activating", ex).ConfigureAwait(false);
+#endif
+					await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Security.Errors", "Error occurred while activating", ex).ConfigureAwait(false);
+					context.ShowError(ex, requestInfo);
 				}
 			}
 
@@ -355,8 +364,11 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					Base.AspNet.Global.WriteLogs(requestInfo.CorrelationID, "Security", $"Error occurred while registering session: {ex.Message}" + "\r\n" + "===> Request:" + "\r\n" + requestInfo.ToJson().ToString(Formatting.Indented), ex);
-					context.ShowError(ex, requestInfo, false);
+#if DEBUG || PROCESSLOGS
+					await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Internal", "Error occurred while registering session", ex).ConfigureAwait(false);
+#endif
+					await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Security.Errors", "Error occurred while registering session", ex).ConfigureAwait(false);
+					context.ShowError(ex, requestInfo);
 				}
 
 			// session of authenticated account
@@ -400,8 +412,11 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					Base.AspNet.Global.WriteLogs(requestInfo.CorrelationID, "Security", $"Error occurred while registering session: {ex.Message}" + "\r\n" + "===> Request:" + "\r\n" + requestInfo.ToJson().ToString(Formatting.Indented), ex);
-					context.ShowError(ex, requestInfo, false);
+#if DEBUG || PROCESSLOGS
+					await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Internal", "Error occurred while registering session", ex).ConfigureAwait(false);
+#endif
+					await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Security.Errors", "Error occurred while registering session", ex).ConfigureAwait(false);
+					context.ShowError(ex, requestInfo);
 				}
 		}
 		#endregion
@@ -448,7 +463,7 @@ namespace net.vieapps.Services.APIGateway
 
 				// clear cached of current session
 				await Global.Cache.RemoveAsync("Session#" + requestInfo.Session.SessionID).ConfigureAwait(false);
-				
+
 				// prepare session
 				requestInfo.Session.User = json.FromJson<User>();
 				requestInfo.Session.SessionID = UtilityService.NewUID;
@@ -499,8 +514,8 @@ namespace net.vieapps.Services.APIGateway
 			catch (Exception ex)
 			{
 				// wait
-				var attempt = await Global.Cache.ExistsAsync("Attempt#" + requestInfo.Session.IP)
-					? await Global.Cache.GetAsync<int>("Attempt#" + requestInfo.Session.IP)
+				var attempt = await Global.Cache.ExistsAsync("Attempt#" + requestInfo.Session.IP).ConfigureAwait(false)
+					? await Global.Cache.GetAsync<int>("Attempt#" + requestInfo.Session.IP).ConfigureAwait(false)
 					: 0;
 				attempt++;
 
@@ -510,8 +525,11 @@ namespace net.vieapps.Services.APIGateway
 				).ConfigureAwait(false);
 
 				// show error
-				Base.AspNet.Global.WriteLogs(requestInfo.CorrelationID, "Security", $"Error occurred while signing-in session: {ex.Message}" + "\r\n" + "===> Request:" + "\r\n" + requestInfo.ToJson().ToString(Formatting.Indented), ex);
-				context.ShowError(ex, requestInfo, false);
+#if DEBUG || PROCESSLOGS
+				await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Internal", "Error occurred while signing-in session", ex).ConfigureAwait(false);
+#endif
+				await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Security.Errors", "Error occurred while signing-in session", ex).ConfigureAwait(false);
+				context.ShowError(ex, requestInfo);
 			}
 		}
 		#endregion
@@ -526,7 +544,7 @@ namespace net.vieapps.Services.APIGateway
 					throw new InvalidRequestException();
 
 				// call service to perform sign out
-				await InternalAPIs.CallServiceAsync(requestInfo.Session, "users", "session", "DELETE");
+				await InternalAPIs.CallServiceAsync(requestInfo.Session, "users", "session", "DELETE").ConfigureAwait(false);
 
 				await Task.WhenAll(
 					Global.Cache.RemoveAsync("Session#" + requestInfo.Session.SessionID),
@@ -552,7 +570,7 @@ namespace net.vieapps.Services.APIGateway
 					{ "AppInfo", requestInfo.Session.AppName + " @ " + requestInfo.Session.AppPlatform },
 					{ "Online", true }
 				};
-				await Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 180);
+				await Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 180).ConfigureAwait(false);
 
 				// response
 				var json = new JObject()
@@ -566,8 +584,11 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-				Base.AspNet.Global.WriteLogs(requestInfo.CorrelationID, "Security", $"Error occurred while signing-out session: {ex.Message}" + "\r\n" + "===> Request:" + "\r\n" + requestInfo.ToJson().ToString(Formatting.Indented), ex);
-				context.ShowError(ex, requestInfo, false);
+#if DEBUG || PROCESSLOGS
+				await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Internal", "Error occurred while signing-out session", ex).ConfigureAwait(false);
+#endif
+				await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Security.Errors", "Error occurred while signing-out session", ex).ConfigureAwait(false);
+				context.ShowError(ex, requestInfo);
 			}
 		}
 		#endregion
@@ -620,7 +641,7 @@ namespace net.vieapps.Services.APIGateway
 			// pre-check
 			if (session == null || string.IsNullOrWhiteSpace(session.SessionID))
 				return false;
-			else if (await Global.Cache.ExistsAsync("Session#" + session.SessionID))
+			else if (await Global.Cache.ExistsAsync("Session#" + session.SessionID).ConfigureAwait(false))
 				return true;
 
 			// check with user service
@@ -641,7 +662,7 @@ namespace net.vieapps.Services.APIGateway
 				throw new TokenNotFoundException();
 
 			// check with cached
-			var cached = await Global.Cache.GetAsync<string>("Session#" + session.SessionID);
+			var cached = await Global.Cache.GetAsync<string>("Session#" + session.SessionID).ConfigureAwait(false);
 			if (!string.IsNullOrWhiteSpace(cached))
 			{
 				var info = cached.ToExpandoObject();
@@ -670,15 +691,14 @@ namespace net.vieapps.Services.APIGateway
 				return;
 
 			// get user information
-			var json = await InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session)
+			var user = (await InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session)
 			{
 				ServiceName = "users",
 				ObjectName = "account",
 				Verb = "GET",
 				Query = requestInfo.Query,
 				CorrelationID = requestInfo.CorrelationID
-			}).ConfigureAwait(false);
-			var user = json.FromJson<User>();
+			}).ConfigureAwait(false)).FromJson<User>();
 
 			// send inter-communicate message to tell services update old sessions with new access token
 			await Global.SendInterCommunicateMessageAsync(new CommunicateMessage()
@@ -695,12 +715,12 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Helper: call service
-		internal static async Task<JObject> CallServiceAsync(RequestInfo requestInfo)
+		internal static async Task<JObject> CallServiceAsync(RequestInfo requestInfo, string objectLogName = "Internal")
 		{
 			var name = requestInfo.ServiceName.Trim().ToLower();
 
-#if DEBUG
-			Base.AspNet.Global.WriteLogs(requestInfo.CorrelationID, "Services", "InternalAPIs: Call the service [net.vieapps.services." + name + "]" + "\r\n" + "Request ==>" + "\r\n" + requestInfo.ToJson().ToString(Formatting.Indented));
+#if DEBUG || PROCESSLOGS
+			await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, objectLogName, $"Call the service [net.vieapps.services.{name}]\r\n{requestInfo.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
 #endif
 
 			if (!InternalAPIs.Services.TryGetValue(name, out IService service))
@@ -710,7 +730,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					if (!InternalAPIs.Services.TryGetValue(name, out service))
 					{
-						service = Base.AspNet.Global.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IService>(new CachedCalleeProxyInterceptor(new ProxyInterceptor(name)));
+						service = Base.AspNet.Global.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IService>(ProxyInterceptor.Create(name));
 						InternalAPIs.Services.Add(name, service);
 					}
 				}
@@ -723,17 +743,19 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (WampSessionNotEstablishedException)
 			{
-				await Task.Delay(567);
+				await Task.Delay(567).ConfigureAwait(false);
 				json = await service.ProcessRequestAsync(requestInfo, Base.AspNet.Global.CancellationTokenSource.Token).ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
-				Base.AspNet.Global.WriteLogs(requestInfo.CorrelationID, "Errors", "InternalAPIs: Error occurred while calling the service [net.vieapps.services." + name + "]: " + ex.Message + " [" + ex.GetType().ToString() + "]" + "\r\n" + "Stack: " + ex.StackTrace);
+#if DEBUG || PROCESSLOGS
+				await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, objectLogName, $"Error occurred while calling the service [net.vieapps.services.{name}]", ex).ConfigureAwait(false);
+#endif
 				throw ex;
 			}
 
-#if DEBUG
-			Base.AspNet.Global.WriteLogs(requestInfo.CorrelationID, "Services", "InternalAPIs: Result of the service [net.vieapps.services." + name + "]" + "\r\n" + "Results ==>" + "\r\n" + (json != null ? json.ToString(Formatting.Indented) : "None"));
+#if DEBUG || PROCESSLOGS
+			await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, objectLogName, $"Results from the service [net.vieapps.services.{name}]\r\n{json.ToString(Formatting.Indented)}").ConfigureAwait(false);
 #endif
 
 			return json;

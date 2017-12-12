@@ -45,7 +45,6 @@
     <ApplicationIcon>Gateway.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="System" />
     <Reference Include="System.Configuration" />
     <Reference Include="System.Configuration.Install" />
     <Reference Include="System.Drawing" />
@@ -64,7 +63,7 @@
     </Compile>
     <Compile Include="Messaging.cs" />
     <Compile Include="RTU.cs" />
-    <Compile Include="Management.cs" />
+    <Compile Include="Logging.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="ServiceComponent.cs" />

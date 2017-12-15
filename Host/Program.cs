@@ -8,10 +8,8 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 
-#if DEBUG
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
-#endif
 
 using Newtonsoft.Json;
 
@@ -52,7 +50,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				if (Program.IsUserInteractive)
 				{
-					Console.WriteLine($"VIEApps API Gateway - Service Hoster v{AssemblyName.GetAssemblyName(Assembly.GetExecutingAssembly().Location).Version}");
+					Console.WriteLine($"VIEApps NGX API Gateway - Service Hoster v{AssemblyName.GetAssemblyName(Assembly.GetExecutingAssembly().Location).Version}");
 					Console.WriteLine("");
 					Console.WriteLine("Syntax: VIEApps.Services.APIGateway.Host.exe /svc:<service-component-namespace,service-assembly>");
 					Console.WriteLine("");

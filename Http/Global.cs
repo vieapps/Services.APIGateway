@@ -31,9 +31,15 @@ namespace net.vieapps.Services.APIGateway
 
 		static HashSet<string> QueryExcluded = "service-name,object-name,object-identity,request-of-static-resource".ToHashSet();
 
-		static Cache _Cache = new Cache("VIEApps-API-Gateway", 120, UtilityService.GetAppSetting("CacheProvider"));
+		static Cache _Cache;
 
-		public static Cache Cache { get { return Global._Cache; } }
+		internal static Cache Cache
+		{
+			get
+			{
+				return Global._Cache ?? (Global._Cache = new Cache("VIEApps-API-Gateway", UtilityService.GetAppSetting("CacheExpirationTime", "120").CastAs<int>(), UtilityService.GetAppSetting("CacheProvider")));
+			}
+		}
 		#endregion
 
 		#region Start/End the app

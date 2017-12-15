@@ -520,7 +520,7 @@ namespace net.vieapps.Services.APIGateway
 				attempt++;
 
 				await Task.WhenAll(
-					Task.Delay(567 + ((attempt - 1) * 5000)),
+					Task.Delay(567 + ((attempt - 1) * 5678)),
 					Global.Cache.SetAsync("Attempt#" + requestInfo.Session.IP, attempt)
 				).ConfigureAwait(false);
 

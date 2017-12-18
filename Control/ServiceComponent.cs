@@ -7,14 +7,15 @@ using System.Diagnostics;
 using System.Configuration;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using System.Reactive.Linq;
 
 using Newtonsoft.Json.Linq;
 
-using WampSharp.Core.Listener;
 using WampSharp.V2;
 using WampSharp.V2.Rpc;
 using WampSharp.V2.Core.Contracts;
 using WampSharp.V2.Realm;
+using WampSharp.Core.Listener;
 
 using net.vieapps.Components.Utility;
 #endregion
@@ -36,7 +37,7 @@ namespace net.vieapps.Services.APIGateway
 		Dictionary<string, string> _availableServices = null;
 		Dictionary<string, int> _runningServices = new Dictionary<string, int>();
 
-		List<System.Timers.Timer> _timers = new List<System.Timers.Timer>();
+		List<IDisposable> _timers = new List<IDisposable>();
 		MailSender _mailSender = null;
 		WebHookSender _webhookSender = null;
 		bool _isHouseKeeperRunning = false, _isTaskSchedulerRunning = false;
@@ -197,15 +198,18 @@ namespace net.vieapps.Services.APIGateway
 				.ForEach(path => Directory.CreateDirectory(path));
 
 			// register helper services
-			this._loggingService = new LoggingService();
 			await this._incommingChannel.RealmProxy.Services.RegisterCallee(this, new RegistrationInterceptor()).ConfigureAwait(false);
 			Global.WriteLog("The centralized managing service is registered");
 			if (this._registerHelperServices)
-				await this.RegisterHelperServicesAsync();
+				await this.RegisterHelperServicesAsync().ConfigureAwait(false);
 
 			// register timers
 			if (this._registerTimers)
-				this.RegisterTimers();
+			{
+				this.RegisterMessagingTimers();
+				this.RegisterSchedulingTimers();
+				Global.WriteLog("The background workers & schedulers are registered");
+			}
 
 			// register business services
 			if (this._registerBusinessServices)
@@ -217,7 +221,7 @@ namespace net.vieapps.Services.APIGateway
 			MailSender.SaveMessages();
 			WebHookSender.SaveMessages();
 
-			this._timers.ForEach(timer => timer.Stop());
+			this._timers.ForEach(timer => timer.Dispose());
 			this._runningServices.Select(s => s.Value)
 				.Concat(this._runningTasks.Select(s => s.Item1))
 				.ToList()
@@ -515,69 +519,72 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Register timers for working with background workers & schedulers
-		void RegisterTimers()
+		IDisposable StartTimer(Action action, int interval, int delau = 0)
 		{
-			this.RegisterMessagingTimers();
-			this.RegisterSchedulingTimers();
-			Global.WriteLog("The background workers & schedulers are registered");
-		}
-
-		void StartTimer(int interval, Action<object, System.Timers.ElapsedEventArgs> action, bool autoReset = true)
-		{
-			var timer = new System.Timers.Timer()
-			{
-				Interval = interval * 1000,
-				AutoReset = autoReset
-			};
-			timer.Elapsed += new System.Timers.ElapsedEventHandler(action);
-			timer.Start();
+			interval = interval < 1 ? 1 : interval;
+			var timer = Observable.Timer(TimeSpan.FromMilliseconds(delau > 0 ? delau : interval * 1000), TimeSpan.FromSeconds(interval)).Subscribe(_ => action?.Invoke());
 			this._timers.Add(timer);
+			return timer;
 		}
 
 		void RegisterMessagingTimers()
 		{
 			// send email messages (15 seconds)
-			this.StartTimer(15, (sender, args) =>
+			this.StartTimer(async () =>
 			{
 				if (this._mailSender == null)
-					Task.Run(async () =>
+				{
+					this._mailSender = new MailSender();
+					try
 					{
-						this._mailSender = new MailSender();
-						try
-						{
-							await this._mailSender.ProcessAsync().ConfigureAwait(false);
-						}
-						catch { }
-						finally
-						{
-							this._mailSender = null;
-						}
-					}).ConfigureAwait(false);
-			});
+						await this._mailSender.ProcessAsync().ConfigureAwait(false);
+					}
+					catch { }
+					finally
+					{
+						this._mailSender = null;
+					}
+				}
+			}, 15);
 
-			// send web hook messages (25 seconds)
-			this.StartTimer(25, (sender, args) =>
+			// send web hook messages (35 seconds)
+			this.StartTimer(async () =>
 			{
 				if (this._webhookSender == null)
-					Task.Run(async () =>
+				{
+					this._webhookSender = new WebHookSender();
+					try
 					{
-						this._webhookSender = new WebHookSender();
-						try
-						{
-							await this._webhookSender.ProcessAsync().ConfigureAwait(false);
-						}
-						catch { }
-						finally
-						{
-							this._webhookSender = null;
-						}
-					}).ConfigureAwait(false);
-			});
+						await this._webhookSender.ProcessAsync().ConfigureAwait(false);
+					}
+					catch { }
+					finally
+					{
+						this._webhookSender = null;
+					}
+				}
+			}, 35);
 		}
 
 		void RegisterSchedulingTimers()
 		{
-			// prepare task scheduler
+			// flush logs (DEBUG: 5 seconds - Other: 1 minute)
+			this.StartTimer(() =>
+			{
+				this._loggingService?.FlushAll();
+#if DEBUG
+			}, 5);
+#else
+			}, 60);
+#endif
+
+			// house keeper (hourly)
+			this.StartTimer(() =>
+			{
+				this.RunHouseKeeper();
+			}, 60 * 60);
+
+			// task scheduler (hourly)
 			var runTaskSchedulerOnFirstLoad = false;
 			if (ConfigurationManager.GetSection("net.vieapps.task.scheduler") is AppConfigurationSectionHandler config)
 			{
@@ -585,54 +592,25 @@ namespace net.vieapps.Services.APIGateway
 				if (config.Section.SelectNodes("task") is XmlNodeList taskNodes)
 					foreach (XmlNode taskNode in taskNodes)
 					{
-						var settings = taskNode.ToJson();
-						var execute = settings["execute"] as JValue;
-						var arguments = settings["arguments"] as JValue;
-						var time = settings["time"] as JValue;
-
-						if (string.IsNullOrWhiteSpace(execute?.Value as string) || !File.Exists(execute.Value as string))
+						if (string.IsNullOrWhiteSpace(taskNode.Attributes["execute"]?.Value) || !File.Exists(taskNode.Attributes["execute"].Value))
 							continue;
 
 						var info = new Tuple<string, string, string>(
-							(execute.Value as string).Trim(),
-							(arguments?.Value as string ?? "").Trim(),
-							time?.Value as string ?? "3"
+							taskNode.Attributes["execute"].Value.Trim(),
+							(taskNode.Attributes["arguments"]?.Value ?? "").Trim(),
+							taskNode.Attributes["time"]?.Value ?? "3"
 						);
 
-						var identity = (info.Item1 + "[" + (arguments?.Value as string ?? "") + "]").ToLower().GetMD5();
+						var identity = (info.Item1 + "[" + (taskNode.Attributes["arguments"]?.Value ?? "") + "]").ToLower().GetMD5();
 						if (!this._tasks.ContainsKey(identity))
 							this._tasks.Add(identity, info);
 					}
 			}
 
-#if DEBUG
-			// timer to flush logs (5 seconds)
-			this.StartTimer(5, (sender, args) =>
-#else
-			// timer to flush logs (3 minutes)
-			this.StartTimer(60 * 3, (sender, args) =>
-#endif
+			this.StartTimer(async () =>
 			{
-				this._loggingService?.FlushAll();
-			});
-
-			// timer to run house keeper & task scheduler (hourly)
-			this.StartTimer(60 * 60, (sender, args) =>
-			{
-				this.RunHouseKeeper();
-				Task.Run(async () =>
-				{
-					await this.RunTaskSchedulerAsync().ConfigureAwait(false);
-				}).ConfigureAwait(false);
-			});
-
-			// run task scheduler on first-load
-			if (runTaskSchedulerOnFirstLoad)
-				Task.Run(async () =>
-				{
-					await Task.Delay(1234);
-					await this.RunTaskSchedulerAsync().ConfigureAwait(false);
-				}).ConfigureAwait(false);
+				await this.RunTaskSchedulerAsync().ConfigureAwait(false);
+			}, 60 * 60, runTaskSchedulerOnFirstLoad ? 5678 : 0);
 		}
 
 		void RunHouseKeeper()

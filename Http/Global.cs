@@ -85,11 +85,11 @@ namespace net.vieapps.Services.APIGateway
 							}
 							catch (Exception ex)
 							{
-								Base.AspNet.Global.WriteLogs("Error occurred while initializing helper services", ex);
+								await Base.AspNet.Global.WriteLogsAsync("Error occurred while initializing helper services", ex).ConfigureAwait(false);
 							}
 						}).ConfigureAwait(false);
 					}
-				);
+				).ConfigureAwait(false);
 			}).ConfigureAwait(false);
 
 			// special segments
@@ -134,7 +134,7 @@ namespace net.vieapps.Services.APIGateway
 				executionFilePath = executionFilePath.Right(executionFilePath.Length - 2);
 
 			var executionFilePaths = string.IsNullOrWhiteSpace(executionFilePath)
-				? new string[] {""}
+				? new[] {""}
 				: executionFilePath.ToLower().ToArray('/', true);
 
 			// update special headers on OPTIONS request
@@ -541,12 +541,12 @@ namespace net.vieapps.Services.APIGateway
 					User = user
 				}).UpdateSessionJson(json, accessToken);
 
-				(new UpdateMessage()
+				new UpdateMessage()
 				{
 					Type = "Users#Session",
 					DeviceID = deviceID,
 					Data = json
-				}).Publish();
+				}.Publish();
 			}
 		}
 		#endregion

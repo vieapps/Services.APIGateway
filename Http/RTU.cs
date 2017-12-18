@@ -459,12 +459,12 @@ namespace net.vieapps.Services.APIGateway
 
 						// send the update message
 						var objectIdentity = query != null && query.ContainsKey("object-identity") ? query["object-identity"] : null;
-						(new UpdateMessage()
+						new UpdateMessage()
 						{
 							Type = serviceName.GetCapitalizedFirstLetter() + "#" + objectName.GetCapitalizedFirstLetter() + (objectIdentity != null && !objectIdentity.IsValidUUID() ? "#" + objectIdentity.GetCapitalizedFirstLetter() : ""),
 							DeviceID = session.DeviceID,
 							Data = data
-						}).Publish();
+						}.Publish();
 
 #if DEBUG || RTULOGS
 						stopwatch.Stop();

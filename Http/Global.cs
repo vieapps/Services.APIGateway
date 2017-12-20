@@ -13,6 +13,7 @@ using System.Diagnostics;
 
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using WampSharp.V2.Core.Contracts;
 
 using net.vieapps.Components.Utility;
 using net.vieapps.Components.Security;
@@ -374,7 +375,7 @@ namespace net.vieapps.Services.APIGateway
 				context.Response.End();
 		}
 
-		internal static void ShowError(this HttpContext context, WampSharp.V2.Core.Contracts.WampException exception, RequestInfo requestInfo = null, bool writeLogs = true)
+		internal static void ShowError(this HttpContext context, WampException exception, RequestInfo requestInfo = null, bool writeLogs = true)
 		{
 			// prepare
 			var details = exception.GetDetails(requestInfo);
@@ -416,16 +417,16 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static void ShowError(this HttpContext context, Exception exception, RequestInfo requestInfo = null, bool writeLogs = true)
 		{
-			if (exception is WampSharp.V2.Core.Contracts.WampException)
-				context.ShowError(exception as WampSharp.V2.Core.Contracts.WampException, requestInfo, writeLogs);
+			// write logs
+			if (writeLogs && exception != null)
+				Base.AspNet.Global.WriteLogs(Base.AspNet.Global.GetCorrelationID(context.Items), "Errors", $"Error occurred while processing (Request: {requestInfo?.ToJson().ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None) ?? "None"})", exception);
+
+			// show error
+			if (exception is WampException)
+				context.ShowError(exception as WampException, requestInfo, writeLogs);
 
 			else
 			{
-				// write logs
-				if (writeLogs && exception != null)
-					Base.AspNet.Global.WriteLogs(Base.AspNet.Global.GetCorrelationID(context.Items), "Errors", $"Error occurred while processing (Request: {requestInfo?.ToJson().ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None) ?? "None"})", exception);
-
-				// show error
 				var message = exception != null ? exception.Message : "Unknown error";
 				var type = exception != null ? exception.GetType().ToString().ToArray('.').Last() : "Unknown";
 				var stack = exception != null && Global.IsShowErrorStacks ? exception.StackTrace : null;

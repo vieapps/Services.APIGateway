@@ -93,6 +93,7 @@ namespace net.vieapps.Services.APIGateway
 			};
 
 			// prepare logging
+			var uri = (Program.ServiceComponent as IService).ServiceURI;
 			var logger = new ServiceCollection()
 				.AddLogging(builder =>
 				{
@@ -112,7 +113,7 @@ namespace net.vieapps.Services.APIGateway
 			if (!Program.IsUserInteractive)
 			{
 				// get the flag of the existing instance
-				waitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, (Program.ServiceComponent as IService).ServiceURI, out bool createdNew);
+				waitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, uri, out bool createdNew);
 
 				// process the call to stop
 				if (apiCallToStop)
@@ -127,18 +128,18 @@ namespace net.vieapps.Services.APIGateway
 				}
 			}
 			else
-				logger.LogInformation($"The service [{(Program.ServiceComponent as IService).ServiceURI}] is starting...");
+				logger.LogInformation($"The service [{uri}] is starting...");
 
 			// start the service component
-			var initRepository = args?.FirstOrDefault(a => a.IsStartsWith("/repository:"));
-			Program.ServiceComponent.Start(args, !string.IsNullOrWhiteSpace(initRepository) && initRepository.IsEquals("false") ? false : true);
+			var initRepository = args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", "");
+			Program.ServiceComponent.Start(args, "false".IsEquals(initRepository) ? false : true);
 
 			// wait for exit
 			if (Program.IsUserInteractive)
 			{
 				Program.ConsoleEventHandler = new ConsoleEventDelegate(Program.ConsoleEventCallback);
 				Program.SetConsoleCtrlHandler(Program.ConsoleEventHandler, true);
-				logger.LogInformation($"The service [{(Program.ServiceComponent as IService).ServiceURI}] is started. PID: {Process.GetCurrentProcess().Id}\r\n=====> Press RETURN to terminate...");
+				logger.LogInformation($"The service [{uri}] is started. PID: {Process.GetCurrentProcess().Id}\r\n=====> Press RETURN to terminate...");
 				Console.ReadLine();
 			}
 			else

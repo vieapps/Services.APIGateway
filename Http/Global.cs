@@ -81,8 +81,10 @@ namespace net.vieapps.Services.APIGateway
 						{
 							try
 							{
-								await Base.AspNet.Global.InitializeLoggingServiceAsync().ConfigureAwait(false);
-								await Base.AspNet.Global.InitializeRTUServiceAsync().ConfigureAwait(false);
+								await Task.WhenAll(
+									Base.AspNet.Global.InitializeLoggingServiceAsync(),
+									Base.AspNet.Global.InitializeRTUServiceAsync()
+								).ConfigureAwait(false);
 							}
 							catch (Exception ex)
 							{
@@ -106,7 +108,7 @@ namespace net.vieapps.Services.APIGateway
 			};
 
 			stopwatch.Stop();
-			Base.AspNet.Global.WriteLogs($"*** The API Gateway is ready for serving. The app is initialized in {stopwatch.GetElapsedTimes()}");
+			Base.AspNet.Global.WriteLogs($"*** The API Gateway HTTP Service is ready for serving. The app is initialized in {stopwatch.GetElapsedTimes()}");
 		}
 
 		internal static void OnAppEnd()
@@ -215,8 +217,10 @@ namespace net.vieapps.Services.APIGateway
 				if (!string.IsNullOrWhiteSpace(key) && !Global.QueryExcluded.Contains(key))
 					url += "&" + key + "=" + app.Request.QueryString[key].UrlEncode();
 
-#if DEBUG || REQUESTLOGS
+#if DEBUG || REQUESTLOGS || URLREWRITERLOGS
+#if DEBUG || URLREWRITERLOGS
 			logs.Add($"Rewrite URL: [{app.Context.Request.Url.Scheme}://{app.Context.Request.Url.Host + app.Context.Request.RawUrl}] ==> [{app.Context.Request.Url.Scheme}://{app.Context.Request.Url.Host + url}]");
+#endif
 			Base.AspNet.Global.WriteLogs(logs);
 #endif
 
@@ -394,12 +398,28 @@ namespace net.vieapps.Services.APIGateway
 			{
 				var logs = new List<string>() { "[" + type + "]: " + message };
 
-				var fullStack = "";
+				stack = "";
 				if (requestInfo != null)
-					fullStack += "\r\n" + "==> Request:\r\n" + requestInfo.ToJson().ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None);
+					stack += "\r\n" + "==> Request:\r\n" + requestInfo.ToJson().ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None);
 
 				if (jsonException != null)
-					fullStack += "\r\n" + "==> Response:\r\n" + jsonException.ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None);
+					stack += "\r\n" + "==> Response:\r\n" + jsonException.ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None);
+
+				if (exception != null)
+				{
+					stack += "\r\n" + "==> Stack:\r\n" + exception.StackTrace;
+					var counter = 0;
+					var innerException = exception.InnerException;
+					while (innerException != null)
+					{
+						counter++;
+						stack += "\r\n" + $"-------- Inner ({counter}) ----------------------------------"
+							+ "> Message: " + innerException.Message + "\r\n"
+							+ "> Type: " + innerException.GetType().ToString() + "\r\n"
+							+ innerException.StackTrace;
+						innerException = innerException.InnerException;
+					}
+				}
 
 				var correlationID = requestInfo != null
 					? requestInfo.CorrelationID
@@ -411,7 +431,7 @@ namespace net.vieapps.Services.APIGateway
 					? requestInfo.ObjectName
 					: "unknown";
 
-				Base.AspNet.Global.WriteLogs(correlationID, serviceName, objectName, logs, exception != null ? exception.StackTrace : "", fullStack);
+				Base.AspNet.Global.WriteLogs(correlationID, serviceName, objectName, logs, stack);
 			}
 		}
 

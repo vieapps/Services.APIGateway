@@ -25,7 +25,7 @@ namespace net.vieapps.Services.APIGateway
 
 		#region Attributes
 		internal static ISubject<UpdateMessage> Sender = null;
-		internal static Dictionary<string, IDisposable> Updaters = new Dictionary<string, IDisposable>();
+		internal static ConcurrentDictionary<string, IDisposable> Updaters = new ConcurrentDictionary<string, IDisposable>();
 
 		internal static int _PushInterval = 0, _ProcessInterval = 0;
 
@@ -79,7 +79,7 @@ namespace net.vieapps.Services.APIGateway
 						updater = Base.AspNet.Global.IncommingChannel.RealmProxy.Services
 							.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages")
 							.Subscribe(onNext, onError);
-						RTU.Updaters.Add(identity, updater);
+						RTU.Updaters.TryAdd(identity, updater);
 					}
 				}
 
@@ -93,7 +93,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					RTU.Updaters[identity].Dispose();
 					if (remove)
-						RTU.Updaters.Remove(identity);
+						RTU.Updaters.TryRemove(identity, out IDisposable instance);
 				}
 				catch { }
 		}
@@ -254,7 +254,7 @@ namespace net.vieapps.Services.APIGateway
 					},
 					(ex) =>
 					{
-						Base.AspNet.Global.WriteLogs(correlationID, "RTU", $"Error occurred while fetching messages: {ex.Message} [{ex.GetType().GetTypeName(true)}]", ex);
+						Base.AspNet.Global.WriteLogs(correlationID, "RTU", $"Error occurred while fetching messages", ex);
 					});
 			}
 			catch (Exception ex)
@@ -315,9 +315,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 
 				// push messages to client's device
-				while (messages.Count > 0)
-				{
-					messages.TryDequeue(out UpdateMessage message);
+				while (messages.TryDequeue(out UpdateMessage message))
 					if (message != null && message.DeviceID.Equals("*") || message.DeviceID.IsEquals(session.DeviceID))
 						try
 						{
@@ -340,22 +338,19 @@ namespace net.vieapps.Services.APIGateway
 						{
 							await Base.AspNet.Global.WriteLogsAsync(correlationID, "RTU",
 								"Error occurred while pushing message to the subscriber's device" + "\r\n" +
-								"- Message: " + message.ToJson().ToString(Formatting.None) + "\r\n" +
-								$"- Error: {ex.Message} [{ex.GetType().GetTypeName(true)}]"
+								"- Message: " + message.ToJson().ToString(Formatting.None)
 							, ex).ConfigureAwait(false);
 						}
-				}
 
 				// wait for next interval
 				try
 				{
 					await Task.Delay(RTU.PushInterval, Base.AspNet.Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				}
-				catch (OperationCanceledException)
+				catch
 				{
 					return;
 				}
-				catch (Exception) { }
 			}
 		}
 		#endregion
@@ -413,11 +408,8 @@ namespace net.vieapps.Services.APIGateway
 						throw;
 					}
 
-					var requestInfo = requestMessage?.ToExpandoObject();
-					if (requestInfo == null)
-						return;
-
 					// prepare information
+					var requestInfo = requestMessage?.ToExpandoObject() ?? new ExpandoObject();
 					var serviceName = requestInfo.Get<string>("ServiceName");
 					var objectName = requestInfo.Get<string>("ObjectName");
 					var verb = requestInfo.Get<string>("Verb") ?? "GET";
@@ -499,11 +491,10 @@ namespace net.vieapps.Services.APIGateway
 				{
 					await Task.Delay(RTU.ProcessInterval, Base.AspNet.Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				}
-				catch (OperationCanceledException)
+				catch
 				{
 					return;
 				}
-				catch (Exception) { }
 			}
 		}
 		#endregion

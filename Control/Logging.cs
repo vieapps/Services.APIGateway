@@ -33,7 +33,7 @@ namespace net.vieapps.Services.APIGateway
 #endif
 		}
 
-		public Task WriteLogsAsync(string correlationID, string serviceName, string objectName, List<string> logs, string simpleStack = null, string fullStack = null, CancellationToken cancellationToken = default(CancellationToken))
+		public Task WriteLogsAsync(string correlationID, string serviceName, string objectName, List<string> logs, string stack = null, CancellationToken cancellationToken = default(CancellationToken))
 		{
 			var prefix = !string.IsNullOrWhiteSpace(serviceName)
 				? serviceName.ToLower()
@@ -64,18 +64,11 @@ namespace net.vieapps.Services.APIGateway
 					formLogs += (!formLogs.Equals("") ? "\r\n" : "") + info;
 			});
 
-			if (!string.IsNullOrWhiteSpace(simpleStack))
+			if (!string.IsNullOrWhiteSpace(stack))
 			{
-				svcLogs.Enqueue("==> Stack:" + "\r\n" + simpleStack);
+				svcLogs.Enqueue("==> Stack:" + "\r\n" + stack);
 				if (!Global.AsService)
-					formLogs += (!formLogs.Equals("") ? "\r\n" : "") + "==> Stack:" + "\r\n" + simpleStack;
-			}
-
-			if (!string.IsNullOrWhiteSpace(fullStack) && !fullStack.Equals(simpleStack))
-			{
-				svcLogs.Enqueue("==> Stack (Full):" + "\r\n" + fullStack);
-				if (!Global.AsService)
-					formLogs += (!formLogs.Equals("") ? "\r\n" : "") + "==> Stack (Full):" + "\r\n" + fullStack;
+					formLogs += (!formLogs.Equals("") ? "\r\n" : "") + "==> Stack:" + "\r\n" + stack;
 			}
 
 			if (svcLogs.Count >= this._max)
@@ -90,36 +83,36 @@ namespace net.vieapps.Services.APIGateway
 			return Task.CompletedTask;
 		}
 
-		public Task WriteLogAsync(string correlationID, string serviceName, string objectName, string log, string simpleStack = null, string fullStack = null, CancellationToken cancellationToken = default(CancellationToken))
+		public Task WriteLogAsync(string correlationID, string serviceName, string objectName, string log, string stack = null, CancellationToken cancellationToken = default(CancellationToken))
 		{
-			return this.WriteLogsAsync(correlationID, serviceName, objectName, new List<string>() { log }, simpleStack, fullStack, cancellationToken);
+			return this.WriteLogsAsync(correlationID, serviceName, objectName, new List<string>() { log }, stack, cancellationToken);
 		}
 
-		internal void WriteLogs(string correlationID, string serviceName, string objectName, List<string> logs, string simpleStack = null, string fullStack = null)
+		internal void WriteLogs(string correlationID, string serviceName, string objectName, List<string> logs, string stack = null)
 		{
 			Task.Run(async () =>
 			{
 				try
 				{
-					await this.WriteLogsAsync(correlationID, serviceName, objectName, logs, simpleStack, fullStack).ConfigureAwait(false);
+					await this.WriteLogsAsync(correlationID, serviceName, objectName, logs, stack).ConfigureAwait(false);
 				}
 				catch { }
 			}).ConfigureAwait(false);
 		}
 
-		internal void WriteLogs(string serviceName, string objectName, List<string> logs, string simpleStack = null, string fullStack = null)
+		internal void WriteLogs(string serviceName, string objectName, List<string> logs, string stack = null)
 		{
-			this.WriteLogs(UtilityService.NewUID, serviceName, objectName, logs, simpleStack, fullStack);
+			this.WriteLogs(UtilityService.NewUID, serviceName, objectName, logs, stack);
 		}
 
-		internal void WriteLog(string correlationID, string serviceName, string objectName, string log, string simpleStack = null, string fullStack = null)
+		internal void WriteLog(string correlationID, string serviceName, string objectName, string log, string stack = null)
 		{
-			this.WriteLogs(correlationID, serviceName, objectName, new List<string>() { log }, simpleStack, fullStack);
+			this.WriteLogs(correlationID, serviceName, objectName, new List<string>() { log }, stack);
 		}
 
-		internal void WriteLog(string serviceName, string objectName, string log, string simpleStack = null, string fullStack = null)
+		internal void WriteLog(string serviceName, string objectName, string log, string stack = null)
 		{
-			this.WriteLogs(UtilityService.NewUID, serviceName, objectName, new List<string>() { log }, simpleStack, fullStack);
+			this.WriteLogs(UtilityService.NewUID, serviceName, objectName, new List<string>() { log }, stack);
 		}
 
 		internal void Flush(string path, ConcurrentQueue<string> logs)
@@ -141,6 +134,5 @@ namespace net.vieapps.Services.APIGateway
 		{
 			this._logs.ForEach(info => this.Flush(info.Key, info.Value));
 		}
-
 	}
 }

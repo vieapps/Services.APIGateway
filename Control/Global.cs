@@ -52,7 +52,11 @@ namespace net.vieapps.Services.APIGateway
 			// update logs
 			string msg = log + (ex != null ? "\r\n\r\n" + "Message: " + ex.Message + " [" + ex.GetType().ToString() + "]\r\n\r\n" + "Details: " + ex.StackTrace : "");
 			if (Global.AsService)
-				Global.EventLog.WriteEntry(msg, ex != null ? EventLogEntryType.Error : EventLogEntryType.Information);
+				try
+				{
+					Global.EventLog.WriteEntry(msg, ex != null ? EventLogEntryType.Error : EventLogEntryType.Information);
+				}
+				catch { }
 			else
 				Global.Form.UpdateLogs(msg);
 

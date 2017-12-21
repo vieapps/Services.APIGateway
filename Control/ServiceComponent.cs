@@ -63,7 +63,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Start/Stop
-		internal void Start(string[] args = null, Action nextAction = null, Func<Task> nextActionAsync = null)
+		internal void Start(string[] args = null, Func<Task> next = null)
 		{
 			Task.Run(async () =>
 			{
@@ -71,18 +71,10 @@ namespace net.vieapps.Services.APIGateway
 			})
 			.ContinueWith(async (task) =>
 			{
-				try
-				{
-					nextAction?.Invoke();
-				}
-				catch (Exception ex)
-				{
-					Global.WriteLog("Error occurred while running the next action (sync)", ex);
-				}
-				if (nextActionAsync != null)
+				if (next != null)
 					try
 					{
-						await nextActionAsync().ConfigureAwait(false);
+						await next().ConfigureAwait(false);
 					}
 					catch (Exception ex)
 					{
@@ -100,7 +92,7 @@ namespace net.vieapps.Services.APIGateway
 			await this.OpenIncomingChannelAsync(
 				(sender, arguments) =>
 				{
-					Global.WriteLog("The incoming connection is established - Session ID: " + arguments.SessionId);
+					Global.WriteLog($"The incoming connection is established - Session ID: {arguments.SessionId}");
 					this._incommingChannelSessionID = arguments.SessionId;
 					this._communicator = this._incommingChannel.RealmProxy.Services
 						.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
@@ -112,11 +104,11 @@ namespace net.vieapps.Services.APIGateway
 				(sender, arguments) =>
 				{
 					if (arguments.CloseType.Equals(SessionCloseType.Disconnection))
-						Global.WriteLog("The incoming connection is broken because the router is not found or the router is refused - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
+						Global.WriteLog($"The incoming connection is broken because the router is not found or the router is refused - Session ID: {arguments.SessionId}\r\n- Reason: {(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)} - {arguments.CloseType}");
 					else
 					{
 						if (this._channelsAreClosedBySystem)
-							Global.WriteLog("The incoming connection is closed - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
+							Global.WriteLog($"The incoming connection is closed - Session ID: {arguments.SessionId}\r\n- Reason: {(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)} - {arguments.CloseType}");
 						else
 							this.ReOpenIncomingChannel(
 								123,
@@ -133,24 +125,24 @@ namespace net.vieapps.Services.APIGateway
 				},
 				(sender, arguments) =>
 				{
-					Global.WriteLog("Got an error of incoming connection: " + (arguments.Exception != null ? arguments.Exception.Message : "None"), arguments.Exception);
+					Global.WriteLog($"Got an error of incoming connection [{(arguments.Exception != null ? arguments.Exception.Message : "None")}", arguments.Exception);
 				}
 			).ConfigureAwait(false);
 
 			await this.OpenOutgoingChannelAsync(
 				(sender, arguments) =>
 				{
-					Global.WriteLog("The outgoing connection is established - Session ID: " + arguments.SessionId);
+					Global.WriteLog($"The outgoing connection is established - Session ID: {arguments.SessionId}");
 					this._outgoingChannelSessionID = arguments.SessionId;
 				},
 				(sender, arguments) =>
 				{
 					if (arguments.CloseType.Equals(SessionCloseType.Disconnection))
-						Global.WriteLog("The outgoing connection is broken because the router is not found or the router is refused - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
+						Global.WriteLog($"The outgoing connection is broken because the router is not found or the router is refused - Session ID: {arguments.SessionId}\r\n- Reason: {(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)} - {arguments.CloseType}");
 					else
 					{
 						if (this._channelsAreClosedBySystem)
-							Global.WriteLog("The outgoing connection is closed - Session ID: " + arguments.SessionId + "\r\n" + "- Reason: " + (string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason) + " - " + arguments.CloseType.ToString());
+							Global.WriteLog($"The outgoing connection is closed - Session ID: {arguments.SessionId}\r\n- Reason: {(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)} - {arguments.CloseType}");
 						else
 							this.ReOpenOutgoingChannel(
 								123,
@@ -167,7 +159,7 @@ namespace net.vieapps.Services.APIGateway
 				},
 				(sender, arguments) =>
 				{
-					Global.WriteLog("Got an error of incoming connection: " + (arguments.Exception != null ? arguments.Exception.Message : "None"), arguments.Exception);
+					Global.WriteLog($"Got an error of outgoing connection [{(arguments.Exception != null ? arguments.Exception.Message : "None")}", arguments.Exception);
 				}
 			).ConfigureAwait(false);
 
@@ -198,7 +190,7 @@ namespace net.vieapps.Services.APIGateway
 				.ForEach(path => Directory.CreateDirectory(path));
 
 			// register helper services
-			await this._incommingChannel.RealmProxy.Services.RegisterCallee(this, new RegistrationInterceptor()).ConfigureAwait(false);
+			await this._incommingChannel.RealmProxy.Services.RegisterCallee(this, RegistrationInterceptor.Create()).ConfigureAwait(false);
 			Global.WriteLog("The centralized managing service is registered");
 			if (this._registerHelperServices)
 				await this.RegisterHelperServicesAsync().ConfigureAwait(false);
@@ -507,13 +499,13 @@ namespace net.vieapps.Services.APIGateway
 		async Task RegisterHelperServicesAsync()
 		{
 			this._loggingService = new LoggingService();
-			await this._incommingChannel.RealmProxy.Services.RegisterCallee(this._loggingService, new RegistrationInterceptor()).ConfigureAwait(false);
+			await this._incommingChannel.RealmProxy.Services.RegisterCallee(this._loggingService, RegistrationInterceptor.Create()).ConfigureAwait(false);
 			Global.WriteLog("The centralized logging service is registered");
 
-			await this._incommingChannel.RealmProxy.Services.RegisterCallee(new MessagingService(), new RegistrationInterceptor()).ConfigureAwait(false);
+			await this._incommingChannel.RealmProxy.Services.RegisterCallee(new MessagingService(), RegistrationInterceptor.Create()).ConfigureAwait(false);
 			Global.WriteLog("The centralized messaging service is registered");
 
-			await this._incommingChannel.RealmProxy.Services.RegisterCallee(new RTUService(), new RegistrationInterceptor()).ConfigureAwait(false);
+			await this._incommingChannel.RealmProxy.Services.RegisterCallee(new RTUService(), RegistrationInterceptor.Create()).ConfigureAwait(false);
 			Global.WriteLog("The real-time update (RTU) service is registered");
 		}
 		#endregion
@@ -610,7 +602,7 @@ namespace net.vieapps.Services.APIGateway
 			this.StartTimer(async () =>
 			{
 				await this.RunTaskSchedulerAsync().ConfigureAwait(false);
-			}, 60 * 60, runTaskSchedulerOnFirstLoad ? 5678 : 0);
+			}, 65 * 60, runTaskSchedulerOnFirstLoad ? 5678 : 0);
 		}
 
 		void RunHouseKeeper()

@@ -71,8 +71,8 @@ namespace net.vieapps.Services.APIGateway
 		{
 			var path = UtilityService.GetAppSetting(name);
 			if (string.IsNullOrWhiteSpace(path) && getDefaultIsNotFound)
-				path = Directory.GetCurrentDirectory() + @"\" + folder;
-			else if (!string.IsNullOrWhiteSpace(path) && path.EndsWith(@"\"))
+				path = Directory.GetCurrentDirectory() + Path.DirectorySeparatorChar.ToString() + folder;
+			else if (!string.IsNullOrWhiteSpace(path) && path.EndsWith(Path.DirectorySeparatorChar.ToString()))
 				path = path.Left(path.Length - 1);
 			return path;
 		}
@@ -115,9 +115,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			get
 			{
-				if (Global._EmailSmtpServer == null)
-					Global._EmailSmtpServer = UtilityService.GetAppSetting("EmailSmtpServer", "localhost");
-				return Global._EmailSmtpServer;
+				return Global._EmailSmtpServer ?? (Global._EmailSmtpServer = UtilityService.GetAppSetting("EmailSmtpServer", "localhost"));
 			}
 		}
 
@@ -135,9 +133,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			get
 			{
-				if (Global._EmailSmtpUser == null)
-					Global._EmailSmtpUser = UtilityService.GetAppSetting("EmailSmtpUser", "");
-				return Global._EmailSmtpUser;
+				return Global._EmailSmtpUser ?? (Global._EmailSmtpUser = UtilityService.GetAppSetting("EmailSmtpUser", ""));
 			}
 		}
 
@@ -145,9 +141,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			get
 			{
-				if (Global._EmailSmtpUserPassword == null)
-					Global._EmailSmtpUserPassword = UtilityService.GetAppSetting("EmailSmtpUserPassword", "");
-				return Global._EmailSmtpUserPassword;
+				return Global._EmailSmtpUserPassword ?? (Global._EmailSmtpUserPassword = UtilityService.GetAppSetting("EmailSmtpUserPassword", ""));
 			}
 		}
 
@@ -155,9 +149,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			get
 			{
-				if (Global._EmailSmtpServerEnableSsl == null)
-					Global._EmailSmtpServerEnableSsl = UtilityService.GetAppSetting("EmailSmtpServerEnableSsl", "false");
-				return Global._EmailSmtpServerEnableSsl.IsEquals("true");
+				return (Global._EmailSmtpServerEnableSsl ?? (Global._EmailSmtpServerEnableSsl = UtilityService.GetAppSetting("EmailSmtpServerEnableSsl", "false"))).IsEquals("true");
 			}
 		}
 
@@ -165,9 +157,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			get
 			{
-				if (Global._EmailDefaultSender == null)
-					Global._EmailDefaultSender = UtilityService.GetAppSetting("EmailDefaultSender", "VIEApps.net <vieapps.net@gmail.com>");
-				return Global._EmailDefaultSender;
+				return Global._EmailDefaultSender ?? (Global._EmailDefaultSender = UtilityService.GetAppSetting("EmailDefaultSender", "VIEApps.net <vieapps.net@gmail.com>"));
 			}
 		}
 		#endregion

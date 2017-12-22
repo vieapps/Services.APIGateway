@@ -13,7 +13,6 @@ namespace net.vieapps.Services.APIGateway
 {
 	public class LoggingService : ILoggingService
 	{
-
 		ConcurrentDictionary<string, ConcurrentQueue<string>> _logs = new ConcurrentDictionary<string, ConcurrentQueue<string>>();
 		int _max = 10;
 
@@ -35,16 +34,12 @@ namespace net.vieapps.Services.APIGateway
 
 		public Task WriteLogsAsync(string correlationID, string serviceName, string objectName, List<string> logs, string stack = null, CancellationToken cancellationToken = default(CancellationToken))
 		{
-			var prefix = !string.IsNullOrWhiteSpace(serviceName)
-				? serviceName.ToLower()
-				: "apigateway";
-
+			var prefix = (!string.IsNullOrWhiteSpace(serviceName) ? serviceName : "APIGateway").ToLower();
 			var surfix = !string.IsNullOrWhiteSpace(serviceName) && !string.IsNullOrWhiteSpace(objectName) && !serviceName.IsEquals(objectName)
 				? "." + objectName.ToLower()
 				: "";
 
-			var path = prefix + @"\" + prefix + surfix;
-
+			var path = prefix + Path.DirectorySeparatorChar.ToString() + prefix + surfix;
 			if (!this._logs.TryGetValue(path, out ConcurrentQueue<string> svcLogs))
 				lock (this._logs)
 				{
@@ -122,12 +117,12 @@ namespace net.vieapps.Services.APIGateway
 			while (logs.TryDequeue(out log))
 				lines.Add(log);
 
-			var info = path.ToArray('\\');
+			var info = path.ToArray(Path.PathSeparator);
 
-			if (!Directory.Exists(Global.LogsPath + @"\" + info[0]))
-				Directory.CreateDirectory(Global.LogsPath + @"\" + info[0]);
+			if (!Directory.Exists(Path.Combine(Global.LogsPath, info[0])))
+				Directory.CreateDirectory(Path.Combine(Global.LogsPath, info[0]));
 
-			UtilityService.WriteTextFile(Global.LogsPath + @"\" + info[0] + @"\" + DateTime.Now.ToString("yyyy-MM-dd-HH") + "." + info[1] + ".txt", lines);
+			UtilityService.WriteTextFile(Path.Combine(Global.LogsPath, info[0], DateTime.Now.ToString("yyyy-MM-dd-HH") + "." + info[1] + ".txt"), lines);
 		}
 
 		internal void FlushAll()

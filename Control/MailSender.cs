@@ -42,7 +42,7 @@ namespace net.vieapps.Services.APIGateway
 			MailSender.Messages = MailSender.Messages ?? new Dictionary<string, MailInfo>();
 
 			// previous messages
-			var filePath = Global.StatusPath + @"\mails.json";
+			var filePath = Path.Combine(Global.StatusPath, "mails.json");
 			if (File.Exists(filePath))
 				try
 				{
@@ -77,7 +77,7 @@ namespace net.vieapps.Services.APIGateway
 		internal static void SaveMessages()
 		{
 			if (MailSender.Messages != null && MailSender.Messages.Count > 0)
-				UtilityService.WriteTextFile(Global.StatusPath + @"\mails.json", MailSender.Messages.ToJArray(info => new JObject()
+				UtilityService.WriteTextFile(Path.Combine(Global.StatusPath, "mails.json"), MailSender.Messages.ToJArray(info => new JObject()
 				{
 					{ "Time", info.Time },
 					{ "Counters", info.Counters },

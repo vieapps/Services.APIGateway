@@ -41,7 +41,7 @@ namespace net.vieapps.Services.APIGateway
 			WebHookSender.Messages = WebHookSender.Messages ?? new Dictionary<string, WebHookInfo>();
 
 			// previous messages
-			var filePath = Global.StatusPath + @"\webhooks.json";
+			var filePath = Path.Combine(Global.StatusPath, "webhooks.json");
 			if (File.Exists(filePath))
 				try
 				{
@@ -76,7 +76,7 @@ namespace net.vieapps.Services.APIGateway
 		internal static void SaveMessages()
 		{
 			if (WebHookSender.Messages != null && WebHookSender.Messages.Count > 0)
-				UtilityService.WriteTextFile(Global.StatusPath + @"\webhooks.json", WebHookSender.Messages.ToJArray(info => new JObject()
+				UtilityService.WriteTextFile(Path.Combine(Global.StatusPath, "webhooks.json"), WebHookSender.Messages.ToJArray(info => new JObject()
 				{
 					{ "Time", info.Time },
 					{ "Counters", info.Counters },

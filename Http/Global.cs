@@ -120,6 +120,7 @@ namespace net.vieapps.Services.APIGateway
 			RTU.StopUpdaters();
 
 			Base.AspNet.Global.CloseChannels();
+			Base.AspNet.Global.RSA.Dispose();
 		}
 		#endregion
 

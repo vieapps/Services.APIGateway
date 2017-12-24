@@ -604,7 +604,9 @@ namespace net.vieapps.Services.APIGateway
 				await this.RunTaskSchedulerAsync().ConfigureAwait(false);
 			}, 65 * 60, runTaskSchedulerOnFirstLoad ? 5678 : 0);
 		}
+		#endregion
 
+		#region Run house keeper
 		void RunHouseKeeper()
 		{
 			// stop if its still running
@@ -671,7 +673,9 @@ namespace net.vieapps.Services.APIGateway
 			);
 			this._isHouseKeeperRunning = false;
 		}
+		#endregion
 
+		#region Run task scheduler
 		async Task RunTaskSchedulerAsync()
 		{
 			// stop if its still running

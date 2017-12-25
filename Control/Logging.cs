@@ -113,11 +113,10 @@ namespace net.vieapps.Services.APIGateway
 		internal void Flush(string path, ConcurrentQueue<string> logs)
 		{
 			var lines = new List<string>();
-			var log = "";
-			while (logs.TryDequeue(out log))
+			while (logs.TryDequeue(out string log))
 				lines.Add(log);
 
-			var info = path.ToArray(Path.PathSeparator);
+			var info = path.ToArray(Path.DirectorySeparatorChar);
 
 			if (!Directory.Exists(Path.Combine(Global.LogsPath, info[0])))
 				Directory.CreateDirectory(Path.Combine(Global.LogsPath, info[0]));

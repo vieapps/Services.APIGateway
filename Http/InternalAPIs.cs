@@ -9,25 +9,24 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 using WampSharp.V2;
-using WampSharp.V2.Client;
 
 using net.vieapps.Components.Utility;
 using net.vieapps.Components.Security;
+
+using net.vieapps.Services.Base.AspNet;
 #endregion
 
 namespace net.vieapps.Services.APIGateway
 {
 	internal static class InternalAPIs
 	{
-		static Dictionary<string, IService> Services = new Dictionary<string, IService>();
-
 		internal static async Task ProcessRequestAsync(HttpContext context)
 		{
 
 			#region prepare the requesting information
 			var requestInfo = new RequestInfo()
 			{
-				Session = Global.GetSession(context.Request.Headers, context.Request.QueryString, context.Request.UserAgent, context.Request.UserHostAddress, context.Request.UrlReferrer),
+				Session = context.GetSession(),
 				Verb = context.Request.HttpMethod,
 				ServiceName = string.IsNullOrWhiteSpace(context.Request.QueryString["service-name"]) ? "unknown" : context.Request.QueryString["service-name"],
 				ObjectName = string.IsNullOrWhiteSpace(context.Request.QueryString["object-name"]) ? "unknown" : context.Request.QueryString["object-name"],
@@ -715,50 +714,28 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Helper: call service
-		internal static async Task<JObject> CallServiceAsync(RequestInfo requestInfo, string objectLogName = "Internal")
+		internal static Task<JObject> CallServiceAsync(RequestInfo requestInfo, string objectLogName = "Internal")
 		{
-			var name = requestInfo.ServiceName.Trim().ToLower();
-
-#if DEBUG || PROCESSLOGS
-			await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, objectLogName, $"Call the service [net.vieapps.services.{name}]\r\n{requestInfo.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
-#endif
-
-			if (!InternalAPIs.Services.TryGetValue(name, out IService service))
-			{
-				await Base.AspNet.Global.OpenOutgoingChannelAsync().ConfigureAwait(false);
-				lock (InternalAPIs.Services)
+			return Base.AspNet.Global.CallServiceAsync(requestInfo, Base.AspNet.Global.CancellationTokenSource.Token,
+				(info) =>
 				{
-					if (!InternalAPIs.Services.TryGetValue(name, out service))
-					{
-						service = Base.AspNet.Global.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IService>(ProxyInterceptor.Create(name));
-						InternalAPIs.Services.Add(name, service);
-					}
+#if DEBUG || PROCESSLOGS
+					Base.AspNet.Global.WriteLogs(info.CorrelationID, objectLogName, $"Call the service [net.vieapps.services.{info.ServiceName}]\r\n{info.ToJson().ToString(Formatting.Indented)}");
+#endif
+				},
+				(info, json) =>
+				{
+#if DEBUG || PROCESSLOGS
+					Base.AspNet.Global.WriteLogs(info.CorrelationID, objectLogName, $"Results from the service [net.vieapps.services.{info.ServiceName}]\r\n{json.ToString(Formatting.Indented)}");
+#endif
+				},
+				(info, ex) =>
+				{
+#if DEBUG || PROCESSLOGS
+					Base.AspNet.Global.WriteLogs(info.CorrelationID, objectLogName, $"Error occurred while calling the service [net.vieapps.services.{info.ServiceName}]", ex);
+#endif
 				}
-			}
-
-			JObject json = null;
-			try
-			{
-				json = await service.ProcessRequestAsync(requestInfo, Base.AspNet.Global.CancellationTokenSource.Token).ConfigureAwait(false);
-			}
-			catch (WampSessionNotEstablishedException)
-			{
-				await Task.Delay(567).ConfigureAwait(false);
-				json = await service.ProcessRequestAsync(requestInfo, Base.AspNet.Global.CancellationTokenSource.Token).ConfigureAwait(false);
-			}
-			catch (Exception ex)
-			{
-#if DEBUG || PROCESSLOGS
-				await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, objectLogName, $"Error occurred while calling the service [net.vieapps.services.{name}]", ex).ConfigureAwait(false);
-#endif
-				throw ex;
-			}
-
-#if DEBUG || PROCESSLOGS
-			await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, objectLogName, $"Results from the service [net.vieapps.services.{name}]\r\n{json.ToString(Formatting.Indented)}").ConfigureAwait(false);
-#endif
-
-			return json;
+			);
 		}
 
 		internal static Task<JObject> CallServiceAsync(Session session, string serviceName, string objectName, string verb = "GET", string body = null, Dictionary<string, string> extra = null)

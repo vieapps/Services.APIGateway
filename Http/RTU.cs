@@ -127,7 +127,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 
 				// prepare session
-				session = Global.GetSession(context.Headers, context.QueryString, context.UserAgent, context.UserHostAddress, context.UrlReferrer);
+				session = Base.AspNet.Global.GetSession(context.Headers, context.QueryString, context.UserAgent, context.UserHostAddress, context.UrlReferrer);
 				session.DeviceID = request.Get("x-device-id", session.DeviceID);
 				session.AppName = request.Get("x-app-name", session.AppName);
 				session.AppPlatform = request.Get("x-app-platform", session.AppPlatform);

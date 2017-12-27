@@ -464,21 +464,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
-		#region Session & User with JSON Web Token
-		internal static Session GetSession(NameValueCollection header, NameValueCollection query, string agentString, string ipAddress, Uri urlReferrer)
-		{
-			var appInfo = Base.AspNet.Global.GetAppInfo(header, query, agentString, ipAddress, urlReferrer);
-			return new Session()
-			{
-				IP = ipAddress,
-				AppAgent = agentString,
-				DeviceID = UtilityService.GetAppParameter("x-device-id", header, query, ""),
-				AppName = appInfo.Item1,
-				AppPlatform = appInfo.Item2,
-				AppOrigin = appInfo.Item3,
-			};
-		}
-
+		#region User tokens
 		internal static string GetAccessToken(this User user)
 		{
 			return User.GetAccessToken(user, Base.AspNet.Global.RSA, Base.AspNet.Global.AESKey);

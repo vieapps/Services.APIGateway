@@ -34,6 +34,7 @@ namespace net.vieapps.Services.APIGateway
 
 		public Task WriteLogsAsync(string correlationID, string serviceName, string objectName, List<string> logs, string stack = null, CancellationToken cancellationToken = default(CancellationToken))
 		{
+			// prepare
 			var prefix = (!string.IsNullOrWhiteSpace(serviceName) ? serviceName : "APIGateway").ToLower();
 			var surfix = !string.IsNullOrWhiteSpace(serviceName) && !string.IsNullOrWhiteSpace(objectName) && !serviceName.IsEquals(objectName)
 				? "." + objectName.ToLower()
@@ -50,6 +51,7 @@ namespace net.vieapps.Services.APIGateway
 					}
 				}
 
+			// normal logs
 			var formLogs = "";
 			logs.ForEach(log =>
 			{
@@ -74,6 +76,15 @@ namespace net.vieapps.Services.APIGateway
 					+ (!string.IsNullOrWhiteSpace(serviceName) ? serviceName.ToLower() : "APIGateway")
 					+ (!string.IsNullOrWhiteSpace(objectName) ? "." + objectName.ToLower() : "")
 					+ "] ----------" + "\r\n" + formLogs + "\r\n");
+
+			// error logs
+			if (!string.IsNullOrWhiteSpace(stack))
+			{
+				var errorLogs = new ConcurrentQueue<string>();
+				logs.ForEach(log => errorLogs.Enqueue(DateTime.Now.ToString("HH:mm:ss.fff") + "\t" + correlationID + "     \t" + log));
+				errorLogs.Enqueue("==> Stack:" + "\r\n" + stack);
+				this.Flush(prefix + Path.DirectorySeparatorChar.ToString() + prefix + ".errors", errorLogs);
+			}
 
 			return Task.CompletedTask;
 		}

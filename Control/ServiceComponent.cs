@@ -79,7 +79,7 @@ namespace net.vieapps.Services.APIGateway
 					}
 					catch (Exception ex)
 					{
-						Global.WriteLog("Error occurred while running the next action (async)", ex);
+						Global.WriteLog("Error occurred while running the next action", ex);
 					}
 			})
 			.ConfigureAwait(false);
@@ -87,8 +87,10 @@ namespace net.vieapps.Services.APIGateway
 
 		internal async Task StartAsync(string[] args = null)
 		{
-			// open channels
-			Global.WriteLog("Start the API Gateway Services Controller...");
+			// connecto to WAMP router to open channels
+			var info = this.GetRouterInfo();
+			Global.WriteLog($"Start the API Gateway Services Controller...");
+			Global.WriteLog($"Attempts connect to WAMP router [{info.Item1}{info.Item2}]");
 
 			await this.OpenIncomingChannelAsync(
 				(sender, arguments) =>
@@ -233,11 +235,11 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Open/Close channels
-		Tuple<string, string, bool> GetLocationInfo()
+		Tuple<string, string, bool> GetRouterInfo()
 		{
-			var address = UtilityService.GetAppSetting("RouterAddress", "ws://127.0.0.1:16429/");
-			var realm = UtilityService.GetAppSetting("RouterRealm", "VIEAppsRealm");
-			var mode = UtilityService.GetAppSetting("RouterChannelsMode", "MsgPack");
+			var address = UtilityService.GetAppSetting("Router:Address", "ws://127.0.0.1:16429/");
+			var realm = UtilityService.GetAppSetting("Router:Realm", "VIEAppsRealm");
+			var mode = UtilityService.GetAppSetting("Router:ChannelsMode", "MsgPack");
 			return new Tuple<string, string, bool>(address, realm, mode.IsEquals("json"));
 		}
 
@@ -246,7 +248,7 @@ namespace net.vieapps.Services.APIGateway
 			if (this._incommingChannel != null)
 				return;
 
-			var info = this.GetLocationInfo();
+			var info = this.GetRouterInfo();
 			var address = info.Item1;
 			var realm = info.Item2;
 			var useJsonChannel = info.Item3;
@@ -299,7 +301,7 @@ namespace net.vieapps.Services.APIGateway
 			if (this._outgoingChannel != null)
 				return;
 
-			var info = this.GetLocationInfo();
+			var info = this.GetRouterInfo();
 			var address = info.Item1;
 			var realm = info.Item2;
 			var useJsonChannel = info.Item3;

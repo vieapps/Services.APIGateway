@@ -32,20 +32,18 @@ namespace net.vieapps.Services.APIGateway
 
 		static HashSet<string> QueryExcluded = "service-name,object-name,object-identity,request-of-static-resource".ToHashSet();
 
-		static Cache _Cache;
+		static Cache _Cache = null;
 
 		internal static Cache Cache
 		{
 			get
 			{
-				return Global._Cache ?? (Global._Cache = new Cache("VIEApps-API-Gateway", UtilityService.GetAppSetting("CacheExpirationTime", "120").CastAs<int>(), UtilityService.GetAppSetting("CacheProvider")));
+				return Global._Cache ?? (Global._Cache = new Cache("VIEApps-API-Gateway", UtilityService.GetAppSetting("Cache:ExpirationTime", "120").CastAs<int>(), UtilityService.GetAppSetting("Cache:Provider")));
 			}
 		}
 		#endregion
 
 		#region Start/End the app
-		internal static HashSet<string> HiddenSegments = null, BypassSegments = null, StaticSegments = null;
-
 		internal static void OnAppStart(HttpContext context)
 		{
 			var stopwatch = new Stopwatch();
@@ -96,10 +94,7 @@ namespace net.vieapps.Services.APIGateway
 			}).ConfigureAwait(false);
 
 			// special segments
-			Global.BypassSegments = UtilityService.GetAppSetting("BypassSegments")?.Trim().ToLower().ToHashSet('|', true) ?? new HashSet<string>();
-			Global.HiddenSegments = UtilityService.GetAppSetting("HiddenSegments")?.Trim().ToLower().ToHashSet('|', true) ?? new HashSet<string>();
-			Global.StaticSegments = UtilityService.GetAppSetting("StaticSegments")?.Trim().ToLower().ToHashSet('|', true) ?? new HashSet<string>();
-			Global.StaticSegments.Append("statics");
+			Base.AspNet.Global.StaticSegments.Append("statics");
 
 			// handling unhandled exception
 			AppDomain.CurrentDomain.UnhandledException += (sender, args) =>
@@ -113,7 +108,11 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static void OnAppEnd()
 		{
-			Base.AspNet.Global.CancellationTokenSource.Cancel();
+			try
+			{
+				Base.AspNet.Global.CancellationTokenSource.Cancel();
+			}
+			catch { }
 			Base.AspNet.Global.CancellationTokenSource.Dispose();
 
 			Global.InterCommunicateMessageUpdater?.Dispose();
@@ -154,11 +153,11 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// by-pass segments
-			else if (Global.BypassSegments.Count > 0 && Global.BypassSegments.Contains(executionFilePaths[0]))
+			else if (Base.AspNet.Global.BypassSegments.Count > 0 && Base.AspNet.Global.BypassSegments.Contains(executionFilePaths[0]))
 				return;
 
 			// hidden segments
-			else if (Global.HiddenSegments.Count > 0 && Global.HiddenSegments.Contains(executionFilePaths[0]))
+			else if (Base.AspNet.Global.HiddenSegments.Count > 0 && Base.AspNet.Global.HiddenSegments.Contains(executionFilePaths[0]))
 			{
 				Global.ShowError(app.Context, 403, "Forbidden", "AccessDeniedException", null, null);
 				app.Context.Response.End();
@@ -203,7 +202,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// rewrite url
 			var url = app.Request.ApplicationPath + "Global.ashx";
-			if (Global.StaticSegments.Contains(executionFilePaths[0]))
+			if (Base.AspNet.Global.StaticSegments.Contains(executionFilePaths[0]))
 				url += "?request-of-static-resource=&path=" + app.Context.Request.RawUrl.UrlEncode();
 			else
 			{
@@ -292,19 +291,17 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Error handlings
+#if DEBUG
+		static string ShowErrorStacks = "true";
+#else
 		static string ShowErrorStacks = null;
+#endif
 
 		internal static bool IsShowErrorStacks
 		{
 			get
 			{
-				if (string.IsNullOrWhiteSpace(Global.ShowErrorStacks))
-#if DEBUG
-					Global.ShowErrorStacks = "true";
-#else
-					Global.ShowErrorStacks = UtilityService.GetAppSetting("ShowErrorStacks", "false");
-#endif
-				return Global.ShowErrorStacks.IsEquals("true");
+				return "true".IsEquals(Global.ShowErrorStacks ?? (Global.ShowErrorStacks = UtilityService.GetAppSetting("Errors:ShowStacks", "false")));
 			}
 		}
 
@@ -314,9 +311,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			get
 			{
-				if (string.IsNullOrWhiteSpace(Global.SetErrorStatus))
-					Global.SetErrorStatus = UtilityService.GetAppSetting("SetErrorStatus", "false");
-				return Global.SetErrorStatus.IsEquals("true");
+				return "true".IsEquals(Global.SetErrorStatus ?? (Global.SetErrorStatus = UtilityService.GetAppSetting("Errors:SetStatus", "false")));
 			}
 		}
 
@@ -610,7 +605,7 @@ namespace net.vieapps.Services.APIGateway
 
 					else
 					{
-						filePath = UtilityService.GetAppSetting("StaticFilesPath");
+						filePath = UtilityService.GetAppSetting("Path:StaticFiles");
 						if (string.IsNullOrEmpty(filePath))
 							filePath = HttpRuntime.AppDomainAppPath + @"\data-files\statics";
 						if (filePath.EndsWith(@"\"))

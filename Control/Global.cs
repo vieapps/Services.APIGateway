@@ -13,7 +13,10 @@ namespace net.vieapps.Services.APIGateway
 	{
 		internal static bool AsService = true;
 		internal static ServiceComponent Component = null;
-		internal static MainForm Form = null;
+		internal static IServiceManager ServiceManager = null;
+
+		internal static MainForm MainForm = null;
+		internal static ServicesForm ManagementForm = null;
 
 		internal static CancellationTokenSource CancellationTokenSource = new CancellationTokenSource();
 		static string _LogsPath = null, _StatusPath = null, _EmailsPath = null, _WebHooksPath = null;
@@ -58,7 +61,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch { }
 			else
-				Global.Form.UpdateLogs(msg);
+				Global.MainForm.UpdateLogs(msg);
 
 			// write into files
 			if (writeFiles)

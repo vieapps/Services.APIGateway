@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Linq;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace net.vieapps.Services.APIGateway
@@ -15,7 +17,16 @@ namespace net.vieapps.Services.APIGateway
 
 		void MainForm_Load(object sender, EventArgs args)
 		{
-			Global.Component.Start(this.arguments);
+			Global.Component.Start(this.arguments, async () =>
+			{
+				await Task.Delay(567);
+				if (Global.ServiceManager != null)
+				{
+					var services = Global.ServiceManager.GetAvailableBusinessServices();
+					services.Select(kvp => kvp.Key).ToList().ForEach(name => services[name] = Global.ServiceManager.IsBusinessServiceRunning(name) ? "Yes" : "No");
+					this.UpdateServicesInfo(services.Count, services.Where(kvp => kvp.Value.Equals("Yes")).Count());
+				}
+			});
 		}
 
 		void MainForm_FormClosed(object sender, FormClosedEventArgs args)
@@ -25,7 +36,15 @@ namespace net.vieapps.Services.APIGateway
 
 		void ManageServices_Click(object sender, EventArgs args)
 		{
-			
+			if (!Global.Component._status.Equals("Ready"))
+				return;
+
+			if (Global.ManagementForm == null)
+				Global.ManagementForm = new ServicesForm();
+
+			Global.ManagementForm.Initialize();
+			Global.ManagementForm.Show();
+			Global.ManagementForm.Focus();
 		}
 
 		void ClearLogs_Click(object sender, EventArgs args)

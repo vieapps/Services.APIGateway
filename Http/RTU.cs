@@ -36,7 +36,7 @@ namespace net.vieapps.Services.APIGateway
 				if (RTU._PushInterval < 1)
 					try
 					{
-						RTU._PushInterval = UtilityService.GetAppSetting("RTUPushInterval", "123").CastAs<int>();
+						RTU._PushInterval = UtilityService.GetAppSetting("RTU:PushInterval", "123").CastAs<int>();
 					}
 					catch
 					{
@@ -53,7 +53,7 @@ namespace net.vieapps.Services.APIGateway
 				if (RTU._ProcessInterval < 1)
 					try
 					{
-						RTU._ProcessInterval = UtilityService.GetAppSetting("RTUProcessInterval", "13").CastAs<int>();
+						RTU._ProcessInterval = UtilityService.GetAppSetting("RTU:ProcessInterval", "13").CastAs<int>();
 					}
 					catch
 					{
@@ -168,7 +168,7 @@ namespace net.vieapps.Services.APIGateway
 				await context.PushMessagesAsync(session).ConfigureAwait(false);
 		}
 
-		#region Send messages via web socket
+		#region Helpers
 		static async Task SendAsync(this AspNetWebSocketContext context, UpdateMessage message)
 		{
 			await context.SendAsync(message.ToJson().ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None)).ConfigureAwait(false);
@@ -232,6 +232,27 @@ namespace net.vieapps.Services.APIGateway
 				{
 					await Base.AspNet.Global.WriteLogsAsync(Base.AspNet.Global.GetCorrelationID(context.Items), "RTU", $"Error occurred while sending message via WebSocket: {ex.Message}", ex).ConfigureAwait(false);
 				}
+		}
+
+		internal static void Publish(this UpdateMessage message)
+		{
+			if (RTU.Sender == null)
+				Task.Run(async () =>
+				{
+					try
+					{
+						await Base.AspNet.Global.OpenOutgoingChannelAsync().ConfigureAwait(false);
+						RTU.Sender = Base.AspNet.Global.OutgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages");
+						RTU.Sender.OnNext(message);
+					}
+					catch (Exception ex)
+					{
+						Base.AspNet.Global.WriteLogs(UtilityService.NewUID, "RTU", $"Error occurred while publishing message: {ex.Message}", ex);
+					}
+				}).ConfigureAwait(false);
+
+			else
+				RTU.Sender.OnNext(message);
 		}
 		#endregion
 
@@ -355,25 +376,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
-		#region Process request messages that sent from client devices
-		internal static void Publish(this UpdateMessage message)
-		{
-			if (RTU.Sender == null)
-				Task.Run(async () =>
-				{
-					try
-					{
-						await Base.AspNet.Global.OpenOutgoingChannelAsync().ConfigureAwait(false);
-						RTU.Sender = Base.AspNet.Global.OutgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages");
-						RTU.Sender.OnNext(message);
-					}
-					catch { }
-				}).ConfigureAwait(false);
-
-			else
-				RTU.Sender.OnNext(message);
-		}
-
+		#region Process messages of client devices
 		static async Task ProcesMessagesAsync(this AspNetWebSocketContext context, Session session)
 		{
 			while (true)
@@ -415,10 +418,10 @@ namespace net.vieapps.Services.APIGateway
 					var verb = requestInfo.Get<string>("Verb") ?? "GET";
 					var extra = requestInfo.Get<Dictionary<string, string>>("Extra");
 
-#if DEBUG || RTULOGS
+#if DEBUG || RTULOGS || PROCESSLOGS
 					var stopwatch = new Stopwatch();
 					stopwatch.Start();
-					await Base.AspNet.Global.WriteLogsAsync(correlationID, "RTU", $"Process request [{verb}]: /{serviceName}/{objectName}").ConfigureAwait(false);
+					await Base.AspNet.Global.WriteLogsAsync(correlationID, "RTU", $"Process request [{verb}]: /{serviceName ?? "unknown"}/{objectName ?? "unknown"}").ConfigureAwait(false);
 #endif
 
 					// update the session
@@ -436,14 +439,14 @@ namespace net.vieapps.Services.APIGateway
 							? new User() { Roles = new List<string>() { SystemRole.All.ToString() } }
 							: (await InternalAPIs.CallServiceAsync(session, "users", "account").ConfigureAwait(false)).FromJson<User>();
 
-#if DEBUG || RTULOGS
+#if DEBUG || RTULOGS || PROCESSLOGS
 						stopwatch.Stop();
 						await Base.AspNet.Global.WriteLogsAsync(correlationID, "RTU", "Patch a session successful" + "\r\n" + session.ToJson().ToString(Formatting.Indented)).ConfigureAwait(false);
 #endif
 					}
 
 					// call service to process the request
-					else
+					else if (!string.IsNullOrWhiteSpace(serviceName))
 					{
 						// call the service
 						var query = requestInfo.Get<Dictionary<string, string>>("Query");
@@ -458,7 +461,7 @@ namespace net.vieapps.Services.APIGateway
 							Data = data
 						}.Publish();
 
-#if DEBUG || RTULOGS
+#if DEBUG || RTULOGS || PROCESSLOGS
 						stopwatch.Stop();
 						await Base.AspNet.Global.WriteLogsAsync(correlationID, "RTU", 
 							$"Process the request successful" + "\r\n" +

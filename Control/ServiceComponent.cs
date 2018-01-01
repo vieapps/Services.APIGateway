@@ -29,12 +29,13 @@ namespace net.vieapps.Services.APIGateway
 		internal IWampChannel _incommingChannel = null, _outgoingChannel = null;
 		internal long _incommingChannelSessionID = 0, _outgoingChannelSessionID = 0;
 		internal bool _channelsAreClosedBySystem = false;
+		internal string _status = "Initializing";
 
 		internal IDisposable _communicator = null;
 		internal LoggingService _loggingService = null;
 
 		string _serviceHoster = UtilityService.GetAppSetting("ServiceHoster", "VIEApps.Services.APIGateway.Host.exe");
-		Dictionary<string, string> _availableServices = null;
+		internal Dictionary<string, string> _availableServices = null;
 		Dictionary<string, int> _runningServices = new Dictionary<string, int>();
 		List<SystemEx.IAsyncDisposable> _helperServices = new List<SystemEx.IAsyncDisposable>();
 
@@ -137,6 +138,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					Global.WriteLog($"The outgoing connection is established - Session ID: {arguments.SessionId}");
 					this._outgoingChannelSessionID = arguments.SessionId;
+					Global.ServiceManager = this._outgoingChannel.RealmProxy.Services.GetCalleeProxy<IServiceManager>(ProxyInterceptor.Create());
 				},
 				(sender, arguments) =>
 				{
@@ -193,10 +195,12 @@ namespace net.vieapps.Services.APIGateway
 				.ForEach(path => Directory.CreateDirectory(path));
 
 			// register helper services
-			this._helperServices.Add(await this._incommingChannel.RealmProxy.Services.RegisterCallee(this, RegistrationInterceptor.Create()).ConfigureAwait(false));
-			Global.WriteLog("The centralized managing service is registered");
 			if (this._registerHelperServices)
 				await this.RegisterHelperServicesAsync().ConfigureAwait(false);
+
+			// call service to update status
+			else
+				this._status = "Ready";
 
 			// register timers
 			if (this._registerTimers)
@@ -360,7 +364,7 @@ namespace net.vieapps.Services.APIGateway
 			if (File.Exists(this._serviceHoster))
 				this._availableServices.ForEach(s => this.StartBusinessService(s.Key));
 			else if (!Global.AsService)
-				Global.Form.UpdateLogs($"The service hoster [{this._serviceHoster}] is not found");
+				Global.MainForm.UpdateLogs($"The service hoster [{this._serviceHoster}] is not found");
 
 			// update info
 			this.UpdateServicesInfo();
@@ -369,7 +373,7 @@ namespace net.vieapps.Services.APIGateway
 		void UpdateServicesInfo()
 		{
 			if (!Global.AsService)
-				Global.Form.UpdateServicesInfo(this._availableServices.Count, this._runningServices.Count);
+				Global.MainForm.UpdateServicesInfo(this._availableServices.Count, this._runningServices.Count);
 		}
 
 		public Dictionary<string, string> GetAvailableBusinessServices()
@@ -390,9 +394,11 @@ namespace net.vieapps.Services.APIGateway
 			return this._availableServices;
 		}
 
-		public List<string> GetRunningBusinessServices()
+		public bool IsBusinessServiceRunning(string name)
 		{
-			return this._runningServices.Select(kvp => kvp.Key).ToList();
+			return !string.IsNullOrWhiteSpace(name)
+				? this._runningServices.ContainsKey(name.Trim().ToLower())
+				: false;
 		}
 
 		public void StartBusinessService(string name, string arguments = null)
@@ -497,6 +503,13 @@ namespace net.vieapps.Services.APIGateway
 		#region Register helper services
 		async Task RegisterHelperServicesAsync()
 		{
+			try
+			{
+				this._helperServices.Add(await this._incommingChannel.RealmProxy.Services.RegisterCallee(this, new RegistrationInterceptor(null, new RegisterOptions() { Invoke = WampInvokePolicy.Single })).ConfigureAwait(false));
+				Global.WriteLog("The centralized managing service is registered");
+			}
+			catch { }
+
 			this._loggingService = new LoggingService();
 			this._helperServices.Add(await this._incommingChannel.RealmProxy.Services.RegisterCallee(this._loggingService, RegistrationInterceptor.Create()).ConfigureAwait(false));
 			Global.WriteLog("The centralized logging service is registered");
@@ -506,6 +519,8 @@ namespace net.vieapps.Services.APIGateway
 
 			this._helperServices.Add(await this._incommingChannel.RealmProxy.Services.RegisterCallee(new RTUService(), RegistrationInterceptor.Create()).ConfigureAwait(false));
 			Global.WriteLog("The real-time update (RTU) service is registered");
+
+			this._status = "Ready";
 		}
 		#endregion
 
@@ -765,8 +780,8 @@ namespace net.vieapps.Services.APIGateway
 		[WampProcedure("net.vieapps.apigateway.controller.available")]
 		Dictionary<string, string> GetAvailableBusinessServices();
 
-		[WampProcedure("net.vieapps.apigateway.controller.running")]
-		List<string> GetRunningBusinessServices();
+		[WampProcedure("net.vieapps.apigateway.controller.isrunning")]
+		bool IsBusinessServiceRunning(string name);
 
 		[WampProcedure("net.vieapps.apigateway.controller.start")]
 		void StartBusinessService(string name, string arguments = null);

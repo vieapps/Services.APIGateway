@@ -25,8 +25,8 @@ namespace net.vieapps.Services.APIGateway
 				Application.EnableVisualStyles();
 				Application.SetCompatibleTextRenderingDefault(false);
 
-				Global.Form = new MainForm(args);
-				Application.Run(Global.Form);
+				Global.MainForm = new MainForm(args);
+				Application.Run(Global.MainForm);
 			}
 		}
 	}

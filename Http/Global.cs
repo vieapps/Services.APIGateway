@@ -219,7 +219,7 @@ namespace net.vieapps.Services.APIGateway
 
 #if DEBUG || REQUESTLOGS || URLREWRITERLOGS
 #if DEBUG || URLREWRITERLOGS
-			logs.Add($"Rewrite URL: [{app.Context.Request.Url.Scheme}://{app.Context.Request.Url.Host + app.Context.Request.RawUrl}] ==> [{app.Context.Request.Url.Scheme}://{app.Context.Request.Url.Host + url}]");
+			logs.Add($"Rewrite URL: [{app.Context.Request.Url.Scheme}://{app.Context.Request.Url.Host + app.Context.Request.RawUrl}] => [{app.Context.Request.Url.Scheme}://{app.Context.Request.Url.Host + url}]");
 #endif
 			Base.AspNet.Global.WriteLogs(logs);
 #endif

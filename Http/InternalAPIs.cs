@@ -23,8 +23,12 @@ namespace net.vieapps.Services.APIGateway
 		internal static async Task ProcessRequestAsync(HttpContext context)
 		{
 
+#if DEBUG || PROCESSLOGS
+			await Base.AspNet.Global.WriteLogsAsync(Base.AspNet.Global.GetCorrelationID(context.Items), "Internal", $"Begin process [{context.Request.HttpMethod}]: {context.Request.Url.Scheme}://{context.Request.Url.Host + context.Request.RawUrl} ({context.Request.UserHostAddress})").ConfigureAwait(false);
+#endif
+
 			#region prepare the requesting information
-			var requestInfo = new RequestInfo()
+			var request = new RequestInfo()
 			{
 				Session = context.GetSession(),
 				Verb = context.Request.HttpMethod,
@@ -37,92 +41,88 @@ namespace net.vieapps.Services.APIGateway
 
 			bool isSessionProccessed = false, isSessionInitialized = false, isAccountProccessed = false, isActivationProccessed = false;
 
-			if (requestInfo.ServiceName.IsEquals("users"))
+			if (request.ServiceName.IsEquals("users"))
 			{
-				if ("session".IsEquals(requestInfo.ObjectName))
+				if ("session".IsEquals(request.ObjectName))
 				{
 					isSessionProccessed = true;
-					isSessionInitialized = requestInfo.Verb.IsEquals("GET");
+					isSessionInitialized = request.Verb.IsEquals("GET");
 				}
-				else if ("account".IsEquals(requestInfo.ObjectName))
-					isAccountProccessed = requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT");
-				else if ("activate".IsEquals(requestInfo.ObjectName))
-					isActivationProccessed = requestInfo.Verb.IsEquals("GET");
+				else if ("account".IsEquals(request.ObjectName))
+					isAccountProccessed = request.Verb.IsEquals("POST") || request.Verb.IsEquals("PUT");
+				else if ("activate".IsEquals(request.ObjectName))
+					isActivationProccessed = request.Verb.IsEquals("GET");
 			}
 			#endregion
-
-#if DEBUG || PROCESSLOGS
-			await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Internal", $"Begin process [{context.Request.HttpMethod}]: {context.Request.Url.Scheme}://{context.Request.Url.Host + context.Request.RawUrl} ({context.Request.UserHostAddress})").ConfigureAwait(false);
-#endif
 
 			#region prepare token
 			var accessToken = "";
 			try
 			{
-				var isSpecialUser = requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.IsSystemAccount;
+				var isSpecialUser = request.Session.User.ID.Equals("") || request.Session.User.IsSystemAccount;
 				var tokenIsRequired = isActivationProccessed
 					? false
-					: isSessionInitialized && isSpecialUser && !requestInfo.Query.ContainsKey("register")
+					: isSessionInitialized && isSpecialUser && !request.Query.ContainsKey("register")
 						? false
 						: true;
 
-				var appToken = requestInfo.GetParameter("x-app-token");
+				var appToken = request.GetParameter("x-app-token");
 				if (!string.IsNullOrWhiteSpace(appToken))
-					accessToken = requestInfo.Session.ParseJSONWebToken(appToken);
+					accessToken = request.Session.ParseJSONWebToken(appToken);
 				else if (tokenIsRequired)
 					throw new InvalidSessionException("Session is invalid (JSON Web Token is not found)");
 
 				if (tokenIsRequired)
 				{
-					if (!await InternalAPIs.CheckSessionExistAsync(requestInfo.Session).ConfigureAwait(false))
+					if (!await InternalAPIs.CheckSessionExistAsync(request.Session).ConfigureAwait(false))
 						throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 
-					if (!isSessionInitialized || !(isSpecialUser && requestInfo.Query.ContainsKey("register")))
-						await InternalAPIs.VerifySessionIntegrityAsync(requestInfo.Session, accessToken).ConfigureAwait(false);
+					if (!isSessionInitialized || !(isSpecialUser && request.Query.ContainsKey("register")))
+						await InternalAPIs.VerifySessionIntegrityAsync(request.Session, accessToken).ConfigureAwait(false);
 				}
 			}
 			catch (Exception ex)
 			{
 #if DEBUG || PROCESSLOGS
-				await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Internal", "Error occurred while preparing token", ex).ConfigureAwait(false);
+				await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Internal", "Error occurred while preparing token", ex).ConfigureAwait(false);
 #endif
-				await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Security.Errors", "Error occurred while preparing token", ex).ConfigureAwait(false);
-				context.ShowError(ex, requestInfo, false);
+				await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Security.Errors", "Error occurred while preparing token", ex).ConfigureAwait(false);
+				context.ShowError(ex, request, false);
 				return;
 			}
 			#endregion
 
 			#region prepare others (principal, identity, body)
-			context.User = new UserPrincipal(requestInfo.Session.User);
-			if (string.IsNullOrWhiteSpace(requestInfo.Session.SessionID))
-				requestInfo.Session.SessionID = UtilityService.NewUID;
+			context.User = new UserPrincipal(request.Session.User);
+			if (string.IsNullOrWhiteSpace(request.Session.SessionID))
+				request.Session.SessionID = UtilityService.NewUID;
 
-			if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT"))
+			if (request.Verb.IsEquals("POST") || request.Verb.IsEquals("PUT"))
 				using (var reader = new StreamReader(context.Request.InputStream, context.Request.ContentEncoding))
 				{
-					requestInfo.Body = await reader.ReadToEndAsync().ConfigureAwait(false);
+					request.Body = await reader.ReadToEndAsync().ConfigureAwait(false);
 				}
 
-			else if (requestInfo.Verb.IsEquals("GET") && context.Request.QueryString["x-body"] != null)
+			else if (request.Verb.IsEquals("GET") && context.Request.QueryString["x-body"] != null)
 				try
 				{
-					requestInfo.Body = context.Request.QueryString["x-body"].Url64Decode();
+					request.Body = context.Request.QueryString["x-body"].Url64Decode();
 				}
 				catch
 				{
-					requestInfo.Body = "";
+					request.Body = "";
 				}
 			#endregion
 
 #if DEBUG || PROCESSLOGS
-			await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Internal", $"Request ==>\r\n{requestInfo.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
+			await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Internal", $"Request:\r\n{request.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
 #endif
 
 			#region [extra] prepare information of an account
 			if (isAccountProccessed)
 				try
 				{
-					var requestBody = requestInfo.GetBodyExpando();
+					var requestBody = request.GetBodyExpando();
 					if (requestBody == null)
 						throw new InvalidSessionException("Request JSON is invalid (empty)");
 
@@ -132,7 +132,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 						try
 						{
-							captcha = captcha.Decrypt(Base.AspNet.Global.GenerateEncryptionKey(requestInfo.Session.SessionID), Base.AspNet.Global.GenerateEncryptionIV(requestInfo.Session.SessionID));
+							captcha = captcha.Decrypt(Base.AspNet.Global.GenerateEncryptionKey(request.Session.SessionID), Base.AspNet.Global.GenerateEncryptionIV(request.Session.SessionID));
 						}
 						catch (Exception ex)
 						{
@@ -157,7 +157,7 @@ namespace net.vieapps.Services.APIGateway
 						try
 						{
 							email = CryptoService.RSADecrypt(Base.AspNet.Global.RSA, email);
-							requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>())
+							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>())
 							{
 								{ "Email", email.Encrypt() }
 							};
@@ -173,7 +173,7 @@ namespace net.vieapps.Services.APIGateway
 						try
 						{
 							password = CryptoService.RSADecrypt(Base.AspNet.Global.RSA, password);
-							requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>())
+							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>())
 							{
 								{ "Password", password.Encrypt() }
 							};
@@ -189,7 +189,7 @@ namespace net.vieapps.Services.APIGateway
 						try
 						{
 							oldPassword = CryptoService.RSADecrypt(Base.AspNet.Global.RSA, oldPassword);
-							requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>())
+							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>())
 							{
 								{ "OldPassword", oldPassword.Encrypt() }
 							};
@@ -200,13 +200,13 @@ namespace net.vieapps.Services.APIGateway
 						}
 
 					// preapare
-					var objectIdentity = requestInfo.GetObjectIdentity();
+					var objectIdentity = request.GetObjectIdentity();
 
 					// prepare to register/create new account
 					if (string.IsNullOrWhiteSpace(objectIdentity))
 					{
-						if (requestInfo.Session.SessionID.Encrypt(Base.AspNet.Global.AESKey.Reverse(), true).Equals(requestInfo.GetHeaderParameter("x-create")))
-							requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>())
+						if (request.Session.SessionID.Encrypt(Base.AspNet.Global.AESKey.Reverse(), true).Equals(request.GetHeaderParameter("x-create")))
+							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>())
 							{
 								{ "x-create", "" }
 							};
@@ -214,7 +214,7 @@ namespace net.vieapps.Services.APIGateway
 
 					// prepare to invite
 					else if ("invite".IsEquals(objectIdentity))
-						requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>())
+						request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>())
 						{
 							{ "x-invite", "" }
 						};
@@ -234,10 +234,10 @@ namespace net.vieapps.Services.APIGateway
 				catch (Exception ex)
 				{
 #if DEBUG || PROCESSLOGS
-					await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Internal", "Error occurred while processing account", ex).ConfigureAwait(false);
+					await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Internal", "Error occurred while processing account", ex).ConfigureAwait(false);
 #endif
-					await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Security.Errors", "Error occurred while processing account", ex).ConfigureAwait(false);
-					context.ShowError(ex, requestInfo);
+					await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Security.Errors", "Error occurred while processing account", ex).ConfigureAwait(false);
+					context.ShowError(ex, request);
 					return;
 				}
 			#endregion
@@ -245,35 +245,35 @@ namespace net.vieapps.Services.APIGateway
 			// process the request of session
 			if (isSessionProccessed)
 			{
-				if (requestInfo.Verb.IsEquals("GET"))
-					await InternalAPIs.RegisterSessionAsync(context, requestInfo, accessToken).ConfigureAwait(false);
-				else if (requestInfo.Verb.IsEquals("POST"))
-					await InternalAPIs.SignSessionInAsync(context, requestInfo).ConfigureAwait(false);
-				else if (requestInfo.Verb.IsEquals("DELETE"))
-					await InternalAPIs.SignSessionOutAsync(context, requestInfo).ConfigureAwait(false);
+				if (request.Verb.IsEquals("GET"))
+					await InternalAPIs.RegisterSessionAsync(context, request, accessToken).ConfigureAwait(false);
+				else if (request.Verb.IsEquals("POST"))
+					await InternalAPIs.SignSessionInAsync(context, request).ConfigureAwait(false);
+				else if (request.Verb.IsEquals("DELETE"))
+					await InternalAPIs.SignSessionOutAsync(context, request).ConfigureAwait(false);
 				else
-					context.ShowError(new MethodNotAllowedException(requestInfo.Verb), requestInfo, false);
+					context.ShowError(new MethodNotAllowedException(request.Verb), request, false);
 			}
 
 			// process the request of activation
 			else if (isActivationProccessed)
 			{
 				// prepare device identity
-				if (string.IsNullOrWhiteSpace(requestInfo.Session.DeviceID))
-					requestInfo.Session.DeviceID = (requestInfo.Session.AppName + "/" + requestInfo.Session.AppPlatform + "@" + (requestInfo.Session.AppAgent ?? "N/A")).GetHMACSHA384(requestInfo.Session.SessionID, true) + "@pwa";
+				if (string.IsNullOrWhiteSpace(request.Session.DeviceID))
+					request.Session.DeviceID = (request.Session.AppName + "/" + request.Session.AppPlatform + "@" + (request.Session.AppAgent ?? "N/A")).GetHMACSHA384(request.Session.SessionID, true) + "@pwa";
 
 				// activate
 				try
 				{
-					await InternalAPIs.ActivateAsync(context, requestInfo).ConfigureAwait(false);
+					await InternalAPIs.ActivateAsync(context, request).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
 #if DEBUG || PROCESSLOGS
-					await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Internal", "Error occurred while activating", ex).ConfigureAwait(false);
+					await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Internal", "Error occurred while activating", ex).ConfigureAwait(false);
 #endif
-					await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Security.Errors", "Error occurred while activating", ex).ConfigureAwait(false);
-					context.ShowError(ex, requestInfo);
+					await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Security.Errors", "Error occurred while activating", ex).ConfigureAwait(false);
+					context.ShowError(ex, request);
 				}
 			}
 
@@ -282,18 +282,22 @@ namespace net.vieapps.Services.APIGateway
 				try
 				{
 					// process
-					var result = await InternalAPIs.CallServiceAsync(requestInfo).ConfigureAwait(false);
+					var response = await InternalAPIs.CallServiceAsync(request).ConfigureAwait(false);
 
 					// special: request to update sessions of an account
-					if (isAccountProccessed && requestInfo.Verb.IsEquals("PUT"))
-						await InternalAPIs.RequestUpdateSessionsAsync(requestInfo).ConfigureAwait(false);
+					if (isAccountProccessed && request.Verb.IsEquals("PUT"))
+						await InternalAPIs.RequestUpdateSessionsAsync(request).ConfigureAwait(false);
 
 					// response
-					await context.WriteResponseAsync(result).ConfigureAwait(false);
+					await context.WriteResponseAsync(response).ConfigureAwait(false);
+
+#if DEBUG || PROCESSLOGS
+					await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Internal", $"Response:\r\n{response.ToString(Formatting.Indented)}").ConfigureAwait(false);
+#endif
 				}
 				catch (Exception ex)
 				{
-					context.ShowError(ex, requestInfo);
+					context.ShowError(ex, request);
 				}
 		}
 
@@ -738,13 +742,13 @@ namespace net.vieapps.Services.APIGateway
 			);
 		}
 
-		internal static Task<JObject> CallServiceAsync(Session session, string serviceName, string objectName, string verb = "GET", string body = null, Dictionary<string, string> extra = null)
+		internal static Task<JObject> CallServiceAsync(Session session, string serviceName, string objectName, string verb = "GET", string body = null, Dictionary<string, string> extra = null, string correlationID = null)
 		{
 			return InternalAPIs.CallServiceAsync(new RequestInfo(session, serviceName, objectName, verb)
 			{
 				Body = body ?? "",
 				Extra = extra ?? new Dictionary<string, string>(),
-				CorrelationID = Base.AspNet.Global.GetCorrelationID()
+				CorrelationID = correlationID ?? Base.AspNet.Global.GetCorrelationID()
 			});
 		}
 		#endregion

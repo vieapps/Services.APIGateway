@@ -72,7 +72,7 @@ namespace net.vieapps.Services.APIGateway
 				this.Flush(path, svcLogs);
 
 			if (!Global.AsService && !formLogs.Equals(""))
-				Global.Form.UpdateLogs("----- ["
+				Global.MainForm.UpdateLogs("----- ["
 					+ (!string.IsNullOrWhiteSpace(serviceName) ? serviceName.ToLower() : "APIGateway")
 					+ (!string.IsNullOrWhiteSpace(objectName) ? "." + objectName.ToLower() : "")
 					+ "] ----------" + "\r\n" + formLogs + "\r\n");
@@ -125,7 +125,8 @@ namespace net.vieapps.Services.APIGateway
 		{
 			var lines = new List<string>();
 			while (logs.TryDequeue(out string log))
-				lines.Add(log);
+				if (!string.IsNullOrWhiteSpace(log))
+					lines.Add(log);
 
 			var info = path.ToArray(Path.DirectorySeparatorChar);
 

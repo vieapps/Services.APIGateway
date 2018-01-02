@@ -14,19 +14,11 @@ using net.vieapps.Components.Utility;
 
 namespace net.vieapps.Services.APIGateway
 {
-	public partial class ServicesForm : Form
+	public partial class ManagementForm : Form
 	{
-		public ServicesForm()
+		public ManagementForm()
 		{
 			this.InitializeComponent();
-		}
-
-		Dictionary<string, bool> _businessServices = null;
-
-		void ServicesForm_Load(object sender, EventArgs e)
-		{
-			if (Global.ServiceManager == null)
-				Global.ServiceManager = Global.Component._outgoingChannel.RealmProxy.Services.GetCalleeProxy<IServiceManager>(ProxyInterceptor.Create());
 		}
 
 		void ServicesForm_FormClosing(object sender, FormClosingEventArgs e)
@@ -35,9 +27,19 @@ namespace net.vieapps.Services.APIGateway
 			e.Cancel = true;
 		}
 
+		void Services_SelectedIndexChanged(object sender, EventArgs e)
+		{
+			this.OnSelected();
+		}
+
+		void Change_Click(object sender, EventArgs e)
+		{
+			this.OnChange();
+		}
+
 		internal void Initialize()
 		{
-			this.ServiceName.Text = "Service";
+			this.ServiceURI.Text = "Service URI";
 			this.ServiceStatus.Text = "Status";
 			this.Services.MultiSelect = false;
 
@@ -45,50 +47,51 @@ namespace net.vieapps.Services.APIGateway
 			this.DisplayServices();
 		}
 
+		public Dictionary<string, bool> BusinessServices { get; private set; } = new Dictionary<string, bool>();
+
 		internal void RefreshServices()
 		{
 			if (Global.ServiceManager == null)
 				Global.ServiceManager = Global.Component._outgoingChannel.RealmProxy.Services.GetCalleeProxy<IServiceManager>(ProxyInterceptor.Create());
 
-			this._businessServices = new Dictionary<string, bool>();
-			Global.ServiceManager.GetAvailableBusinessServices().ForEach(kvp => this._businessServices.Add($"net.vieapps.services.{kvp.Key}", Global.ServiceManager.IsBusinessServiceRunning(kvp.Key)));
+			this.BusinessServices.Clear();
+			Global.ServiceManager.GetAvailableBusinessServices().ForEach(kvp => this.BusinessServices.Add($"net.vieapps.services.{kvp.Key}", Global.ServiceManager.IsBusinessServiceRunning(kvp.Key)));
 		}
 
 		void DisplayServices()
 		{
 			this.Services.Items.Clear();
-			this._businessServices.ForEach(kvp => this.Services.Items.Add(new ListViewItem(new[] { kvp.Key, kvp.Value ? "Running" : "Stopped" })));
-			Global.MainForm.UpdateServicesInfo(this._businessServices.Count, this._businessServices.Where(kvp => kvp.Value).Count());
+			this.BusinessServices.ForEach(kvp => this.Services.Items.Add(new ListViewItem(new[] { kvp.Key, kvp.Value ? "Running" : "Stopped" })));
+			Global.MainForm.UpdateServicesInfo(this.BusinessServices.Count, this.BusinessServices.Where(kvp => kvp.Value).Count());
 		}
 
-		void Services_SelectedIndexChanged(object sender, EventArgs e)
+		void OnSelected()
 		{
 			if (this.Services.SelectedItems == null || this.Services.SelectedItems.Count < 1)
 			{
-				this.Service.Visible = this.Change.Enabled = false;
+				this.ServiceName.Visible = this.Change.Enabled = false;
 				return;
 			}
 
-			this.Service.Visible = this.Change.Enabled = true;
-			this.Service.Text = $"Service: [{this.Services.SelectedItems[0].Text}";
-			this.Change.Text = this._businessServices[this.Services.SelectedItems[0].Text]
-				? "Stop"
-				: "Start";
+			var name = this.Services.SelectedItems[0].Text;
+			this.ServiceName.Visible = this.Change.Enabled = true;
+			this.ServiceName.Text = $"Service: [{name}]";
+			this.Change.Text = this.BusinessServices[name] ? "Stop" : "Start";
 		}
 
-		void Change_Click(object sender, EventArgs e)
+		void OnChange()
 		{
 			if (this.Services.SelectedItems == null || this.Services.SelectedItems.Count < 1)
 				return;
 
 			var name = this.Services.SelectedItems[0].Text;
-			if (this._businessServices[name])
+			if (this.BusinessServices[name])
 				Task.Run(() =>
 				{
 					try
 					{
 						Global.ServiceManager.StopBusinessService(name.ToArray('.').Last());
-						this._businessServices[name] = false;
+						this.BusinessServices[name] = false;
 					}
 					catch (Exception ex)
 					{
@@ -105,7 +108,7 @@ namespace net.vieapps.Services.APIGateway
 					try
 					{
 						Global.ServiceManager.StartBusinessService(name.ToArray('.').Last());
-						this._businessServices[name] = true;
+						this.BusinessServices[name] = true;
 					}
 					catch (Exception ex)
 					{

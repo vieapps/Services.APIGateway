@@ -16,7 +16,7 @@ namespace net.vieapps.Services.APIGateway
 		internal static IServiceManager ServiceManager = null;
 
 		internal static MainForm MainForm = null;
-		internal static ServicesForm ManagementForm = null;
+		internal static ManagementForm ManagementForm = null;
 
 		internal static CancellationTokenSource CancellationTokenSource = new CancellationTokenSource();
 		static string _LogsPath = null, _StatusPath = null, _EmailsPath = null, _WebHooksPath = null;
@@ -74,7 +74,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			var path = UtilityService.GetAppSetting(name);
 			if (string.IsNullOrWhiteSpace(path) && getDefaultIsNotFound)
-				path = Directory.GetCurrentDirectory() + Path.DirectorySeparatorChar.ToString() + folder;
+				path = Path.Combine(Directory.GetCurrentDirectory(), folder);
 			else if (!string.IsNullOrWhiteSpace(path) && path.EndsWith(Path.DirectorySeparatorChar.ToString()))
 				path = path.Left(path.Length - 1);
 			return path;

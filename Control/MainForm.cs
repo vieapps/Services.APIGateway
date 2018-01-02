@@ -40,7 +40,7 @@ namespace net.vieapps.Services.APIGateway
 				return;
 
 			if (Global.ManagementForm == null)
-				Global.ManagementForm = new ServicesForm();
+				Global.ManagementForm = new ManagementForm();
 
 			Global.ManagementForm.Initialize();
 			Global.ManagementForm.Show();

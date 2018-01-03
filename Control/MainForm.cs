@@ -19,7 +19,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			Global.Component.Start(this.arguments, async () =>
 			{
-				await Task.Delay(567);
+				await Task.Delay(567).ConfigureAwait(false);
 				if (Global.ServiceManager != null)
 				{
 					var services = Global.ServiceManager.GetAvailableBusinessServices();

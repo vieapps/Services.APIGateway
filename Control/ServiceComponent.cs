@@ -138,7 +138,8 @@ namespace net.vieapps.Services.APIGateway
 				{
 					Global.WriteLog($"The outgoing connection is established - Session ID: {arguments.SessionId}");
 					this._outgoingChannelSessionID = arguments.SessionId;
-					Global.ServiceManager = this._outgoingChannel.RealmProxy.Services.GetCalleeProxy<IServiceManager>(ProxyInterceptor.Create());
+					if (!Global.AsService)
+						Global.ServiceManager = this._outgoingChannel.RealmProxy.Services.GetCalleeProxy<IServiceManager>(ProxyInterceptor.Create());
 				},
 				(sender, arguments) =>
 				{
@@ -777,10 +778,10 @@ namespace net.vieapps.Services.APIGateway
 	#region Service Manager
 	public interface IServiceManager
 	{
-		[WampProcedure("net.vieapps.apigateway.controller.available")]
+		[WampProcedure("net.vieapps.apigateway.controller.get")]
 		Dictionary<string, string> GetAvailableBusinessServices();
 
-		[WampProcedure("net.vieapps.apigateway.controller.isrunning")]
+		[WampProcedure("net.vieapps.apigateway.controller.state")]
 		bool IsBusinessServiceRunning(string name);
 
 		[WampProcedure("net.vieapps.apigateway.controller.start")]

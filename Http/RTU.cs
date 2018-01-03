@@ -237,19 +237,23 @@ namespace net.vieapps.Services.APIGateway
 		internal static void Publish(this UpdateMessage message)
 		{
 			if (RTU.Sender == null)
-				Task.Run(async () =>
+				try
 				{
-					try
+					Task.Run(async () =>
 					{
-						await Base.AspNet.Global.OpenOutgoingChannelAsync().ConfigureAwait(false);
-						RTU.Sender = Base.AspNet.Global.OutgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages");
-						RTU.Sender.OnNext(message);
-					}
-					catch (Exception ex)
-					{
-						Base.AspNet.Global.WriteLogs(UtilityService.NewUID, "RTU", $"Error occurred while publishing message: {ex.Message}", ex);
-					}
-				}).ConfigureAwait(false);
+						try
+						{
+							await Base.AspNet.Global.OpenOutgoingChannelAsync().ConfigureAwait(false);
+							RTU.Sender = Base.AspNet.Global.OutgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages");
+							RTU.Sender.OnNext(message);
+						}
+						catch (Exception ex)
+						{
+							Base.AspNet.Global.WriteLogs(UtilityService.NewUID, "RTU", $"Error occurred while publishing message: {ex.Message}", ex);
+						}
+					}).ConfigureAwait(false);
+				}
+				catch { }
 
 			else
 				RTU.Sender.OnNext(message);

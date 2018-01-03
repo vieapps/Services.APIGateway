@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Windows.Forms;
 
 namespace net.vieapps.Services.APIGateway
@@ -11,15 +12,13 @@ namespace net.vieapps.Services.APIGateway
 			// initialize
 			Global.AsService = !Environment.UserInteractive;
 			Global.Component = new ServiceComponent();
+			Directory.SetCurrentDirectory(AppDomain.CurrentDomain.BaseDirectory);
 
-			// run as a service of Windows
+			// run as a Windows service
 			if (Global.AsService)
-			{
-				System.IO.Directory.SetCurrentDirectory(AppDomain.CurrentDomain.BaseDirectory);
 				System.ServiceProcess.ServiceBase.Run(new ServiceRunner());
-			}
 
-			// run as a desktop app of Windows
+			// run as a Windows desktop app
 			else
 			{
 				Application.EnableVisualStyles();

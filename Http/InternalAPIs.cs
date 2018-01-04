@@ -244,16 +244,28 @@ namespace net.vieapps.Services.APIGateway
 
 			// process the request of session
 			if (isSessionProccessed)
-			{
-				if (request.Verb.IsEquals("GET"))
-					await InternalAPIs.RegisterSessionAsync(context, request, accessToken).ConfigureAwait(false);
-				else if (request.Verb.IsEquals("POST"))
-					await InternalAPIs.SignSessionInAsync(context, request).ConfigureAwait(false);
-				else if (request.Verb.IsEquals("DELETE"))
-					await InternalAPIs.SignSessionOutAsync(context, request).ConfigureAwait(false);
-				else
-					context.ShowError(new MethodNotAllowedException(request.Verb), request, false);
-			}
+				switch (request.Verb)
+				{
+					case "GET":
+						await InternalAPIs.RegisterSessionAsync(context, request, accessToken).ConfigureAwait(false);
+						break;
+
+					case "POST":
+						await InternalAPIs.SignSessionInAsync(context, request).ConfigureAwait(false);
+						break;
+
+					case "PUT":
+						await InternalAPIs.ValidateOTPSessionAsync(context, request).ConfigureAwait(false);
+						break;
+
+					case "DELETE":
+						await InternalAPIs.SignSessionOutAsync(context, request).ConfigureAwait(false);
+						break;
+
+					default:
+						context.ShowError(new MethodNotAllowedException(request.Verb), request, false);
+						break;
+				}
 
 			// process the request of activation
 			else if (isActivationProccessed)
@@ -297,12 +309,15 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
+#if DEBUG || PROCESSLOGS
+					await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Internal", "Error occurred while processing", ex).ConfigureAwait(false);
+#endif
 					context.ShowError(ex, request);
 				}
 		}
 
 		#region Register a session
-		async static Task RegisterSessionAsync(HttpContext context, RequestInfo requestInfo, string accessToken)
+		static async Task RegisterSessionAsync(HttpContext context, RequestInfo requestInfo, string accessToken)
 		{
 			// session of visitor/system account
 			if (requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.IsSystemAccount)
@@ -314,19 +329,7 @@ namespace net.vieapps.Services.APIGateway
 						: accessToken;
 
 					// generate session
-					var session = new JObject()
-					{
-						{ "ID", requestInfo.Session.SessionID },
-						{ "IssuedAt", DateTime.Now },
-						{ "RenewedAt", DateTime.Now },
-						{ "ExpiredAt", DateTime.Now.AddDays(60) },
-						{ "UserID", requestInfo.Session.User.ID },
-						{ "AccessToken", accessToken },
-						{ "IP", requestInfo.Session.IP },
-						{ "DeviceID", requestInfo.Session.DeviceID },
-						{ "AppInfo", requestInfo.Session.AppName + " @ " + requestInfo.Session.AppPlatform },
-						{ "Online", true }
-					};
+					var session = InternalAPIs.GenerateSessionJson(requestInfo, accessToken);
 
 					// initialize session
 					if (context.Request.QueryString["register"] == null)
@@ -351,7 +354,7 @@ namespace net.vieapps.Services.APIGateway
 
 						// register with user service
 						await Task.WhenAll(
-							InternalAPIs.CallServiceAsync(requestInfo.Session, "users", "session", "POST", session.ToString(Formatting.None)),
+							InternalAPIs.CallServiceAsync(requestInfo.Session, "Users", "Session", "POST", session.ToString(Formatting.None)),
 							Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 180)
 						).ConfigureAwait(false);
 					}
@@ -379,7 +382,7 @@ namespace net.vieapps.Services.APIGateway
 				try
 				{
 					// call service to get session
-					var session = await InternalAPIs.CallServiceAsync(requestInfo.Session, "users", "session");
+					var session = await InternalAPIs.CallServiceAsync(requestInfo.Session, "Users", "Session").ConfigureAwait(false);
 					var jsonUserID = session?["UserID"];
 					var jsonAccessToken = session?["AccessToken"];
 
@@ -400,7 +403,7 @@ namespace net.vieapps.Services.APIGateway
 
 					// register with user service
 					await Task.WhenAll(
-						InternalAPIs.CallServiceAsync(requestInfo.Session, "users", "session", "POST", session.ToString(Formatting.None)),
+						InternalAPIs.CallServiceAsync(requestInfo.Session, "Users", "Session", "POST", session.ToString(Formatting.None)),
 						Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 180)
 					).ConfigureAwait(false);
 
@@ -425,7 +428,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Sign a session in
-		async static Task SignSessionInAsync(HttpContext context, RequestInfo requestInfo)
+		static async Task SignSessionInAsync(HttpContext context, RequestInfo requestInfo)
 		{
 			try
 			{
@@ -453,53 +456,117 @@ namespace net.vieapps.Services.APIGateway
 				// call service to perform sign in
 				var json = await InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session)
 				{
-					ServiceName = "users",
-					ObjectName = "session",
+					ServiceName = "Users",
+					ObjectName = "Session",
 					Verb = "PUT",
-					Body = (new JObject()
+					Body = new JObject()
 					{
 						{ "Email", email.Encrypt() },
 						{ "Password", password.Encrypt() }
-					}).ToString(Formatting.None),
+					}.ToString(Formatting.None),
 					CorrelationID = requestInfo.CorrelationID
 				}).ConfigureAwait(false);
 
-				// clear cached of current session
+				// two-factors authentication
+				var require2FA = json["Require2FA"] != null
+					? (json["Require2FA"] as JValue).Value.CastAs<bool>()
+					: false;
+
+				if (require2FA)
+					json = new JObject()
+					{
+						{ "ID", (json["ID"] as JValue).Value as string },
+						{ "Require2FA", true },
+						{ "Providers", json["Providers"] as JArray }
+					};
+
+				else
+				{
+					// register new session
+					await Global.Cache.RemoveAsync("Session#" + requestInfo.Session.SessionID).ConfigureAwait(false);
+
+					requestInfo.Session.User = json.FromJson<User>();
+					requestInfo.Session.SessionID = UtilityService.NewUID;
+					var accessToken = User.GetAccessToken(requestInfo.Session.User, Base.AspNet.Global.RSA, Base.AspNet.Global.AESKey);
+					await InternalAPIs.CreateSessionAsync(requestInfo, accessToken).ConfigureAwait(false);
+
+					// response
+					json = new JObject()
+					{
+						{ "ID", requestInfo.Session.SessionID },
+						{ "DeviceID", requestInfo.Session.DeviceID }
+					};
+					requestInfo.Session.UpdateSessionJson(json, accessToken);
+				}
+
+				// response
+				await Task.WhenAll(
+					context.WriteResponseAsync(json),
+					Global.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP)
+				).ConfigureAwait(false);
+			}
+			catch (Exception ex)
+			{
+				// wait
+				var attempt = await Global.Cache.ExistsAsync("Attempt#" + requestInfo.Session.IP).ConfigureAwait(false)
+					? await Global.Cache.GetAsync<int>("Attempt#" + requestInfo.Session.IP).ConfigureAwait(false)
+					: 0;
+				attempt++;
+
+				await Task.WhenAll(
+					Task.Delay(567 + ((attempt - 1) * 5678)),
+					Global.Cache.SetAsync("Attempt#" + requestInfo.Session.IP, attempt)
+				).ConfigureAwait(false);
+
+				// show error
+#if DEBUG || PROCESSLOGS
+				await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Internal", "Error occurred while signing-in session", ex).ConfigureAwait(false);
+#endif
+				await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Security.Errors", "Error occurred while signing-in session", ex).ConfigureAwait(false);
+				context.ShowError(ex, requestInfo);
+			}
+		}
+		#endregion
+
+		#region Validate an OTP session
+		static async Task ValidateOTPSessionAsync(HttpContext context, RequestInfo requestInfo)
+		{
+			try
+			{
+				// validate
+				var body = requestInfo.GetBodyExpando();
+				if (body == null)
+					throw new InvalidSessionException("OTP is invalid (empty)");
+
+				var id = body.Get<string>("ID");
+				var otp = body.Get<string>("OTP");
+				var info = body.Get<string>("Info");
+
+				if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(otp) || string.IsNullOrWhiteSpace(info))
+					throw new InvalidSessionException("OTP is invalid (empty)");
+
+				// call service to perform sign in
+				var json = await InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session)
+				{
+					ServiceName = "Users",
+					ObjectName = "OTP",
+					Verb = "POST",
+					Body = new JObject()
+					{
+						{ "ID", id },
+						{ "OTP", otp },
+						{ "Info", info }
+					}.ToString(Formatting.None),
+					CorrelationID = requestInfo.CorrelationID
+				}).ConfigureAwait(false);
+
+				// register new session
 				await Global.Cache.RemoveAsync("Session#" + requestInfo.Session.SessionID).ConfigureAwait(false);
 
-				// prepare session
 				requestInfo.Session.User = json.FromJson<User>();
 				requestInfo.Session.SessionID = UtilityService.NewUID;
 				var accessToken = User.GetAccessToken(requestInfo.Session.User, Base.AspNet.Global.RSA, Base.AspNet.Global.AESKey);
-
-				// register new session
-				var session = new JObject()
-				{
-					{ "ID", requestInfo.Session.SessionID },
-					{ "IssuedAt", DateTime.Now },
-					{ "RenewedAt", DateTime.Now },
-					{ "ExpiredAt", DateTime.Now.AddDays(60) },
-					{ "UserID", requestInfo.Session.User.ID },
-					{ "AccessToken", accessToken },
-					{ "IP", requestInfo.Session.IP },
-					{ "DeviceID", requestInfo.Session.DeviceID },
-					{ "AppInfo", requestInfo.Session.AppName + " @ " + requestInfo.Session.AppPlatform },
-					{ "Online", true }
-				};
-
-				await InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session)
-				{
-					ServiceName = "users",
-					ObjectName = "session",
-					Verb = "POST",
-					Body = session.ToString(Formatting.None),
-					CorrelationID = requestInfo.CorrelationID
-				}).ConfigureAwait(false);
-
-				await Task.WhenAll(
-					Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 180),
-					requestInfo.Session.SendOnlineStatusAsync(true)
-				).ConfigureAwait(false);
+				await InternalAPIs.CreateSessionAsync(requestInfo, accessToken).ConfigureAwait(false);
 
 				// response
 				json = new JObject()
@@ -509,6 +576,7 @@ namespace net.vieapps.Services.APIGateway
 				};
 				requestInfo.Session.UpdateSessionJson(json, accessToken);
 
+				// response
 				await Task.WhenAll(
 					context.WriteResponseAsync(json),
 					Global.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP)
@@ -538,7 +606,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Sign a session out
-		async static Task SignSessionOutAsync(HttpContext context, RequestInfo requestInfo)
+		static async Task SignSessionOutAsync(HttpContext context, RequestInfo requestInfo)
 		{
 			try
 			{
@@ -547,7 +615,7 @@ namespace net.vieapps.Services.APIGateway
 					throw new InvalidRequestException();
 
 				// call service to perform sign out
-				await InternalAPIs.CallServiceAsync(requestInfo.Session, "users", "session", "DELETE").ConfigureAwait(false);
+				await InternalAPIs.CallServiceAsync(requestInfo.Session, "Users", "Session", "DELETE").ConfigureAwait(false);
 
 				await Task.WhenAll(
 					Global.Cache.RemoveAsync("Session#" + requestInfo.Session.SessionID),
@@ -560,19 +628,7 @@ namespace net.vieapps.Services.APIGateway
 
 				// register the new session of visitor
 				var accessToken = User.GetAccessToken(requestInfo.Session.User, Base.AspNet.Global.RSA, Base.AspNet.Global.AESKey);
-				var session = new JObject()
-				{
-					{ "ID", requestInfo.Session.SessionID },
-					{ "IssuedAt", DateTime.Now },
-					{ "RenewedAt", DateTime.Now },
-					{ "ExpiredAt", DateTime.Now.AddDays(60) },
-					{ "UserID", requestInfo.Session.User.ID },
-					{ "AccessToken", accessToken },
-					{ "IP", requestInfo.Session.IP },
-					{ "DeviceID", requestInfo.Session.DeviceID },
-					{ "AppInfo", requestInfo.Session.AppName + " @ " + requestInfo.Session.AppPlatform },
-					{ "Online", true }
-				};
+				var session = InternalAPIs.GenerateSessionJson(requestInfo, accessToken);
 				await Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 180).ConfigureAwait(false);
 
 				// response
@@ -582,7 +638,6 @@ namespace net.vieapps.Services.APIGateway
 					{ "DeviceID", requestInfo.Session.DeviceID }
 				};
 				requestInfo.Session.UpdateSessionJson(json, accessToken);
-
 				await context.WriteResponseAsync(json).ConfigureAwait(false);
 			}
 			catch (Exception ex)
@@ -597,32 +652,19 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Activation
-		async static Task ActivateAsync(HttpContext context, RequestInfo requestInfo)
+		static async Task ActivateAsync(HttpContext context, RequestInfo requestInfo)
 		{
 			// call service to activate
-			var json = await InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session, "users", "activate", "GET", requestInfo.Query, requestInfo.Header, "", requestInfo.Extra, requestInfo.CorrelationID)).ConfigureAwait(false);
+			var json = await InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Activate", "GET", requestInfo.Query, requestInfo.Header, "", requestInfo.Extra, requestInfo.CorrelationID)).ConfigureAwait(false);
 
 			// update user information & get access token
 			requestInfo.Session.User = json.FromJson<User>();
 			var accessToken = User.GetAccessToken(requestInfo.Session.User, Base.AspNet.Global.RSA, Base.AspNet.Global.AESKey);
 
 			// register the session
-			var session = (new JObject()
-			{
-				{ "ID", requestInfo.Session.SessionID },
-				{ "IssuedAt", DateTime.Now },
-				{ "RenewedAt", DateTime.Now },
-				{ "ExpiredAt", DateTime.Now.AddDays(60) },
-				{ "UserID", requestInfo.Session.User.ID },
-				{ "AccessToken", accessToken },
-				{ "IP", requestInfo.Session.IP },
-				{ "DeviceID", requestInfo.Session.DeviceID },
-				{ "AppInfo", requestInfo.Session.AppName + " @ " + requestInfo.Session.AppPlatform },
-				{ "Online", true }
-			}).ToString(Formatting.None);
-
+			var session = InternalAPIs.GenerateSessionJson(requestInfo, accessToken).ToString(Formatting.None);
 			await Task.WhenAll(
-				InternalAPIs.CallServiceAsync(requestInfo.Session, "users", "session", "POST", session),
+				InternalAPIs.CallServiceAsync(requestInfo.Session, "Users", "Session", "POST", session),
 				requestInfo.Session.SendOnlineStatusAsync(true),
 				Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session, 180)
 			).ConfigureAwait(false);
@@ -638,6 +680,43 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
+		#region Create a session
+		static JObject GenerateSessionJson(RequestInfo requestInfo, string accessToken = null, bool isOnline = true)
+		{
+			return new JObject()
+			{
+				{ "ID", requestInfo.Session.SessionID },
+				{ "IssuedAt", DateTime.Now },
+				{ "RenewedAt", DateTime.Now },
+				{ "ExpiredAt", DateTime.Now.AddDays(60) },
+				{ "UserID", requestInfo.Session.User.ID },
+				{ "AccessToken", accessToken ?? User.GetAccessToken(requestInfo.Session.User, Base.AspNet.Global.RSA, Base.AspNet.Global.AESKey) },
+				{ "IP", requestInfo.Session.IP },
+				{ "DeviceID", requestInfo.Session.DeviceID },
+				{ "AppInfo", requestInfo.Session.AppName + " @ " + requestInfo.Session.AppPlatform },
+				{ "Online", isOnline }
+			};
+		}
+
+		static async Task CreateSessionAsync(RequestInfo requestInfo, string accessToken = null)
+		{
+			var session = InternalAPIs.GenerateSessionJson(requestInfo, accessToken);
+			await InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session)
+			{
+				ServiceName = "Users",
+				ObjectName = "Session",
+				Verb = "POST",
+				Body = session.ToString(Formatting.None),
+				CorrelationID = requestInfo.CorrelationID
+			}).ConfigureAwait(false);
+
+			await Task.WhenAll(
+				Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 180),
+				requestInfo.Session.SendOnlineStatusAsync(true)
+			).ConfigureAwait(false);
+		}
+		#endregion
+
 		#region Verify a session
 		internal static async Task<bool> CheckSessionExistAsync(Session session)
 		{
@@ -648,7 +727,7 @@ namespace net.vieapps.Services.APIGateway
 				return true;
 
 			// check with user service
-			var result = await InternalAPIs.CallServiceAsync(session, "users", "session", "GET", null, new Dictionary<string, string>()
+			var result = await InternalAPIs.CallServiceAsync(session, "Users", "Session", "GET", null, new Dictionary<string, string>()
 			{
 				{ "Exist", "" }
 			}).ConfigureAwait(false);
@@ -677,7 +756,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// check with user service
 			else
-				await InternalAPIs.CallServiceAsync(session, "users", "session", "GET", null, new Dictionary<string, string>()
+				await InternalAPIs.CallServiceAsync(session, "Users", "Session", "GET", null, new Dictionary<string, string>()
 				{
 					{ "Verify", "" },
 					{ "AccessToken", accessToken.Encrypt() }
@@ -696,8 +775,8 @@ namespace net.vieapps.Services.APIGateway
 			// get user information
 			var user = (await InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session)
 			{
-				ServiceName = "users",
-				ObjectName = "account",
+				ServiceName = "Users",
+				ObjectName = "Account",
 				Verb = "GET",
 				Query = requestInfo.Query,
 				CorrelationID = requestInfo.CorrelationID

@@ -34,8 +34,8 @@ namespace net.vieapps.Services.APIGateway
 				Verb = context.Request.HttpMethod,
 				ServiceName = string.IsNullOrWhiteSpace(context.Request.QueryString["service-name"]) ? "unknown" : context.Request.QueryString["service-name"],
 				ObjectName = string.IsNullOrWhiteSpace(context.Request.QueryString["object-name"]) ? "unknown" : context.Request.QueryString["object-name"],
-				Query = context.Request.QueryString.ToDictionary(),
-				Header = context.Request.Headers.ToDictionary(),
+				Query = new Dictionary<string, string>(context.Request.QueryString.ToDictionary(), StringComparer.OrdinalIgnoreCase),
+				Header = new Dictionary<string, string>(context.Request.Headers.ToDictionary(), StringComparer.OrdinalIgnoreCase),
 				CorrelationID = Base.AspNet.Global.GetCorrelationID(context.Items)
 			};
 
@@ -157,7 +157,7 @@ namespace net.vieapps.Services.APIGateway
 						try
 						{
 							email = CryptoService.RSADecrypt(Base.AspNet.Global.RSA, email);
-							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>())
+							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
 							{
 								{ "Email", email.Encrypt() }
 							};
@@ -173,7 +173,7 @@ namespace net.vieapps.Services.APIGateway
 						try
 						{
 							password = CryptoService.RSADecrypt(Base.AspNet.Global.RSA, password);
-							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>())
+							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
 							{
 								{ "Password", password.Encrypt() }
 							};
@@ -189,7 +189,7 @@ namespace net.vieapps.Services.APIGateway
 						try
 						{
 							oldPassword = CryptoService.RSADecrypt(Base.AspNet.Global.RSA, oldPassword);
-							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>())
+							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
 							{
 								{ "OldPassword", oldPassword.Encrypt() }
 							};
@@ -206,7 +206,7 @@ namespace net.vieapps.Services.APIGateway
 					if (string.IsNullOrWhiteSpace(objectIdentity))
 					{
 						if (request.Session.SessionID.Encrypt(Base.AspNet.Global.AESKey.Reverse(), true).Equals(request.GetHeaderParameter("x-create")))
-							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>())
+							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
 							{
 								{ "x-create", "" }
 							};
@@ -214,7 +214,7 @@ namespace net.vieapps.Services.APIGateway
 
 					// prepare to invite
 					else if ("invite".IsEquals(objectIdentity))
-						request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>())
+						request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
 						{
 							{ "x-invite", "" }
 						};
@@ -727,7 +727,7 @@ namespace net.vieapps.Services.APIGateway
 				return true;
 
 			// check with user service
-			var result = await InternalAPIs.CallServiceAsync(session, "Users", "Session", "GET", null, new Dictionary<string, string>()
+			var result = await InternalAPIs.CallServiceAsync(session, "Users", "Session", "GET", null, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
 			{
 				{ "Exist", "" }
 			}).ConfigureAwait(false);
@@ -756,7 +756,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// check with user service
 			else
-				await InternalAPIs.CallServiceAsync(session, "Users", "Session", "GET", null, new Dictionary<string, string>()
+				await InternalAPIs.CallServiceAsync(session, "Users", "Session", "GET", null, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
 				{
 					{ "Verify", "" },
 					{ "AccessToken", accessToken.Encrypt() }
@@ -826,7 +826,7 @@ namespace net.vieapps.Services.APIGateway
 			return InternalAPIs.CallServiceAsync(new RequestInfo(session, serviceName, objectName, verb)
 			{
 				Body = body ?? "",
-				Extra = extra ?? new Dictionary<string, string>(),
+				Extra = new Dictionary<string, string>(extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase),
 				CorrelationID = correlationID ?? Base.AspNet.Global.GetCorrelationID()
 			});
 		}

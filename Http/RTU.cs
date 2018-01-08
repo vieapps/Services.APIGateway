@@ -162,7 +162,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 
 			// do the process
-			if (session.SessionID.Encrypt(Base.AspNet.Global.AESKey.Reverse(), true).IsEquals(context.QueryString["x-receiver"]))
+			if (session.SessionID.Encrypt(Base.AspNet.Global.EncryptionKey.Reverse(), true).IsEquals(context.QueryString["x-receiver"]))
 				await context.ProcesMessagesAsync(session).ConfigureAwait(false);
 			else
 				await context.PushMessagesAsync(session).ConfigureAwait(false);
@@ -433,7 +433,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 						var sessionInfo = (await InternalAPIs.CallServiceAsync(new Session(session)
 						{
-							SessionID = extra["x-session"].Decrypt(Base.AspNet.Global.AESKey.Reverse(), true)
+							SessionID = extra["x-session"].Decrypt(Base.AspNet.Global.EncryptionKey.Reverse(), true)
 						}, "users", "session").ConfigureAwait(false)).ToExpandoObject();
 
 						session.SessionID = sessionInfo.Get<string>("ID");

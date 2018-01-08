@@ -381,7 +381,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			if (this._availableServices == null)
 			{
-				this._availableServices = new Dictionary<string, string>();
+				this._availableServices = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 				if (ConfigurationManager.GetSection("net.vieapps.services") is AppConfigurationSectionHandler config)
 					if (config.Section.SelectNodes("./add") is XmlNodeList services)
 						foreach (XmlNode service in services)

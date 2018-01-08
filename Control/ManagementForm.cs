@@ -55,13 +55,16 @@ namespace net.vieapps.Services.APIGateway
 				Global.ServiceManager = Global.Component._outgoingChannel.RealmProxy.Services.GetCalleeProxy<IServiceManager>(ProxyInterceptor.Create());
 
 			this.BusinessServices.Clear();
-			Global.ServiceManager.GetAvailableBusinessServices().ForEach(kvp => this.BusinessServices.Add($"net.vieapps.services.{kvp.Key}", Global.ServiceManager.IsBusinessServiceRunning(kvp.Key)));
+			Global.ServiceManager.GetAvailableBusinessServices()
+				.ForEach(kvp => this.BusinessServices.Add($"net.vieapps.services.{kvp.Key}", Global.ServiceManager.IsBusinessServiceRunning(kvp.Key)));
 		}
 
 		void DisplayServices()
 		{
 			this.Services.Items.Clear();
-			this.BusinessServices.ForEach(kvp => this.Services.Items.Add(new ListViewItem(new[] { kvp.Key, kvp.Value ? "Running" : "Stopped" })));
+			this.BusinessServices
+				.OrderBy(kvp => kvp.Key)
+				.ForEach(kvp => this.Services.Items.Add(new ListViewItem(new[] { kvp.Key, kvp.Value ? "Running" : "Stopped" })));
 			Global.MainForm.UpdateServicesInfo(this.BusinessServices.Count, this.BusinessServices.Where(kvp => kvp.Value).Count());
 		}
 

@@ -462,12 +462,12 @@ namespace net.vieapps.Services.APIGateway
 		#region User tokens
 		internal static string GetAccessToken(this User user)
 		{
-			return User.GetAccessToken(user, Base.AspNet.Global.RSA, Base.AspNet.Global.AESKey);
+			return User.GetAccessToken(user, Base.AspNet.Global.RSA, Base.AspNet.Global.EncryptionKey);
 		}
 
 		internal static string GetJSONWebToken(this Session session, string accessToken = null)
 		{
-			return User.GetJSONWebToken(session.User.ID, accessToken ?? session.User.GetAccessToken(), session.SessionID, Base.AspNet.Global.AESKey, Base.AspNet.Global.GenerateJWTKey());
+			return User.GetJSONWebToken(session.User.ID, accessToken ?? session.User.GetAccessToken(), session.SessionID, Base.AspNet.Global.EncryptionKey, Base.AspNet.Global.JWTKey);
 		}
 
 		internal static string ParseJSONWebToken(this Session session, string jwt)
@@ -478,7 +478,7 @@ namespace net.vieapps.Services.APIGateway
 			var sessionID = "";
 			try
 			{
-				var info = User.ParseJSONWebToken(jwt, Base.AspNet.Global.AESKey, Base.AspNet.Global.GenerateJWTKey());
+				var info = User.ParseJSONWebToken(jwt, Base.AspNet.Global.EncryptionKey, Base.AspNet.Global.JWTKey);
 				userID = info.Item1;
 				accessToken = info.Item2;
 				sessionID = info.Item3;
@@ -491,7 +491,7 @@ namespace net.vieapps.Services.APIGateway
 			// get user information
 			try
 			{
-				session.User = User.ParseAccessToken(accessToken, Base.AspNet.Global.RSA, Base.AspNet.Global.AESKey);
+				session.User = User.ParseAccessToken(accessToken, Base.AspNet.Global.RSA, Base.AspNet.Global.EncryptionKey);
 			}
 			catch (Exception ex)
 			{

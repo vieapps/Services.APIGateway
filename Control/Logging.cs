@@ -23,7 +23,7 @@ namespace net.vieapps.Services.APIGateway
 #else
 			try
 			{
-				this._max = UtilityService.GetAppSetting("LogsMax", "13").CastAs<int>();
+				this._max = UtilityService.GetAppSetting("Logs:MaxItems", "13").CastAs<int>();
 			}
 			catch
 			{

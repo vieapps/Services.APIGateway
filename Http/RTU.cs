@@ -431,17 +431,33 @@ namespace net.vieapps.Services.APIGateway
 					// update the session
 					if ("PATCH".IsEquals(verb) && "users".IsEquals(serviceName) && "session".IsEquals(objectName) && extra != null && extra.ContainsKey("x-session"))
 					{
-						var sessionInfo = (await InternalAPIs.CallServiceAsync(new Session(session)
+						var sessionJson = await InternalAPIs.CallServiceAsync(new RequestInfo()
 						{
-							SessionID = extra["x-session"].Decrypt(Base.AspNet.Global.EncryptionKey.Reverse(), true)
-						}, "users", "session").ConfigureAwait(false)).ToExpandoObject();
+							Session = new Session(session)
+							{
+								SessionID = extra["x-session"].Decrypt(Base.AspNet.Global.EncryptionKey.Reverse(), true)
+							},
+							ServiceName = "Users",
+							ObjectName = "Session",
+							Header = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+							{
+								{ "x-app-token", "none" }
+							},
+							Extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+							{
+								{ "Signature", "none".GetHMACSHA256(Base.AspNet.Global.ValidationKey) }
+							},
+							CorrelationID = correlationID
+						}).ConfigureAwait(false);
+
+						var sessionInfo = sessionJson.ToExpandoObject();
 
 						session.SessionID = sessionInfo.Get<string>("ID");
 						session.User.ID = sessionInfo.Get<string>("UserID");
 
 						session.User = session.User.ID.Equals("")
 							? new User() { Roles = new List<string>() { SystemRole.All.ToString() } }
-							: (await InternalAPIs.CallServiceAsync(session, "users", "account").ConfigureAwait(false)).FromJson<User>();
+							: (await InternalAPIs.CallServiceAsync(session, "Users", "Account").ConfigureAwait(false)).FromJson<User>();
 
 #if DEBUG || RTULOGS || PROCESSLOGS
 						stopwatch.Stop();
@@ -454,7 +470,12 @@ namespace net.vieapps.Services.APIGateway
 					{
 						// call the service
 						var query = requestInfo.Get<Dictionary<string, string>>("Query");
-						var data = await InternalAPIs.CallServiceAsync(new RequestInfo(session, serviceName, objectName, verb, query, requestInfo.Get<Dictionary<string, string>>("Header"), requestInfo.Get<string>("Body"), extra, correlationID), "RTU").ConfigureAwait(false);
+						var request = new RequestInfo(session, serviceName, objectName, verb, query, requestInfo.Get<Dictionary<string, string>>("Header"), requestInfo.Get<string>("Body"), extra, correlationID);
+						if (serviceName.IsEquals("Users"))
+							request.Extra["Signature"] = verb.IsEquals("POST") || verb.IsEquals("PUT")
+								? request.Body.GetHMACSHA256(Base.AspNet.Global.ValidationKey)
+								: (request.Header.ContainsKey("x-app-token") ? request.Header["x-app-token"] : "none").GetHMACSHA256(Base.AspNet.Global.ValidationKey);
+						var data = await InternalAPIs.CallServiceAsync(request, "RTU").ConfigureAwait(false);
 
 						// send the update message
 						var objectIdentity = query != null && query.ContainsKey("object-identity") ? query["object-identity"] : null;

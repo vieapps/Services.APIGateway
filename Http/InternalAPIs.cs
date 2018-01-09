@@ -156,10 +156,10 @@ namespace net.vieapps.Services.APIGateway
 					if (!string.IsNullOrWhiteSpace(email))
 						try
 						{
-							email = CryptoService.RSADecrypt(Base.AspNet.Global.RSA, email);
+							email = Base.AspNet.Global.RSA.Decrypt(email);
 							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
 							{
-								{ "Email", email.Encrypt() }
+								{ "Email", email.Encrypt(Base.AspNet.Global.EncryptionKey) }
 							};
 						}
 						catch (Exception ex)
@@ -172,10 +172,10 @@ namespace net.vieapps.Services.APIGateway
 					if (!string.IsNullOrWhiteSpace(password))
 						try
 						{
-							password = CryptoService.RSADecrypt(Base.AspNet.Global.RSA, password);
+							password = Base.AspNet.Global.RSA.Decrypt(password);
 							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
 							{
-								{ "Password", password.Encrypt() }
+								{ "Password", password.Encrypt(Base.AspNet.Global.EncryptionKey) }
 							};
 						}
 						catch (Exception ex)
@@ -188,10 +188,10 @@ namespace net.vieapps.Services.APIGateway
 					if (!string.IsNullOrWhiteSpace(oldPassword))
 						try
 						{
-							oldPassword = CryptoService.RSADecrypt(Base.AspNet.Global.RSA, oldPassword);
+							oldPassword = Base.AspNet.Global.RSA.Decrypt(oldPassword);
 							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
 							{
-								{ "OldPassword", oldPassword.Encrypt() }
+								{ "OldPassword", oldPassword.Encrypt(Base.AspNet.Global.EncryptionKey) }
 							};
 						}
 						catch (Exception ex)
@@ -353,9 +353,13 @@ namespace net.vieapps.Services.APIGateway
 							throw new InvalidRequestException();
 
 						// register with user service
+						var body = session.ToString(Formatting.None);
 						await Task.WhenAll(
-							InternalAPIs.CallServiceAsync(requestInfo.Session, "Users", "Session", "POST", session.ToString(Formatting.None)),
-							Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 180)
+							InternalAPIs.CallServiceAsync(requestInfo.Session, "Users", "Session", "POST", body, new Dictionary<string, string>()
+							{
+								{ "Signature", body.GetHMACSHA256(Base.AspNet.Global.ValidationKey) }
+							}, requestInfo.CorrelationID),
+							Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, body, 180)
 						).ConfigureAwait(false);
 					}
 
@@ -382,29 +386,36 @@ namespace net.vieapps.Services.APIGateway
 				try
 				{
 					// call service to get session
-					var session = await InternalAPIs.CallServiceAsync(requestInfo.Session, "Users", "Session").ConfigureAwait(false);
+					var session = await InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Session", "GET", requestInfo.Query, requestInfo.Header, null, new Dictionary<string, string>()
+					{
+						{ "Signature", requestInfo.Header["x-app-token"].GetHMACSHA256(Base.AspNet.Global.ValidationKey) }
+					}, requestInfo.CorrelationID)).ConfigureAwait(false);
 					var jsonUserID = session?["UserID"];
 					var jsonAccessToken = session?["AccessToken"];
 
 					// verify access token
 					if (jsonUserID == null || !(jsonUserID is JValue) || (jsonUserID as JValue).Value == null || !requestInfo.Session.User.ID.Equals((jsonUserID as JValue).Value as string))
 						throw new InvalidTokenException();
-					else if (jsonAccessToken == null || !(jsonAccessToken is JValue) || (jsonAccessToken as JValue).Value == null || !accessToken.Equals(((jsonAccessToken as JValue).Value as string).Decrypt()))
+					else if (jsonAccessToken == null || !(jsonAccessToken is JValue) || (jsonAccessToken as JValue).Value == null || !accessToken.Equals(((jsonAccessToken as JValue).Value as string).Decrypt(Base.AspNet.Global.EncryptionKey)))
 						throw new TokenRevokedException();
 
 					// update session
 					session["RenewedAt"] = DateTime.Now;
 					session["ExpiredAt"] = DateTime.Now.AddDays(60);
-					session["AccessToken"] = ((jsonAccessToken as JValue).Value as string).Decrypt();
+					session["AccessToken"] = ((jsonAccessToken as JValue).Value as string).Decrypt(Base.AspNet.Global.EncryptionKey);
 					session["IP"] = requestInfo.Session.IP;
 					session["DeviceID"] = requestInfo.Session.DeviceID;
 					session["AppInfo"] = requestInfo.Session.AppName + " @ " + requestInfo.Session.AppPlatform;
 					session["Online"] = true;
 
 					// register with user service
+					var body = session.ToString(Formatting.None);
 					await Task.WhenAll(
-						InternalAPIs.CallServiceAsync(requestInfo.Session, "Users", "Session", "POST", session.ToString(Formatting.None)),
-						Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 180)
+						InternalAPIs.CallServiceAsync(requestInfo.Session, "Users", "Session", "POST", body, new Dictionary<string, string>()
+						{
+							{ "Signature", body.GetHMACSHA256(Base.AspNet.Global.ValidationKey) }
+						}, requestInfo.CorrelationID),
+						Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, body, 180)
 					).ConfigureAwait(false);
 
 					// response
@@ -433,12 +444,12 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				// validate
-				var body = requestInfo.GetBodyExpando();
-				if (body == null)
+				var request = requestInfo.GetBodyExpando();
+				if (request == null)
 					throw new InvalidTokenException("Sign-in JSON is invalid (empty)");
 
-				var email = body.Get<string>("Email");
-				var password = body.Get<string>("Password");
+				var email = request.Get<string>("Email");
+				var password = request.Get<string>("Password");
 
 				if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
 					throw new InvalidTokenException("Sign-in JSON is invalid (email/password is null or empty)");
@@ -454,18 +465,22 @@ namespace net.vieapps.Services.APIGateway
 				}
 
 				// call service to perform sign in
+				var body = new JObject()
+				{
+					{ "Type", request.Get("Type", "BuiltIn") },
+					{ "Email", email.Encrypt(Base.AspNet.Global.EncryptionKey) },
+					{ "Password", password.Encrypt(Base.AspNet.Global.EncryptionKey) },
+				}.ToString(Formatting.None);
 				var json = await InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session)
 				{
 					ServiceName = "Users",
 					ObjectName = "Session",
 					Verb = "PUT",
-					Body = new JObject()
+					Body = body,
+					Extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
 					{
-						{ "Email", email.Encrypt(Base.AspNet.Global.EncryptionKey) },
-						{ "Password", password.Encrypt(Base.AspNet.Global.EncryptionKey) },
-						{ "Type", body.Get("Type", "BuiltIn") },
-						{ "Signature", (email + password).GetHMACSHA256(Base.AspNet.Global.ValidationKey) }
-					}.ToString(Formatting.None),
+						{ "Signature", body.GetHMACSHA256(Base.AspNet.Global.ValidationKey) }
+					},
 					CorrelationID = requestInfo.CorrelationID
 				}).ConfigureAwait(false);
 
@@ -629,8 +644,12 @@ namespace net.vieapps.Services.APIGateway
 					throw new InvalidRequestException();
 
 				// call service to perform sign out
-				await InternalAPIs.CallServiceAsync(requestInfo.Session, "Users", "Session", "DELETE").ConfigureAwait(false);
+				await InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Session", "DELETE", requestInfo.Query, requestInfo.Header, null, new Dictionary<string, string>()
+				{
+					{ "Signature", requestInfo.Header["x-app-token"].GetHMACSHA256(Base.AspNet.Global.ValidationKey) }
+				}, requestInfo.CorrelationID)).ConfigureAwait(false);
 
+				// remove cache and send update message
 				await Task.WhenAll(
 					Global.Cache.RemoveAsync("Session#" + requestInfo.Session.SessionID),
 					requestInfo.Session.SendOnlineStatusAsync(false)
@@ -715,17 +734,23 @@ namespace net.vieapps.Services.APIGateway
 		static async Task CreateSessionAsync(RequestInfo requestInfo, string accessToken = null)
 		{
 			var session = InternalAPIs.GenerateSessionJson(requestInfo, accessToken);
+			var body = session.ToString(Formatting.None);
+			var signature = body.GetHMACSHA256(Base.AspNet.Global.ValidationKey);
 			await InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session)
 			{
 				ServiceName = "Users",
 				ObjectName = "Session",
 				Verb = "POST",
-				Body = session.ToString(Formatting.None),
+				Body = body,
+				Extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+				{
+					{ "Signature", signature }
+				},
 				CorrelationID = requestInfo.CorrelationID
 			}).ConfigureAwait(false);
 
 			await Task.WhenAll(
-				Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session.ToString(Formatting.None), 180),
+				Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, body, 180),
 				requestInfo.Session.SendOnlineStatusAsync(true)
 			).ConfigureAwait(false);
 		}

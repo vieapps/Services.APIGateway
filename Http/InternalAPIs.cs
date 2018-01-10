@@ -64,7 +64,9 @@ namespace net.vieapps.Services.APIGateway
 					? false
 					: isSessionInitialized && isSpecialUser && !request.Query.ContainsKey("register")
 						? false
-						: true;
+						: request.ServiceName.IsEquals("indexes")
+							? false
+							: true;
 
 				var appToken = request.GetParameter("x-app-token");
 				if (!string.IsNullOrWhiteSpace(appToken))

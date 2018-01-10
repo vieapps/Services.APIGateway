@@ -697,7 +697,10 @@ namespace net.vieapps.Services.APIGateway
 			// register the session
 			var session = InternalAPIs.GenerateSessionJson(requestInfo, accessToken).ToString(Formatting.None);
 			await Task.WhenAll(
-				InternalAPIs.CallServiceAsync(requestInfo.Session, "Users", "Session", "POST", session),
+				InternalAPIs.CallServiceAsync(requestInfo.Session, "Users", "Session", "POST", session, new Dictionary<string, string>()
+				{
+					{ "Signature", session.GetHMACSHA256(Base.AspNet.Global.ValidationKey) }
+				}, requestInfo.CorrelationID),
 				requestInfo.Session.SendOnlineStatusAsync(true),
 				Global.Cache.SetAsync("Session#" + requestInfo.Session.SessionID, session, 180)
 			).ConfigureAwait(false);

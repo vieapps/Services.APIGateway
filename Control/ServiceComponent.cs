@@ -228,7 +228,11 @@ namespace net.vieapps.Services.APIGateway
 			this._communicator?.Dispose();
 			this._loggingService?.FlushAll();
 
-			Global.CancellationTokenSource.Cancel();
+			try
+			{
+				Global.CancellationTokenSource.Cancel();
+			}
+			catch { }
 			Global.CancellationTokenSource.Dispose();
 
 			this._helperServices.ForEach(async (s) => await s.DisposeAsync().ConfigureAwait(false));

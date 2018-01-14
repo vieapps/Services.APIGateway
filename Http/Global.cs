@@ -467,7 +467,17 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static string GetJSONWebToken(this Session session, string accessToken = null)
 		{
-			return User.GetJSONWebToken(session.User.ID, accessToken ?? session.User.GetAccessToken(), session.SessionID, Base.AspNet.Global.EncryptionKey, Base.AspNet.Global.JWTKey);
+			return User.GetJSONWebToken(
+				session.User.ID,
+				accessToken ?? session.User.GetAccessToken(),
+				session.SessionID,
+				Base.AspNet.Global.EncryptionKey,
+				Base.AspNet.Global.JWTKey,
+				(payload) =>
+				{
+					payload.Add(new JProperty("j2f", $"{session.Verification.ToString()}|{UtilityService.NewUID}".Encrypt(Base.AspNet.Global.EncryptionKey)));
+				}
+			);
 		}
 
 		internal static string ParseJSONWebToken(this Session session, string jwt)
@@ -478,7 +488,14 @@ namespace net.vieapps.Services.APIGateway
 			var sessionID = "";
 			try
 			{
-				var info = User.ParseJSONWebToken(jwt, Base.AspNet.Global.EncryptionKey, Base.AspNet.Global.JWTKey);
+				var info = User.ParseJSONWebToken(jwt, Base.AspNet.Global.EncryptionKey, Base.AspNet.Global.JWTKey, (payload) =>
+				{
+					try
+					{
+						session.Verification = "true".IsEquals((payload["j2f"] as JValue).Value.ToString().Decrypt(Base.AspNet.Global.EncryptionKey).ToArray("|").First());
+					}
+					catch { }
+				});
 				userID = info.Item1;
 				accessToken = info.Item2;
 				sessionID = info.Item3;
@@ -515,18 +532,30 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				await Base.AspNet.Global.RTUService.SendInterCommunicateMessageAsync(message, Base.AspNet.Global.CancellationTokenSource.Token).ConfigureAwait(false);
+#if DEBUG || PROCESSLOGS
+				await Base.AspNet.Global.WriteLogsAsync(UtilityService.NewUID, "RTU", $"Send an inter-communicate message successful\r\n{message.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
+#endif
 			}
-			catch { }
+			catch (Exception ex)
+			{
+				await Base.AspNet.Global.WriteLogsAsync(UtilityService.NewUID, "RTU", "Error occurred while sending an inter-communicate message", ex).ConfigureAwait(false);
+			}
 		}
 
 		static void ProcessInterCommunicateMessage(CommunicateMessage message)
 		{
-			if (message.Type.Equals("Users#Session"))
+#if DEBUG || PROCESSLOGS
+			Base.AspNet.Global.WriteLogs(UtilityService.NewUID, "RTU", $"Got an inter-communicate message\r\n{message.ToJson().ToString(Formatting.Indented)}");
+#endif
+
+			// update users' sessions with new access token
+			if (message.Type.Equals("Session#Update"))
 			{
 				var sessionID = (message.Data["Session"] as JValue).Value as string;
 				var user = (message.Data["User"] as JObject).FromJson<User>();
 				var deviceID = (message.Data["Device"] as JValue).Value as string;
-				var accessToken = ((message.Data["Token"] as JValue).Value as string).Decrypt();
+				var verification = (message.Data["Verification"] as JValue).Value.CastAs<bool>();
+				var accessToken = ((message.Data["Token"] as JValue).Value as string).Decrypt(Base.AspNet.Global.EncryptionKey);
 
 				Global.Cache.Remove("Session#" + sessionID);
 
@@ -534,15 +563,17 @@ namespace net.vieapps.Services.APIGateway
 				{
 					{ "ID", sessionID },
 					{ "UserID", user.ID },
-					{ "DeviceID", deviceID }
+					{ "DeviceID", deviceID },
+					{ "Mode", "Update" }
 				};
 
-				(new Session()
+				new Session()
 				{
 					SessionID = sessionID,
 					DeviceID = deviceID,
-					User = user
-				}).UpdateSessionJson(json, accessToken);
+					User = user,
+					Verification = verification
+				}.UpdateSessionJson(json, accessToken);
 
 				new UpdateMessage()
 				{
@@ -550,6 +581,43 @@ namespace net.vieapps.Services.APIGateway
 					DeviceID = deviceID,
 					Data = json
 				}.Publish();
+			}
+
+			// revoke users' sessions
+			else if (message.Type.Equals("Session#Revoke"))
+			{
+				var sessionID = (message.Data["Session"] as JValue).Value as string;
+				var user = (message.Data["User"] as JObject).FromJson<User>();
+				var deviceID = (message.Data["Device"] as JValue).Value as string;
+
+				var json = new JObject()
+				{
+					{ "ID", sessionID },
+					{ "UserID", user.ID },
+					{ "DeviceID", deviceID },
+					{ "Mode", "Revoke" }
+				};
+
+				new Session()
+				{
+					SessionID = sessionID,
+					DeviceID = deviceID,
+					User = user
+				}.UpdateSessionJson(json, null);
+
+				new UpdateMessage()
+				{
+					Type = "Users#Session",
+					DeviceID = deviceID,
+					Data = json
+				}.Publish();
+			}
+
+			// refresh users' sessions (clear cached)
+			else if (message.Type.Equals("Session#Refresh"))
+			{
+				var sessionID = (message.Data["Session"] as JValue).Value as string;
+				Global.Cache.Remove("Session#" + sessionID);
 			}
 		}
 		#endregion

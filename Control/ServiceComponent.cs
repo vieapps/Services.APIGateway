@@ -9,8 +9,6 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Reactive.Linq;
 
-using Newtonsoft.Json.Linq;
-
 using WampSharp.V2;
 using WampSharp.V2.Rpc;
 using WampSharp.V2.Core.Contracts;
@@ -18,6 +16,7 @@ using WampSharp.V2.Realm;
 using WampSharp.Core.Listener;
 
 using net.vieapps.Components.Utility;
+using net.vieapps.Components.Repository;
 #endregion
 
 namespace net.vieapps.Services.APIGateway
@@ -218,6 +217,13 @@ namespace net.vieapps.Services.APIGateway
 
 		internal void Stop()
 		{
+			try
+			{
+				Global.CancellationTokenSource.Cancel();
+			}
+			catch { }
+			Global.CancellationTokenSource.Dispose();
+
 			MailSender.SaveMessages();
 			WebHookSender.SaveMessages();
 
@@ -227,13 +233,6 @@ namespace net.vieapps.Services.APIGateway
 
 			this._communicator?.Dispose();
 			this._loggingService?.FlushAll();
-
-			try
-			{
-				Global.CancellationTokenSource.Cancel();
-			}
-			catch { }
-			Global.CancellationTokenSource.Dispose();
 
 			this._helperServices.ForEach(async (s) => await s.DisposeAsync().ConfigureAwait(false));
 
@@ -530,10 +529,10 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Register timers for working with background workers & schedulers
-		IDisposable StartTimer(Action action, int interval, int delau = 0)
+		IDisposable StartTimer(Action action, int interval, int delay = 0)
 		{
 			interval = interval < 1 ? 1 : interval;
-			var timer = Observable.Timer(TimeSpan.FromMilliseconds(delau > 0 ? delau : interval * 1000), TimeSpan.FromSeconds(interval)).Subscribe(_ => action?.Invoke());
+			var timer = Observable.Timer(TimeSpan.FromMilliseconds(delay > 0 ? delay : interval * 1000), TimeSpan.FromSeconds(interval)).Subscribe(_ => action?.Invoke());
 			this._timers.Add(timer);
 			return timer;
 		}
@@ -684,13 +683,88 @@ namespace net.vieapps.Services.APIGateway
 						});
 				});
 
+			// clean recycle-bin contents
+			var logs = this.CleanRecycleBin();
+
+			// done
 			stopwatch.Stop();
 			Global.WriteLog(
-				"The house keeper is complete the working..." + "\r\n\r\n=> " + paths.ToString("\r\n=> ") + "\r\n\r\n" +
-				"- Total of cleaned files: " + counter.ToString("###,##0") + "\r\n" +
-				"- Execution times: " + stopwatch.GetElapsedTimes()
+				"The house keeper is complete the working..." + "\r\n\r\nPaths\r\n=> " + paths.ToString("\r\n=> ") + "\r\n\r\n" +
+				"Total of cleaned files: " + counter.ToString("###,##0") + "\r\n\r\n" +
+				"Recycle-Bin\r\n\t" + logs.ToString("\r\n\t") + "\r\n\r\n" +
+				"Execution times: " + stopwatch.GetElapsedTimes()
 			);
 			this._isHouseKeeperRunning = false;
+		}
+
+		List<string> CleanRecycleBin()
+		{
+			// prepare data sources
+			var versionDataSources = new List<string>();
+			var trashDataSources = new List<string>();
+
+			$"{this._serviceHoster}.config|{this._serviceHoster.Replace(".exe", ".x86.exe")}.config".ToList("|")
+				.Where(filename => File.Exists(filename))
+				.ForEach(filename =>
+				{
+					var xml = new XmlDocument();
+					xml.LoadXml(UtilityService.ReadTextFile(filename));
+
+					if (xml.DocumentElement.SelectSingleNode("/configuration/net.vieapps.repositories") is XmlNode root)
+					{
+						var name = root.Attributes["versionDataSource"]?.Value;
+						if (!string.IsNullOrWhiteSpace(name) && versionDataSources.IndexOf(name) < 0)
+							versionDataSources.Add(name);
+
+						name = root.Attributes["trashDataSource"]?.Value;
+						if (!string.IsNullOrWhiteSpace(name) && trashDataSources.IndexOf(name) < 0)
+							trashDataSources.Add(name);
+
+						if (root.SelectNodes("./repository") is XmlNodeList repositories)
+							foreach (XmlNode repository in repositories)
+							{
+								name = repository.Attributes["versionDataSource"]?.Value;
+								if (!string.IsNullOrWhiteSpace(name) && versionDataSources.IndexOf(name) < 0)
+									versionDataSources.Add(name);
+
+								name = repository.Attributes["trashDataSource"]?.Value;
+								if (!string.IsNullOrWhiteSpace(name) && trashDataSources.IndexOf(name) < 0)
+									trashDataSources.Add(name);
+							}
+					}
+				});
+
+			var logs = new List<string>();
+
+			// clean version contents
+			versionDataSources.ForEach(dataSource =>
+			{
+				try
+				{
+					RepositoryMediator.CleanVersionContents(dataSource);
+					logs.Add($"Clean old version contents of data source [{dataSource}] successful");
+				}
+				catch (Exception ex)
+				{
+					logs.Add($"Error occurred while cleaning old version contents of data source [{dataSource}]: {ex.Message}\r\nStack:{ex.StackTrace}");
+				}
+			});
+
+			// clean trash contents
+			trashDataSources.ForEach(dataSource =>
+			{
+				try
+				{
+					RepositoryMediator.CleanTrashContents(dataSource);
+					logs.Add($"Clean old trash contents of data source [{dataSource}] successful");
+				}
+				catch (Exception ex)
+				{
+					logs.Add($"Error occurred while cleaning old trash contents of data source [{dataSource}]: {ex.Message}\r\nStack:{ex.StackTrace}");
+				}
+			});
+
+			return logs;
 		}
 		#endregion
 

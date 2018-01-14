@@ -60,7 +60,7 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="MySqlConnector">
-      <Version>0.34.0</Version>
+      <Version>0.34.2</Version>
     </PackageReference>
     <PackageReference Include="Npgsql">
       <Version>3.2.6</Version>

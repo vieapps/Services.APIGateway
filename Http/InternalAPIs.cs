@@ -144,7 +144,7 @@ namespace net.vieapps.Services.APIGateway
 						try
 						{
 							var info = JObject.Parse(captcha);
-							if (!Captcha.IsCodeValid((info["Registered"] as JValue).Value as string, (info["Input"] as JValue).Value as string))
+							if (!CaptchaService.IsCodeValid((info["Registered"] as JValue).Value as string, (info["Input"] as JValue).Value as string))
 								throw new InformationInvalidException("Captcha code is invalid");
 						}
 						catch (Exception)
@@ -408,6 +408,7 @@ namespace net.vieapps.Services.APIGateway
 					session["IP"] = requestInfo.Session.IP;
 					session["DeviceID"] = requestInfo.Session.DeviceID;
 					session["AppInfo"] = requestInfo.Session.AppName + " @ " + requestInfo.Session.AppPlatform;
+					session["OSInfo"] = context.GetOSInfo() + " [" + context.Request.UserAgent + "]";
 					session["Online"] = true;
 
 					// register with user service
@@ -597,7 +598,7 @@ namespace net.vieapps.Services.APIGateway
 				requestInfo.Session.User = json.FromJson<User>();
 				requestInfo.Session.SessionID = UtilityService.NewUID;
 				var accessToken = User.GetAccessToken(requestInfo.Session.User, Base.AspNet.Global.RSA, Base.AspNet.Global.EncryptionKey);
-				await InternalAPIs.CreateSessionAsync(requestInfo, accessToken).ConfigureAwait(false);
+				await InternalAPIs.CreateSessionAsync(requestInfo, accessToken, true).ConfigureAwait(false);
 
 				// response
 				json = new JObject()
@@ -719,7 +720,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Create a session
-		static JObject GenerateSessionJson(RequestInfo requestInfo, string accessToken = null, bool isOnline = true)
+		static JObject GenerateSessionJson(RequestInfo requestInfo, string accessToken = null, bool is2FAVerified = false, bool isOnline = true)
 		{
 			return new JObject()
 			{
@@ -732,24 +733,21 @@ namespace net.vieapps.Services.APIGateway
 				{ "IP", requestInfo.Session.IP },
 				{ "DeviceID", requestInfo.Session.DeviceID },
 				{ "AppInfo", requestInfo.Session.AppName + " @ " + requestInfo.Session.AppPlatform },
+				{ "OSInfo", requestInfo.Header.ContainsKey("user-agent") ? requestInfo.Header["user-agent"].GetOSInfo() + " [" + requestInfo.Header["user-agent"] + "]" : "Unknown" },
+				{ "Verification", is2FAVerified },
 				{ "Online", isOnline }
 			};
 		}
 
-		static async Task CreateSessionAsync(RequestInfo requestInfo, string accessToken = null)
+		static async Task CreateSessionAsync(RequestInfo requestInfo, string accessToken = null, bool is2FAVerified = false)
 		{
-			var session = InternalAPIs.GenerateSessionJson(requestInfo, accessToken);
-			var body = session.ToString(Formatting.None);
-			var signature = body.GetHMACSHA256(Base.AspNet.Global.ValidationKey);
-			await InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session)
+			var body = InternalAPIs.GenerateSessionJson(requestInfo, accessToken, is2FAVerified).ToString(Formatting.None);
+			await InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Session", "POST")
 			{
-				ServiceName = "Users",
-				ObjectName = "Session",
-				Verb = "POST",
 				Body = body,
 				Extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
 				{
-					{ "Signature", signature }
+					{ "Signature", body.GetHMACSHA256(Base.AspNet.Global.ValidationKey) }
 				},
 				CorrelationID = requestInfo.CorrelationID
 			}).ConfigureAwait(false);
@@ -771,7 +769,7 @@ namespace net.vieapps.Services.APIGateway
 				return true;
 
 			// check with user service
-			var result = await InternalAPIs.CallServiceAsync(session, "Users", "Session", "GET", null, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+			var result = await InternalAPIs.CallServiceAsync(session, "Users", "Session", "GET", null, new Dictionary<string, string>()
 			{
 				{ "Exist", "" }
 			}).ConfigureAwait(false);
@@ -800,15 +798,15 @@ namespace net.vieapps.Services.APIGateway
 
 			// check with user service
 			else
-				await InternalAPIs.CallServiceAsync(session, "Users", "Session", "GET", null, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+				await InternalAPIs.CallServiceAsync(session, "Users", "Session", "GET", null, new Dictionary<string, string>()
 				{
 					{ "Verify", "" },
-					{ "AccessToken", accessToken.Encrypt() }
+					{ "AccessToken", accessToken.Encrypt(Base.AspNet.Global.EncryptionKey) }
 				}).ConfigureAwait(false);
 		}
 		#endregion
 
-		#region Update sessions (revoke)
+		#region Update sessions
 		internal static async Task RequestUpdateSessionsAsync(RequestInfo requestInfo)
 		{
 			// check
@@ -817,24 +815,20 @@ namespace net.vieapps.Services.APIGateway
 				return;
 
 			// get user information
-			var user = (await InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session)
+			var user = (await InternalAPIs.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Account")
 			{
-				ServiceName = "Users",
-				ObjectName = "Account",
-				Verb = "GET",
 				Query = requestInfo.Query,
 				CorrelationID = requestInfo.CorrelationID
 			}).ConfigureAwait(false)).FromJson<User>();
 
 			// send inter-communicate message to tell services update old sessions with new access token
-			await Global.SendInterCommunicateMessageAsync(new CommunicateMessage()
+			await Global.SendInterCommunicateMessageAsync(new CommunicateMessage("Users")
 			{
-				ServiceName = "Users",
 				Type = "Session",
 				Data = new JObject()
 				{
 					{ "UserID", user.ID },
-					{ "AccessToken", User.GetAccessToken(user, Base.AspNet.Global.RSA, Base.AspNet.Global.EncryptionKey).Encrypt() }
+					{ "AccessToken", User.GetAccessToken(user, Base.AspNet.Global.RSA, Base.AspNet.Global.EncryptionKey).Encrypt(Base.AspNet.Global.EncryptionKey) }
 				}
 			}).ConfigureAwait(false);
 		}
@@ -906,13 +900,13 @@ namespace net.vieapps.Services.APIGateway
 			json.Add(new JProperty("JWT", session.GetJSONWebToken(accessToken)));
 		}
 
+		//internal static async Task SendOnlineStatusAsync(this Session session, bool isOnline)
 		internal static Task SendOnlineStatusAsync(this Session session, bool isOnline)
 		{
-			return session.User == null || session.User.ID.Equals("")
+			return session.User == null || session.User.ID.Equals("") || session.User.IsSystemAccount
 				? Task.CompletedTask
-				: Global.SendInterCommunicateMessageAsync(new CommunicateMessage()
+				: Global.SendInterCommunicateMessageAsync(new CommunicateMessage("Users")
 				{
-					ServiceName = "Users",
 					Type = "OnlineStatus",
 					Data = new JObject()
 					{
@@ -930,11 +924,11 @@ namespace net.vieapps.Services.APIGateway
 		static async Task WriteResponseAsync(this HttpContext context, JObject json)
 		{
 			context.Response.ContentType = "application/json";
-			await context.Response.Output.WriteAsync((new JObject()
+			await context.Response.Output.WriteAsync(new JObject()
 			{
 				{ "Status", "OK" },
 				{ "Data", json }
-			}).ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None)).ConfigureAwait(false);
+			}.ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None)).ConfigureAwait(false);
 		}
 		#endregion
 

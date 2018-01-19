@@ -9,14 +9,14 @@
 
 		protected override void OnStart(string[] args)
 		{
-			Global.InitializeLog();
+			Global.InitializeEventLog();
 			Global.Component.Start(args);
 		}
 
 		protected override void OnStop()
 		{
 			Global.Component.Dispose();
-			Global.DisposeLog();
+			Global.DisposeEventLog();
 		}
 	}
 }

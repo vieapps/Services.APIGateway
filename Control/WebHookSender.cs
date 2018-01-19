@@ -56,7 +56,10 @@ namespace net.vieapps.Services.APIGateway
 						WebHookSender.Messages.Add(message.ID, new WebHookInfo() { Message = message, Time = time, Counters = counters });
 					}
 				}
-				catch { }
+				catch (Exception ex)
+				{
+					Global.WriteLog("Error occurred while loading messages", ex, true, null, "webhook", 36429);
+				}
 
 			// new messages
 			if (Directory.Exists(Global.WebHooksPath))
@@ -68,7 +71,10 @@ namespace net.vieapps.Services.APIGateway
 							var msg = WebHookMessage.Load(file.FullName);
 							WebHookSender.Messages.Add(msg.ID, new WebHookInfo() { Message = msg, Time = msg.SendingTime, Counters = 0 });
 						}
-						catch { }
+						catch (Exception ex)
+						{
+							Global.WriteLog("Error occurred while loading messages", ex, true, null, "webhook", 36429);
+						}
 						file.Delete();
 					});
 		}
@@ -141,7 +147,7 @@ namespace net.vieapps.Services.APIGateway
 				log += "- Status: Update queue to re-send at [" + time.ToDTString() + "]";
 			}
 
-			Global.WriteLog(log, ex, true, null, "webhook");
+			Global.WriteLog(log, ex, true, null, "webhook", 36429);
 		}
 		#endregion
 

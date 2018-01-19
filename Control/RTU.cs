@@ -4,20 +4,28 @@ using System.Linq;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-
 using System.Reactive.Subjects;
 using System.Reactive.Linq;
 
-#if DEBUG
 using Newtonsoft.Json;
-#endif
+
+using net.vieapps.Components.Utility;
 #endregion
 
 namespace net.vieapps.Services.APIGateway
 {
 	public class RTUService : IRTUService
 	{
-		public RTUService() { }
+		bool _updateEventLog = false;
+
+		public RTUService()
+		{
+#if DEBUG || RUTLOGS
+			this._updateEventLog = true;
+#else
+			this._updateEventLog = "true".IsEquals(UtilityService.GetAppSetting("Logs:RTU-EventLogs", "false"));
+#endif
+		}
 
 		#region Send update messages
 		ISubject<UpdateMessage> _updateSubject = null;
@@ -34,15 +42,14 @@ namespace net.vieapps.Services.APIGateway
 				{
 					this.GetUpdateSubject();
 					this._updateSubject.OnNext(message);
-#if DEBUG
-					Global.WriteLog(
-						"----- [RTU Service] ---------------" + "\r\n" +
-						"Publish an update message successful" + "\r\n" +
-						"- Device: " + message.DeviceID + "\r\n" +
-						"- Excluded: " + (string.IsNullOrWhiteSpace(message.ExcludedDeviceID) ? "None" : message.ExcludedDeviceID) + "\r\n" +
-						"- Message: " + message.Data.ToString(Formatting.None) + "\r\n"
-					);
-#endif
+					if (this._updateEventLog)
+						Global.WriteLog(
+							"----- [RTU Service] ---------------" + "\r\n" +
+							"Publish an update message successful" + "\r\n" +
+							"- Device: " + message.DeviceID + "\r\n" +
+							"- Excluded: " + (string.IsNullOrWhiteSpace(message.ExcludedDeviceID) ? "None" : message.ExcludedDeviceID) + "\r\n" +
+							"- Message: " + message.Data.ToString(Formatting.None) + "\r\n"
+						);
 				}
 				catch (Exception ex)
 				{
@@ -70,29 +77,27 @@ namespace net.vieapps.Services.APIGateway
 							message =>
 							{
 								this._updateSubject.OnNext(message);
-#if DEBUG
-								Global.WriteLog(
-									"----- [RTU Service] ---------------" + "\r\n" +
-									"Publish an update message successful" + "\r\n" +
-									"- Device: " + message.DeviceID + "\r\n" +
-									"- Excluded: " + (string.IsNullOrWhiteSpace(message.ExcludedDeviceID) ? "None" : message.ExcludedDeviceID) + "\r\n" +
-									"- Message: " + message.Data.ToString(Formatting.None) + "\r\n"
-								);
-#endif
+								if (this._updateEventLog)
+									Global.WriteLog(
+										"----- [RTU Service] ---------------" + "\r\n" +
+										"Publish an update message successful" + "\r\n" +
+										"- Device: " + message.DeviceID + "\r\n" +
+										"- Excluded: " + (string.IsNullOrWhiteSpace(message.ExcludedDeviceID) ? "None" : message.ExcludedDeviceID) + "\r\n" +
+										"- Message: " + message.Data.ToString(Formatting.None) + "\r\n"
+									);
 							},
 							exception => Global.WriteLog("Error occurred while publishing an update message", exception)
 						)
 					)
 					{
-#if DEBUG
-						Global.WriteLog(
-							"----- [RTU Service] ---------------" + "\r\n" +
-							"Publish the update messages successful" + "\r\n" +
-							"- Device: " + deviceID + "\r\n" +
-							"- Excluded: " + (string.IsNullOrWhiteSpace(excludedDeviceID) ? "None" : excludedDeviceID) + "\r\n" +
-							"- Total of messages: " + messages.Count.ToString() + "\r\n"
-						);
-#endif
+						if (this._updateEventLog)
+							Global.WriteLog(
+								"----- [RTU Service] ---------------" + "\r\n" +
+								"Publish the update messages successful" + "\r\n" +
+								"- Device: " + deviceID + "\r\n" +
+								"- Excluded: " + (string.IsNullOrWhiteSpace(excludedDeviceID) ? "None" : excludedDeviceID) + "\r\n" +
+								"- Total of messages: " + messages.Count.ToString() + "\r\n"
+							);
 					}
 				}
 				catch (Exception ex)
@@ -132,13 +137,12 @@ namespace net.vieapps.Services.APIGateway
 				try
 				{
 					this.GetCommunicateSubject(message.ServiceName).OnNext(message);
-#if DEBUG
-					Global.WriteLog(
-						"----- [RTU Service] ---------------" + "\r\n" +
-						"Publish an inter-communicate message successful" + "\r\n" +
-						"- Message: " + message.Data.ToString(Formatting.None) + "\r\n"
-					);
-#endif
+					if (this._updateEventLog)
+						Global.WriteLog(
+							"----- [RTU Service] ---------------" + "\r\n" +
+							"Publish an inter-communicate message successful" + "\r\n" +
+							"- Message: " + message.Data.ToString(Formatting.None) + "\r\n"
+						);
 				}
 				catch (Exception ex)
 				{
@@ -179,26 +183,24 @@ namespace net.vieapps.Services.APIGateway
 							message =>
 							{
 								subject.OnNext(message);
-#if DEBUG
-								Global.WriteLog(
-									"----- [RTU Service] ---------------" + "\r\n" +
-									"Publish an inter-communicate message successful" + "\r\n" +
-									"- Message: " + message.Data.ToString(Formatting.None) + "\r\n"
-								);
-#endif
+								if (this._updateEventLog)
+									Global.WriteLog(
+										"----- [RTU Service] ---------------" + "\r\n" +
+										"Publish an inter-communicate message successful" + "\r\n" +
+										"- Message: " + message.Data.ToString(Formatting.None) + "\r\n"
+									);
 							},
 							exception => Global.WriteLog("Error occurred while publishing an inter-communicate message", exception)
 						)
 					)
 					{
-#if DEBUG
-						Global.WriteLog(
-							"----- [RTU Service] ---------------" + "\r\n" +
-							"Publish the inter-communicate messages successful" + "\r\n" +
-							"- Destination: net.vieapps.services." + serviceName.ToLower() + "\r\n" +
-							"- Total of messages: " + messages.Count.ToString() + "\r\n"
-						);
-#endif
+						if (this._updateEventLog)
+							Global.WriteLog(
+								"----- [RTU Service] ---------------" + "\r\n" +
+								"Publish the inter-communicate messages successful" + "\r\n" +
+								"- Destination: net.vieapps.services." + serviceName.ToLower() + "\r\n" +
+								"- Total of messages: " + messages.Count.ToString() + "\r\n"
+							);
 					}
 				}
 				catch (Exception ex)

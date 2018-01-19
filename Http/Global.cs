@@ -217,8 +217,8 @@ namespace net.vieapps.Services.APIGateway
 				if (!string.IsNullOrWhiteSpace(key) && !Global.QueryExcluded.Contains(key))
 					url += "&" + key + "=" + app.Request.QueryString[key].UrlEncode();
 
-#if DEBUG || REQUESTLOGS || URLREWRITERLOGS
-#if DEBUG || URLREWRITERLOGS
+#if DEBUG || REQUESTLOGS || REWRITELOGS
+#if DEBUG || REWRITELOGS
 			logs.Add($"Rewrite URL: [{app.Context.Request.Url.Scheme}://{app.Context.Request.Url.Host + app.Context.Request.RawUrl}] => [{app.Context.Request.Url.Scheme}://{app.Context.Request.Url.Host + url}]");
 #endif
 			Base.AspNet.Global.WriteLogs(logs);

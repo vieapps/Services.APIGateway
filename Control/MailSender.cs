@@ -57,7 +57,10 @@ namespace net.vieapps.Services.APIGateway
 						MailSender.Messages.Add(message.ID, new MailInfo() { Message = message, Time = time, Counters = counters });
 					}
 				}
-				catch { }
+				catch (Exception ex)
+				{
+					Global.WriteLog("Error occurred while loading messages", ex, true, null, "mail", 36429);
+				}
 
 			// new messages
 			if (Directory.Exists(Global.EmailsPath))
@@ -69,7 +72,10 @@ namespace net.vieapps.Services.APIGateway
 							var msg = EmailMessage.Load(file.FullName);
 							MailSender.Messages.Add(msg.ID, new MailInfo() { Message = msg, Time = msg.SendingTime, Counters = 0 });
 						}
-						catch { }
+						catch (Exception ex)
+						{
+							Global.WriteLog("Error occurred while loading messages", ex, true, null, "mail", 36429);
+						}
 						file.Delete();
 					});
 		}
@@ -146,7 +152,7 @@ namespace net.vieapps.Services.APIGateway
 				log += "- Status: Update queue to re-send at [" + time.ToDTString() + "]";
 			}
 
-			Global.WriteLog(log, ex, true, null, "mail");
+			Global.WriteLog(log, ex, true, null, "mail", 36429);
 		}
 		#endregion
 

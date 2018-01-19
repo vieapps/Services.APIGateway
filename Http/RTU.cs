@@ -146,12 +146,17 @@ namespace net.vieapps.Services.APIGateway
 			if (context.WebSocket.State.Equals(WebSocketState.Open))
 				try
 				{
+					while (context.Items.Contains("Sending"))
+						await Task.Delay(123).ConfigureAwait(false);
+
+					context.Items["Sending"] = "yes";
 					await context.WebSocket.SendAsync(new ArraySegment<byte>(message.ToBytes()), WebSocketMessageType.Text, true, Base.AspNet.Global.CancellationTokenSource.Token).ConfigureAwait(false);
+					context.Items.Remove("Sending");
 				}
 				catch (OperationCanceledException) { }
 				catch (Exception ex)
 				{
-					await Base.AspNet.Global.WriteLogsAsync(Base.AspNet.Global.GetCorrelationID(context.Items), "RTU", $"Error occurred while sending message via WebSocket: {message}", ex).ConfigureAwait(false);
+					await Base.AspNet.Global.WriteLogsAsync(Base.AspNet.Global.GetCorrelationID(context.Items), "RTU", $"Error occurred while sending message via WebSocket", ex).ConfigureAwait(false);
 				}
 		}
 

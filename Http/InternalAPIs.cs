@@ -23,7 +23,7 @@ namespace net.vieapps.Services.APIGateway
 		internal static async Task ProcessRequestAsync(HttpContext context)
 		{
 
-#if DEBUG || PROCESSLOGS
+#if DEBUG || PROCESSLOGS || REQUESTLOGS
 			await Base.AspNet.Global.WriteLogsAsync(Base.AspNet.Global.GetCorrelationID(context.Items), "Internal", $"Begin process [{context.Request.HttpMethod}]: {context.Request.Url.Scheme}://{context.Request.Url.Host + context.Request.RawUrl} ({context.Request.UserHostAddress})").ConfigureAwait(false);
 #endif
 
@@ -85,7 +85,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-#if DEBUG || PROCESSLOGS
+#if DEBUG || PROCESSLOGS || REQUESTLOGS
 				await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Internal", "Error occurred while preparing token", ex).ConfigureAwait(false);
 #endif
 				await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Security.Errors", "Error occurred while preparing token", ex).ConfigureAwait(false);
@@ -110,13 +110,14 @@ namespace net.vieapps.Services.APIGateway
 				{
 					request.Body = context.Request.QueryString["x-body"].Url64Decode();
 				}
-				catch
+				catch (Exception ex)
 				{
+					await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Internal", "Error occurred while parsing body of 'x-body' parameter", ex).ConfigureAwait(false);
 					request.Body = "";
 				}
 			#endregion
 
-#if DEBUG || PROCESSLOGS
+#if DEBUG || PROCESSLOGS || REQUESTLOGS
 			await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Internal", $"Request:\r\n{request.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
 #endif
 
@@ -235,7 +236,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-#if DEBUG || PROCESSLOGS
+#if DEBUG || PROCESSLOGS || REQUESTLOGS
 					await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Internal", "Error occurred while processing account", ex).ConfigureAwait(false);
 #endif
 					await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Security.Errors", "Error occurred while processing account", ex).ConfigureAwait(false);
@@ -283,7 +284,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-#if DEBUG || PROCESSLOGS
+#if DEBUG || PROCESSLOGS || REQUESTLOGS
 					await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Internal", "Error occurred while activating", ex).ConfigureAwait(false);
 #endif
 					await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Security.Errors", "Error occurred while activating", ex).ConfigureAwait(false);
@@ -305,13 +306,13 @@ namespace net.vieapps.Services.APIGateway
 					// response
 					await context.WriteResponseAsync(response).ConfigureAwait(false);
 
-#if DEBUG || PROCESSLOGS
+#if DEBUG || PROCESSLOGS || REQUESTLOGS
 					await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Internal", $"Response:\r\n{response.ToString(Formatting.Indented)}").ConfigureAwait(false);
 #endif
 				}
 				catch (Exception ex)
 				{
-#if DEBUG || PROCESSLOGS
+#if DEBUG || PROCESSLOGS || REQUESTLOGS
 					await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Internal", "Error occurred while processing", ex).ConfigureAwait(false);
 #endif
 					context.ShowError(ex, request);
@@ -840,19 +841,19 @@ namespace net.vieapps.Services.APIGateway
 			return Base.AspNet.Global.CallServiceAsync(requestInfo, Base.AspNet.Global.CancellationTokenSource.Token,
 				(info) =>
 				{
-#if DEBUG || PROCESSLOGS
+#if DEBUG || PROCESSLOGS || REQUESTLOGS
 					Base.AspNet.Global.WriteLogs(info.CorrelationID, objectLogName, $"Call the service [net.vieapps.services.{info.ServiceName.ToLower()}]\r\n{info.ToJson().ToString(Formatting.Indented)}");
 #endif
 				},
 				(info, json) =>
 				{
-#if DEBUG || PROCESSLOGS
+#if DEBUG || PROCESSLOGS || REQUESTLOGS
 					Base.AspNet.Global.WriteLogs(info.CorrelationID, objectLogName, $"Results from the service [net.vieapps.services.{info.ServiceName.ToLower()}]\r\n{json.ToString(Formatting.Indented)}");
 #endif
 				},
 				(info, ex) =>
 				{
-#if DEBUG || PROCESSLOGS
+#if DEBUG || PROCESSLOGS || REQUESTLOGS
 					Base.AspNet.Global.WriteLogs(info.CorrelationID, objectLogName, $"Error occurred while calling the service [net.vieapps.services.{info.ServiceName.ToLower()}]", ex);
 #endif
 				}

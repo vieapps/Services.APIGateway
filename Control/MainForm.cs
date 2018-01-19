@@ -7,17 +7,17 @@ namespace net.vieapps.Services.APIGateway
 {
 	public partial class MainForm : Form
 	{
-		string[] arguments = null;
+		string[] _args = null;
 
 		public MainForm(string[] args = null)
 		{
 			this.InitializeComponent();
-			this.arguments = args;
+			this._args = args;
 		}
 
 		void MainForm_Load(object sender, EventArgs args)
 		{
-			Global.Component.Start(this.arguments, async () =>
+			Global.Component.Start(this._args, async () =>
 			{
 				await Task.Delay(567).ConfigureAwait(false);
 				if (Global.ServiceManager != null)

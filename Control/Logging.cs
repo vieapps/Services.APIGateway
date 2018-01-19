@@ -14,7 +14,7 @@ namespace net.vieapps.Services.APIGateway
 	public class LoggingService : ILoggingService
 	{
 		ConcurrentDictionary<string, ConcurrentQueue<string>> _logs = new ConcurrentDictionary<string, ConcurrentQueue<string>>();
-		int _max = 10;
+		int _max = 13;
 
 		public LoggingService()
 		{
@@ -36,7 +36,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			// prepare
 			var prefix = (!string.IsNullOrWhiteSpace(serviceName) ? serviceName : "APIGateway").ToLower();
-			var surfix = !string.IsNullOrWhiteSpace(serviceName) && !string.IsNullOrWhiteSpace(objectName) && !serviceName.IsEquals(objectName)
+			var surfix = !string.IsNullOrWhiteSpace(objectName) && !objectName.IsEquals(serviceName)
 				? "." + objectName.ToLower()
 				: "";
 

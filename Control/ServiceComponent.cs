@@ -79,7 +79,7 @@ namespace net.vieapps.Services.APIGateway
 					}
 					catch (Exception ex)
 					{
-						Global.WriteLog("Error occurred while running the next action", ex);
+						Global.WriteLog("Error occurred while running the next action", ex, "Controller", 36429);
 					}
 			})
 			.ConfigureAwait(false);
@@ -89,53 +89,53 @@ namespace net.vieapps.Services.APIGateway
 		{
 			// connecto to WAMP router to open channels
 			var info = this.GetRouterInfo();
-			Global.WriteLog($"Start the API Gateway Services Controller...");
-			Global.WriteLog($"Attempts connect to WAMP router [{info.Item1}{info.Item2}]");
+			Global.WriteLog($"Start the API Gateway Services Controller...", "Controller");
+			Global.WriteLog($"Attempts connect to WAMP router [{info.Item1}{info.Item2}]", "Controller");
 
 			await this.OpenIncomingChannelAsync(
 				(sender, arguments) =>
 				{
-					Global.WriteLog($"The incoming connection is established - Session ID: {arguments.SessionId}");
+					Global.WriteLog($"The incoming connection is established - Session ID: {arguments.SessionId}", "Controller");
 					this._incommingChannelSessionID = arguments.SessionId;
 					this._communicator = this._incommingChannel.RealmProxy.Services
 						.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
 						.Subscribe(
 							message => this.ProcessInterCommunicateMessage(message),
-							exception => Global.WriteLog("Error occurred while fetching inter-communicate message", exception)
+							exception => Global.WriteLog("Error occurred while fetching inter-communicate message", exception, "Controller", 36429)
 						);
 				},
 				(sender, arguments) =>
 				{
 					if (arguments.CloseType.Equals(SessionCloseType.Disconnection))
-						Global.WriteLog($"The incoming connection is broken because the router is not found or the router is refused - Session ID: {arguments.SessionId}\r\n- Reason: {(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)} - {arguments.CloseType}");
+						Global.WriteLog($"The incoming connection is broken because the router is not found or the router is refused - Session ID: {arguments.SessionId}\r\n- Reason: {(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)} - {arguments.CloseType}", "Controller", 36429);
 					else
 					{
 						if (this._channelsAreClosedBySystem)
-							Global.WriteLog($"The incoming connection is closed - Session ID: {arguments.SessionId}\r\n- Reason: {(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)} - {arguments.CloseType}");
+							Global.WriteLog($"The incoming connection is closed - Session ID: {arguments.SessionId}\r\n- Reason: {(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)} - {arguments.CloseType}", "Controller");
 						else
 							this.ReOpenIncomingChannel(
 								123,
 								() =>
 								{
-									Global.WriteLog("Re-connect the incoming connection successful");
+									Global.WriteLog("Re-connect the incoming connection successful", "Controller");
 								},
 								(ex) =>
 								{
-									Global.WriteLog("Error occurred while re-connecting the incoming connection", ex);
+									Global.WriteLog("Error occurred while re-connecting the incoming connection", ex, "Controller", 36429);
 								}
 							);
 					}
 				},
 				(sender, arguments) =>
 				{
-					Global.WriteLog($"Got an error of incoming connection [{(arguments.Exception != null ? arguments.Exception.Message : "None")}", arguments.Exception);
+					Global.WriteLog($"Got an error of incoming connection [{(arguments.Exception != null ? arguments.Exception.Message : "None")}", arguments.Exception, "Controller", 36429);
 				}
 			).ConfigureAwait(false);
 
 			await this.OpenOutgoingChannelAsync(
 				(sender, arguments) =>
 				{
-					Global.WriteLog($"The outgoing connection is established - Session ID: {arguments.SessionId}");
+					Global.WriteLog($"The outgoing connection is established - Session ID: {arguments.SessionId}", "Controller");
 					this._outgoingChannelSessionID = arguments.SessionId;
 					if (!Global.AsService)
 						Global.ServiceManager = this._outgoingChannel.RealmProxy.Services.GetCalleeProxy<IServiceManager>(ProxyInterceptor.Create());
@@ -143,28 +143,28 @@ namespace net.vieapps.Services.APIGateway
 				(sender, arguments) =>
 				{
 					if (arguments.CloseType.Equals(SessionCloseType.Disconnection))
-						Global.WriteLog($"The outgoing connection is broken because the router is not found or the router is refused - Session ID: {arguments.SessionId}\r\n- Reason: {(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)} - {arguments.CloseType}");
+						Global.WriteLog($"The outgoing connection is broken because the router is not found or the router is refused - Session ID: {arguments.SessionId}\r\n- Reason: {(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)} - {arguments.CloseType}", "Controller", 36429);
 					else
 					{
 						if (this._channelsAreClosedBySystem)
-							Global.WriteLog($"The outgoing connection is closed - Session ID: {arguments.SessionId}\r\n- Reason: {(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)} - {arguments.CloseType}");
+							Global.WriteLog($"The outgoing connection is closed - Session ID: {arguments.SessionId}\r\n- Reason: {(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)} - {arguments.CloseType}", "Controller");
 						else
 							this.ReOpenOutgoingChannel(
 								123,
 								() =>
 								{
-									Global.WriteLog("Re-connect the outgoing connection successful");
+									Global.WriteLog("Re-connect the outgoing connection successful", "Controller");
 								},
 								(ex) =>
 								{
-									Global.WriteLog("Error occurred while re-connecting the outgoing connection", ex);
+									Global.WriteLog("Error occurred while re-connecting the outgoing connection", ex, "Controller", 36429);
 								}
 							);
 					}
 				},
 				(sender, arguments) =>
 				{
-					Global.WriteLog($"Got an error of outgoing connection [{(arguments.Exception != null ? arguments.Exception.Message : "None")}", arguments.Exception);
+					Global.WriteLog($"Got an error of outgoing connection [{(arguments.Exception != null ? arguments.Exception.Message : "None")}", arguments.Exception, "Controller", 36429);
 				}
 			).ConfigureAwait(false);
 
@@ -207,7 +207,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				this.RegisterMessagingTimers();
 				this.RegisterSchedulingTimers();
-				Global.WriteLog("The background workers & schedulers are registered");
+				Global.WriteLog("The background workers & schedulers are registered", "Controller");
 			}
 
 			// register business services
@@ -367,8 +367,8 @@ namespace net.vieapps.Services.APIGateway
 			// start all services
 			if (File.Exists(this._serviceHoster))
 				this._availableServices.ForEach(s => this.StartBusinessService(s.Key));
-			else if (!Global.AsService)
-				Global.MainForm.UpdateLogs($"The service hoster [{this._serviceHoster}] is not found");
+			else
+				Global.WriteLog($"The service hoster [{this._serviceHoster}] is not found", null, "Controller", 36429);
 
 			// update info
 			this.UpdateServicesInfo();
@@ -419,7 +419,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 			var serviceArguments = (arguments ?? "") + $" /agc:{(Global.AsService ? "r" : "g")} /svc:{serviceType} /svn:{name.ToLower()}";
 
-			Global.WriteLog($"The service [{name.ToLower()}] is starting...");
+			Global.WriteLog($"The service [{name.ToLower()}] is starting...", "Controller");
 			var process = UtilityService.RunProcess(
 				serviceHoster,
 				serviceArguments,
@@ -434,7 +434,8 @@ namespace net.vieapps.Services.APIGateway
 							Global.WriteLog(
 								$"----- [{serviceName.ToLower().Replace("/svn:", "")}] -----" + "\r\n" +
 								"The sevice is stopped..." + "\r\n" +
-								"--------------------------------------------------------------------------------" + "\r\n"
+								"--------------------------------------------------------------------------------" + "\r\n",
+								"Controller"
 							);
 						}
 
@@ -452,7 +453,8 @@ namespace net.vieapps.Services.APIGateway
 							Global.WriteLog(
 								$"----- [{serviceName.ToLower().Replace("/svn:", "")}] -----" + "\r\n" +
 								args.Data + "\r\n" +
-								"--------------------------------------------------------------------------------" + "\r\n"
+								"--------------------------------------------------------------------------------" + "\r\n",
+								"Controller"
 							);
 						}
 						catch { }
@@ -460,7 +462,7 @@ namespace net.vieapps.Services.APIGateway
 			);
 
 			this._runningServices[name.ToLower()] = process.Id;
-			Global.WriteLog($"The service [{name.ToLower()}] is started - PID: {process.Id}");
+			Global.WriteLog($"The service [{name.ToLower()}] is started - PID: {process.Id}", "Controller");
 
 			if (!Global.AsService)
 				this.UpdateServicesInfo();
@@ -510,19 +512,22 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				this._helperServices.Add(await this._incommingChannel.RealmProxy.Services.RegisterCallee(this, new RegistrationInterceptor(null, new RegisterOptions() { Invoke = WampInvokePolicy.Single })).ConfigureAwait(false));
-				Global.WriteLog("The centralized managing service is registered");
+				Global.WriteLog("The centralized managing service is registered", "Controller");
 			}
-			catch { }
+			catch (Exception ex)
+			{
+				Global.WriteLog("Error occurred while registering the centralized managing service", ex, "Controller", 36429);
+			}
 
 			this._loggingService = new LoggingService();
 			this._helperServices.Add(await this._incommingChannel.RealmProxy.Services.RegisterCallee(this._loggingService, RegistrationInterceptor.Create()).ConfigureAwait(false));
-			Global.WriteLog("The centralized logging service is registered");
+			Global.WriteLog("The centralized logging service is registered", "Controller");
 
 			this._helperServices.Add(await this._incommingChannel.RealmProxy.Services.RegisterCallee(new MessagingService(), RegistrationInterceptor.Create()).ConfigureAwait(false));
-			Global.WriteLog("The centralized messaging service is registered");
+			Global.WriteLog("The centralized messaging service is registered", "Controller");
 
 			this._helperServices.Add(await this._incommingChannel.RealmProxy.Services.RegisterCallee(new RTUService(), RegistrationInterceptor.Create()).ConfigureAwait(false));
-			Global.WriteLog("The real-time update (RTU) service is registered");
+			Global.WriteLog("The real-time update (RTU) service is registered", "Controller");
 
 			this._status = "Ready";
 		}
@@ -585,10 +590,11 @@ namespace net.vieapps.Services.APIGateway
 #if DEBUG
 			}, 5);
 #else
-			}, 60);
+			}, UtilityService.GetAppSetting("Logs:FlushInterval", "60").CastAs<int>());
 #endif
 
 			// house keeper (hourly)
+			this.PrepareRecycleBin();
 			this.StartTimer(() =>
 			{
 				this.RunHouseKeeper();
@@ -692,9 +698,59 @@ namespace net.vieapps.Services.APIGateway
 				"The house keeper is complete the working..." + "\r\n\r\nPaths\r\n=> " + paths.ToString("\r\n=> ") + "\r\n\r\n" +
 				"Total of cleaned files: " + counter.ToString("###,##0") + "\r\n\r\n" +
 				"Recycle-Bin\r\n\t" + logs.ToString("\r\n\t") + "\r\n\r\n" +
-				"Execution times: " + stopwatch.GetElapsedTimes()
+				"Execution times: " + stopwatch.GetElapsedTimes(),
+				"HouseKeeper"
 			);
 			this._isHouseKeeperRunning = false;
+		}
+
+		void PrepareRecycleBin()
+		{
+			var connectionStrings = new Dictionary<string, string>();
+			$"{this._serviceHoster}.config|{this._serviceHoster.Replace(".exe", ".x86.exe")}.config".ToList("|")
+				.Where(filename => File.Exists(filename))
+				.ForEach(filename =>
+				{
+					var xml = new XmlDocument();
+					xml.LoadXml(UtilityService.ReadTextFile(filename));
+
+					if (xml.DocumentElement.SelectNodes("/configuration/connectionStrings/add") is XmlNodeList connectionStringNodes)
+						foreach (XmlNode connectionStringNode in connectionStringNodes)
+						{
+							var name = connectionStringNode.Attributes["name"]?.Value;
+							var connectionString = connectionStringNode.Attributes["connectionString"]?.Value;
+							if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(connectionString) && !connectionStrings.ContainsKey(name))
+								connectionStrings[name] = connectionString;
+						}
+
+					if (xml.DocumentElement.SelectNodes("/configuration/net.vieapps.repositories/dataSources/dataSource") is XmlNodeList dataSourceNodes)
+					{
+						Global.WriteLog("Construct data sources", "Controller");
+						foreach (XmlNode dataSourceNode in dataSourceNodes)
+						{
+							var connectionStringName = dataSourceNode.Attributes["connectionStringName"]?.Value;
+							if (!string.IsNullOrWhiteSpace(connectionStringName) && connectionStrings.ContainsKey(connectionStringName))
+							{
+								var attribute = xml.CreateAttribute("connectionString");
+								attribute.Value = connectionStrings[connectionStringName];
+								dataSourceNode.Attributes.Append(attribute);
+							}
+						}
+						RepositoryStarter.ConstructDataSources(dataSourceNodes, (msg, ex) =>
+						{
+							Global.WriteLog(msg, ex, "Controller");
+						});
+					}
+
+					if (xml.DocumentElement.SelectNodes("/configuration/dbProviderFactories/add") is XmlNodeList dbProviderFactoryNodes)
+					{
+						Global.WriteLog("Construct database provider factories", "Controller");
+						RepositoryStarter.ConstructDbProviderFactories(dbProviderFactoryNodes, (msg, ex) =>
+						{
+							Global.WriteLog(msg, ex, "Controller");
+						});
+					}
+				});
 		}
 
 		List<string> CleanRecycleBin()
@@ -746,7 +802,16 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					logs.Add($"Error occurred while cleaning old version contents of data source [{dataSource}]: {ex.Message}\r\nStack:{ex.StackTrace}");
+					logs.Add($"Error occurred while cleaning old version contents of data source [{dataSource}]\r\n[{ex.GetType()}]: {ex.Message}\r\nStack:{ex.StackTrace}");
+					var inner = ex.InnerException;
+					var count = 1;
+					while (inner != null)
+					{
+						logs.Add($"-- Inner ({count}) -----\r\n[{inner.GetType()}]: {inner.Message}\r\nStack:{inner.StackTrace}");
+						count++;
+						inner = inner.InnerException;
+					}
+					logs.Add("----------------------------------------------------------------------");
 				}
 			});
 
@@ -760,7 +825,16 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					logs.Add($"Error occurred while cleaning old trash contents of data source [{dataSource}]: {ex.Message}\r\nStack:{ex.StackTrace}");
+					logs.Add($"Error occurred while cleaning old trash contents of data source [{dataSource}]\r\n[{ex.GetType()}]: {ex.Message}\r\nStack:{ex.StackTrace}");
+					var inner = ex.InnerException;
+					var count = 1;
+					while (inner != null)
+					{
+						logs.Add($"-- Inner ({count}) -----\r\n[{inner.GetType()}] : {inner.Message}\r\nStack:{inner.StackTrace}");
+						count++;
+						inner = inner.InnerException;
+					}
+					logs.Add("----------------------------------------------------------------------");
 				}
 			});
 
@@ -798,11 +872,21 @@ namespace net.vieapps.Services.APIGateway
 					task.Value.Item2,
 					(sender, args) =>
 					{
+						var command = task.Value.Item1 + " " + task.Value.Item2;
+						var pos = command.PositionOf("/password:");
+						while (pos > -1)
+						{
+							var next = command.IndexOf(" ", pos);
+							command = command.Remove(pos + 11, next - pos - 11);
+							command = command.Insert(pos + 11, "***");
+							pos = command.PositionOf("/password:", pos + 1);
+						}
 						Global.WriteLog(
 							"The task is completed" + "\r\n" +
 							"- Execution times: " + ((sender as Process).ExitTime - (sender as Process).StartTime).TotalMilliseconds.CastAs<long>().GetElapsedTimes() + "\r\n" +
-							"- Command: [" + (task.Value.Item1 + " " + task.Value.Item2).Trim() + "]\r\n" +
-							"- Results: " + results
+							"- Command: [" + command.Trim() + "]\r\n" +
+							"- Results: " + results,
+							"TaskScheduler"
 						);
 						this._runningTasks.Remove(this._runningTasks.First(info => info.Item1 == (sender as Process).Id));
 						running = false;
@@ -838,7 +922,8 @@ namespace net.vieapps.Services.APIGateway
 			Global.WriteLog(
 				"The task scheduler was completed with all tasks" + "\r\n" +
 				"- Number of tasks: " + tasks.Count.ToString() + "\r\n" +
-				"- Execution times: " + stopwatch.GetElapsedTimes()
+				"- Execution times: " + stopwatch.GetElapsedTimes(),
+				"TaskScheduler"
 			);
 			this._isTaskSchedulerRunning = false;
 		}

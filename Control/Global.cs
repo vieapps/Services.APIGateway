@@ -26,7 +26,7 @@ namespace net.vieapps.Services.APIGateway
 		#region Working with logs
 		static EventLog EventLog = null;
 
-		internal static void InitializeLog()
+		internal static void InitializeEventLog()
 		{
 			if (Global.EventLog == null)
 			{
@@ -44,28 +44,55 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		internal static void DisposeLog()
+		internal static void DisposeEventLog()
 		{
 			Global.EventLog.Close();
 			Global.EventLog.Dispose();
 		}
 
-		internal static void WriteLog(string log, Exception ex = null, bool writeFiles = false, string serviceName = null, string objectName = null)
+		internal static void WriteLog(string log, Exception exception, bool writeFiles, string serviceName = null, string objectName = null, int eventID = 26429)
 		{
-			// update logs
-			string msg = log + (ex != null ? "\r\n\r\n" + "Message: " + ex.Message + " [" + ex.GetType().ToString() + "]\r\n\r\n" + "Details: " + ex.StackTrace : "");
+			// prepare
+			var message = log ?? "";
+			var stack = "";
+			if (exception != null)
+			{
+				stack = $"[{exception.GetType()}]: {exception.Message ?? "No error message"}\r\nStack:{exception.StackTrace}";
+				var inner = exception.InnerException;
+				var count = 1;
+				while (inner != null)
+				{
+					stack += $"\r\n-----------------------------\r\nInner ({count}) ===> [{inner.GetType()}]: {inner.Message ?? "No error message"}\r\nStack:{inner.StackTrace}";
+					count++;
+					inner = inner.InnerException;
+				}
+			}
+
+			// write into event logs
 			if (Global.AsService)
 				try
 				{
-					Global.EventLog.WriteEntry(msg, ex != null ? EventLogEntryType.Error : EventLogEntryType.Information);
+					Global.EventLog.WriteEntry(message + (string.IsNullOrWhiteSpace(stack) ? "" : "\r\n-----------------------------\r\n" + stack), exception != null ? EventLogEntryType.Error : EventLogEntryType.Information, eventID);
 				}
 				catch { }
+
+			// write into form
 			else
-				Global.MainForm.UpdateLogs(msg);
+				Global.MainForm.UpdateLogs(message);
 
 			// write into files
 			if (writeFiles)
-				Global.Component?._loggingService?.WriteLog(serviceName, objectName, log);
+				Global.Component?._loggingService?.WriteLog(serviceName, objectName, log, stack);
+		}
+
+		internal static void WriteLog(string log, Exception exception, string objectName = null, int eventID = 26429)
+		{
+			Global.WriteLog(log, exception, true, null, objectName, eventID);
+		}
+
+		internal static void WriteLog(string log, string objectName = null, int eventID = 26429)
+		{
+			Global.WriteLog(log, null, objectName, eventID);
 		}
 		#endregion
 

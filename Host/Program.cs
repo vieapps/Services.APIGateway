@@ -134,6 +134,9 @@ namespace net.vieapps.Services.APIGateway
 			var initRepository = args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", "");
 			Program.ServiceComponent.Start(args, "false".IsEquals(initRepository) ? false : true);
 
+			// assign the static instance of the service component
+			ServiceBase.ServiceComponent = Program.ServiceComponent as ServiceBase;
+
 			// wait for exit
 			if (Program.IsUserInteractive)
 			{

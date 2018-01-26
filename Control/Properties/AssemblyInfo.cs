@@ -10,4 +10,4 @@ using System.Runtime.InteropServices;
 
 [assembly: AssemblyVersion("10.1.2.1801")]
 [assembly: AssemblyFileVersion("10.1.2.1801")]
-[assembly: AssemblyInformationalVersion("v10.1.netstandard-2+rev:2018.01.02")]
+[assembly: AssemblyInformationalVersion("v10.1.netstandard-2+rev:2018.01.26")]

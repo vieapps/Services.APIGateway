@@ -798,7 +798,7 @@ namespace net.vieapps.Services.APIGateway
 				try
 				{
 					RepositoryMediator.CleanVersionContents(dataSource);
-					logs.Add($"Clean old version contents of data source [{dataSource}] successful");
+					logs.Add($"Clean old version contents successful [{dataSource}]");
 				}
 				catch (Exception ex)
 				{
@@ -821,7 +821,7 @@ namespace net.vieapps.Services.APIGateway
 				try
 				{
 					RepositoryMediator.CleanTrashContents(dataSource);
-					logs.Add($"Clean old trash contents of data source [{dataSource}] successful");
+					logs.Add($"Clean old trash contents successful [{dataSource}]");
 				}
 				catch (Exception ex)
 				{
@@ -877,8 +877,8 @@ namespace net.vieapps.Services.APIGateway
 						while (pos > -1)
 						{
 							var next = command.IndexOf(" ", pos);
-							command = command.Remove(pos + 11, next - pos - 11);
-							command = command.Insert(pos + 11, "***");
+							command = command.Remove(pos + 10, next - pos - 11);
+							command = command.Insert(pos + 11, "*****");
 							pos = command.PositionOf("/password:", pos + 1);
 						}
 						Global.WriteLog(

@@ -848,7 +848,7 @@ namespace net.vieapps.Services.APIGateway
 				(info, json) =>
 				{
 #if DEBUG || PROCESSLOGS || REQUESTLOGS
-					Base.AspNet.Global.WriteLogs(info.CorrelationID, objectLogName, $"Results from the service [net.vieapps.services.{info.ServiceName.ToLower()}]\r\n{json.ToString(Formatting.Indented)}");
+					Base.AspNet.Global.WriteLogs(info.CorrelationID, objectLogName, $"Results from the service [net.vieapps.services.{info.ServiceName.ToLower()}]\r\n{json?.ToString(Formatting.Indented)}");
 #endif
 				},
 				(info, ex) =>

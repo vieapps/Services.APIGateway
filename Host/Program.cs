@@ -54,7 +54,7 @@ namespace net.vieapps.Services.APIGateway
 					Console.WriteLine("");
 					Console.WriteLine("Syntax: VIEApps.Services.APIGateway.Host.exe /svc:<service-component-namespace,service-assembly>");
 					Console.WriteLine("");
-					Console.WriteLine("Ex.: VIEApps.Services.APIGateway.Host.exe /svc:net.vieapps.Services.Systems.ServiceComponent,VIEAApps.Services.Systems");
+					Console.WriteLine("Ex.: VIEApps.Services.APIGateway.Host.exe /svc:net.vieapps.Services.Systems.ServiceComponent,VIEApps.Services.Systems");
 					Console.WriteLine("");
 					Console.ReadLine();
 				}
@@ -123,6 +123,7 @@ namespace net.vieapps.Services.APIGateway
 						waitHandle.Set();
 
 					// then exit
+					waitHandle.Dispose();
 					Program.ServiceComponent.Dispose();
 					return;
 				}
@@ -148,6 +149,7 @@ namespace net.vieapps.Services.APIGateway
 			else
 			{
 				waitHandle.WaitOne();
+				waitHandle.Dispose();
 				Program.ServiceComponent.Dispose();
 			}
 		}

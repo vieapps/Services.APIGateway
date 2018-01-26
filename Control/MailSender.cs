@@ -99,7 +99,7 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				await Task.Delay(100 + (counter * 10), Global.CancellationTokenSource.Token);
-				await MessageUtility.SendMailAsync(msg.From, msg.ReplyTo, msg.To, msg.Cc, msg.Bcc, msg.Subject, msg.Body, msg.Attachment, msg.Priority, msg.IsHtmlFormat, Encoding.GetEncoding(msg.Encoding), msg.SmtpServer, msg.SmtpServerPort.ToString(), msg.SmtpUsername, msg.SmtpPassword, msg.SmtpServerEnableSsl, Global.CancellationTokenSource.Token);
+				await MessageService.SendMailAsync(msg.From, msg.ReplyTo, msg.To, msg.Cc, msg.Bcc, msg.Subject, msg.Body, msg.Attachment, msg.Priority, msg.IsHtmlFormat, Encoding.GetEncoding(msg.Encoding), msg.SmtpServer, msg.SmtpServerPort.ToString(), msg.SmtpUsername, msg.SmtpPassword, msg.SmtpServerEnableSsl, Global.CancellationTokenSource.Token);
 				onSuccess?.Invoke(msg.ID);
 			}
 			catch (OperationCanceledException) { }

@@ -48,7 +48,7 @@ namespace net.vieapps.Services.APIGateway
 							"Publish an update message successful" + "\r\n" +
 							"- Device: " + message.DeviceID + "\r\n" +
 							"- Excluded: " + (string.IsNullOrWhiteSpace(message.ExcludedDeviceID) ? "None" : message.ExcludedDeviceID) + "\r\n" +
-							"- Message: " + message.Data.ToString(Formatting.None) + "\r\n"
+							"- Message: " + message.Data.ToString(Formatting.None)
 						);
 				}
 				catch (Exception ex)
@@ -83,7 +83,7 @@ namespace net.vieapps.Services.APIGateway
 										"Publish an update message successful" + "\r\n" +
 										"- Device: " + message.DeviceID + "\r\n" +
 										"- Excluded: " + (string.IsNullOrWhiteSpace(message.ExcludedDeviceID) ? "None" : message.ExcludedDeviceID) + "\r\n" +
-										"- Message: " + message.Data.ToString(Formatting.None) + "\r\n"
+										"- Message: " + message.Data.ToString(Formatting.None)
 									);
 							},
 							exception => Global.WriteLog("Error occurred while publishing an update message", exception)
@@ -96,7 +96,7 @@ namespace net.vieapps.Services.APIGateway
 								"Publish the update messages successful" + "\r\n" +
 								"- Device: " + deviceID + "\r\n" +
 								"- Excluded: " + (string.IsNullOrWhiteSpace(excludedDeviceID) ? "None" : excludedDeviceID) + "\r\n" +
-								"- Total of messages: " + messages.Count.ToString() + "\r\n"
+								"- Total of messages: " + messages.Count.ToString()
 							);
 					}
 				}
@@ -141,7 +141,7 @@ namespace net.vieapps.Services.APIGateway
 						Global.WriteLog(
 							"----- [RTU Service] ---------------" + "\r\n" +
 							"Publish an inter-communicate message successful" + "\r\n" +
-							"- Message: " + message.Data.ToString(Formatting.None) + "\r\n"
+							"- Message: " + message.Data.ToString(Formatting.None)
 						);
 				}
 				catch (Exception ex)
@@ -187,7 +187,7 @@ namespace net.vieapps.Services.APIGateway
 									Global.WriteLog(
 										"----- [RTU Service] ---------------" + "\r\n" +
 										"Publish an inter-communicate message successful" + "\r\n" +
-										"- Message: " + message.Data.ToString(Formatting.None) + "\r\n"
+										"- Message: " + message.Data.ToString(Formatting.None)
 									);
 							},
 							exception => Global.WriteLog("Error occurred while publishing an inter-communicate message", exception)
@@ -199,7 +199,7 @@ namespace net.vieapps.Services.APIGateway
 								"----- [RTU Service] ---------------" + "\r\n" +
 								"Publish the inter-communicate messages successful" + "\r\n" +
 								"- Destination: net.vieapps.services." + serviceName.ToLower() + "\r\n" +
-								"- Total of messages: " + messages.Count.ToString() + "\r\n"
+								"- Total of messages: " + messages.Count.ToString()
 							);
 					}
 				}

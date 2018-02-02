@@ -22,10 +22,12 @@ namespace net.vieapps.Services.APIGateway
 	{
 		internal static async Task ProcessRequestAsync(HttpContext context)
 		{
-
-#if DEBUG || PROCESSLOGS || REQUESTLOGS
-			await Base.AspNet.Global.WriteLogsAsync(Base.AspNet.Global.GetCorrelationID(context.Items), "Internal", $"Begin process [{context.Request.HttpMethod}]: {context.Request.Url.Scheme}://{context.Request.Url.Host + context.Request.RawUrl} ({context.Request.UserHostAddress})").ConfigureAwait(false);
-#endif
+			// track
+			var correlationID = Base.AspNet.Global.GetCorrelationID(context.Items);
+			await Task.WhenAll(
+				Base.AspNet.Global.WriteDebugLogsAsync(correlationID, Base.AspNet.Global.ServiceName, $"Begin process [{context.Request.HttpMethod}]: {context.Request.Url.Scheme}://{context.Request.Url.Host + context.Request.RawUrl}"),
+				Base.AspNet.Global.IsInfoLogEnabled ? Base.AspNet.Global.WriteLogsAsync(correlationID, "Internal", $"Begin process [{context.Request.HttpMethod}]: {context.Request.Url.Scheme}://{context.Request.Url.Host + context.Request.RawUrl}") : Task.CompletedTask
+			).ConfigureAwait(false);
 
 			#region prepare the requesting information
 			var request = new RequestInfo()
@@ -36,7 +38,7 @@ namespace net.vieapps.Services.APIGateway
 				ObjectName = string.IsNullOrWhiteSpace(context.Request.QueryString["object-name"]) ? "unknown" : context.Request.QueryString["object-name"],
 				Query = new Dictionary<string, string>(context.Request.QueryString.ToDictionary(), StringComparer.OrdinalIgnoreCase),
 				Header = new Dictionary<string, string>(context.Request.Headers.ToDictionary(), StringComparer.OrdinalIgnoreCase),
-				CorrelationID = Base.AspNet.Global.GetCorrelationID(context.Items)
+				CorrelationID = correlationID
 			};
 
 			bool isSessionProccessed = false, isSessionInitialized = false, isAccountProccessed = false, isActivationProccessed = false;
@@ -85,10 +87,10 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-#if DEBUG || PROCESSLOGS || REQUESTLOGS
-				await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Internal", "Error occurred while preparing token", ex).ConfigureAwait(false);
-#endif
-				await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Security.Errors", "Error occurred while preparing token", ex).ConfigureAwait(false);
+				await Task.WhenAll(
+					Base.AspNet.Global.WriteDebugLogsAsync(correlationID, Base.AspNet.Global.ServiceName, "End process => Error occurred while preparing token", ex),
+					Base.AspNet.Global.WriteLogsAsync(correlationID, "Internal", "End process => Error occurred while preparing token", ex)
+				).ConfigureAwait(false);
 				context.ShowError(ex, request, false);
 				return;
 			}
@@ -100,9 +102,19 @@ namespace net.vieapps.Services.APIGateway
 				request.Session.SessionID = UtilityService.NewUID;
 
 			if (request.Verb.IsEquals("POST") || request.Verb.IsEquals("PUT"))
-				using (var reader = new StreamReader(context.Request.InputStream, context.Request.ContentEncoding))
+				try
 				{
-					request.Body = await reader.ReadToEndAsync().ConfigureAwait(false);
+					using (var reader = new StreamReader(context.Request.InputStream, context.Request.ContentEncoding))
+					{
+						request.Body = await reader.ReadToEndAsync().ConfigureAwait(false);
+					}
+				}
+				catch (Exception ex)
+				{
+					await Task.WhenAll(
+						Base.AspNet.Global.WriteDebugLogsAsync(correlationID, Base.AspNet.Global.ServiceName, "Error occurred while parsing body of the request", ex),
+						Base.AspNet.Global.WriteLogsAsync(correlationID, "Internal", "Error occurred while parsing body of the request", ex)
+					).ConfigureAwait(false);
 				}
 
 			else if (request.Verb.IsEquals("GET") && context.Request.QueryString["x-body"] != null)
@@ -112,14 +124,54 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Internal", "Error occurred while parsing body of 'x-body' parameter", ex).ConfigureAwait(false);
-					request.Body = "";
+					await Task.WhenAll(
+						Base.AspNet.Global.WriteDebugLogsAsync(correlationID, Base.AspNet.Global.ServiceName, "Error occurred while parsing body of the 'x-body' parameter", ex),
+						Base.AspNet.Global.WriteLogsAsync(correlationID, "Internal", "Error occurred while parsing body of the 'x-body' parameter", ex)
+					).ConfigureAwait(false);
 				}
 			#endregion
 
-#if DEBUG || PROCESSLOGS || REQUESTLOGS
-			await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Internal", $"Request:\r\n{request.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
-#endif
+			await Task.WhenAll(
+				Base.AspNet.Global.WriteDebugLogsAsync(correlationID, Base.AspNet.Global.ServiceName, $"Request:\r\n{request.ToJson().ToString(Base.AspNet.Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}"),
+				Base.AspNet.Global.IsDebugLogEnabled ? Base.AspNet.Global.WriteLogsAsync(correlationID, "Internal", $"Request:\r\n{request.ToJson().ToString(Formatting.Indented)}") : Task.CompletedTask
+			).ConfigureAwait(false);
+
+			#region [extra] verify captcha
+			// verfy captcha
+			var captchaIsValid = false;
+			if (request.Header.ContainsKey("x-captcha"))
+				try
+				{
+					request.Header.TryGetValue("x-captcha-registered", out string registered);
+					request.Header.TryGetValue("x-captcha-input", out string input);
+					if (string.IsNullOrWhiteSpace(registered) || string.IsNullOrWhiteSpace(input))
+						throw new InvalidSessionException("Captcha code is invalid");
+
+					try
+					{
+						registered = registered.Decrypt(Base.AspNet.Global.GenerateEncryptionKey(request.Session.SessionID), Base.AspNet.Global.GenerateEncryptionIV(request.Session.SessionID));
+						input = input.Decrypt(Base.AspNet.Global.GenerateEncryptionKey(request.Session.SessionID), Base.AspNet.Global.GenerateEncryptionIV(request.Session.SessionID));
+					}
+					catch (Exception ex)
+					{
+						throw new InvalidSessionException("Captcha code is invalid", ex);
+					}
+
+					if (!CaptchaService.IsCodeValid(registered, input))
+						throw new InformationInvalidException("Captcha code is invalid");
+
+					captchaIsValid = true;
+				}
+				catch (Exception ex)
+				{
+					await Task.WhenAll(
+						Base.AspNet.Global.WriteDebugLogsAsync(correlationID, Base.AspNet.Global.ServiceName, "End process => Error occurred while verifying captcha", ex),
+						Base.AspNet.Global.WriteLogsAsync(correlationID, "Internal", "End process => Error occurred while verifying captcha", ex)
+					).ConfigureAwait(false);
+					context.ShowError(ex, request);
+					return;
+				}
+			#endregion
 
 			#region [extra] prepare information of an account
 			if (isAccountProccessed)
@@ -128,31 +180,6 @@ namespace net.vieapps.Services.APIGateway
 					var requestBody = request.GetBodyExpando();
 					if (requestBody == null)
 						throw new InvalidSessionException("Request JSON is invalid (empty)");
-
-					// verify captcha
-					var captcha = requestBody.Get<string>("Captcha");
-					if (!string.IsNullOrWhiteSpace(captcha))
-					{
-						try
-						{
-							captcha = captcha.Decrypt(Base.AspNet.Global.GenerateEncryptionKey(request.Session.SessionID), Base.AspNet.Global.GenerateEncryptionIV(request.Session.SessionID));
-						}
-						catch (Exception ex)
-						{
-							throw new InvalidSessionException("Request JSON is invalid (captcha is invalid)", ex);
-						}
-
-						try
-						{
-							var info = JObject.Parse(captcha);
-							if (!CaptchaService.IsCodeValid((info["Registered"] as JValue).Value as string, (info["Input"] as JValue).Value as string))
-								throw new InformationInvalidException("Captcha code is invalid");
-						}
-						catch (Exception)
-						{
-							throw;
-						}
-					}
 
 					// prepare email
 					var email = requestBody.Get<string>("Email");
@@ -202,12 +229,43 @@ namespace net.vieapps.Services.APIGateway
 							throw new InvalidDataException("Request JSON is invalid (password must be encrypted by RSA before sending)", ex);
 						}
 
+					// prepare privileges
+					var privileges = requestBody.Get<string>("Privileges");
+					if (!string.IsNullOrWhiteSpace(privileges))
+						try
+						{
+							privileges = Base.AspNet.Global.RSA.Decrypt(privileges);
+							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
+							{
+								{ "Privileges", privileges.Encrypt(Base.AspNet.Global.EncryptionKey) }
+							};
+						}
+						catch { }
+
+					// prepare information of related service
+					var relatedInfo = request.Query.ContainsKey("related-service")
+						? requestBody.Get<string>("RelatedInfo")
+						: null;
+					if (!string.IsNullOrWhiteSpace(relatedInfo))
+						try
+						{
+							relatedInfo = Base.AspNet.Global.RSA.Decrypt(relatedInfo);
+							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
+							{
+								{ "RelatedInfo", relatedInfo.Encrypt(Base.AspNet.Global.EncryptionKey) }
+							};
+						}
+						catch { }
+
 					// preapare
 					var objectIdentity = request.GetObjectIdentity();
 
 					// prepare to register/create new account
 					if (string.IsNullOrWhiteSpace(objectIdentity))
 					{
+						if (!captchaIsValid)
+							throw new InvalidSessionException("Captcha code is invalid");
+
 						if (request.Session.SessionID.Encrypt(Base.AspNet.Global.EncryptionKey.Reverse(), true).Equals(request.GetHeaderParameter("x-create")))
 							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
 							{
@@ -223,7 +281,7 @@ namespace net.vieapps.Services.APIGateway
 						};
 
 					// prepare to reset password
-					else if ("reset".IsEquals(objectIdentity) && (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(captcha)))
+					else if ("reset".IsEquals(objectIdentity) && (string.IsNullOrWhiteSpace(email) || !captchaIsValid))
 						throw new InvalidSessionException("Request JSON is invalid (email/captcha is null or empty)");
 
 					// prepare to update password
@@ -236,10 +294,10 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-#if DEBUG || PROCESSLOGS || REQUESTLOGS
-					await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Internal", "Error occurred while processing account", ex).ConfigureAwait(false);
-#endif
-					await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Security.Errors", "Error occurred while processing account", ex).ConfigureAwait(false);
+					await Task.WhenAll(
+						Base.AspNet.Global.WriteDebugLogsAsync(correlationID, Base.AspNet.Global.ServiceName, "End process => Error occurred while processing account", ex),
+						Base.AspNet.Global.WriteLogsAsync(correlationID, "Internal", "End process => Error occurred while processing account", ex)
+					).ConfigureAwait(false);
 					context.ShowError(ex, request);
 					return;
 				}
@@ -284,10 +342,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-#if DEBUG || PROCESSLOGS || REQUESTLOGS
-					await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Internal", "Error occurred while activating", ex).ConfigureAwait(false);
-#endif
-					await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Security.Errors", "Error occurred while activating", ex).ConfigureAwait(false);
+					await Base.AspNet.Global.WriteLogsAsync(correlationID, "Internal", "End process => Error occurred while activating", ex).ConfigureAwait(false);
 					context.ShowError(ex, request);
 				}
 			}
@@ -306,16 +361,20 @@ namespace net.vieapps.Services.APIGateway
 					// response
 					await context.WriteResponseAsync(response).ConfigureAwait(false);
 
-#if DEBUG || PROCESSLOGS || REQUESTLOGS
-					await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Internal", $"Response:\r\n{response.ToString(Formatting.Indented)}").ConfigureAwait(false);
-#endif
+					if (Base.AspNet.Global.IsDebugLogEnabled)
+						await Base.AspNet.Global.WriteLogsAsync(correlationID, "Internal", $"End process => Response:\r\n{response.ToString(Formatting.Indented)}").ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
-#if DEBUG || PROCESSLOGS || REQUESTLOGS
-					await Base.AspNet.Global.WriteLogsAsync(request.CorrelationID, "Internal", "Error occurred while processing", ex).ConfigureAwait(false);
-#endif
+					await Base.AspNet.Global.WriteLogsAsync(correlationID, "Internal", "End process => Error occurred while processing", ex).ConfigureAwait(false);
 					context.ShowError(ex, request);
+				}
+				finally
+				{
+					await Task.WhenAll(
+						Base.AspNet.Global.WriteDebugLogsAsync(correlationID, Base.AspNet.Global.ServiceName, "End process"),
+						Base.AspNet.Global.IsInfoLogEnabled && !Base.AspNet.Global.IsDebugLogEnabled  ? Base.AspNet.Global.WriteLogsAsync(correlationID, "Internal", "End process") : Task.CompletedTask
+					).ConfigureAwait(false);
 				}
 		}
 
@@ -377,10 +436,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-#if DEBUG || PROCESSLOGS
-					await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Internal", "Error occurred while registering session", ex).ConfigureAwait(false);
-#endif
-					await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Security.Errors", "Error occurred while registering session", ex).ConfigureAwait(false);
+					await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Internal", "End process => Error occurred while registering session", ex).ConfigureAwait(false);
 					context.ShowError(ex, requestInfo);
 				}
 
@@ -433,10 +489,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-#if DEBUG || PROCESSLOGS
-					await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Internal", "Error occurred while registering session", ex).ConfigureAwait(false);
-#endif
-					await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Security.Errors", "Error occurred while registering session", ex).ConfigureAwait(false);
+					await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Internal", "End process => Error occurred while registering session", ex).ConfigureAwait(false);
 					context.ShowError(ex, requestInfo);
 				}
 		}
@@ -540,10 +593,7 @@ namespace net.vieapps.Services.APIGateway
 				).ConfigureAwait(false);
 
 				// show error
-#if DEBUG || PROCESSLOGS
-				await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Internal", "Error occurred while signing-in session", ex).ConfigureAwait(false);
-#endif
-				await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Security.Errors", "Error occurred while signing-in session", ex).ConfigureAwait(false);
+				await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Internal", "End process => Error occurred while signing-in session", ex).ConfigureAwait(false);
 				context.ShowError(ex, requestInfo);
 			}
 		}
@@ -629,10 +679,7 @@ namespace net.vieapps.Services.APIGateway
 				).ConfigureAwait(false);
 
 				// show error
-#if DEBUG || PROCESSLOGS
-				await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Internal", "Error occurred while validating OTP session", ex).ConfigureAwait(false);
-#endif
-				await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Security.Errors", "Error occurred while validating OTP session", ex).ConfigureAwait(false);
+				await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Internal", "End process => Error occurred while validating OTP session", ex).ConfigureAwait(false);
 				context.ShowError(ex, requestInfo);
 			}
 		}
@@ -679,10 +726,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-#if DEBUG || PROCESSLOGS
-				await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Internal", "Error occurred while signing-out session", ex).ConfigureAwait(false);
-#endif
-				await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Security.Errors", "Error occurred while signing-out session", ex).ConfigureAwait(false);
+				await Base.AspNet.Global.WriteLogsAsync(requestInfo.CorrelationID, "Internal", "End process => Error occurred while signing-out session", ex).ConfigureAwait(false);
 				context.ShowError(ex, requestInfo);
 			}
 		}
@@ -841,21 +885,18 @@ namespace net.vieapps.Services.APIGateway
 			return Base.AspNet.Global.CallServiceAsync(requestInfo, Base.AspNet.Global.CancellationTokenSource.Token,
 				(info) =>
 				{
-#if DEBUG || PROCESSLOGS || REQUESTLOGS
-					Base.AspNet.Global.WriteLogs(info.CorrelationID, objectLogName, $"Call the service [net.vieapps.services.{info.ServiceName.ToLower()}]\r\n{info.ToJson().ToString(Formatting.Indented)}");
-#endif
+					if (Base.AspNet.Global.IsDebugLogEnabled)
+						Base.AspNet.Global.WriteLogs(info.CorrelationID, objectLogName, $"Call the service [net.vieapps.services.{info.ServiceName.ToLower()}]\r\n{info.ToJson().ToString(Formatting.Indented)}");
 				},
 				(info, json) =>
 				{
-#if DEBUG || PROCESSLOGS || REQUESTLOGS
-					Base.AspNet.Global.WriteLogs(info.CorrelationID, objectLogName, $"Results from the service [net.vieapps.services.{info.ServiceName.ToLower()}]\r\n{json?.ToString(Formatting.Indented)}");
-#endif
+					if (Base.AspNet.Global.IsDebugLogEnabled)
+						Base.AspNet.Global.WriteLogs(info.CorrelationID, objectLogName, $"Results from the service [net.vieapps.services.{info.ServiceName.ToLower()}]\r\n{json?.ToString(Formatting.Indented)}");
 				},
 				(info, ex) =>
 				{
-#if DEBUG || PROCESSLOGS || REQUESTLOGS
-					Base.AspNet.Global.WriteLogs(info.CorrelationID, objectLogName, $"Error occurred while calling the service [net.vieapps.services.{info.ServiceName.ToLower()}]", ex);
-#endif
+					if (Base.AspNet.Global.IsDebugLogEnabled)
+						Base.AspNet.Global.WriteLogs(info.CorrelationID, objectLogName, $"Error occurred while calling the service [net.vieapps.services.{info.ServiceName.ToLower()}]", ex);
 				}
 			);
 		}

@@ -10,6 +10,7 @@ using System.Collections.Specialized;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Diagnostics;
+using System.Reactive.Subjects;
 
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -28,10 +29,9 @@ namespace net.vieapps.Services.APIGateway
 	{
 
 		#region Attributes
-		internal static IDisposable InterCommunicateMessageUpdater = null;
-
+		static ISubject<UpdateMessage> UpdateMessagePublisher = null;
+		static IDisposable InterCommunicateMessageUpdater = null;
 		static HashSet<string> QueryExcluded = "service-name,object-name,object-identity,request-of-static-resource".ToHashSet();
-
 		static Cache _Cache = null;
 
 		internal static Cache Cache
@@ -59,6 +59,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// default service name
 			Base.AspNet.Global.ServiceName = "APIGateway";
+			var correlationID = Base.AspNet.Global.GetCorrelationID(context?.Items);
 
 			// open WAMP channels
 			Task.Run(async () =>
@@ -69,24 +70,57 @@ namespace net.vieapps.Services.APIGateway
 						Global.InterCommunicateMessageUpdater = Base.AspNet.Global.IncommingChannel.RealmProxy.Services
 							.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
 							.Subscribe(
-								message => Global.ProcessInterCommunicateMessage(message),
-								exception => Base.AspNet.Global.WriteLogs(UtilityService.BlankUID, "RTU", "Error occurred while fetching inter-communicate message", exception)
+								async (message) =>
+								{
+									var relatedID = Base.AspNet.Global.GetCorrelationID();
+									try
+									{
+										await Global.ProcessInterCommunicateMessageAsync(message).ConfigureAwait(false);
+										await Task.WhenAll(
+											Base.AspNet.Global.WriteDebugLogsAsync(relatedID, Base.AspNet.Global.ServiceName, $"Process an inter-communicate message successful\r\n{message.ToJson().ToString(Base.AspNet.Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}"),
+											Base.AspNet.Global.IsDebugLogEnabled ? Base.AspNet.Global.WriteLogsAsync(relatedID, "RTU", $"Process an inter-communicate message successful\r\n{message.ToJson().ToString(Formatting.Indented)}") : Task.CompletedTask
+										).ConfigureAwait(false);
+									}
+									catch (Exception ex)
+									{
+										await Task.WhenAll(
+											Base.AspNet.Global.WriteDebugLogsAsync(relatedID, Base.AspNet.Global.ServiceName, $"Error occurred while processing an inter-communicate message\r\n{message.ToJson().ToString(Base.AspNet.Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex),
+											Base.AspNet.Global.WriteLogsAsync(relatedID, "RTU", $"Error occurred while processing an inter-communicate message\r\n{message.ToJson().ToString(Base.AspNet.Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex)
+										).ConfigureAwait(false);
+									}
+								},
+								async (exception) =>
+								{
+									var relatedID = Base.AspNet.Global.GetCorrelationID();
+									await Task.WhenAll(
+										Base.AspNet.Global.WriteDebugLogsAsync(relatedID, Base.AspNet.Global.ServiceName, "Error occurred while fetching inter-communicate message", exception),
+										Base.AspNet.Global.WriteLogsAsync(relatedID, "RTU", "Error occurred while fetching inter-communicate message", exception)
+									).ConfigureAwait(false);
+								}
 							);
 					},
 					(sender, args) =>
 					{
 						Task.Run(async () =>
 						{
+							var relatedID = Base.AspNet.Global.GetCorrelationID();
 							try
 							{
 								await Task.WhenAll(
 									Base.AspNet.Global.InitializeLoggingServiceAsync(),
 									Base.AspNet.Global.InitializeRTUServiceAsync()
 								).ConfigureAwait(false);
+								await Task.WhenAll(
+									Base.AspNet.Global.WriteDebugLogsAsync(relatedID, "RTU", "Initializing helper services succesful"),
+									Base.AspNet.Global.WriteLogsAsync(relatedID, "RTU", "Initializing helper services succesful")
+								).ConfigureAwait(false);
 							}
 							catch (Exception ex)
 							{
-								await Base.AspNet.Global.WriteLogsAsync("Error occurred while initializing helper services", ex).ConfigureAwait(false);
+								await Task.WhenAll(
+									Base.AspNet.Global.WriteDebugLogsAsync(relatedID, "RTU", "Error occurred while initializing helper services", ex),
+									Base.AspNet.Global.WriteLogsAsync(relatedID, "RTU", "Error occurred while initializing helper services", ex)
+								).ConfigureAwait(false);
 							}
 						}).ConfigureAwait(false);
 					}
@@ -99,25 +133,34 @@ namespace net.vieapps.Services.APIGateway
 			// handling unhandled exception
 			AppDomain.CurrentDomain.UnhandledException += (sender, args) =>
 			{
+				Base.AspNet.Global.WriteDebugLogs(Base.AspNet.Global.GetCorrelationID(), Base.AspNet.Global.ServiceName, "An unhandled exception is thrown", args.ExceptionObject as Exception);
 				Base.AspNet.Global.WriteLogs("An unhandled exception is thrown", args.ExceptionObject as Exception);
 			};
 
 			stopwatch.Stop();
-			Base.AspNet.Global.WriteLogs($"*** The API Gateway HTTP Service is ready for serving. The app is initialized in {stopwatch.GetElapsedTimes()}");
+			Task.Run(async () =>
+			{
+				await Task.Delay(345).ConfigureAwait(false);
+				await Task.WhenAll(
+					Base.AspNet.Global.WriteDebugLogsAsync(correlationID, Base.AspNet.Global.ServiceName, $"*** The API Gateway HTTP Service is ready for serving. The app is initialized in {stopwatch.GetElapsedTimes()}"),
+					Base.AspNet.Global.IsInfoLogEnabled ? Base.AspNet.Global.WriteLogsAsync(correlationID, $"*** The API Gateway HTTP Service is ready for serving. The app is initialized in {stopwatch.GetElapsedTimes()}") : Task.CompletedTask
+				).ConfigureAwait(false);
+			}).ConfigureAwait(false);
 		}
 
 		internal static void OnAppEnd()
 		{
-			try
-			{
-				Base.AspNet.Global.CancellationTokenSource.Cancel();
-			}
-			catch { }
-			Base.AspNet.Global.CancellationTokenSource.Dispose();
-
 			Global.InterCommunicateMessageUpdater?.Dispose();
-			RTU.StopUpdaters();
-
+			RTU.Updaters.ForEach(updater =>
+			{
+				try
+				{
+					updater.Dispose();
+				}
+				catch { }
+			});
+			Base.AspNet.Global.CancellationTokenSource.Cancel();
+			Base.AspNet.Global.CancellationTokenSource.Dispose();
 			Base.AspNet.Global.CloseChannels();
 			Base.AspNet.Global.RSA.Dispose();
 		}
@@ -154,11 +197,15 @@ namespace net.vieapps.Services.APIGateway
 
 			// by-pass segments
 			else if (Base.AspNet.Global.BypassSegments.Count > 0 && Base.AspNet.Global.BypassSegments.Contains(executionFilePaths[0]))
+			{
+				Base.AspNet.Global.WriteDebugLogs(Base.AspNet.Global.GetCorrelationID(), Base.AspNet.Global.ServiceName, $"Bypass the request of by-pass segment [{app.Context.Request.RawUrl}]");
 				return;
+			}
 
 			// hidden segments
 			else if (Base.AspNet.Global.HiddenSegments.Count > 0 && Base.AspNet.Global.HiddenSegments.Contains(executionFilePaths[0]))
 			{
+				Base.AspNet.Global.WriteDebugLogs(Base.AspNet.Global.GetCorrelationID(), Base.AspNet.Global.ServiceName, $"Stop the request of hidden segment [{app.Context.Request.RawUrl}]");
 				Global.ShowError(app.Context, 403, "Forbidden", "AccessDeniedException", null, null);
 				app.Context.Response.End();
 				return;
@@ -185,20 +232,22 @@ namespace net.vieapps.Services.APIGateway
 				return;
 			}
 
-#if DEBUG || REQUESTLOGS
+			// track
 			var appInfo = app.Context.GetAppInfo();
-			var logs = new List<string>() {
-				$"Begin process [{app.Context.Request.HttpMethod}]: {app.Context.Request.Url.Scheme}://{app.Context.Request.Url.Host + app.Context.Request.RawUrl}",
+			var logs = new List<string>()
+			{
+				$"Begin of request [{app.Context.Request.HttpMethod}]: {app.Context.Request.Url.Scheme}://{app.Context.Request.Url.Host + app.Context.Request.RawUrl}",
 				$"- Origin: {appInfo.Item1} / {appInfo.Item2} - {appInfo.Item3}",
 				$"- IP: {app.Context.Request.UserHostAddress} [{app.Context.Request.UserAgent}]"
 			};
+			Base.AspNet.Global.WriteDebugLogs(Base.AspNet.Global.GetCorrelationID(), Base.AspNet.Global.ServiceName, logs);
 
-			if (!executionFilePaths[0].IsEquals("rtu"))
+			// diagnostics
+			if (Base.AspNet.Global.IsInfoLogEnabled && !executionFilePaths[0].IsEquals("rtu"))
 			{
 				app.Context.Items["StopWatch"] = new Stopwatch();
 				(app.Context.Items["StopWatch"] as Stopwatch).Start();
 			}
-#endif
 
 			// rewrite url
 			var url = app.Request.ApplicationPath + "Global.ashx";
@@ -217,31 +266,31 @@ namespace net.vieapps.Services.APIGateway
 				if (!string.IsNullOrWhiteSpace(key) && !Global.QueryExcluded.Contains(key))
 					url += "&" + key + "=" + app.Request.QueryString[key].UrlEncode();
 
-#if DEBUG || REQUESTLOGS || REWRITELOGS
-#if DEBUG || REWRITELOGS
-			logs.Add($"Rewrite URL: [{app.Context.Request.Url.Scheme}://{app.Context.Request.Url.Host + app.Context.Request.RawUrl}] => [{app.Context.Request.Url.Scheme}://{app.Context.Request.Url.Host + url}]");
-#endif
-			Base.AspNet.Global.WriteLogs(logs);
-#endif
+			if (Base.AspNet.Global.IsInfoLogEnabled)
+			{
+				if (Base.AspNet.Global.IsDebugLogEnabled)
+					logs.Add($"Rewrite URL: [{app.Context.Request.Url.Scheme}://{app.Context.Request.Url.Host + app.Context.Request.RawUrl}] => [{app.Context.Request.Url.Scheme}://{app.Context.Request.Url.Host + url}]");
+				Base.AspNet.Global.WriteLogs(logs);
+			}
 
 			app.Context.RewritePath(url);
 		}
 
 		internal static void OnAppEndRequest(HttpApplication app)
 		{
-#if DEBUG || REQUESTLOGS
-			if (!app.Context.Request.HttpMethod.Equals("OPTIONS") && app.Context.Items.Contains("StopWatch"))
+			var executionTimes = "";
+			if (Base.AspNet.Global.IsInfoLogEnabled && app.Context.Items.Contains("StopWatch"))
 			{
 				(app.Context.Items["StopWatch"] as Stopwatch).Stop();
-				var executionTimes = (app.Context.Items["StopWatch"] as Stopwatch).GetElapsedTimes();
-				Base.AspNet.Global.WriteLogs($"End process - Execution times: {executionTimes}");
+				executionTimes = $" - Execution times: {(app.Context.Items["StopWatch"] as Stopwatch).GetElapsedTimes()}";
+				Base.AspNet.Global.WriteLogs($"End of request{executionTimes}");
 				try
 				{
 					app.Response.Headers.Add("x-execution-times", executionTimes);
 				}
 				catch { }
 			}
-#endif
+			Base.AspNet.Global.WriteDebugLogs(Base.AspNet.Global.GetCorrelationID(), Base.AspNet.Global.ServiceName, $"End of request{executionTimes}");
 		}
 		#endregion
 
@@ -427,7 +476,7 @@ namespace net.vieapps.Services.APIGateway
 					? requestInfo.ObjectName
 					: "unknown";
 
-				Base.AspNet.Global.WriteLogs(correlationID, serviceName, objectName, logs, stack);
+				Base.AspNet.Global.WriteLogs(correlationID, serviceName, logs, stack, objectName);
 			}
 		}
 
@@ -435,7 +484,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			// write logs
 			if (writeLogs && exception != null)
-				Base.AspNet.Global.WriteLogs(Base.AspNet.Global.GetCorrelationID(context.Items), "Errors", $"Error occurred while processing (Request: {requestInfo?.ToJson().ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None) ?? "None"})", exception);
+				Base.AspNet.Global.WriteLogs(Base.AspNet.Global.GetCorrelationID(context.Items), "Internal", $"Error occurred while processing (Request: {requestInfo?.ToJson().ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None) ?? "None"})", exception);
 
 			// show error
 			if (exception is WampException)
@@ -456,6 +505,7 @@ namespace net.vieapps.Services.APIGateway
 			var exception = app.Server.GetLastError();
 			app.Server.ClearError();
 			app.Context.ShowError(exception, null, true);
+			Base.AspNet.Global.WriteDebugLogs(Base.AspNet.Global.GetCorrelationID(app.Context.Items), Base.AspNet.Global.ServiceName, "Got an unhandled error exception while processing", exception);
 		}
 		#endregion
 
@@ -529,25 +579,26 @@ namespace net.vieapps.Services.APIGateway
 		#region Send & process inter-communicate message
 		internal static async Task SendInterCommunicateMessageAsync(CommunicateMessage message)
 		{
+			var correlationID = Base.AspNet.Global.GetCorrelationID();
 			try
 			{
 				await Base.AspNet.Global.RTUService.SendInterCommunicateMessageAsync(message, Base.AspNet.Global.CancellationTokenSource.Token).ConfigureAwait(false);
-#if DEBUG || PROCESSLOGS
-				await Base.AspNet.Global.WriteLogsAsync(UtilityService.NewUID, "RTU", $"Send an inter-communicate message successful\r\n{message.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
-#endif
+				await Task.WhenAll(
+					Base.AspNet.Global.WriteDebugLogsAsync(correlationID, Base.AspNet.Global.ServiceName, $"Send an inter-communicate message successful\r\n{message.ToJson().ToString(Base.AspNet.Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}"),
+					Base.AspNet.Global.IsDebugLogEnabled ? Base.AspNet.Global.WriteLogsAsync(correlationID, "RTU", $"Send an inter-communicate message successful\r\n{message.ToJson().ToString(Formatting.Indented)}") : Task.CompletedTask
+				).ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
-				await Base.AspNet.Global.WriteLogsAsync(UtilityService.NewUID, "RTU", "Error occurred while sending an inter-communicate message", ex).ConfigureAwait(false);
+				await Task.WhenAll(
+					Base.AspNet.Global.WriteDebugLogsAsync(correlationID, Base.AspNet.Global.ServiceName, "Error occurred while sending an inter-communicate message", ex),
+					Base.AspNet.Global.WriteLogsAsync(correlationID, "RTU", "Error occurred while sending an inter-communicate message", ex)
+				).ConfigureAwait(false);
 			}
 		}
 
-		static void ProcessInterCommunicateMessage(CommunicateMessage message)
+		static async Task ProcessInterCommunicateMessageAsync(CommunicateMessage message)
 		{
-#if DEBUG || PROCESSLOGS
-			Base.AspNet.Global.WriteLogs(UtilityService.NewUID, "RTU", $"Got an inter-communicate message\r\n{message.ToJson().ToString(Formatting.Indented)}");
-#endif
-
 			// update users' sessions with new access token
 			if (message.Type.Equals("Session#Update"))
 			{
@@ -557,7 +608,7 @@ namespace net.vieapps.Services.APIGateway
 				var verification = (message.Data["Verification"] as JValue).Value.CastAs<bool>();
 				var accessToken = ((message.Data["Token"] as JValue).Value as string).Decrypt(Base.AspNet.Global.EncryptionKey);
 
-				Global.Cache.Remove("Session#" + sessionID);
+				await Global.Cache.RemoveAsync("Session#" + sessionID).ConfigureAwait(false);
 
 				var json = new JObject()
 				{
@@ -575,12 +626,12 @@ namespace net.vieapps.Services.APIGateway
 					Verification = verification
 				}.UpdateSessionJson(json, accessToken);
 
-				new UpdateMessage()
+				await new UpdateMessage()
 				{
 					Type = "Users#Session",
 					DeviceID = deviceID,
 					Data = json
-				}.Publish();
+				}.PublishAsync().ConfigureAwait(false);
 			}
 
 			// revoke users' sessions
@@ -605,20 +656,48 @@ namespace net.vieapps.Services.APIGateway
 					User = user
 				}.UpdateSessionJson(json, null);
 
-				new UpdateMessage()
+				await new UpdateMessage()
 				{
 					Type = "Users#Session",
 					DeviceID = deviceID,
 					Data = json
-				}.Publish();
+				}.PublishAsync().ConfigureAwait(false);
 			}
 
 			// refresh users' sessions (clear cached)
 			else if (message.Type.Equals("Session#Refresh"))
-			{
-				var sessionID = (message.Data["Session"] as JValue).Value as string;
-				Global.Cache.Remove("Session#" + sessionID);
-			}
+				await Global.Cache.RemoveAsync($"Session#{(message.Data["Session"] as JValue).Value as string}").ConfigureAwait(false);
+		}
+
+		internal static async Task PublishAsync(this UpdateMessage message)
+		{
+			if (Global.UpdateMessagePublisher == null)
+				try
+				{
+					await Base.AspNet.Global.OpenOutgoingChannelAsync().ConfigureAwait(false);
+					Global.UpdateMessagePublisher = Base.AspNet.Global.OutgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages");
+					Global.UpdateMessagePublisher.OnNext(message);
+				}
+				catch (Exception ex)
+				{
+					await Task.WhenAll(
+						Base.AspNet.Global.WriteDebugLogsAsync(Base.AspNet.Global.GetCorrelationID(), Base.AspNet.Global.ServiceName, $"Error occurred while publishing an update message: {message.ToJson().ToString(Base.AspNet.Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex),
+						Base.AspNet.Global.WriteLogsAsync(Base.AspNet.Global.GetCorrelationID(), "RTU", $"Error occurred while publishing an update message: {message.ToJson().ToString(Formatting.Indented)}", ex)
+					).ConfigureAwait(false);
+				}
+
+			else
+				try
+				{
+					Global.UpdateMessagePublisher.OnNext(message);
+				}
+				catch (Exception ex)
+				{
+					await Task.WhenAll(
+						Base.AspNet.Global.WriteDebugLogsAsync(Base.AspNet.Global.GetCorrelationID(), Base.AspNet.Global.ServiceName, $"Error occurred while publishing an update message: {message.ToJson().ToString(Base.AspNet.Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex),
+						Base.AspNet.Global.WriteLogsAsync(Base.AspNet.Global.GetCorrelationID(), "RTU", $"Error occurred while publishing an update message: {message.ToJson().ToString(Formatting.Indented)}", ex)
+					).ConfigureAwait(false);
+				}
 		}
 		#endregion
 
@@ -707,14 +786,19 @@ namespace net.vieapps.Services.APIGateway
 
 					// write content
 					context.Response.ContentType = staticMimeType;
-					await context.Response.Output.WriteAsync(staticContent).ConfigureAwait(false);
+					await Task.WhenAll(
+						context.Response.Output.WriteAsync(staticContent),
+						Base.AspNet.Global.WriteDebugLogsAsync(Base.AspNet.Global.GetCorrelationID(context.Items), Base.AspNet.Global.ServiceName, $"Process request of static file successful [{path}]")
+					).ConfigureAwait(false);
 				}
 				catch (FileNotFoundException ex)
 				{
+					Base.AspNet.Global.WriteDebugLogs(Base.AspNet.Global.GetCorrelationID(context.Items), Base.AspNet.Global.ServiceName, $"Static file is not found [{path}]", ex);
 					context.ShowError((int)HttpStatusCode.NotFound, $"Not found [{path}]", "FileNotFoundException", ex.StackTrace, ex.InnerException);
 				}
 				catch (Exception ex)
 				{
+					Base.AspNet.Global.WriteDebugLogs(Base.AspNet.Global.GetCorrelationID(context.Items), Base.AspNet.Global.ServiceName, $"Error occurred while processing static file [{path}]", ex);
 					context.ShowError(ex);
 				}
 			}
@@ -727,7 +811,10 @@ namespace net.vieapps.Services.APIGateway
 
 				// no information
 				if (string.IsNullOrWhiteSpace(serviceName))
+				{
+					Base.AspNet.Global.WriteDebugLogs(Base.AspNet.Global.GetCorrelationID(context.Items), Base.AspNet.Global.ServiceName, $"The request is invalid [{context.Request.RawUrl}]");
 					context.ShowError(new InvalidRequestException());
+				}
 
 				// external APIs
 				else if (ExternalAPIs.APIs.ContainsKey(serviceName))

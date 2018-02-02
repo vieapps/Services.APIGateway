@@ -83,6 +83,12 @@ namespace net.vieapps.Services.APIGateway
 			// write into files
 			if (writeFiles)
 				Global.Component?._loggingService?.WriteLog(serviceName, objectName, log, stack);
+
+			// write into debug logs
+			var correlationID = UtilityService.NewUID;
+			Global.Component?._loggingService?.WriteDebugLogs(correlationID, "APIGateway", message);
+			if (!stack.Equals(""))
+				Global.Component?._loggingService?.WriteDebugLogs(correlationID, "APIGateway", stack);
 		}
 
 		internal static void WriteLog(string log, Exception exception, string objectName = null, int eventID = 26429)

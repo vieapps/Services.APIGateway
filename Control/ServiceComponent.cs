@@ -66,6 +66,7 @@ namespace net.vieapps.Services.APIGateway
 		#region Start/Stop
 		internal void Start(string[] args = null, Func<Task> next = null)
 		{
+			this._loggingService = new LoggingService();
 			Task.Run(async () =>
 			{
 				await this.StartAsync(args).ConfigureAwait(false);
@@ -89,7 +90,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			// connecto to WAMP router to open channels
 			var info = this.GetRouterInfo();
-			Global.WriteLog($"Start the API Gateway Services Controller...", "Controller");
+			Global.WriteLog($"Start the API Gateway Services Controller - Working mode: {(Global.AsService ? "Background Service" : "Desktop App")}", "Controller");
 			Global.WriteLog($"Attempts connect to WAMP router [{info.Item1}{info.Item2}]", "Controller");
 
 			await this.OpenIncomingChannelAsync(
@@ -100,7 +101,10 @@ namespace net.vieapps.Services.APIGateway
 					this._communicator = this._incommingChannel.RealmProxy.Services
 						.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
 						.Subscribe(
-							message => this.ProcessInterCommunicateMessage(message),
+							async (message) =>
+							{
+								await this.ProcessInterCommunicateMessageAsync(message).ConfigureAwait(false);
+							},
 							exception => Global.WriteLog("Error occurred while fetching inter-communicate message", exception, "Controller", 36429)
 						);
 				},
@@ -217,11 +221,7 @@ namespace net.vieapps.Services.APIGateway
 
 		internal void Stop()
 		{
-			try
-			{
-				Global.CancellationTokenSource.Cancel();
-			}
-			catch { }
+			Global.CancellationTokenSource.Cancel();
 			Global.CancellationTokenSource.Dispose();
 
 			MailSender.SaveMessages();
@@ -232,7 +232,7 @@ namespace net.vieapps.Services.APIGateway
 			this._runningServices.Select(kvp => kvp.Key).ToList().ForEach(name => this.StopBusinessService(name, false));
 
 			this._communicator?.Dispose();
-			this._loggingService?.FlushAll();
+			this._loggingService?.FlushAllLogs();
 
 			this._helperServices.ForEach(async (s) => await s.DisposeAsync().ConfigureAwait(false));
 
@@ -262,8 +262,8 @@ namespace net.vieapps.Services.APIGateway
 			var useJsonChannel = info.Item3;
 
 			this._incommingChannel = useJsonChannel
-				? (new DefaultWampChannelFactory()).CreateJsonChannel(address, realm)
-				: (new DefaultWampChannelFactory()).CreateMsgpackChannel(address, realm);
+				? new DefaultWampChannelFactory().CreateJsonChannel(address, realm)
+				: new DefaultWampChannelFactory().CreateMsgpackChannel(address, realm);
 
 			if (onConnectionEstablished != null)
 				this._incommingChannel.RealmProxy.Monitor.ConnectionEstablished += new EventHandler<WampSessionCreatedEventArgs>(onConnectionEstablished);
@@ -289,9 +289,9 @@ namespace net.vieapps.Services.APIGateway
 		void ReOpenIncomingChannel(int delay = 0, Action onSuccess = null, Action<Exception> onError = null)
 		{
 			if (this._incommingChannel != null)
-				(new WampChannelReconnector(this._incommingChannel, async () =>
+				new WampChannelReconnector(this._incommingChannel, async () =>
 				{
-					await Task.Delay(delay > 0 ? delay : 0);
+					await Task.Delay(delay > 0 ? delay : 0).ConfigureAwait(false);
 					try
 					{
 						await this._incommingChannel.Open().ConfigureAwait(false);
@@ -301,7 +301,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 						onError?.Invoke(ex);
 					}
-				})).Start();
+				}).Start();
 		}
 
 		public async Task OpenOutgoingChannelAsync(Action<object, WampSessionCreatedEventArgs> onConnectionEstablished = null, Action<object, WampSessionCloseEventArgs> onConnectionBroken = null, Action<object, WampConnectionErrorEventArgs> onConnectionError = null)
@@ -315,8 +315,8 @@ namespace net.vieapps.Services.APIGateway
 			var useJsonChannel = info.Item3;
 
 			this._outgoingChannel = useJsonChannel
-				? (new DefaultWampChannelFactory()).CreateJsonChannel(address, realm)
-				: (new DefaultWampChannelFactory()).CreateMsgpackChannel(address, realm);
+				? new DefaultWampChannelFactory().CreateJsonChannel(address, realm)
+				: new DefaultWampChannelFactory().CreateMsgpackChannel(address, realm);
 
 			if (onConnectionEstablished != null)
 				this._outgoingChannel.RealmProxy.Monitor.ConnectionEstablished += new EventHandler<WampSessionCreatedEventArgs>(onConnectionEstablished);
@@ -342,7 +342,7 @@ namespace net.vieapps.Services.APIGateway
 		void ReOpenOutgoingChannel(int delay = 0, Action onSuccess = null, Action<Exception> onError = null)
 		{
 			if (this._outgoingChannel != null)
-				(new WampChannelReconnector(this._outgoingChannel, async () =>
+				new WampChannelReconnector(this._outgoingChannel, async () =>
 				{
 					await Task.Delay(delay > 0 ? delay : 0);
 					try
@@ -354,7 +354,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 						onError?.Invoke(ex);
 					}
-				})).Start();
+				}).Start();
 		}
 		#endregion
 
@@ -366,7 +366,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// start all services
 			if (File.Exists(this._serviceHoster))
-				this._availableServices.ForEach(s => this.StartBusinessService(s.Key));
+				this._availableServices.ForEach(kvp => this.StartBusinessService(kvp.Key));
 			else
 				Global.WriteLog($"The service hoster [{this._serviceHoster}] is not found", null, "Controller", 36429);
 
@@ -519,7 +519,6 @@ namespace net.vieapps.Services.APIGateway
 				Global.WriteLog("Error occurred while registering the centralized managing service", ex, "Controller", 36429);
 			}
 
-			this._loggingService = new LoggingService();
 			this._helperServices.Add(await this._incommingChannel.RealmProxy.Services.RegisterCallee(this._loggingService, RegistrationInterceptor.Create()).ConfigureAwait(false));
 			Global.WriteLog("The centralized logging service is registered", "Controller");
 
@@ -586,7 +585,7 @@ namespace net.vieapps.Services.APIGateway
 			// flush logs (DEBUG: 5 seconds - Other: 1 minute)
 			this.StartTimer(() =>
 			{
-				this._loggingService?.FlushAll();
+				this._loggingService?.FlushAllLogs();
 #if DEBUG
 			}, 5);
 #else
@@ -687,6 +686,19 @@ namespace net.vieapps.Services.APIGateway
 							}
 							catch { }
 						});
+				});
+
+			// debug logs
+			remainTime = DateTime.Now.AddHours(-24);
+			UtilityService.GetFiles(Global.LogsPath, "*.*")
+				.ForEach(file =>
+				{
+					try
+					{
+						file.Delete();
+						counter++;
+					}
+					catch { }
 				});
 
 			// clean recycle-bin contents
@@ -878,7 +890,7 @@ namespace net.vieapps.Services.APIGateway
 						{
 							var next = command.IndexOf(" ", pos);
 							command = command.Remove(pos + 10, next - pos - 11);
-							command = command.Insert(pos + 11, "*****");
+							command = command.Insert(pos + 10, "*****");
 							pos = command.PositionOf("/password:", pos + 1);
 						}
 						Global.WriteLog(
@@ -930,9 +942,9 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Process inter-communicate messages
-		void ProcessInterCommunicateMessage(CommunicateMessage message)
+		Task ProcessInterCommunicateMessageAsync(CommunicateMessage message)
 		{
-
+			return Task.CompletedTask;
 		}
 		#endregion
 

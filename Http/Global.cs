@@ -77,15 +77,15 @@ namespace net.vieapps.Services.APIGateway
 									{
 										await Global.ProcessInterCommunicateMessageAsync(message).ConfigureAwait(false);
 										await Task.WhenAll(
-											Base.AspNet.Global.WriteDebugLogsAsync(relatedID, Base.AspNet.Global.ServiceName, $"Process an inter-communicate message successful\r\n{message.ToJson().ToString(Base.AspNet.Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}"),
-											Base.AspNet.Global.IsDebugLogEnabled ? Base.AspNet.Global.WriteLogsAsync(relatedID, "RTU", $"Process an inter-communicate message successful\r\n{message.ToJson().ToString(Formatting.Indented)}") : Task.CompletedTask
+											Base.AspNet.Global.WriteDebugLogsAsync(relatedID, Base.AspNet.Global.ServiceName, $"Process an inter-communicate message successful\r\n{message?.ToJson().ToString(Base.AspNet.Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}"),
+											Base.AspNet.Global.IsDebugLogEnabled ? Base.AspNet.Global.WriteLogsAsync(relatedID, "RTU", $"Process an inter-communicate message successful\r\n{message?.ToJson().ToString(Formatting.Indented)}") : Task.CompletedTask
 										).ConfigureAwait(false);
 									}
 									catch (Exception ex)
 									{
 										await Task.WhenAll(
-											Base.AspNet.Global.WriteDebugLogsAsync(relatedID, Base.AspNet.Global.ServiceName, $"Error occurred while processing an inter-communicate message\r\n{message.ToJson().ToString(Base.AspNet.Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex),
-											Base.AspNet.Global.WriteLogsAsync(relatedID, "RTU", $"Error occurred while processing an inter-communicate message\r\n{message.ToJson().ToString(Base.AspNet.Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex)
+											Base.AspNet.Global.WriteDebugLogsAsync(relatedID, Base.AspNet.Global.ServiceName, $"Error occurred while processing an inter-communicate message\r\n{message?.ToJson().ToString(Base.AspNet.Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex),
+											Base.AspNet.Global.WriteLogsAsync(relatedID, "RTU", $"Error occurred while processing an inter-communicate message\r\n{message?.ToJson().ToString(Base.AspNet.Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex)
 										).ConfigureAwait(false);
 									}
 								},
@@ -183,6 +183,8 @@ namespace net.vieapps.Services.APIGateway
 				? new[] {""}
 				: executionFilePath.ToLower().ToArray('/', true);
 
+			var correlationID = Base.AspNet.Global.GetCorrelationID(app.Context.Items);
+
 			// update special headers on OPTIONS request
 			if (app.Context.Request.HttpMethod.Equals("OPTIONS"))
 			{
@@ -198,14 +200,14 @@ namespace net.vieapps.Services.APIGateway
 			// by-pass segments
 			else if (Base.AspNet.Global.BypassSegments.Count > 0 && Base.AspNet.Global.BypassSegments.Contains(executionFilePaths[0]))
 			{
-				Base.AspNet.Global.WriteDebugLogs(Base.AspNet.Global.GetCorrelationID(), Base.AspNet.Global.ServiceName, $"Bypass the request of by-pass segment [{app.Context.Request.RawUrl}]");
+				Base.AspNet.Global.WriteDebugLogs(correlationID, Base.AspNet.Global.ServiceName, $"Bypass the request of by-pass segment [{app.Context.Request.RawUrl}]");
 				return;
 			}
 
 			// hidden segments
 			else if (Base.AspNet.Global.HiddenSegments.Count > 0 && Base.AspNet.Global.HiddenSegments.Contains(executionFilePaths[0]))
 			{
-				Base.AspNet.Global.WriteDebugLogs(Base.AspNet.Global.GetCorrelationID(), Base.AspNet.Global.ServiceName, $"Stop the request of hidden segment [{app.Context.Request.RawUrl}]");
+				Base.AspNet.Global.WriteDebugLogs(correlationID, Base.AspNet.Global.ServiceName, $"Stop the request of hidden segment [{app.Context.Request.RawUrl}]");
 				Global.ShowError(app.Context, 403, "Forbidden", "AccessDeniedException", null, null);
 				app.Context.Response.End();
 				return;
@@ -240,7 +242,7 @@ namespace net.vieapps.Services.APIGateway
 				$"- Origin: {appInfo.Item1} / {appInfo.Item2} - {appInfo.Item3}",
 				$"- IP: {app.Context.Request.UserHostAddress} [{app.Context.Request.UserAgent}]"
 			};
-			Base.AspNet.Global.WriteDebugLogs(Base.AspNet.Global.GetCorrelationID(), Base.AspNet.Global.ServiceName, logs);
+			Base.AspNet.Global.WriteDebugLogs(correlationID, Base.AspNet.Global.ServiceName, logs);
 
 			// diagnostics
 			if (Base.AspNet.Global.IsInfoLogEnabled && !executionFilePaths[0].IsEquals("rtu"))
@@ -712,6 +714,8 @@ namespace net.vieapps.Services.APIGateway
 
 		public override async Task ProcessRequestAsync(HttpContext context)
 		{
+			var correlationID = Base.AspNet.Global.GetCorrelationID(context.Items);
+
 			// stop process request is OPTIONS
 			if (context.Request.HttpMethod.Equals("OPTIONS"))
 				return;
@@ -788,17 +792,17 @@ namespace net.vieapps.Services.APIGateway
 					context.Response.ContentType = staticMimeType;
 					await Task.WhenAll(
 						context.Response.Output.WriteAsync(staticContent),
-						Base.AspNet.Global.WriteDebugLogsAsync(Base.AspNet.Global.GetCorrelationID(context.Items), Base.AspNet.Global.ServiceName, $"Process request of static file successful [{path}]")
+						Base.AspNet.Global.WriteDebugLogsAsync(correlationID, Base.AspNet.Global.ServiceName, $"Process request of static file successful [{path}]")
 					).ConfigureAwait(false);
 				}
 				catch (FileNotFoundException ex)
 				{
-					Base.AspNet.Global.WriteDebugLogs(Base.AspNet.Global.GetCorrelationID(context.Items), Base.AspNet.Global.ServiceName, $"Static file is not found [{path}]", ex);
+					Base.AspNet.Global.WriteDebugLogs(correlationID, Base.AspNet.Global.ServiceName, $"Static file is not found [{path}]", ex);
 					context.ShowError((int)HttpStatusCode.NotFound, $"Not found [{path}]", "FileNotFoundException", ex.StackTrace, ex.InnerException);
 				}
 				catch (Exception ex)
 				{
-					Base.AspNet.Global.WriteDebugLogs(Base.AspNet.Global.GetCorrelationID(context.Items), Base.AspNet.Global.ServiceName, $"Error occurred while processing static file [{path}]", ex);
+					Base.AspNet.Global.WriteDebugLogs(correlationID, Base.AspNet.Global.ServiceName, $"Error occurred while processing static file [{path}]", ex);
 					context.ShowError(ex);
 				}
 			}
@@ -812,7 +816,7 @@ namespace net.vieapps.Services.APIGateway
 				// no information
 				if (string.IsNullOrWhiteSpace(serviceName))
 				{
-					Base.AspNet.Global.WriteDebugLogs(Base.AspNet.Global.GetCorrelationID(context.Items), Base.AspNet.Global.ServiceName, $"The request is invalid [{context.Request.RawUrl}]");
+					Base.AspNet.Global.WriteDebugLogs(correlationID, Base.AspNet.Global.ServiceName, $"The request is invalid [{context.Request.RawUrl}]");
 					context.ShowError(new InvalidRequestException());
 				}
 

@@ -35,7 +35,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		#region Write logs
-		public Task WriteLogsAsync(string correlationID, string serviceName, string objectName, List<string> logs, string stack = null, CancellationToken cancellationToken = default(CancellationToken))
+		public void WriteLogs(string correlationID, string serviceName, string objectName, List<string> logs, string stack = null)
 		{
 			// prepare
 			var time = DateTime.Now.ToString("HH:mm:ss.fff");
@@ -57,25 +57,24 @@ namespace net.vieapps.Services.APIGateway
 
 			// normal logs
 			var formLogs = "";
-			logs.ForEach(log =>
+			logs?.ForEach(log =>
 			{
-				var info = time + "\t" + correlationID + "     \t" + log;
-				svcLogs.Enqueue(info);
+				svcLogs.Enqueue($"{time}\t{correlationID}\t{log}");
 				if (!Global.AsService)
-					formLogs += (!formLogs.Equals("") ? "\r\n" : "") + info;
+					formLogs += (!formLogs.Equals("") ? "\r\n" : "") + $"{time}\t{correlationID}\t{log}";
 			});
 
 			if (!string.IsNullOrWhiteSpace(stack))
 			{
-				svcLogs.Enqueue("==> Stack:" + "\r\n" + stack);
+				svcLogs.Enqueue($"==> Stack:\r\n{stack}");
 				if (!Global.AsService)
-					formLogs += (!formLogs.Equals("") ? "\r\n" : "") + "==> Stack:" + "\r\n" + stack;
+					formLogs += (!formLogs.Equals("") ? "\r\n" : "") + $"==> Stack:\r\n{stack}";
 			}
 
 			if (svcLogs.Count >= this._max)
 				Task.Run(async () =>
 				{
-					await this.FlushLogsAsync(path, svcLogs, cancellationToken).ConfigureAwait(false);
+					await this.FlushLogsAsync(path, svcLogs).ConfigureAwait(false);
 				}).ConfigureAwait(false);
 
 			if (!Global.AsService && !formLogs.Equals(""))
@@ -88,15 +87,23 @@ namespace net.vieapps.Services.APIGateway
 			if (!string.IsNullOrWhiteSpace(stack))
 			{
 				var errorLogs = new ConcurrentQueue<string>();
-				logs.ForEach(log => errorLogs.Enqueue(time + "\t" + correlationID + "     \t" + log));
-				errorLogs.Enqueue("==> Stack:" + "\r\n" + stack);
+				logs?.ForEach(log => errorLogs.Enqueue($"{time}\t{correlationID}\t{log}"));
+				errorLogs.Enqueue($"==> Stack:\r\n{stack}");
 				Task.Run(async () =>
 				{
-					await this.FlushLogsAsync(prefix + Path.DirectorySeparatorChar.ToString() + prefix + ".errors", errorLogs, cancellationToken).ConfigureAwait(false);
+					await this.FlushLogsAsync(prefix + Path.DirectorySeparatorChar.ToString() + prefix + ".errors", errorLogs).ConfigureAwait(false);
 				}).ConfigureAwait(false);
 			}
+		}
 
-			return Task.CompletedTask;
+		public Task WriteLogsAsync(string correlationID, string serviceName, string objectName, List<string> logs, string stack = null, CancellationToken cancellationToken = default(CancellationToken))
+		{
+			return UtilityService.ExecuteTask(() => this.WriteLogs(correlationID, serviceName, objectName, logs, stack), cancellationToken);
+		}
+
+		public void WriteLogs(string serviceName, string objectName, List<string> logs, string stack = null)
+		{
+			this.WriteLogs(UtilityService.NewUID, serviceName, objectName, logs, stack);
 		}
 
 		public Task WriteLogAsync(string correlationID, string serviceName, string objectName, string log, string stack = null, CancellationToken cancellationToken = default(CancellationToken))
@@ -104,25 +111,12 @@ namespace net.vieapps.Services.APIGateway
 			return this.WriteLogsAsync(correlationID, serviceName, objectName, new List<string>() { log }, stack, cancellationToken);
 		}
 
-		internal void WriteLogs(string correlationID, string serviceName, string objectName, List<string> logs, string stack = null)
-		{
-			Task.Run(async () =>
-			{
-				await this.WriteLogsAsync(correlationID, serviceName, objectName, logs, stack, Global.CancellationTokenSource.Token).ConfigureAwait(false);
-			}).ConfigureAwait(false);
-		}
-
-		internal void WriteLogs(string serviceName, string objectName, List<string> logs, string stack = null)
-		{
-			this.WriteLogs(UtilityService.NewUID, serviceName, objectName, logs, stack);
-		}
-
-		internal void WriteLog(string correlationID, string serviceName, string objectName, string log, string stack = null)
+		public void WriteLog(string correlationID, string serviceName, string objectName, string log, string stack = null)
 		{
 			this.WriteLogs(correlationID, serviceName, objectName, new List<string>() { log }, stack);
 		}
 
-		internal void WriteLog(string serviceName, string objectName, string log, string stack = null)
+		public void WriteLog(string serviceName, string objectName, string log, string stack = null)
 		{
 			this.WriteLogs(UtilityService.NewUID, serviceName, objectName, new List<string>() { log }, stack);
 		}
@@ -155,7 +149,7 @@ namespace net.vieapps.Services.APIGateway
 		public void WriteDebugLogs(string correlationID, string serviceName, List<string> logs)
 		{
 			var time = DateTime.Now.ToString("HH:mm:ss.fff");
-			var service = serviceName ?? "Unknown";
+			var service = serviceName ?? "APIGateway";
 			logs?.ForEach(log => this._debugLogs.Enqueue($"{time}\t{correlationID}\t{service}\t{log}"));
 			if (this._debugLogs.Count >= this._max)
 				Task.Run(async () =>
@@ -171,15 +165,7 @@ namespace net.vieapps.Services.APIGateway
 
 		public Task WriteDebugLogsAsync(string correlationID, string serviceName, List<string> logs, CancellationToken cancellationToken = default(CancellationToken))
 		{
-			var time = DateTime.Now.ToString("HH:mm:ss.fff");
-			var service = serviceName ?? "Unknown";
-			logs?.ForEach(log => this._debugLogs.Enqueue($"{time}\t{correlationID}\t{service}\t{log}"));
-			if (this._debugLogs.Count >= this._max)
-				Task.Run(async () =>
-				{
-					await this.FlushDebugLogsAsync(cancellationToken).ConfigureAwait(false);
-				}).ConfigureAwait(false);
-			return Task.CompletedTask;
+			return UtilityService.ExecuteTask(() => this.WriteDebugLogs(correlationID, serviceName, logs), cancellationToken);
 		}
 
 		public Task WriteDebugLogsAsync(string correlationID, string serviceName, string logs, CancellationToken cancellationToken = default(CancellationToken))
@@ -200,7 +186,7 @@ namespace net.vieapps.Services.APIGateway
 					if (!string.IsNullOrWhiteSpace(log))
 						lines.Add(log);
 
-				var filename = DateTime.Now.Minute > 49
+				var part = DateTime.Now.Minute > 49
 					? "6"
 					: DateTime.Now.Minute > 39
 						? "5"
@@ -212,7 +198,7 @@ namespace net.vieapps.Services.APIGateway
 									? "2"
 									: "1";
 
-				await UtilityService.WriteTextFileAsync(Path.Combine(Global.LogsPath, $"{DateTime.Now.ToString("yyyy-MM-dd_HH")}-{filename}.debug.txt"), lines, true, null, cancellationToken).ConfigureAwait(false);
+				await UtilityService.WriteTextFileAsync(Path.Combine(Global.LogsPath, $"{DateTime.Now.ToString("yyyy-MM-dd_HH")}.debug-{part}.txt"), lines, true, null, cancellationToken).ConfigureAwait(false);
 			}
 			catch { }
 			this._debugLogsAreFlushing = false;

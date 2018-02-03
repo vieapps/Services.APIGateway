@@ -7,7 +7,6 @@ using System.Collections.Concurrent;
 using System.Threading.Tasks;
 using System.Web.WebSockets;
 using System.Net.WebSockets;
-using System.Reactive.Linq;
 using System.Diagnostics;
 
 using Newtonsoft.Json;
@@ -41,11 +40,6 @@ namespace net.vieapps.Services.APIGateway
 					}
 				return RTU._ProcessInterval;
 			}
-		}
-
-		static async Task SendAsync(this AspNetWebSocketContext context, UpdateMessage message)
-		{
-			await context.SendAsync(message.ToJson().ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None)).ConfigureAwait(false);
 		}
 
 		static async Task SendAsync(this AspNetWebSocketContext context, Exception exception, string correlationID = null, string logs = null)
@@ -94,23 +88,41 @@ namespace net.vieapps.Services.APIGateway
 			).ConfigureAwait(false);
 		}
 
-		static async Task SendAsync(this AspNetWebSocketContext context, string message)
+		static async Task SendAsync(this AspNetWebSocketContext context, string message, string correlationID = null)
 		{
+			correlationID = correlationID ?? Base.AspNet.Global.GetCorrelationID(context.Items);
 			if (context.WebSocket.State.Equals(WebSocketState.Open))
 				try
 				{
-					while (context.Items.Contains("Sending"))
-						await Task.Delay(123).ConfigureAwait(false);
-
-					context.Items["Sending"] = "";
 					await context.WebSocket.SendAsync(new ArraySegment<byte>(message.ToBytes()), WebSocketMessageType.Text, true, Base.AspNet.Global.CancellationTokenSource.Token).ConfigureAwait(false);
-					context.Items.Remove("Sending");
 				}
 				catch (OperationCanceledException) { }
 				catch (Exception ex)
 				{
-					await Base.AspNet.Global.WriteLogsAsync(Base.AspNet.Global.GetCorrelationID(context.Items), "RTU", $"Error occurred while sending message via WebSocket", ex).ConfigureAwait(false);
+					await Task.WhenAll(
+						Base.AspNet.Global.WriteLogsAsync(correlationID, "RTU", $"Error occurred while sending message via WebSocket [{message}]", ex),
+						Base.AspNet.Global.WriteDebugLogsAsync(correlationID, Base.AspNet.Global.ServiceName, $"Error occurred while sending message via WebSocket [{message}]", ex)
+					).ConfigureAwait(false);
 				}
+		}
+
+		static async Task SendAsync(this AspNetWebSocketContext context, UpdateMessage message, string correlationID = null)
+		{
+			// update into queue
+			(context.Items["Messages"] as Queue<UpdateMessage>).Enqueue(message);
+
+			// stop if a send operation is already in progress
+			if (context.Items.Contains("Sending"))
+				return;
+
+			// send messages
+			context.Items.Add("Sending", "");
+			while ((context.Items["Messages"] as Queue<UpdateMessage>).Count > 0)
+			{
+				var msg = (context.Items["Messages"] as Queue<UpdateMessage>).Dequeue();
+				await context.SendAsync(msg.ToJson().ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None), correlationID).ConfigureAwait(false);
+			}
+			context.Items.Remove("Sending");
 		}
 		#endregion
 
@@ -155,6 +167,9 @@ namespace net.vieapps.Services.APIGateway
 				return;
 			}
 
+			// queue of messages
+			context.Items["Messages"] = new Queue<UpdateMessage>();
+
 			// wait for few times before connecting to WAMP router because Reactive.NET needs few times
 			if (context.QueryString["x-restart"] != null)
 			{
@@ -162,7 +177,7 @@ namespace net.vieapps.Services.APIGateway
 				await context.SendAsync(new UpdateMessage()
 				{
 					Type = "Knock"
-				}).ConfigureAwait(false);
+				}, correlationID).ConfigureAwait(false);
 
 				// wait for a few times
 				try
@@ -176,8 +191,10 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// register online session
-			await session.SendOnlineStatusAsync(true).ConfigureAwait(false);
-			await Base.AspNet.Global.WriteDebugLogsAsync(correlationID, Base.AspNet.Global.ServiceName, $"The real-time updater of a client's device is started - Account: {(session.User.ID.Equals("") ? "Visitor" : session.User.ID)} - Session: {session.SessionID} @ {session.DeviceID} - App Info: {session.AppName} @ {session.AppPlatform}").ConfigureAwait(false);
+			await Task.WhenAll(
+				session.SendOnlineStatusAsync(true),
+				Base.AspNet.Global.WriteDebugLogsAsync(correlationID, Base.AspNet.Global.ServiceName, $"The real-time updater of a client's device is started - Account: {(session.User.ID.Equals("") ? "Visitor" : session.User.ID)} - Session: {session.SessionID} @ {session.DeviceID} - App Info: {session.AppName} @ {session.AppPlatform}")
+			).ConfigureAwait(false);
 
 #if DEBUG || RTULOGS || REQUESTLOGS
 			await Base.AspNet.Global.WriteLogsAsync(correlationID, "RTU",
@@ -196,24 +213,25 @@ namespace net.vieapps.Services.APIGateway
 					.Subscribe(
 						async (message) =>
 						{
+							var relatedID = UtilityService.NewUID;
 							if (message.DeviceID.Equals("*") || message.DeviceID.IsEquals(session.DeviceID))
 								try
 								{
-									await context.SendAsync(message).ConfigureAwait(false);
-		#if DEBUG || RTULOGS
-									await Base.AspNet.Global.WriteLogsAsync(correlationID, "RTU",
+									await context.SendAsync(message, relatedID).ConfigureAwait(false);
+#if DEBUG || RTULOGS
+									await Base.AspNet.Global.WriteLogsAsync(relatedID, "RTU",
 										"Push the message to the subscriber's device successful" + "\r\n" +
 										$"- Session: {session.SessionID} @ {session.DeviceID}\r\n" +
 										$"- App Info: {session.AppName} @ {session.AppPlatform} - {session.AppOrigin} [IP: {session.IP} - Agent: {session.AppAgent}]" + "\r\n" +
 										$"- Message:\r\n{message.Data.ToString(Formatting.Indented)}"
 									).ConfigureAwait(false);
-		#endif
+#endif
 								}
 								catch (Exception ex)
 								{
 									await Task.WhenAll(
-										Base.AspNet.Global.WriteDebugLogsAsync(correlationID, Base.AspNet.Global.ServiceName, $"Error occurred while pushing message to the subscriber's device\r\n{message.ToJson().ToString(Base.AspNet.Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex),
-										Base.AspNet.Global.WriteLogsAsync(correlationID, "RTU", $"Error occurred while pushing message to the subscriber's device\r\n{message.ToJson().ToString(Formatting.None)}", ex)
+										Base.AspNet.Global.WriteDebugLogsAsync(relatedID, Base.AspNet.Global.ServiceName, $"Error occurred while pushing message to the subscriber's device\r\n{message.ToJson().ToString(Base.AspNet.Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex),
+										Base.AspNet.Global.WriteLogsAsync(relatedID, "RTU", $"Error occurred while pushing message to the subscriber's device\r\n{message.ToJson().ToString(Formatting.None)}", ex)
 									).ConfigureAwait(false);
 								}
 						},
@@ -247,8 +265,10 @@ namespace net.vieapps.Services.APIGateway
 					}
 
 					// update online status
-					await session.SendOnlineStatusAsync(false).ConfigureAwait(false);
-					await Base.AspNet.Global.WriteDebugLogsAsync(correlationID, Base.AspNet.Global.ServiceName, $"The real-time updater of a client's device is stopped - Account: {(session.User.ID.Equals("") ? "Visitor" : session.User.ID)} - Session: {session.SessionID} @ {session.DeviceID} - App Info: {session.AppName} @ {session.AppPlatform}").ConfigureAwait(false);
+					await Task.WhenAll(
+						session.SendOnlineStatusAsync(false),
+						Base.AspNet.Global.WriteDebugLogsAsync(correlationID, Base.AspNet.Global.ServiceName, $"The real-time updater of a client's device is stopped - Account: {(session.User.ID.Equals("") ? "Visitor" : session.User.ID)} - Session: {session.SessionID} @ {session.DeviceID} - App Info: {session.AppName} @ {session.AppPlatform}")
+					).ConfigureAwait(false);
 
 #if DEBUG || RTULOGS || REQUESTLOGS
 					await Base.AspNet.Global.WriteLogsAsync(correlationID, "RTU",
@@ -308,7 +328,7 @@ namespace net.vieapps.Services.APIGateway
 					await context.SendAsync(new UpdateMessage()
 					{
 						Type = "Pong"
-					}).ConfigureAwait(false);
+					}, correlationID).ConfigureAwait(false);
 
 				// update the session
 				else if ("PATCH".IsEquals(verb) && "users".IsEquals(serviceName) && "session".IsEquals(objectName) && extra != null && extra.ContainsKey("x-session"))
@@ -341,7 +361,7 @@ namespace net.vieapps.Services.APIGateway
 						? new User() { Roles = new List<string>() { SystemRole.All.ToString() } }
 						: (await InternalAPIs.CallServiceAsync(session, "Users", "Account").ConfigureAwait(false)).FromJson<User>();
 
-					await Base.AspNet.Global.WriteDebugLogsAsync(UtilityService.NewUID, Base.AspNet.Global.ServiceName, $"Patch a session successful (via WebSocket) [{verb}]: /{serviceName ?? "unknown"}/{objectName ?? "unknown"}{(Base.AspNet.Global.IsDebugResultsEnabled ? "\r\n" + session.ToJson().ToString(Base.AspNet.Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None) : "")}").ConfigureAwait(false);
+					await Base.AspNet.Global.WriteDebugLogsAsync(correlationID, Base.AspNet.Global.ServiceName, $"Patch a session successful (via WebSocket) [{verb}]: /{serviceName ?? "unknown"}/{objectName ?? "unknown"}{(Base.AspNet.Global.IsDebugResultsEnabled ? "\r\n" + session.ToJson().ToString(Base.AspNet.Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None) : "")}").ConfigureAwait(false);
 
 #if DEBUG || RTULOGS || PROCESSLOGS
 					await Base.AspNet.Global.WriteLogsAsync(UtilityService.NewUID, "RTU", $"Patch a session successful\r\n{session.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
@@ -350,13 +370,14 @@ namespace net.vieapps.Services.APIGateway
 
 				// call service to process the request
 				else if (!string.IsNullOrWhiteSpace(serviceName))
+				{
+					var relatedID = UtilityService.NewUID;
 					try
 					{
 						var stopwatch = new Stopwatch();
 						stopwatch.Start();
 
-						var query = requestInfo.Get<Dictionary<string, string>>("Query");
-						var request = new RequestInfo(session, serviceName, objectName, verb, query, requestInfo.Get<Dictionary<string, string>>("Header"), requestInfo.Get<string>("Body"), extra, correlationID);
+						var request = new RequestInfo(session, serviceName, objectName, verb, requestInfo.Get<Dictionary<string, string>>("Query"), requestInfo.Get<Dictionary<string, string>>("Header"), requestInfo.Get<string>("Body"), extra, relatedID);
 						if (serviceName.IsEquals("Users"))
 							request.Extra["Signature"] = verb.IsEquals("POST") || verb.IsEquals("PUT")
 								? request.Body.GetHMACSHA256(Base.AspNet.Global.ValidationKey)
@@ -369,10 +390,10 @@ namespace net.vieapps.Services.APIGateway
 							Type = serviceName.GetCapitalizedFirstLetter() + (string.IsNullOrWhiteSpace(objectName) ? "" : "#" + objectName.GetCapitalizedFirstLetter() + "#" + verb.GetCapitalizedFirstLetter()),
 							DeviceID = session.DeviceID,
 							Data = data
-						}).ConfigureAwait(false);
+						}, relatedID).ConfigureAwait(false);
 
 						stopwatch.Stop();
-						await Base.AspNet.Global.WriteDebugLogsAsync(UtilityService.NewUID, Base.AspNet.Global.ServiceName,
+						await Base.AspNet.Global.WriteDebugLogsAsync(relatedID, Base.AspNet.Global.ServiceName,
 							$"Process the request successful (via WebSocket) [{verb}]: /{serviceName ?? "unknown"}/{objectName ?? "unknown"}" + "\r\n" +
 							$"- Execution times: {stopwatch.GetElapsedTimes()}" + "\r\n" +
 							$"- Session: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
@@ -382,7 +403,7 @@ namespace net.vieapps.Services.APIGateway
 						).ConfigureAwait(false);
 
 #if DEBUG || RTULOGS || PROCESSLOGS
-						await Base.AspNet.Global.WriteLogsAsync(UtilityService.NewUID, "RTU",
+						await Base.AspNet.Global.WriteLogsAsync(relatedID, "RTU",
 							$"Process the request successful" + "\r\n" +
 							$"- Execution times: {stopwatch.GetElapsedTimes()}" + "\r\n" +
 							$"- Session: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
@@ -395,10 +416,11 @@ namespace net.vieapps.Services.APIGateway
 					catch (Exception ex)
 					{
 						await Task.WhenAll(
-							Base.AspNet.Global.WriteDebugLogsAsync(UtilityService.NewUID, Base.AspNet.Global.ServiceName, $"Error occurred while processing client message (via WebSocket): {requestInfo.ToJson().ToString(Base.AspNet.Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex),
-							context.SendAsync(ex, UtilityService.NewUID, $"Error occurred while processing client message: {requestInfo.ToJson().ToString(Formatting.Indented)}")
+							Base.AspNet.Global.WriteDebugLogsAsync(relatedID, Base.AspNet.Global.ServiceName, $"Error occurred while processing client message (via WebSocket): {requestInfo?.ToJson().ToString(Base.AspNet.Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex),
+							context.SendAsync(ex, relatedID, $"Error occurred while processing client message: {requestInfo?.ToJson().ToString(Formatting.Indented)}")
 						).ConfigureAwait(false);
 					}
+				}
 
 				// stand for next interval
 				try

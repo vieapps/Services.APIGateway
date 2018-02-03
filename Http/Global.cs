@@ -150,6 +150,7 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static void OnAppEnd()
 		{
+			Base.AspNet.Global.WriteDebugLogsAsync(UtilityService.NewUID, Base.AspNet.Global.ServiceName, "Stop the API Gateway HTTP Service...");
 			Global.InterCommunicateMessageUpdater?.Dispose();
 			RTU.Updaters.ForEach(updater =>
 			{

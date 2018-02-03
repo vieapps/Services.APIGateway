@@ -616,7 +616,7 @@ namespace net.vieapps.Services.APIGateway
 							taskNode.Attributes["time"]?.Value ?? "3"
 						);
 
-						var identity = (info.Item1 + "[" + (taskNode.Attributes["arguments"]?.Value ?? "") + "]").ToLower().GetMD5();
+						var identity = $"{info.Item1}[{info.Item2}]".ToLower().GetMD5();
 						if (!this._tasks.ContainsKey(identity))
 							this._tasks.Add(identity, info);
 					}

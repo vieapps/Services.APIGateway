@@ -186,19 +186,7 @@ namespace net.vieapps.Services.APIGateway
 					if (!string.IsNullOrWhiteSpace(log))
 						lines.Add(log);
 
-				var part = DateTime.Now.Minute > 49
-					? "6"
-					: DateTime.Now.Minute > 39
-						? "5"
-						: DateTime.Now.Minute > 29
-							? "4"
-							: DateTime.Now.Minute > 19
-								? "3"
-								: DateTime.Now.Minute > 9
-									? "2"
-									: "1";
-
-				await UtilityService.WriteTextFileAsync(Path.Combine(Global.LogsPath, $"{DateTime.Now.ToString("yyyy-MM-dd_HH")}.debug-{part}.txt"), lines, true, null, cancellationToken).ConfigureAwait(false);
+				await UtilityService.WriteTextFileAsync(Path.Combine(Global.LogsPath, $"{DateTime.Now.ToString("yyyy-MM-dd_HH")}.debug-{(1 + (DateTime.Now.Minute / 5))}.txt"), lines, true, null, cancellationToken).ConfigureAwait(false);
 			}
 			catch { }
 			this._debugLogsAreFlushing = false;

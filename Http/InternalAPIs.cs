@@ -157,10 +157,9 @@ namespace net.vieapps.Services.APIGateway
 						throw new InvalidSessionException("Captcha code is invalid", ex);
 					}
 
-					if (!CaptchaService.IsCodeValid(registered, input))
-						throw new InformationInvalidException("Captcha code is invalid");
-
-					captchaIsValid = true;
+					captchaIsValid = CaptchaService.IsCodeValid(registered, input)
+						? true
+						: throw new InformationInvalidException("Captcha code is invalid");
 				}
 				catch (Exception ex)
 				{

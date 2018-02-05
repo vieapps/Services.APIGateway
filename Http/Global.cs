@@ -285,15 +285,15 @@ namespace net.vieapps.Services.APIGateway
 			if (Base.AspNet.Global.IsInfoLogEnabled && app.Context.Items.Contains("StopWatch"))
 			{
 				(app.Context.Items["StopWatch"] as Stopwatch).Stop();
-				executionTimes = $" - Execution times: {(app.Context.Items["StopWatch"] as Stopwatch).GetElapsedTimes()}";
-				Base.AspNet.Global.WriteLogs($"End of request{executionTimes}");
+				executionTimes = (app.Context.Items["StopWatch"] as Stopwatch).GetElapsedTimes();
+				Base.AspNet.Global.WriteLogs($"End of request{(string.IsNullOrWhiteSpace(executionTimes) ? "" : " - Execution times: " + executionTimes)}");
 				try
 				{
 					app.Response.Headers.Add("x-execution-times", executionTimes);
 				}
 				catch { }
 			}
-			Base.AspNet.Global.WriteDebugLogs(Base.AspNet.Global.GetCorrelationID(), Base.AspNet.Global.ServiceName, $"End of request{executionTimes}");
+			Base.AspNet.Global.WriteDebugLogs(Base.AspNet.Global.GetCorrelationID(), Base.AspNet.Global.ServiceName, $"End of request{(string.IsNullOrWhiteSpace(executionTimes) ? "" : " - Execution times: " + executionTimes)}");
 		}
 		#endregion
 

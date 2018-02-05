@@ -361,7 +361,7 @@ namespace net.vieapps.Services.APIGateway
 						? new User() { Roles = new List<string>() { SystemRole.All.ToString() } }
 						: (await InternalAPIs.CallServiceAsync(session, "Users", "Account").ConfigureAwait(false)).FromJson<User>();
 
-					await Base.AspNet.Global.WriteDebugLogsAsync(correlationID, Base.AspNet.Global.ServiceName, $"Patch a session successful (via WebSocket) [{verb}]: /{serviceName ?? "unknown"}/{objectName ?? "unknown"}{(Base.AspNet.Global.IsDebugResultsEnabled ? "\r\n" + session.ToJson().ToString(Base.AspNet.Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None) : "")}").ConfigureAwait(false);
+					await Base.AspNet.Global.WriteDebugLogsAsync(correlationID, Base.AspNet.Global.ServiceName, $"Patch a session successful (via WebSocket){(Base.AspNet.Global.IsDebugResultsEnabled ? "\r\n" + session.ToJson().ToString(Base.AspNet.Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None) : "")}").ConfigureAwait(false);
 
 #if DEBUG || RTULOGS || PROCESSLOGS
 					await Base.AspNet.Global.WriteLogsAsync(UtilityService.NewUID, "RTU", $"Patch a session successful\r\n{session.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
@@ -385,16 +385,20 @@ namespace net.vieapps.Services.APIGateway
 						var data = await InternalAPIs.CallServiceAsync(request, "RTU").ConfigureAwait(false);
 
 						// send the update message
+						var @event = request.GetObjectIdentity();
+						@event = !string.IsNullOrWhiteSpace(@event) && !@event.IsValidUUID()
+							? @event
+							: verb;
 						await context.SendAsync(new UpdateMessage()
 						{
-							Type = serviceName.GetCapitalizedFirstLetter() + (string.IsNullOrWhiteSpace(objectName) ? "" : "#" + objectName.GetCapitalizedFirstLetter() + "#" + verb.GetCapitalizedFirstLetter()),
+							Type = serviceName.GetCapitalizedFirstLetter() + (string.IsNullOrWhiteSpace(objectName) ? "" : "#" + objectName.GetCapitalizedFirstLetter() + "#" + @event.GetCapitalizedFirstLetter()),
 							DeviceID = session.DeviceID,
 							Data = data
 						}, relatedID).ConfigureAwait(false);
 
 						stopwatch.Stop();
 						await Base.AspNet.Global.WriteDebugLogsAsync(relatedID, Base.AspNet.Global.ServiceName,
-							$"Process the request successful (via WebSocket) [{verb}]: /{serviceName ?? "unknown"}/{objectName ?? "unknown"}" + "\r\n" +
+							$"Process the request successful (via WebSocket)" + "\r\n" +
 							$"- Execution times: {stopwatch.GetElapsedTimes()}" + "\r\n" +
 							$"- Session: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
 							$"- App Info: {session.AppName} @ {session.AppPlatform} - {session.AppOrigin} [IP: {session.IP}]" + "\r\n" +

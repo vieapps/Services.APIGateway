@@ -23,16 +23,16 @@ namespace net.vieapps.Services.APIGateway
 #if DEBUG || RUTLOGS
 			this._updateEventLog = true;
 #else
-			this._updateEventLog = "true".IsEquals(UtilityService.GetAppSetting("Logs:RTU-EventLogs", "false"));
+			this._updateEventLog = "true".IsEquals(UtilityService.GetAppSetting("Logs:EventLogs", "false"));
 #endif
 		}
 
 		#region Send update messages
 		ISubject<UpdateMessage> _updateSubject = null;
 
-		void GetUpdateSubject()
+		ISubject<UpdateMessage> GetUpdateSubject()
 		{
-			this._updateSubject = this._updateSubject ?? Global.Component._outgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages");
+			return this._updateSubject ?? (this._updateSubject = Global.Component._outgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages"));
 		}
 
 		public Task SendUpdateMessageAsync(UpdateMessage message, CancellationToken cancellationToken = default(CancellationToken))
@@ -40,8 +40,7 @@ namespace net.vieapps.Services.APIGateway
 			if (message != null)
 				try
 				{
-					this.GetUpdateSubject();
-					this._updateSubject.OnNext(message);
+					this.GetUpdateSubject().OnNext(message);
 					if (this._updateEventLog)
 						Global.WriteLog(
 							"----- [RTU Service] ---------------" + "\r\n" +
@@ -63,7 +62,6 @@ namespace net.vieapps.Services.APIGateway
 			if (messages != null && messages.Count > 0)
 				try
 				{
-					this.GetUpdateSubject();
 					using (var publisher = messages
 						.Select(message => new UpdateMessage()
 						{
@@ -76,7 +74,7 @@ namespace net.vieapps.Services.APIGateway
 						.Subscribe(
 							message =>
 							{
-								this._updateSubject.OnNext(message);
+								this.GetUpdateSubject().OnNext(message);
 								if (this._updateEventLog)
 									Global.WriteLog(
 										"----- [RTU Service] ---------------" + "\r\n" +
@@ -164,11 +162,9 @@ namespace net.vieapps.Services.APIGateway
 				? messages.ToLookup(m => m.ServiceName)
 				: null;
 
-			if (byServiceMessages != null)
-				foreach (var msgs in byServiceMessages)
-					this.SendInterCommunicateMessagesAsync(msgs.Key, msgs.ToList());
-
-			return Task.CompletedTask;
+			return Task.WhenAll(byServiceMessages != null
+				? byServiceMessages.Select(msgs => this.SendInterCommunicateMessagesAsync(msgs.Key, msgs.ToList()))
+				: new List<Task>());
 		}
 
 		Task SendInterCommunicateMessagesAsync(string serviceName, List<CommunicateMessage> messages)

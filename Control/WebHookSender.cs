@@ -36,7 +36,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Load & Save messages
-		internal static void LoadMessages()
+		internal static async Task LoadMessagesAsync()
 		{
 			WebHookSender.Messages = WebHookSender.Messages ?? new Dictionary<string, WebHookInfo>();
 
@@ -45,7 +45,7 @@ namespace net.vieapps.Services.APIGateway
 			if (File.Exists(filePath))
 				try
 				{
-					var msgs = JArray.Parse(UtilityService.ReadTextFile(filePath));
+					var msgs = JArray.Parse(await UtilityService.ReadTextFileAsync(filePath).ConfigureAwait(false));
 					File.Delete(filePath);
 
 					foreach (JObject msg in msgs)
@@ -63,12 +63,12 @@ namespace net.vieapps.Services.APIGateway
 
 			// new messages
 			if (Directory.Exists(Global.WebHooksPath))
-				UtilityService.GetFiles(Global.WebHooksPath, "*.msg")
-					.ForEach(file =>
+				await UtilityService.GetFiles(Global.WebHooksPath, "*.msg")
+					.ForEachAsync(async (file, token) =>
 					{
 						try
 						{
-							var msg = WebHookMessage.Load(file.FullName);
+							var msg = await WebHookMessage.LoadAsync(file.FullName).ConfigureAwait(false);
 							WebHookSender.Messages.Add(msg.ID, new WebHookInfo() { Message = msg, Time = msg.SendingTime, Counters = 0 });
 						}
 						catch (Exception ex)
@@ -76,7 +76,7 @@ namespace net.vieapps.Services.APIGateway
 							Global.WriteLog("Error occurred while loading messages", ex, true, null, "webhook", 36429);
 						}
 						file.Delete();
-					});
+					}, Global.CancellationTokenSource.Token, true, false);
 		}
 
 		internal static void SaveMessages()
@@ -154,7 +154,7 @@ namespace net.vieapps.Services.APIGateway
 		public async Task ProcessAsync()
 		{
 			// load messages
-			WebHookSender.LoadMessages();
+			await WebHookSender.LoadMessagesAsync().ConfigureAwait(false);
 
 			// send messages
 			await WebHookSender.Messages

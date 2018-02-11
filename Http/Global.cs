@@ -253,30 +253,30 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// rewrite url
-			var url = app.Request.ApplicationPath + "Global.ashx";
+			var url = app.Request.ApplicationPath + "Global.ashx?";
 			if (Base.AspNet.Global.StaticSegments.Contains(executionFilePaths[0]))
-				url += "?request-of-static-resource=&path=" + app.Context.Request.RawUrl.UrlEncode();
+				url += $"request-of-static-resource=&path={app.Context.Request.RawUrl.UrlEncode()}&";
 			else
 			{
-				url += "?service-name=" + (!string.IsNullOrWhiteSpace(executionFilePaths[0]) ? executionFilePaths[0].GetANSIUri() : "");
+				url += $"service-name={(!string.IsNullOrWhiteSpace(executionFilePaths[0]) ? executionFilePaths[0].GetANSIUri() : "")}&";
 				if (executionFilePaths.Length > 1)
-					url += "&object-name=" + executionFilePaths[1].GetANSIUri();
+					url += $"object-name={executionFilePaths[1].GetANSIUri()}&";
 				if (executionFilePaths.Length > 2)
-					url += "&object-identity=" + executionFilePaths[2].GetANSIUri();
+					url += $"object-identity={executionFilePaths[2].GetANSIUri()}&";
 			}
 
 			foreach (string key in app.Request.QueryString)
 				if (!string.IsNullOrWhiteSpace(key) && !Global.QueryExcluded.Contains(key))
-					url += "&" + key + "=" + app.Request.QueryString[key].UrlEncode();
+					url += $"{key}={app.Request.QueryString[key].UrlEncode()}&";
 
 			if (Base.AspNet.Global.IsInfoLogEnabled)
 			{
 				if (Base.AspNet.Global.IsDebugLogEnabled)
-					logs.Add($"Rewrite URL: [{app.Context.Request.Url.Scheme}://{app.Context.Request.Url.Host + app.Context.Request.RawUrl}] => [{app.Context.Request.Url.Scheme}://{app.Context.Request.Url.Host + url}]");
+					logs.Add($"Rewrite URL: [{app.Context.Request.Url.Scheme}://{app.Context.Request.Url.Host + app.Context.Request.RawUrl}] => [{app.Context.Request.Url.Scheme}://{app.Context.Request.Url.Host + url.Left(url.Length - 1)}]");
 				Base.AspNet.Global.WriteLogs(logs);
 			}
 
-			app.Context.RewritePath(url);
+			app.Context.RewritePath(url.Left(url.Length - 1));
 		}
 
 		internal static void OnAppEndRequest(HttpApplication app)
@@ -357,16 +357,6 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		static string SetErrorStatus = null;
-
-		internal static bool IsSetErrorStatus
-		{
-			get
-			{
-				return "true".IsEquals(Global.SetErrorStatus ?? (Global.SetErrorStatus = UtilityService.GetAppSetting("Errors:SetStatus", "false")));
-			}
-		}
-
 		internal static void ShowError(this HttpContext context, int code, string message, string type, string stack, Exception inner)
 		{
 			// prepare
@@ -403,20 +393,11 @@ namespace net.vieapps.Services.APIGateway
 					json.Add(new JProperty("Inners", inners));
 			}
 
-			json = new JObject()
-			{
-				{ "Status", "Error" },
-				{ "Error", json }
-			};
-
 			// status code
-			if (Global.IsSetErrorStatus)
-			{
-				context.Response.TrySkipIisCustomErrors = true;
-				context.Response.StatusCode = code < 1 ? 500 : code;
-			}
+			context.Response.TrySkipIisCustomErrors = true;
+			context.Response.StatusCode = code < 1 ? 500 : code;
 
-			// response with JSON
+			// response bofy
 			context.Response.Cache.SetNoStore();
 			context.Response.ContentType = "application/json";
 			context.Response.ClearContent();
@@ -469,17 +450,7 @@ namespace net.vieapps.Services.APIGateway
 					}
 				}
 
-				var correlationID = requestInfo != null
-					? requestInfo.CorrelationID
-					: Base.AspNet.Global.GetCorrelationID(context.Items);
-				var serviceName = requestInfo != null
-					? requestInfo.ServiceName
-					: "unknown";
-				var objectName = requestInfo != null
-					? requestInfo.ObjectName
-					: "unknown";
-
-				Base.AspNet.Global.WriteLogs(correlationID, serviceName, logs, stack, objectName);
+				Base.AspNet.Global.WriteLogs(requestInfo?.CorrelationID ?? Base.AspNet.Global.GetCorrelationID(context.Items), requestInfo?.ObjectName ?? "unknown", logs, stack, requestInfo?.ServiceName ?? "unknown");
 			}
 		}
 

@@ -881,21 +881,22 @@ namespace net.vieapps.Services.APIGateway
 		#region Helper: call service
 		internal static Task<JObject> CallServiceAsync(RequestInfo requestInfo, string objectLogName = "Internal")
 		{
+			var name = $"net.vieapps.services.{requestInfo?.ServiceName}".ToLower();
 			return Base.AspNet.Global.CallServiceAsync(requestInfo, Base.AspNet.Global.CancellationTokenSource.Token,
 				(info) =>
 				{
 					if (Base.AspNet.Global.IsDebugLogEnabled)
-						Base.AspNet.Global.WriteLogs(info.CorrelationID, objectLogName, $"Call the service [net.vieapps.services.{info.ServiceName.ToLower()}]\r\n{info.ToJson().ToString(Formatting.Indented)}");
+						Base.AspNet.Global.WriteLogs(info.CorrelationID, objectLogName, $"Call the service [{name}]\r\n{info?.ToJson().ToString(Formatting.Indented)}");
 				},
 				(info, json) =>
 				{
 					if (Base.AspNet.Global.IsDebugLogEnabled)
-						Base.AspNet.Global.WriteLogs(info.CorrelationID, objectLogName, $"Results from the service [net.vieapps.services.{info.ServiceName.ToLower()}]\r\n{json?.ToString(Formatting.Indented)}");
+						Base.AspNet.Global.WriteLogs(info.CorrelationID, objectLogName, $"Results from the service [{name}]\r\n{json?.ToString(Formatting.Indented)}");
 				},
 				(info, ex) =>
 				{
 					if (Base.AspNet.Global.IsDebugLogEnabled)
-						Base.AspNet.Global.WriteLogs(info.CorrelationID, objectLogName, $"Error occurred while calling the service [net.vieapps.services.{info.ServiceName.ToLower()}]", ex);
+						Base.AspNet.Global.WriteLogs(info.CorrelationID, objectLogName, $"Error occurred while calling the service [{name}]", ex);
 				}
 			);
 		}
@@ -965,11 +966,8 @@ namespace net.vieapps.Services.APIGateway
 		static async Task WriteResponseAsync(this HttpContext context, JObject json)
 		{
 			context.Response.ContentType = "application/json";
-			await context.Response.Output.WriteAsync(new JObject()
-			{
-				{ "Status", "OK" },
-				{ "Data", json }
-			}.ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None)).ConfigureAwait(false);
+			context.Response.StatusCode = 200;
+			await context.Response.Output.WriteAsync(json.ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None)).ConfigureAwait(false);
 		}
 		#endregion
 

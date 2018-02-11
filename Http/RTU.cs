@@ -12,6 +12,8 @@ using System.Diagnostics;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
+using WampSharp.V2.Core.Contracts;
+
 using net.vieapps.Components.Utility;
 using net.vieapps.Components.Security;
 #endregion
@@ -42,36 +44,55 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		static async Task SendAsync(this AspNetWebSocketContext context, Exception exception, string correlationID = null, string logs = null)
+		static async Task SendAsync(this AspNetWebSocketContext context, Exception exception, string correlationID = null, string msg = null)
 		{
 			// prepare
 			correlationID = correlationID ?? Base.AspNet.Global.GetCorrelationID(context.Items);
+
+			var wampError = exception is WampException
+				? (exception as WampException).GetDetails()
+				: null;
+
+			msg = msg ?? (wampError != null
+				? wampError.Item2
+				: exception.Message);
+
+			var type = wampError != null
+				? wampError.Item3
+				: exception.GetType().GetTypeName(true);
+
 			var message = new JObject()
 			{
-				{ "Type", exception.GetType().GetTypeName(true) },
-				{ "Message", exception.Message },
+				{ "Message", type },
+				{ "Type", type },
 				{ "CorrelationID", correlationID }
 			};
 
 			if (Global.IsShowErrorStacks)
 			{
-				message.Add(new JProperty("Stack", exception.StackTrace));
-				if (exception.InnerException != null)
+				if (wampError != null)
+					message.Add(new JProperty("Stack", wampError.Item4));
+
+				else
 				{
-					var inners = new JArray();
-					var counter = 0;
-					var inner = exception.InnerException;
-					while (inner != null)
+					message.Add(new JProperty("Stack", exception.StackTrace));
+					if (exception.InnerException != null)
 					{
-						counter++;
-						inners.Add(new JObject()
+						var inners = new JArray();
+						var counter = 1;
+						var inner = exception.InnerException;
+						while (inner != null)
 						{
-							{ "Error", "(" + counter + "): " + inner.Message + " [" + inner.GetType().ToString() + "]" },
-							{ "Stack", inner.StackTrace }
-						});
-						inner = inner.InnerException;
+							inners.Add(new JObject()
+							{
+								{ "Error", "(" + counter + "): " + inner.Message + " [" + inner.GetType().ToString() + "]" },
+								{ "Stack", inner.StackTrace }
+							});
+							counter++;
+							inner = inner.InnerException;
+						}
+						message.Add(new JProperty("Inners", inners));
 					}
-					message.Add(new JProperty("Inners", inners));
 				}
 			}
 
@@ -84,7 +105,7 @@ namespace net.vieapps.Services.APIGateway
 			// send & write logs
 			await Task.WhenAll(
 				context.SendAsync(message.ToString(Global.IsShowErrorStacks ? Formatting.Indented : Formatting.None)),
-				Base.AspNet.Global.WriteLogsAsync(correlationID, "RTU", logs ?? "Error occurred while processing with real-time updater", exception)
+				Base.AspNet.Global.WriteLogsAsync(correlationID, "RTU", msg ?? "Error occurred while processing with real-time updater", exception)
 			).ConfigureAwait(false);
 		}
 
@@ -259,8 +280,8 @@ namespace net.vieapps.Services.APIGateway
 					catch (Exception ex)
 					{
 						await Task.WhenAll(
-							Base.AspNet.Global.WriteDebugLogsAsync(correlationID, Base.AspNet.Global.ServiceName, "Error occurred while disposing updater", ex),
-							Base.AspNet.Global.WriteLogsAsync(correlationID, "RTU", "Error occurred while disposing updater", ex)
+							Base.AspNet.Global.WriteDebugLogsAsync(correlationID, Base.AspNet.Global.ServiceName, $"Error occurred while disposing updater: {session.ToJson().ToString(Formatting.None)}", ex),
+							Base.AspNet.Global.WriteLogsAsync(correlationID, "RTU", $"Error occurred while disposing updater: {session.ToJson().ToString(Formatting.None)}", ex)
 						).ConfigureAwait(false);
 					}
 
@@ -327,7 +348,8 @@ namespace net.vieapps.Services.APIGateway
 				if ("PING".IsEquals(verb))
 					await context.SendAsync(new UpdateMessage()
 					{
-						Type = "Pong"
+						Type = "Pong",
+						DeviceID = session.DeviceID
 					}, correlationID).ConfigureAwait(false);
 
 				// update the session

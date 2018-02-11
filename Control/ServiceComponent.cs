@@ -689,8 +689,9 @@ namespace net.vieapps.Services.APIGateway
 				});
 
 			// debug logs
-			remainTime = DateTime.Now.AddHours(-24);
+			remainTime = DateTime.Now.AddHours(0 - 36);
 			UtilityService.GetFiles(Global.LogsPath, "*.*")
+				.Where(file => file.LastWriteTime < remainTime)
 				.ForEach(file =>
 				{
 					try

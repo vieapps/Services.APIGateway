@@ -44,7 +44,7 @@ namespace net.vieapps.Services.APIGateway
 				? "." + objectName.ToLower()
 				: "";
 
-			var path = prefix + Path.DirectorySeparatorChar.ToString() + prefix + surfix;
+			var path = Path.Combine(prefix, prefix + surfix);
 			if (!this._logs.TryGetValue(path, out ConcurrentQueue<string> svcLogs))
 				lock (this._logs)
 				{
@@ -91,7 +91,7 @@ namespace net.vieapps.Services.APIGateway
 				errorLogs.Enqueue($"==> Stack:\r\n{stack}");
 				Task.Run(async () =>
 				{
-					await this.FlushLogsAsync(prefix + Path.DirectorySeparatorChar.ToString() + prefix + ".errors", errorLogs).ConfigureAwait(false);
+					await this.FlushLogsAsync(Path.Combine(prefix, prefix + ".errors"), errorLogs).ConfigureAwait(false);
 				}).ConfigureAwait(false);
 			}
 		}

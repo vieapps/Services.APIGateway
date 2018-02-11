@@ -14,45 +14,29 @@ namespace net.vieapps.Services.APIGateway
 	{
 		public MessagingService() { }
 
-		public Task SendEmailAsync(EmailMessage message, CancellationToken cancellationToken = default(CancellationToken))
+		public async Task SendEmailAsync(EmailMessage message, CancellationToken cancellationToken = default(CancellationToken))
 		{
-			try
-			{
-				// normalize
-				message.From = string.IsNullOrWhiteSpace(message.From)
-					? Global.EmailDefaultSender
-					: message.From;
+			// normalize
+			message.From = string.IsNullOrWhiteSpace(message.From)
+				? Global.EmailDefaultSender
+				: message.From;
 
-				if (string.IsNullOrWhiteSpace(message.SmtpServer))
-				{
-					message.SmtpServer = Global.EmailSmtpServer;
-					message.SmtpServerPort = Global.EmailSmtpServerPort;
-					message.SmtpServerEnableSsl = Global.EmailSmtpServerEnableSsl;
-					message.SmtpUsername = Global.EmailSmtpUser;
-					message.SmtpPassword = Global.EmailSmtpUserPassword;
-				}
-
-				// save into folder
-				EmailMessage.Save(message, Global.EmailsPath);
-				return Task.CompletedTask;
-			}
-			catch (Exception ex)
+			if (string.IsNullOrWhiteSpace(message.SmtpServer))
 			{
-				return Task.FromException(ex);
+				message.SmtpServer = Global.EmailSmtpServer;
+				message.SmtpServerPort = Global.EmailSmtpServerPort;
+				message.SmtpServerEnableSsl = Global.EmailSmtpServerEnableSsl;
+				message.SmtpUsername = Global.EmailSmtpUser;
+				message.SmtpPassword = Global.EmailSmtpUserPassword;
 			}
+
+			// save into folder
+			await EmailMessage.SaveAsync(message, Global.EmailsPath).ConfigureAwait(false);
 		}
 
-		public Task SendWebHookAsync(WebHookMessage message, CancellationToken cancellationToken = default(CancellationToken))
+		public async Task SendWebHookAsync(WebHookMessage message, CancellationToken cancellationToken = default(CancellationToken))
 		{
-			try
-			{
-				WebHookMessage.Save(message, Global.WebHooksPath);
-				return Task.CompletedTask;
-			}
-			catch (Exception ex)
-			{
-				return Task.FromException(ex);
-			}
+			await WebHookMessage.SaveAsync(message, Global.WebHooksPath).ConfigureAwait(false);
 		}
 	}
 }

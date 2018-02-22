@@ -99,7 +99,7 @@ namespace net.vieapps.Services.APIGateway
 			#region prepare others (principal, identity, body)
 			context.User = new UserPrincipal(request.Session.User);
 			if (string.IsNullOrWhiteSpace(request.Session.SessionID))
-				request.Session.SessionID = UtilityService.NewUID;
+				request.Session.SessionID = UtilityService.NewUUID;
 
 			if (request.Verb.IsEquals("POST") || request.Verb.IsEquals("PUT"))
 				try
@@ -559,7 +559,7 @@ namespace net.vieapps.Services.APIGateway
 					await Global.Cache.RemoveAsync("Session#" + requestInfo.Session.SessionID).ConfigureAwait(false);
 
 					requestInfo.Session.User = json.FromJson<User>();
-					requestInfo.Session.SessionID = UtilityService.NewUID;
+					requestInfo.Session.SessionID = UtilityService.NewUUID;
 					var accessToken = User.GetAccessToken(requestInfo.Session.User, Base.AspNet.Global.RSA, Base.AspNet.Global.EncryptionKey);
 					await InternalAPIs.CreateSessionAsync(requestInfo, accessToken).ConfigureAwait(false);
 
@@ -646,7 +646,7 @@ namespace net.vieapps.Services.APIGateway
 				await Global.Cache.RemoveAsync("Session#" + requestInfo.Session.SessionID).ConfigureAwait(false);
 
 				requestInfo.Session.User = json.FromJson<User>();
-				requestInfo.Session.SessionID = UtilityService.NewUID;
+				requestInfo.Session.SessionID = UtilityService.NewUUID;
 				var accessToken = User.GetAccessToken(requestInfo.Session.User, Base.AspNet.Global.RSA, Base.AspNet.Global.EncryptionKey);
 				await InternalAPIs.CreateSessionAsync(requestInfo, accessToken, true).ConfigureAwait(false);
 
@@ -706,7 +706,7 @@ namespace net.vieapps.Services.APIGateway
 				).ConfigureAwait(false);
 
 				// create a new session
-				requestInfo.Session.SessionID = UtilityService.NewUID;
+				requestInfo.Session.SessionID = UtilityService.NewUUID;
 				requestInfo.Session.User = new User();
 
 				// register the new session of visitor

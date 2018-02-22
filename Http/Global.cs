@@ -150,7 +150,7 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static void OnAppEnd()
 		{
-			Base.AspNet.Global.WriteDebugLogsAsync(UtilityService.NewUID, Base.AspNet.Global.ServiceName, "Stop the API Gateway HTTP Service...");
+			Base.AspNet.Global.WriteDebugLogsAsync(UtilityService.NewUUID, Base.AspNet.Global.ServiceName, "Stop the API Gateway HTTP Service...");
 
 			try
 			{
@@ -507,7 +507,7 @@ namespace net.vieapps.Services.APIGateway
 				Base.AspNet.Global.JWTKey,
 				(payload) =>
 				{
-					payload.Add(new JProperty("j2f", $"{session.Verification.ToString()}|{UtilityService.NewUID}".Encrypt(Base.AspNet.Global.EncryptionKey)));
+					payload.Add(new JProperty("j2f", $"{session.Verification.ToString()}|{UtilityService.NewUUID}".Encrypt(Base.AspNet.Global.EncryptionKey)));
 				}
 			);
 		}

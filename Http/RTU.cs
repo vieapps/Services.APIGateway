@@ -234,7 +234,7 @@ namespace net.vieapps.Services.APIGateway
 					.Subscribe(
 						async (message) =>
 						{
-							var relatedID = UtilityService.NewUID;
+							var relatedID = UtilityService.NewUUID;
 							if (message.DeviceID.Equals("*") || message.DeviceID.IsEquals(session.DeviceID))
 								try
 								{
@@ -386,14 +386,14 @@ namespace net.vieapps.Services.APIGateway
 					await Base.AspNet.Global.WriteDebugLogsAsync(correlationID, Base.AspNet.Global.ServiceName, $"Patch a session successful (via WebSocket){(Base.AspNet.Global.IsDebugResultsEnabled ? "\r\n" + session.ToJson().ToString(Base.AspNet.Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None) : "")}").ConfigureAwait(false);
 
 #if DEBUG || RTULOGS || PROCESSLOGS
-					await Base.AspNet.Global.WriteLogsAsync(UtilityService.NewUID, "RTU", $"Patch a session successful\r\n{session.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
+					await Base.AspNet.Global.WriteLogsAsync(UtilityService.NewUUID, "RTU", $"Patch a session successful\r\n{session.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
 #endif
 				}
 
 				// call service to process the request
 				else if (!string.IsNullOrWhiteSpace(serviceName))
 				{
-					var relatedID = UtilityService.NewUID;
+					var relatedID = UtilityService.NewUUID;
 					try
 					{
 						var stopwatch = new Stopwatch();

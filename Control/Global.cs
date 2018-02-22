@@ -85,7 +85,7 @@ namespace net.vieapps.Services.APIGateway
 				Global.Component?._loggingService?.WriteLog(serviceName, objectName, log, stack);
 
 			// write into debug logs
-			var correlationID = UtilityService.NewUID;
+			var correlationID = UtilityService.NewUUID;
 			Global.Component?._loggingService?.WriteDebugLogs(correlationID, "APIGateway", message);
 			if (!stack.Equals(""))
 				Global.Component?._loggingService?.WriteDebugLogs(correlationID, "APIGateway", stack);

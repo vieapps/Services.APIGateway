@@ -103,7 +103,7 @@ namespace net.vieapps.Services.APIGateway
 
 		public void WriteLogs(string serviceName, string objectName, List<string> logs, string stack = null)
 		{
-			this.WriteLogs(UtilityService.NewUID, serviceName, objectName, logs, stack);
+			this.WriteLogs(UtilityService.NewUUID, serviceName, objectName, logs, stack);
 		}
 
 		public Task WriteLogAsync(string correlationID, string serviceName, string objectName, string log, string stack = null, CancellationToken cancellationToken = default(CancellationToken))
@@ -118,7 +118,7 @@ namespace net.vieapps.Services.APIGateway
 
 		public void WriteLog(string serviceName, string objectName, string log, string stack = null)
 		{
-			this.WriteLogs(UtilityService.NewUID, serviceName, objectName, new List<string>() { log }, stack);
+			this.WriteLogs(UtilityService.NewUUID, serviceName, objectName, new List<string>() { log }, stack);
 		}
 
 		internal async Task FlushLogsAsync(string path, ConcurrentQueue<string> logs, CancellationToken cancellationToken = default(CancellationToken))

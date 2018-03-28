@@ -584,22 +584,21 @@ namespace net.vieapps.Services.APIGateway
 			// update users' sessions with new access token
 			if (message.Type.Equals("Session#Update"))
 			{
+				// prepare
 				var sessionID = (message.Data["Session"] as JValue).Value as string;
 				var user = (message.Data["User"] as JObject).FromJson<User>();
 				var deviceID = (message.Data["Device"] as JValue).Value as string;
 				var verification = (message.Data["Verification"] as JValue).Value.CastAs<bool>();
 				var accessToken = ((message.Data["Token"] as JValue).Value as string).Decrypt(Base.AspNet.Global.EncryptionKey);
 
-				await Global.Cache.RemoveAsync("Session#" + sessionID).ConfigureAwait(false);
-
 				var json = new JObject()
 				{
 					{ "ID", sessionID },
 					{ "UserID", user.ID },
-					{ "DeviceID", deviceID },
-					{ "Mode", "Update" }
+					{ "DeviceID", deviceID }
 				};
 
+				// update
 				new Session()
 				{
 					SessionID = sessionID,
@@ -608,17 +607,21 @@ namespace net.vieapps.Services.APIGateway
 					Verification = verification
 				}.UpdateSessionJson(json, accessToken);
 
-				await new UpdateMessage()
-				{
-					Type = "Users#Session",
-					DeviceID = deviceID,
-					Data = json
-				}.PublishAsync().ConfigureAwait(false);
+				await Task.WhenAll(
+					Global.Cache.RemoveAsync("Session#" + sessionID),
+					new UpdateMessage()
+					{
+						Type = "Users#Session#Update",
+						DeviceID = deviceID,
+						Data = json
+					}.PublishAsync()
+				).ConfigureAwait(false);
 			}
 
 			// revoke users' sessions
 			else if (message.Type.Equals("Session#Revoke"))
 			{
+				// prepare
 				var sessionID = (message.Data["Session"] as JValue).Value as string;
 				var user = (message.Data["User"] as JObject).FromJson<User>();
 				var deviceID = (message.Data["Device"] as JValue).Value as string;
@@ -628,9 +631,9 @@ namespace net.vieapps.Services.APIGateway
 					{ "ID", sessionID },
 					{ "UserID", user.ID },
 					{ "DeviceID", deviceID },
-					{ "Mode", "Revoke" }
 				};
 
+				// update
 				new Session()
 				{
 					SessionID = sessionID,
@@ -640,7 +643,7 @@ namespace net.vieapps.Services.APIGateway
 
 				await new UpdateMessage()
 				{
-					Type = "Users#Session",
+					Type = "Users#Session#Revoke",
 					DeviceID = deviceID,
 					Data = json
 				}.PublishAsync().ConfigureAwait(false);
@@ -737,12 +740,12 @@ namespace net.vieapps.Services.APIGateway
 					else
 					{
 						filePath = UtilityService.GetAppSetting("Path:StaticFiles");
-						if (string.IsNullOrEmpty(filePath))
+						if (string.IsNullOrWhiteSpace(filePath))
 							filePath = HttpRuntime.AppDomainAppPath + @"\data-files\statics";
-						if (filePath.EndsWith(@"\"))
+						if (filePath.EndsWith(Path.DirectorySeparatorChar.ToString()))
 							filePath = filePath.Left(filePath.Length - 1);
 
-						filePath += path.Replace("/statics/", "/").Replace("/", @"\");
+						filePath += path.Replace("/statics/", "/").Replace("/", Path.DirectorySeparatorChar.ToString());
 					}
 
 					// check exist
@@ -759,17 +762,15 @@ namespace net.vieapps.Services.APIGateway
 					context.Response.Cache.SetLastModified(fileInfo.LastWriteTime);
 					context.Response.Cache.SetETag(eTag);
 
-					// prepare content
+					// set MIME type
 					var staticMimeType = MimeMapping.GetMimeMapping(fileInfo.Name);
-					if (string.IsNullOrWhiteSpace(staticMimeType))
-						staticMimeType = "text/plain";
-
-					var staticContent = await UtilityService.ReadTextFileAsync(fileInfo).ConfigureAwait(false);
-					if (staticMimeType.IsEndsWith("json"))
-						staticContent = JObject.Parse(staticContent).ToString(Formatting.Indented);
+					context.Response.ContentType = string.IsNullOrWhiteSpace(staticMimeType) ? "text/plain" : staticMimeType;
 
 					// write content
-					context.Response.ContentType = staticMimeType;
+					var staticContent = await UtilityService.ReadTextFileAsync(fileInfo).ConfigureAwait(false);
+					staticContent = staticMimeType.IsEndsWith("json")
+						? JObject.Parse(staticContent).ToString(Formatting.Indented)
+						: staticContent;
 					await Task.WhenAll(
 						context.Response.Output.WriteAsync(staticContent),
 						Base.AspNet.Global.WriteDebugLogsAsync(correlationID, Base.AspNet.Global.ServiceName, $"Process request of static file successful [{path}]")

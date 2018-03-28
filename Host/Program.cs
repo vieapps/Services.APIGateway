@@ -100,7 +100,13 @@ namespace net.vieapps.Services.APIGateway
 #if DEBUG
 					builder.SetMinimumLevel(LogLevel.Debug);
 #else
-					builder.SetMinimumLevel(LogLevel.Information);
+					var logLevel = LogLevel.Information;
+					try
+					{
+						logLevel = UtilityService.GetAppSetting("Logs:Level", "Information").ToEnum<LogLevel>();
+					}
+					catch { }
+					builder.SetMinimumLevel(logLevel);
 #endif
 					builder.AddConsole();
 				})

@@ -29,15 +29,15 @@ namespace net.vieapps.Services.APIGateway
 				Base.AspNet.Global.IsInfoLogEnabled ? Base.AspNet.Global.WriteLogsAsync(correlationID, "Internal", $"Begin process [{context.Request.HttpMethod}]: {context.Request.Url.Scheme}://{context.Request.Url.Host + context.Request.RawUrl}") : Task.CompletedTask
 			).ConfigureAwait(false);
 
-			#region prepare the requesting information
+			#region prepare the requesting information			
 			var request = new RequestInfo()
 			{
 				Session = context.GetSession(),
-				Verb = context.Request.HttpMethod,
+				Verb = context.Request.HttpMethod.ToUpper(),
 				ServiceName = string.IsNullOrWhiteSpace(context.Request.QueryString["service-name"]) ? "unknown" : context.Request.QueryString["service-name"],
 				ObjectName = string.IsNullOrWhiteSpace(context.Request.QueryString["object-name"]) ? "unknown" : context.Request.QueryString["object-name"],
-				Query = new Dictionary<string, string>(context.Request.QueryString.ToDictionary(), StringComparer.OrdinalIgnoreCase),
-				Header = new Dictionary<string, string>(context.Request.Headers.ToDictionary(), StringComparer.OrdinalIgnoreCase),
+				Query = context.Request.QueryString.ToDictionary(),
+				Header = context.Request.Headers.ToDictionary(dictionary => "connection,accept,accept-encoding,accept-language,host,referer,user-agent,origin,upgrade-insecure-requests".ToList().ForEach(name => dictionary.Remove(name))),
 				CorrelationID = correlationID
 			};
 
@@ -228,15 +228,26 @@ namespace net.vieapps.Services.APIGateway
 							throw new InvalidDataException("Request JSON is invalid (password must be encrypted by RSA before sending)", ex);
 						}
 
+					// prepare roles
+					var roles = requestBody.Get<string>("Roles");
+					if (!string.IsNullOrWhiteSpace(roles))
+						try
+						{
+							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
+							{
+								{ "Roles", Base.AspNet.Global.RSA.Decrypt(roles).Encrypt(Base.AspNet.Global.EncryptionKey) }
+							};
+						}
+						catch { }
+
 					// prepare privileges
 					var privileges = requestBody.Get<string>("Privileges");
 					if (!string.IsNullOrWhiteSpace(privileges))
 						try
 						{
-							privileges = Base.AspNet.Global.RSA.Decrypt(privileges);
 							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
 							{
-								{ "Privileges", privileges.Encrypt(Base.AspNet.Global.EncryptionKey) }
+								{ "Privileges", Base.AspNet.Global.RSA.Decrypt(privileges).Encrypt(Base.AspNet.Global.EncryptionKey) }
 							};
 						}
 						catch { }
@@ -868,7 +879,7 @@ namespace net.vieapps.Services.APIGateway
 			// send inter-communicate message to tell services update old sessions with new access token
 			await Global.SendInterCommunicateMessageAsync(new CommunicateMessage("Users")
 			{
-				Type = "Session",
+				Type = "Session#Update",
 				Data = new JObject()
 				{
 					{ "UserID", user.ID },
@@ -963,7 +974,7 @@ namespace net.vieapps.Services.APIGateway
 				});
 		}
 
-		static async Task WriteResponseAsync(this HttpContext context, JObject json)
+		static async Task WriteResponseAsync(this HttpContext context, JToken json)
 		{
 			context.Response.ContentType = "application/json";
 			context.Response.StatusCode = 200;

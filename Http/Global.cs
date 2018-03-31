@@ -150,7 +150,11 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static void OnAppEnd()
 		{
-			Base.AspNet.Global.WriteDebugLogsAsync(UtilityService.NewUUID, Base.AspNet.Global.ServiceName, "Stop the API Gateway HTTP Service...");
+			try
+			{
+				Base.AspNet.Global.WriteDebugLogs(UtilityService.NewUUID, Base.AspNet.Global.ServiceName, "Stop the API Gateway HTTP Service...");
+			}
+			catch { }
 
 			try
 			{

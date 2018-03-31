@@ -138,13 +138,12 @@ namespace net.vieapps.Services.APIGateway
 				logger.LogInformation($"The service [{uri}] is starting...");
 
 			// start the service component
-			var initRepository = args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", "");
-			Program.ServiceComponent.Start(args, "false".IsEquals(initRepository) ? false : true);
+			Program.ServiceComponent.Start(args, "false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", "")) ? false : true);
 
 			// assign the static instance of the service component
 			ServiceBase.ServiceComponent = Program.ServiceComponent as ServiceBase;
 
-			// wait for exit
+			// wait for exit signal
 			if (Program.IsUserInteractive)
 			{
 				Program.ConsoleEventHandler = new ConsoleEventDelegate(Program.ConsoleEventCallback);
@@ -160,6 +159,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
+		#region Handle the events when close the app
 		static bool ConsoleEventCallback(int eventCode)
 		{
 			switch (eventCode)
@@ -182,5 +182,7 @@ namespace net.vieapps.Services.APIGateway
 
 		[DllImport("kernel32.dll", SetLastError = true)]
 		static extern bool SetConsoleCtrlHandler(ConsoleEventDelegate callback, bool add);
+		#endregion
+
 	}
 }

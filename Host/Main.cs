@@ -18,7 +18,7 @@ using net.vieapps.Components.Utility;
 
 namespace net.vieapps.Services.APIGateway
 {
-    public class Hoster
+    public class HostingComponent
     {
 		IServiceComponent ServiceComponent { get; set; }
 

@@ -12,6 +12,7 @@
 		<AssemblyVersion>10.1.5.1804</AssemblyVersion>
 		<FileVersion>10.1.5.1804</FileVersion>
 		<InformationalVersion>v10.1.netstandard-2+rev:2018.04.24</InformationalVersion>
+		<RootNamespace>VIEApps.Services.APIGateway</RootNamespace>
 	</PropertyGroup>
 
 	<ItemGroup>

@@ -18,29 +18,31 @@ using net.vieapps.Components.Utility;
 
 namespace net.vieapps.Services.APIGateway
 {
-	class Program
-	{
-		static IServiceComponent ServiceComponent;
-		static bool IsUserInteractive;
+    public class Hoster
+    {
+		IServiceComponent ServiceComponent { get; set; }
 
-		static void Main(string[] args)
+		bool IsUserInteractive { get; set; }
+
+		public void Start(string[] args)
 		{
 			// prepare
 			var apiCall = args?.FirstOrDefault(a => a.IsStartsWith("/agc:"));
 			var apiCallToStop = apiCall != null && apiCall.IsEquals("/agc:s");
 
-			Program.IsUserInteractive = apiCall == null;
-			if (Program.IsUserInteractive)
+			this.IsUserInteractive = apiCall == null;
+			if (this.IsUserInteractive)
 				Console.OutputEncoding = System.Text.Encoding.UTF8;
 
 			// prepare type name
 			var typeName = args?.FirstOrDefault(a => a.IsStartsWith("/svc:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/svc:", "");
-			if (string.IsNullOrWhiteSpace(typeName) && File.Exists("VIEApps.Services.APIGateway.exe.config") && args?.FirstOrDefault(a => a.IsStartsWith("/svn:")) != null)
+			var configFilename = "VIEApps.Services.APIGateway" + (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : ".dll") + ".config";
+			if (string.IsNullOrWhiteSpace(typeName) && File.Exists(configFilename) && args?.FirstOrDefault(a => a.IsStartsWith("/svn:")) != null)
 				try
 				{
 					var xpath = $"/configuration/net.vieapps.services/add[@name='{args.First(a => a.IsStartsWith("/svn:")).Replace(StringComparison.OrdinalIgnoreCase, "/svn:", "").ToLower()}']";
 					var xml = new XmlDocument();
-					xml.LoadXml(UtilityService.ReadTextFile("VIEApps.Services.APIGateway.exe.config"));
+					xml.LoadXml(UtilityService.ReadTextFile(configFilename));
 					typeName = xml.DocumentElement.SelectSingleNode(xpath)?.Attributes["type"]?.Value.Replace(" ", "").Replace(StringComparison.OrdinalIgnoreCase, ",x86", "");
 				}
 				catch { }
@@ -48,13 +50,13 @@ namespace net.vieapps.Services.APIGateway
 			// stop if has no type name of a service component
 			if (string.IsNullOrWhiteSpace(typeName))
 			{
-				if (Program.IsUserInteractive)
+				if (this.IsUserInteractive)
 				{
 					Console.WriteLine($"VIEApps NGX API Gateway - Service Hoster v{AssemblyName.GetAssemblyName(Assembly.GetExecutingAssembly().Location).Version}");
 					Console.WriteLine("");
-					Console.WriteLine("Syntax: VIEApps.Services.APIGateway.Host.exe /svc:<service-component-namespace,service-assembly>");
+					Console.WriteLine("Syntax: VIEApps.Services.APIGateway.Host /svc:<service-component-namespace,service-assembly>");
 					Console.WriteLine("");
-					Console.WriteLine("Ex.: VIEApps.Services.APIGateway.Host.exe /svc:net.vieapps.Services.Systems.ServiceComponent,VIEApps.Services.Systems");
+					Console.WriteLine("Ex.: VIEApps.Services.APIGateway.Host /svc:net.vieapps.Services.Systems.ServiceComponent,VIEApps.Services.Systems");
 					Console.WriteLine("");
 					Console.ReadLine();
 				}
@@ -68,21 +70,21 @@ namespace net.vieapps.Services.APIGateway
 			if (serviceType == null)
 			{
 				Console.WriteLine($"The type of the service component is not found [{typeName}]");
-				if (Program.IsUserInteractive)
+				if (this.IsUserInteractive)
 					Console.ReadLine();
 				return;
 			}
 
-			Program.ServiceComponent = serviceType.CreateInstance() as IServiceComponent;
-			if (Program.ServiceComponent == null || !(Program.ServiceComponent is IService))
+			this.ServiceComponent = serviceType.CreateInstance() as IServiceComponent;
+			if (this.ServiceComponent == null || !(this.ServiceComponent is IService))
 			{
 				Console.WriteLine($"The type of the service component is invalid [{serviceType.GetTypeName()}]");
-				if (Program.IsUserInteractive)
+				if (this.IsUserInteractive)
 					Console.ReadLine();
 				return;
 			}
 			else
-				Program.ServiceComponent.IsUserInteractive = Program.IsUserInteractive;
+				this.ServiceComponent.IsUserInteractive = this.IsUserInteractive;
 
 			// prepare default settings of Json.NET
 			JsonConvert.DefaultSettings = () => new JsonSerializerSettings()
@@ -93,30 +95,36 @@ namespace net.vieapps.Services.APIGateway
 			};
 
 			// prepare logging
-			var uri = (Program.ServiceComponent as IService).ServiceURI;
-			var logger = new ServiceCollection()
-				.AddLogging(builder =>
-				{
 #if DEBUG
-					builder.SetMinimumLevel(LogLevel.Debug);
+			var logLevel = LogLevel.Debug;
 #else
-					var logLevel = LogLevel.Information;
-					try
-					{
-						logLevel = UtilityService.GetAppSetting("Logs:Level", "Information").ToEnum<LogLevel>();
-					}
-					catch { }
-					builder.SetMinimumLevel(logLevel);
+			var logLevel = LogLevel.Information;
+			try
+			{
+				logLevel = UtilityService.GetAppSetting("Logs:Level", "Information").ToEnum<LogLevel>();
+			}
+			catch { }
 #endif
-					builder.AddConsole();
-				})
+
+			var loggerFactory = new ServiceCollection()
+				.AddLogging(builder => builder.SetMinimumLevel(logLevel))
 				.BuildServiceProvider()
 				.GetService<ILoggerFactory>()
-				.CreateLogger(Program.ServiceComponent.GetType());
+				.AddConsole(logLevel);
+
+			var logsPath = UtilityService.GetAppSetting("Path:Logs");
+			if (Directory.Exists(logsPath))
+			{
+				logsPath += logsPath.EndsWith(Path.DirectorySeparatorChar.ToString()) ? "" : Path.DirectorySeparatorChar.ToString();
+				loggerFactory.AddFile(logsPath + "{Date}_" + (this.ServiceComponent as IService).ServiceName.ToLower() + ".txt", logLevel);
+			}
+
+			var logger = loggerFactory.CreateLogger(this.ServiceComponent.GetType());
+			var uri = (this.ServiceComponent as IService).ServiceURI;
 
 			// prepare the signal to start/stop when the service was called from API Gateway
 			EventWaitHandle waitHandle = null;
-			if (!Program.IsUserInteractive)
+			if (!this.IsUserInteractive)
 			{
 				// get the flag of the existing instance
 				waitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, uri, out bool createdNew);
@@ -130,7 +138,7 @@ namespace net.vieapps.Services.APIGateway
 
 					// then exit
 					waitHandle.Dispose();
-					Program.ServiceComponent.Dispose();
+					this.ServiceComponent.Dispose();
 					return;
 				}
 			}
@@ -138,51 +146,29 @@ namespace net.vieapps.Services.APIGateway
 				logger.LogInformation($"The service [{uri}] is starting...");
 
 			// start the service component
-			Program.ServiceComponent.Start(args, "false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", "")) ? false : true);
+			this.ServiceComponent.Start(args, "false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", "")) ? false : true);
 
 			// assign the static instance of the service component
-			ServiceBase.ServiceComponent = Program.ServiceComponent as ServiceBase;
+			ServiceBase.ServiceComponent = this.ServiceComponent as ServiceBase;
 
 			// wait for exit signal
-			if (Program.IsUserInteractive)
+			if (this.IsUserInteractive)
 			{
-				Program.ConsoleEventHandler = new ConsoleEventDelegate(Program.ConsoleEventCallback);
-				Program.SetConsoleCtrlHandler(Program.ConsoleEventHandler, true);
 				logger.LogInformation($"The service [{uri}] is started. PID: {Process.GetCurrentProcess().Id}\r\n=====> Press RETURN to terminate...");
 				Console.ReadLine();
+				this.Stop();
 			}
 			else
 			{
 				waitHandle.WaitOne();
 				waitHandle.Dispose();
-				Program.ServiceComponent.Dispose();
+				this.Stop();
 			}
 		}
 
-		#region Handle the events when close the app
-		static bool ConsoleEventCallback(int eventCode)
+		public void Stop()
 		{
-			switch (eventCode)
-			{
-				case 0:        // Ctrl + C
-				case 1:        // Ctrl + Break
-				case 2:        // Close
-				case 6:        // Shutdown
-					Program.ServiceComponent.Dispose();
-					break;
-			}
-			return false;
+			this.ServiceComponent?.Dispose();
 		}
-
-		// keeps it from getting garbage collected
-		static ConsoleEventDelegate ConsoleEventHandler;
-
-		// invokes
-		delegate bool ConsoleEventDelegate(int eventCode);
-
-		[DllImport("kernel32.dll", SetLastError = true)]
-		static extern bool SetConsoleCtrlHandler(ConsoleEventDelegate callback, bool add);
-		#endregion
-
 	}
 }

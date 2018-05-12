@@ -29,7 +29,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			// track
 			var requestUri = context.GetRequestUri();
-			await context.WriteLogsAsync("InternalAPIs", $"Begin process [{context.Request.Method}]: {requestUri}").ConfigureAwait(false);
+			await context.WriteLogsAsync("InternalAPIs", $"Begin process => {context.Request.Method} {requestUri.PathAndQuery}").ConfigureAwait(false);
 
 			#region prepare the requesting information			
 			var queryString = requestUri.ParseQuery(query =>
@@ -54,7 +54,7 @@ namespace net.vieapps.Services.APIGateway
 				ServiceName = queryString["service-name"],
 				ObjectName = queryString["object-name"],
 				Query = queryString,
-				Header = context.Request.Headers.ToNameValueCollection().ToDictionary(dictionary => "connection,accept,accept-encoding,accept-language,host,referer,user-agent,origin,upgrade-insecure-requests".ToList().ForEach(name => dictionary.Remove(name))),
+				Header = context.Request.Headers.ToNameValueCollection().ToDictionary(dictionary => "connection,accept,accept-encoding,accept-language,host,referer,user-agent,origin,cache-control,cookie,upgrade-insecure-requests,ms-aspnetcore-token,x-original-proto,x-original-for".ToList().ForEach(name => dictionary.Remove(name))),
 				CorrelationID = context.GetCorrelationID()
 			};
 
@@ -77,40 +77,47 @@ namespace net.vieapps.Services.APIGateway
 			#region prepare token
 			try
 			{
-				var appToken = request.GetParameter("x-app-token");
-				if (string.IsNullOrWhiteSpace(appToken))
-				{
-					var tokenIsRequired = isActivationProccessed
+				var tokenIsRequired = isActivationProccessed
+					? false
+					: isSessionInitialized && (request.Session.User.ID.Equals("") || request.Session.User.IsSystemAccount) && !request.Query.ContainsKey("register")
 						? false
-						: isSessionInitialized && !request.Query.ContainsKey("register")
+						: request.ServiceName.IsEquals("indexes")
 							? false
-							: request.ServiceName.IsEquals("indexes")
-								? false
-								: true;
-					if (tokenIsRequired)
-						throw new InvalidSessionException("Session is invalid (Token is not found)");
-				}
-				else
+							: true;
+
+				// parse and update information from token
+				var appToken = request.GetParameter("x-app-token");
+				if (!string.IsNullOrWhiteSpace(appToken))
 				{
-					if (!await context.IsSessionExistAsync(request.Session).ConfigureAwait(false))
-						throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 					request.Header["x-app-token"] = appToken;
-					await context.UpdateRequestWithTokenAsync(request, appToken).ConfigureAwait(false);
+					await context.UpdateSessionAsync(request.Session, appToken, !request.Query.ContainsKey("register")).ConfigureAwait(false);
 				}
+				else if (tokenIsRequired)
+					throw new InvalidSessionException("Session is invalid (Token is not found)");
+
+				// check existed of session
+				if (tokenIsRequired && !await context.CheckSessionExistAsync(request.Session).ConfigureAwait(false))
+					throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 			}
 			catch (Exception ex)
 			{
-				await context.WriteLogsAsync("InternalAPIs", "End process => Error occurred while preparing token", ex).ConfigureAwait(false);
-				context.WriteError(ex, request, false);
+				context.WriteError(ex, request, $"Error occurred while preparing token: {ex.Message}", false);
 				return;
 			}
 			#endregion
 
-			#region prepare others (principal, identity, body)
-			context.User = new UserPrincipal(request.Session.User);
+			#region prepare others (session identity, user principal, request body)
+			// new session
 			if (string.IsNullOrWhiteSpace(request.Session.SessionID))
+			{
 				request.Session.SessionID = UtilityService.NewUUID;
+				request.Session.User.SessionID = request.Session.SessionID;
+			}
 
+			// user principal
+			context.User = new UserPrincipal(request.Session.User);
+
+			// request body
 			if (request.Verb.IsEquals("POST") || request.Verb.IsEquals("PUT"))
 				try
 				{
@@ -159,8 +166,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					await context.WriteLogsAsync("InternalAPIs", "End process => Error occurred while verifying captcha", ex).ConfigureAwait(false);
-					context.WriteError(ex, request);
+					context.WriteError(ex, request, $"Error occurred while verifying captcha: {ex.Message}");
 					return;
 				}
 			#endregion
@@ -297,14 +303,13 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					await Global.WriteLogsAsync("InternalAPIs", "End process => Error occurred while processing account", ex).ConfigureAwait(false);
-					context.WriteError(ex, request);
+					context.WriteError(ex, request, $"Error occurred while processing account: {ex.Message}");
 					return;
 				}
 			#endregion
 
 			if (Global.IsDebugLogEnabled)
-				await context.WriteLogsAsync("InternalAPIs", $"Request:\r\n{request.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
+				await context.WriteLogsAsync("InternalAPIs", $"Begin process => Request:\r\n{request.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
 
 			// process the request of session
 			if (isSessionProccessed)
@@ -327,7 +332,7 @@ namespace net.vieapps.Services.APIGateway
 						break;
 
 					default:
-						context.WriteError(new MethodNotAllowedException(request.Verb), request, false);
+						context.WriteError(new MethodNotAllowedException(request.Verb), request, $"Method {request.Verb} is not allowed",false);
 						break;
 				}
 
@@ -345,8 +350,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					await context.WriteLogsAsync("InternalAPIs", "End process => Error occurred while activating", ex).ConfigureAwait(false);
-					context.WriteError(ex, request);
+					context.WriteError(ex, request, $"Error occurred while activating: {ex.Message}");
 				}
 			}
 
@@ -354,25 +358,26 @@ namespace net.vieapps.Services.APIGateway
 			else
 				try
 				{
-					// process
 					var response = await context.CallServiceAsync(request).ConfigureAwait(false);
-
-					// response
 					await context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None).ConfigureAwait(false);
-					if (Global.IsDebugLogEnabled)
-						await context.WriteLogsAsync("InternalAPIs", $"End process => Response:\r\n{response.ToString(Formatting.Indented)}").ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
-					await context.WriteLogsAsync("InternalAPIs", "End process => Error occurred while processing", ex).ConfigureAwait(false);
-					context.WriteError(ex, request);
-				}
-				finally
-				{
-					if (!Global.IsDebugLogEnabled)
-						await context.WriteLogsAsync("InternalAPIs", "End process").ConfigureAwait(false);
+					context.WriteError(ex, request, $"Error [{request.ServiceName}/{request.ObjectName}] => {ex.Message}");
 				}
 		}
+
+		#region Check existing of a session
+		static async Task<bool> CheckSessionExistAsync(this HttpContext context, Session session)
+		{
+			if (string.IsNullOrWhiteSpace(session?.SessionID))
+				return false;
+			else if (session.User.ID.Equals("") && await InternalAPIs.Cache.ExistsAsync($"Session#{session.SessionID}").ConfigureAwait(false))
+				return true;
+			else
+				return await context.IsSessionExistAsync(session).ConfigureAwait(false);
+		}
+		#endregion
 
 		#region Register a session
 		static async Task RegisterSessionAsync(HttpContext context, RequestInfo requestInfo)
@@ -381,18 +386,12 @@ namespace net.vieapps.Services.APIGateway
 			if (requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.IsSystemAccount)
 				try
 				{
-					// generate session
-					var session = InternalAPIs.GenerateSessionJson(requestInfo);
-
 					// initialize session
 					if (!requestInfo.Query.ContainsKey("register"))
 					{
 						// generate device identity
 						if (string.IsNullOrWhiteSpace(requestInfo.Session.DeviceID))
-						{
 							requestInfo.Session.DeviceID = (requestInfo.Session.AppName + "/" + requestInfo.Session.AppPlatform + "@" + (requestInfo.Session.AppAgent ?? "N/A")).GetHMACBLAKE128(requestInfo.Session.SessionID, true) + "@pwa";
-							session["DeviceID"] = requestInfo.Session.DeviceID;
-						}
 
 						// store identity into cache for further use
 						await InternalAPIs.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.SessionID.Encrypt(Global.EncryptionKey, true), 7).ConfigureAwait(false);
@@ -402,24 +401,15 @@ namespace net.vieapps.Services.APIGateway
 					else
 					{
 						// validate
-						var register = requestInfo.Query["register"];
-						if (!requestInfo.Session.SessionID.IsEquals(register.Decrypt(Global.EncryptionKey, true)))
-							throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
-
-						if (!register.IsEquals(await InternalAPIs.Cache.GetAsync<string>($"Session#{requestInfo.Session.SessionID}").ConfigureAwait(false)))
+						var register = requestInfo.Query["register"].Decrypt(Global.EncryptionKey.Reverse(), true);
+						if (!requestInfo.Session.SessionID.IsEquals(register) || !register.Encrypt(Global.EncryptionKey, true).IsEquals(await InternalAPIs.Cache.GetAsync<string>($"Session#{requestInfo.Session.SessionID}").ConfigureAwait(false)))
 							throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 
 						// register with user service
-						var body = session.ToString(Formatting.None);
-						await context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Session", "POST")
-						{
-							Body = body,
-							Extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-							{
-								{ "Signature", body.GetHMACSHA256(Global.ValidationKey) }
-							},
-							CorrelationID = requestInfo.CorrelationID
-						}).ConfigureAwait(false);
+						await Task.WhenAll(
+							InternalAPIs.CreateSessionAsync(context, requestInfo),
+							InternalAPIs.Cache.RemoveAsync($"Session#{requestInfo.Session.SessionID}")
+						).ConfigureAwait(false);
 					}
 
 					// response
@@ -431,18 +421,12 @@ namespace net.vieapps.Services.APIGateway
 					requestInfo.Session.UpdateSessionJson(json);
 
 					await context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None).ConfigureAwait(false);
-					if (Global.IsDebugLogEnabled)
+					if (Global.IsDebugLogEnabled && Global.IsDebugResultsEnabled)
 						await context.WriteLogsAsync("InternalAPIs", $"End process => Response:\r\n{json.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
-					await context.WriteLogsAsync("InternalAPIs", "End process => Error occurred while registering session", ex).ConfigureAwait(false);
-					context.WriteError(ex, requestInfo);
-				}
-				finally
-				{
-					if (!Global.IsDebugLogEnabled)
-						await context.WriteLogsAsync("InternalAPIs", "End process").ConfigureAwait(false);
+					context.WriteError(ex, requestInfo, $"Error occurred while registering session: {ex.Message}");
 				}
 
 			// session of authenticated account
@@ -491,18 +475,12 @@ namespace net.vieapps.Services.APIGateway
 					requestInfo.Session.UpdateSessionJson(json);
 
 					await context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None).ConfigureAwait(false);
-					if (Global.IsDebugLogEnabled)
+					if (Global.IsDebugLogEnabled & Global.IsDebugResultsEnabled)
 						await context.WriteLogsAsync("InternalAPIs", $"End process => Response:\r\n{json.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
-					await context.WriteLogsAsync("InternalAPIs", "End process => Error occurred while registering session", ex).ConfigureAwait(false);
-					context.WriteError(ex, requestInfo);
-				}
-				finally
-				{
-					if (!Global.IsDebugLogEnabled)
-						await context.WriteLogsAsync("InternalAPIs", "End process").ConfigureAwait(false);
+					context.WriteError(ex, requestInfo, $"Error occurred while registering session: {ex.Message}");
 				}
 		}
 		#endregion
@@ -517,7 +495,7 @@ namespace net.vieapps.Services.APIGateway
 				{ "RenewedAt", DateTime.Now },
 				{ "ExpiredAt", DateTime.Now.AddDays(60) },
 				{ "UserID", requestInfo.Session.User.ID },
-				{ "AccessToken", requestInfo.Session.User.GetAccessToken(Global.ECCKey).Base64ToBytes().Encrypt(Global.EncryptionKey.GenerateHashKey(256), Global.EncryptionKey.GenerateHashKey(128)).ToBase64() },
+				{ "AccessToken", requestInfo.Session.User.GetAccessToken(Global.ECCKey) },
 				{ "IP", requestInfo.Session.IP },
 				{ "DeviceID", requestInfo.Session.DeviceID },
 				{ "AppInfo", requestInfo.Session.AppName + " @ " + requestInfo.Session.AppPlatform },
@@ -630,7 +608,7 @@ namespace net.vieapps.Services.APIGateway
 					context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None),
 					InternalAPIs.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP)
 				).ConfigureAwait(false);
-				if (Global.IsDebugLogEnabled)
+				if (Global.IsDebugLogEnabled && Global.IsDebugResultsEnabled)
 					await context.WriteLogsAsync("InternalAPIs", $"End process => Response:\r\n{json.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
 			}
 			catch (Exception ex)
@@ -647,13 +625,7 @@ namespace net.vieapps.Services.APIGateway
 				).ConfigureAwait(false);
 
 				// show error
-				await context.WriteLogsAsync("InternalAPIs", "End process => Error occurred while signing-in session", ex).ConfigureAwait(false);
-				context.WriteError(ex, requestInfo);
-			}
-			finally
-			{
-				if (!Global.IsDebugLogEnabled)
-					await context.WriteLogsAsync("InternalAPIs", "End process").ConfigureAwait(false);
+				context.WriteError(ex, requestInfo, $"Error occurred while signing-in a session: {ex.Message}");
 			}
 		}
 		#endregion
@@ -722,7 +694,7 @@ namespace net.vieapps.Services.APIGateway
 					context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None),
 					InternalAPIs.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP)
 				).ConfigureAwait(false);
-				if (Global.IsDebugLogEnabled)
+				if (Global.IsDebugLogEnabled && Global.IsDebugResultsEnabled)
 					await context.WriteLogsAsync("InternalAPIs", $"End process => Response:\r\n{json.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
 			}
 			catch (Exception ex)
@@ -739,13 +711,7 @@ namespace net.vieapps.Services.APIGateway
 				).ConfigureAwait(false);
 
 				// show error
-				await context.WriteLogsAsync("InternalAPIs", "End process => Error occurred while validating OTP session", ex).ConfigureAwait(false);
-				context.WriteError(ex, requestInfo);
-			}
-			finally
-			{
-				if (!Global.IsDebugLogEnabled)
-					await context.WriteLogsAsync("InternalAPIs", "End process").ConfigureAwait(false);
+				context.WriteError(ex, requestInfo, $"Error occurred while validating OTP session: {ex.Message}");
 			}
 		}
 		#endregion
@@ -783,18 +749,12 @@ namespace net.vieapps.Services.APIGateway
 				requestInfo.Session.UpdateSessionJson(json);
 
 				await context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None).ConfigureAwait(false);
-				if (Global.IsDebugLogEnabled)
+				if (Global.IsDebugLogEnabled && Global.IsDebugResultsEnabled)
 					await context.WriteLogsAsync("InternalAPIs", $"End process => Response:\r\n{json.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
-				await context.WriteLogsAsync("InternalAPIs", "End process => Error occurred while signing-out session", ex).ConfigureAwait(false);
-				context.WriteError(ex, requestInfo);
-			}
-			finally
-			{
-				if (!Global.IsDebugLogEnabled)
-					await context.WriteLogsAsync("InternalAPIs", "End process").ConfigureAwait(false);
+				context.WriteError(ex, requestInfo, $"Error occurred while signing-out a session: {ex.Message}");
 			}
 		}
 		#endregion
@@ -830,7 +790,7 @@ namespace net.vieapps.Services.APIGateway
 			requestInfo.Session.UpdateSessionJson(json);
 
 			await context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None).ConfigureAwait(false);
-			if (Global.IsDebugLogEnabled)
+			if (Global.IsDebugLogEnabled && Global.IsDebugResultsEnabled)
 				await context.WriteLogsAsync("InternalAPIs", $"End process => Response:\r\n{json.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
 		}
 		#endregion
@@ -852,7 +812,7 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static void UpdateSessionJson(this Session session, JObject json)
 		{
-			json["ID"] = session.SessionID.Encrypt(Global.EncryptionKey, true);
+			json["ID"] = session.SessionID.Encrypt(Global.EncryptionKey.Reverse(), true);
 			json["Keys"] = new JObject
 			{
 				{

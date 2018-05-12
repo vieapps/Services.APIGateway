@@ -31,24 +31,34 @@ namespace net.vieapps.Services.APIGateway
 			this._hostingEnvironment = hostingEnvironment;
 		}
 
-		public async Task InvokeAsync(HttpContext context)
+		public async Task Invoke(HttpContext context)
 		{
 			// request of WebSocket
 			if (context.WebSockets.IsWebSocketRequest)
 				await RTU.WebSocket.WrapAsync(context).ConfigureAwait(false);
 
-			// request with OPTIONS
-			else if (context.Request.Method.IsEquals("OPTIONS"))
-			{
-				context.Response.Headers.Add("Access-Control-Allow-Origin", "*");
-				context.Response.Headers.Add("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE");
-				if (context.Request.Headers.ContainsKey("Access-Control-Request-Headers"))
-					context.Response.Headers.Add("Access-Control-Request-Headers", context.Request.Headers["Access-Control-Request-Headers"]);
-			}
-
-			// request with other verbs
+			// request of HTTP
 			else
-				await this.ProcessRequestAsync(context).ConfigureAwait(false);
+			{
+				// allow origin
+				context.Response.Headers["Access-Control-Allow-Origin"] = "*";
+
+				// request with OPTIONS verb
+				if (context.Request.Method.IsEquals("OPTIONS"))
+				{
+					var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+					{
+						{ "Access-Control-Allow-Methods", "GET,POST,PUT,DELETE" }
+					};
+					if (context.Request.Headers.ContainsKey("Access-Control-Request-Headers"))
+						headers["Access-Control-Allow-Headers"] = context.Request.Headers["Access-Control-Request-Headers"];
+					context.SetResponseHeaders((int)HttpStatusCode.OK, headers, true);
+				}
+
+				// request with other verbs
+				else
+					await this.ProcessRequestAsync(context).ConfigureAwait(false);
+			}
 
 			// invoke next middleware
 			try
@@ -90,15 +100,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// request to static segments
 			else if (Global.StaticSegments.Count > 0 && Global.StaticSegments.Contains(executionFilePaths[0]))
-				try
-				{
-					await this.ProcessStaticRequestAsync(context, executionFilePaths[0]).ConfigureAwait(false);
-				}
-				catch (Exception ex)
-				{
-					context.ShowHttpError(ex.GetHttpStatusCode(), ex.Message, ex.GetType().GetTypeName(true), context.GetCorrelationID());
-					await context.WriteLogsAsync("StaticFiles", $"Error occurred while processing static file [{requestUri}]", ex);
-				}
+				await this.ProcessStaticRequestAsync(context, executionFilePaths[0]).ConfigureAwait(false);
 
 			// request to external APIs
 			else if (ExternalAPIs.APIs.ContainsKey(executionFilePaths[0]))
@@ -111,59 +113,89 @@ namespace net.vieapps.Services.APIGateway
 
 		internal async Task ProcessStaticRequestAsync(HttpContext context, string path)
 		{
-			// check "If-Modified-Since" request to reduce traffic
 			var requestUri = context.GetRequestUri();
-			var eTag = "Static#" + $"{requestUri}".ToLower().GenerateUUID();
-			if (!string.IsNullOrWhiteSpace(context.Request.Headers["If-Modified-Since"]) && eTag.IsEquals(context.Request.Headers["If-None-Match"]))
+			try
 			{
-				context.SetResponseHeaders((int)HttpStatusCode.NotModified, new Dictionary<string, string>
+				// prepare
+				var rootPath = path.IsEquals("statics")
+					? UtilityService.GetAppSetting("Path:StaticFiles", this._hostingEnvironment.ContentRootPath + "/data-files/statics")
+					: this._hostingEnvironment.ContentRootPath;
+
+				var filePath = string.IsNullOrWhiteSpace(requestUri.PathAndQuery)
+					? "/geo/countries.json"
+					: requestUri.PathAndQuery;
+
+				if (filePath.IndexOf("?") > 0)
+					filePath = filePath.Left(filePath.IndexOf("?"));
+
+				filePath = (rootPath + filePath.Replace("/statics/", "/")).Replace("//", "/").Replace(@"\", "/").Replace("/", Path.DirectorySeparatorChar.ToString());
+				FileInfo fileInfo = null;
+
+				// check caching headers to reduce traffic
+				var eTag = "Static#" + $"{requestUri}".ToLower().GenerateUUID();
+				if (eTag.IsEquals(context.Request.Headers["If-None-Match"].First()))
 				{
+					var isNotModified = true;
+					var lastModifed = DateTime.Now;
+
+					// last-modified
+					if (!context.Request.Headers["If-Modified-Since"].First().Equals(""))
+					{
+						fileInfo = new FileInfo(filePath);
+						if (fileInfo.Exists)
+						{
+							lastModifed = fileInfo.LastWriteTime;
+							isNotModified = lastModifed <= context.Request.Headers["If-Modified-Since"].First().FromHttpDateTime();
+						}
+						else
+							isNotModified = false;
+					}
+
+					// update header and stop
+					if (isNotModified)
+					{
+						context.SetResponseHeaders((int)HttpStatusCode.NotModified, new Dictionary<string, string>
+						{
+							{ "Cache-Control", "public" },
+							{ "ETag", eTag },
+							{ "Last-Modifed", $"{lastModifed.ToHttpString()}" }
+						}, true);
+						return;
+					}
+				}
+
+				// check existed
+				fileInfo = fileInfo ?? new FileInfo(filePath);
+				if (!fileInfo.Exists)
+					throw new FileNotFoundException($"Not Found [{requestUri}]");
+
+				// prepare body
+				new FileExtensionContentTypeProvider().TryGetContentType(fileInfo.Name, out string staticMimeType);
+				var staticContent = await UtilityService.ReadTextFileAsync(fileInfo).ConfigureAwait(false);
+				staticContent = staticMimeType.IsEndsWith("json")
+					? JObject.Parse(staticContent).ToString(Formatting.Indented)
+					: staticContent;
+
+				// response
+				context.SetResponseHeaders((int)HttpStatusCode.OK, new Dictionary<string, string>
+				{
+					{ "Content-Type", (string.IsNullOrWhiteSpace(staticMimeType) ? "text/plain" : staticMimeType) + "; charset=utf-8" },
+					{ "ETag", eTag },
+					{ "Last-Modified", $"{fileInfo.LastWriteTime.ToHttpString()}" },
 					{ "Cache-Control", "public" },
-					{ "ETag", $"\"{eTag}\"" }
+					{ "Expires", $"{DateTime.Now.AddDays(7).ToHttpString()}" },
 				});
-				return;
+				await Task.WhenAll(
+					context.WriteAsync(staticContent.ToBytes()),
+					Global.IsDebugLogEnabled ? context.WriteLogsAsync("StaticFiles", $"End request => Response static file successful ({filePath} - {fileInfo.Length:#,##0} bytes)") : Task.CompletedTask
+				).ConfigureAwait(false);
 			}
-
-			// prepare
-			var rootPath = path.IsEquals("statics")
-				? UtilityService.GetAppSetting("Path:StaticFiles", this._hostingEnvironment.ContentRootPath + "/data-files/statics")
-				: this._hostingEnvironment.ContentRootPath;
-
-			var filePath = string.IsNullOrWhiteSpace(requestUri.PathAndQuery)
-				? "/geo/countries.json"
-				: requestUri.PathAndQuery;
-
-			if (filePath.IndexOf("?") > 0)
-				filePath = filePath.Left(filePath.IndexOf("?"));
-
-			filePath = (rootPath + filePath.Replace("/statics/", "/")).Replace("//", "/").Replace(@"\", "/").Replace("/", Path.DirectorySeparatorChar.ToString());
-
-			// check existed
-			var fileInfo = new FileInfo(filePath);
-			if (!fileInfo.Exists)
-				throw new FileNotFoundException($"Not Found [{requestUri}]");
-
-			// update headers
-			new FileExtensionContentTypeProvider().TryGetContentType(fileInfo.Name, out string staticMimeType);
-			context.SetResponseHeaders((int)HttpStatusCode.OK, new Dictionary<string, string>
+			catch (Exception ex)
 			{
-				{ "Content-Type", string.IsNullOrWhiteSpace(staticMimeType) ? "text/plain" : staticMimeType },
-				{ "ETag", $"\"{eTag}\"" },
-				{ "Last-Modified", $"{fileInfo.LastWriteTime.ToHttpString()}" },
-				{ "Cache-Control", "public" },
-				{ "Expires", $"{fileInfo.LastWriteTime.AddDays(30).ToHttpString()}" },
-			});
-
-			// write body
-			var staticContent = await UtilityService.ReadTextFileAsync(fileInfo).ConfigureAwait(false);
-			staticContent = staticMimeType.IsEndsWith("json")
-				? JObject.Parse(staticContent).ToString(Formatting.Indented)
-				: staticContent;
-
-			await Task.WhenAll(
-				context.WriteAsync(staticContent.ToBytes()),
-				Global.IsDebugLogEnabled ? context.WriteLogsAsync("StaticFiles", $"Process request of static file successful [{filePath}]") : Task.CompletedTask
-			).ConfigureAwait(false);
+				if (!(ex is InvalidOperationException))
+					await context.WriteLogsAsync("StaticFiles", $"End request => Error occurred while processing static file [{requestUri}]", ex);
+				context.ShowHttpError(ex.GetHttpStatusCode(), ex.Message, ex.GetType().GetTypeName(true), context.GetCorrelationID());
+			}
 		}
 	}
 }

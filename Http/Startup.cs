@@ -43,7 +43,7 @@ namespace net.vieapps.Services.APIGateway
 		public void ConfigureServices(IServiceCollection services)
 		{
 			services.AddResponseCompression(options => options.EnableForHttps = true);
-			services.AddLogging(builder => builder.SetMinimumLevel(UtilityService.GetAppSetting("Logs:Level", "Warning").ToEnum<LogLevel>()));
+			services.AddLogging(builder => builder.SetMinimumLevel(UtilityService.GetAppSetting("Logs:Level", this.Configuration.GetAppSetting("Logging/LogLevel/Default", "Warning")).ToEnum<LogLevel>()));
 			services.AddHttpContextAccessor();
 			services.AddCache(options => this.Configuration.GetSection("Cache").Bind(options));
 			/*
@@ -88,19 +88,21 @@ namespace net.vieapps.Services.APIGateway
 			Global.ServiceProvider = app.ApplicationServices;
 			Global.Logger = loggerFactory.CreateLogger<RequestHandler>();
 
+			var logLevel = UtilityService.GetAppSetting("Logs:Level", this.Configuration.GetAppSetting("Logging/LogLevel/Default", "Warning")).ToEnum<LogLevel>();
 			var path = UtilityService.GetAppSetting("Path:Logs");
 			if (!string.IsNullOrWhiteSpace(path) && Directory.Exists(path))
 			{
-				path += Path.DirectorySeparatorChar.ToString() + "{Date}_" + Global.ServiceName.ToLower() + ".http.txt";
-				loggerFactory.AddFile(path, UtilityService.GetAppSetting("Logs:Level", "Warning").ToEnum<LogLevel>());
+				path += Path.DirectorySeparatorChar.ToString() + Global.ServiceName.ToLower() + ".http_{Date}.txt";
+				loggerFactory.AddFile(path, logLevel);
 			}
 			else
 				path = null;
 
 			var logger = loggerFactory.CreateLogger<Startup>();
-			logger.LogInformation($"Initializing {Global.ServiceName} HTTP service...");
+			logger.LogInformation($"Start {Global.ServiceName} HTTP service");
+			logger.LogDebug($"Logging is enabled [{logLevel}]");
 			if (!string.IsNullOrWhiteSpace(path))
-				logger.LogInformation($"Rolling log files is enabled => {path}");
+				logger.LogDebug($"Rolling log files is enabled [{path}]");
 
 			JsonConvert.DefaultSettings = () => new JsonSerializerSettings()
 			{
@@ -109,6 +111,8 @@ namespace net.vieapps.Services.APIGateway
 				DateTimeZoneHandling = DateTimeZoneHandling.Local
 			};
 
+			var routerInfo = WAMPConnections.GetRouterInfo();
+			logger.LogDebug($"Attempting to connect to WAMP router [{routerInfo.Item1}{routerInfo.Item2}]");
 			Task.Run(() => InternalAPIs.OpenChannelsAsync()).ConfigureAwait(false);
 			InternalAPIs.Cache = new Cache("VIEApps-API-Gateway", this.Configuration.GetAppSetting("Cache/ExpirationTime", 30), this.Configuration.GetAppSetting("Cache/Provider", "Redis"));
 			RTU.Initialize(loggerFactory);
@@ -122,7 +126,7 @@ namespace net.vieapps.Services.APIGateway
 			app.UseMiddleware<RequestHandler>();
 
 			stopwatch.Stop();
-			logger.LogInformation($"The {Global.ServiceName} HTTP service is initialized - Execution times: {stopwatch.GetElapsedTimes()}");
+			logger.LogInformation($"The {Global.ServiceName} HTTP service is started - Execution times: {stopwatch.GetElapsedTimes()}");
 		}
 	}
 }

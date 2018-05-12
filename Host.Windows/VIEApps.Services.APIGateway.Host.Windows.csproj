@@ -41,7 +41,7 @@
     <StartupObject>net.vieapps.Services.APIGateway.Program</StartupObject>
   </PropertyGroup>
   <PropertyGroup>
-    <ApplicationIcon>Host.ico</ApplicationIcon>
+    <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
@@ -58,7 +58,7 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
-    <Content Include="Host.ico" />
+    <Content Include="app.ico" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Host\VIEApps.Services.APIGateway.Host.csproj">

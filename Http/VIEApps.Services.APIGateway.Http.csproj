@@ -26,6 +26,7 @@
 		<PackageReleaseNotes>Upgrade to latest components to avoid potential bugs</PackageReleaseNotes>
 		<PackageProjectUrl>https://github.com/vieapps/Services.APIGateway</PackageProjectUrl>
 		<RepositoryUrl>https://github.com/vieapps/Services.APIGateway</RepositoryUrl>
+		<ApplicationIcon></ApplicationIcon>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
@@ -39,7 +40,9 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<Compile Remove="Global.cs" />
+		<None Remove=".DS_Store" />
+		<None Remove=".gitattributes" />
+		<None Remove=".gitignore" />
 	</ItemGroup>
 
 	<ItemGroup>

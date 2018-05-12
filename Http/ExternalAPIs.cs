@@ -2,13 +2,8 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using System.Web;
 
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-
-using net.vieapps.Components.Utility;
-using net.vieapps.Components.Security;
+using Microsoft.AspNetCore.Http;
 #endregion
 
 namespace net.vieapps.Services.APIGateway
@@ -17,9 +12,6 @@ namespace net.vieapps.Services.APIGateway
 	{
 		internal static Dictionary<string, object> APIs = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
 
-		internal static Task ProcessRequestAsync(HttpContext context)
-		{
-			return Task.CompletedTask;
-		}
+		internal static Task ProcessRequestAsync(HttpContext context) => Task.CompletedTask;
 	}
 }

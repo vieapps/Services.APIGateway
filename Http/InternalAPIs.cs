@@ -90,7 +90,7 @@ namespace net.vieapps.Services.APIGateway
 				if (!string.IsNullOrWhiteSpace(appToken))
 				{
 					request.Header["x-app-token"] = appToken;
-					await context.UpdateSessionAsync(request.Session, appToken, !request.Query.ContainsKey("register")).ConfigureAwait(false);
+					await context.UpdateWithAuthenticateTokenAsync(request.Session, appToken).ConfigureAwait(false);
 				}
 				else if (tokenIsRequired)
 					throw new InvalidSessionException("Session is invalid (Token is not found)");
@@ -308,27 +308,24 @@ namespace net.vieapps.Services.APIGateway
 				}
 			#endregion
 
-			if (Global.IsDebugLogEnabled)
-				await context.WriteLogsAsync("InternalAPIs", $"Begin process => Request:\r\n{request.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
-
 			// process the request of session
 			if (isSessionProccessed)
 				switch (request.Verb)
 				{
 					case "GET":
-						await InternalAPIs.RegisterSessionAsync(context, request).ConfigureAwait(false);
+						await context.RegisterSessionAsync(request).ConfigureAwait(false);
 						break;
 
 					case "POST":
-						await InternalAPIs.SignSessionInAsync(context, request).ConfigureAwait(false);
+						await context.SignSessionInAsync(request).ConfigureAwait(false);
 						break;
 
 					case "PUT":
-						await InternalAPIs.ValidateOTPSessionAsync(context, request).ConfigureAwait(false);
+						await context.ValidateOTPSessionAsync(request).ConfigureAwait(false);
 						break;
 
 					case "DELETE":
-						await InternalAPIs.SignSessionOutAsync(context, request).ConfigureAwait(false);
+						await context.SignSessionOutAsync(request).ConfigureAwait(false);
 						break;
 
 					default:
@@ -346,7 +343,7 @@ namespace net.vieapps.Services.APIGateway
 				// activate
 				try
 				{
-					await InternalAPIs.ActivateAsync(context, request).ConfigureAwait(false);
+					await context.ActivateAsync(request).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -380,7 +377,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Register a session
-		static async Task RegisterSessionAsync(HttpContext context, RequestInfo requestInfo)
+		static async Task RegisterSessionAsync(this HttpContext context, RequestInfo requestInfo)
 		{
 			// session of visitor/system account
 			if (requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.IsSystemAccount)
@@ -401,13 +398,13 @@ namespace net.vieapps.Services.APIGateway
 					else
 					{
 						// validate
-						var register = requestInfo.Query["register"].Decrypt(Global.EncryptionKey.Reverse(), true);
+						var register = requestInfo.Query["register"].HexToBytes().Decrypt(Global.EncryptionKey.Reverse().GenerateHashKey(256), Global.EncryptionKey.GenerateHashKey(128)).ToHex();
 						if (!requestInfo.Session.SessionID.IsEquals(register) || !register.Encrypt(Global.EncryptionKey, true).IsEquals(await InternalAPIs.Cache.GetAsync<string>($"Session#{requestInfo.Session.SessionID}").ConfigureAwait(false)))
 							throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 
 						// register with user service
 						await Task.WhenAll(
-							InternalAPIs.CreateSessionAsync(context, requestInfo),
+							context.CreateSessionAsync(requestInfo),
 							InternalAPIs.Cache.RemoveAsync($"Session#{requestInfo.Session.SessionID}")
 						).ConfigureAwait(false);
 					}
@@ -434,15 +431,17 @@ namespace net.vieapps.Services.APIGateway
 				try
 				{
 					// call service to get session
-					var session = await context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Session", "GET", requestInfo.Query, requestInfo.Header, null, new Dictionary<string, string>()
+					var session = await context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Session", "GET", requestInfo.Query, requestInfo.Header)
 					{
-						{ "Signature", requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey) }
-					}, requestInfo.CorrelationID)).ConfigureAwait(false);
-					var jsonUserID = session?["UserID"];
-					var jsonAccessToken = session?["AccessToken"];
+						Extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+						{
+							{ "Signature", requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey) }
+						},
+						CorrelationID = requestInfo.CorrelationID
+					}).ConfigureAwait(false);
 
-					// verify access token
-					if (jsonUserID == null || !(jsonUserID is JValue) || (jsonUserID as JValue).Value == null || !requestInfo.Session.User.ID.Equals((jsonUserID as JValue).Value as string))
+					// verify identity
+					if (!requestInfo.Session.User.ID.IsEquals(session.Get<string>("UserID")))
 						throw new InvalidTokenException();
 
 					// update session
@@ -486,9 +485,8 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Create a session
-		static JObject GenerateSessionJson(RequestInfo requestInfo, bool is2FAVerified = false, bool isOnline = true)
-		{
-			return new JObject()
+		static JObject GenerateSessionJson(this RequestInfo requestInfo, bool is2FAVerified = false, bool isOnline = true)
+			=> new JObject
 			{
 				{ "ID", requestInfo.Session.SessionID },
 				{ "IssuedAt", DateTime.Now },
@@ -503,11 +501,10 @@ namespace net.vieapps.Services.APIGateway
 				{ "Verification", is2FAVerified },
 				{ "Online", isOnline }
 			};
-		}
 
-		static async Task CreateSessionAsync(HttpContext context, RequestInfo requestInfo, bool is2FAVerified = false)
+		static async Task CreateSessionAsync(this HttpContext context, RequestInfo requestInfo, bool is2FAVerified = false)
 		{
-			var body = InternalAPIs.GenerateSessionJson(requestInfo, is2FAVerified).ToString(Formatting.None);
+			var body = requestInfo.GenerateSessionJson(is2FAVerified).ToString(Formatting.None);
 			await context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Session", "POST")
 			{
 				Body = body,
@@ -523,7 +520,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Sign a session in
-		static async Task SignSessionInAsync(HttpContext context, RequestInfo requestInfo)
+		static async Task SignSessionInAsync(this HttpContext context, RequestInfo requestInfo)
 		{
 			try
 			{
@@ -592,7 +589,7 @@ namespace net.vieapps.Services.APIGateway
 
 					requestInfo.Session.User = json.FromJson<UserIdentity>();
 					requestInfo.Session.SessionID = UtilityService.NewUUID;
-					await InternalAPIs.CreateSessionAsync(context, requestInfo).ConfigureAwait(false);
+					await context.CreateSessionAsync(requestInfo).ConfigureAwait(false);
 
 					// response
 					json = new JObject()
@@ -631,7 +628,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Validate an OTP session
-		static async Task ValidateOTPSessionAsync(HttpContext context, RequestInfo requestInfo)
+		static async Task ValidateOTPSessionAsync(this HttpContext context, RequestInfo requestInfo)
 		{
 			try
 			{
@@ -679,7 +676,7 @@ namespace net.vieapps.Services.APIGateway
 
 				requestInfo.Session.User = json.FromJson<UserIdentity>();
 				requestInfo.Session.SessionID = UtilityService.NewUUID;
-				await InternalAPIs.CreateSessionAsync(context, requestInfo, true).ConfigureAwait(false);
+				await context.CreateSessionAsync(requestInfo, true).ConfigureAwait(false);
 
 				// response
 				json = new JObject
@@ -717,7 +714,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Sign a session out
-		static async Task SignSessionOutAsync(HttpContext context, RequestInfo requestInfo)
+		static async Task SignSessionOutAsync(this HttpContext context, RequestInfo requestInfo)
 		{
 			try
 			{
@@ -736,9 +733,8 @@ namespace net.vieapps.Services.APIGateway
 
 				// create & register the new session of visitor
 				requestInfo.Session.SessionID = UtilityService.NewUUID;
-				requestInfo.Session.User = new UserIdentity();
-				var session = InternalAPIs.GenerateSessionJson(requestInfo);
-				await InternalAPIs.CreateSessionAsync(context, requestInfo).ConfigureAwait(false);
+				requestInfo.Session.User = new UserIdentity("", requestInfo.Session.SessionID, new List<string> { SystemRole.All.ToString() }, new List<Privilege>());
+				await context.CreateSessionAsync(requestInfo).ConfigureAwait(false);
 
 				// response
 				var json = new JObject()
@@ -760,21 +756,21 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Activation
-		static async Task ActivateAsync(HttpContext context, RequestInfo requestInfo)
+		static async Task ActivateAsync(this HttpContext context, RequestInfo requestInfo)
 		{
 			// call service to activate
 			var json = await context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Activate", "GET", requestInfo.Query, requestInfo.Header, "", requestInfo.Extra, requestInfo.CorrelationID)).ConfigureAwait(false);
 
 			// get user information & register the session
 			requestInfo.Session.User = json.FromJson<UserIdentity>();
-			var session = InternalAPIs.GenerateSessionJson(requestInfo).ToString(Formatting.None);
+			var body = requestInfo.GenerateSessionJson().ToString(Formatting.None);
 			await Task.WhenAll(
 				context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Session", "POST")
 				{
-					Body = session,
+					Body = body,
 					Extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
 					{
-						{ "Signature", session.GetHMACSHA256(Global.ValidationKey) }
+						{ "Signature", body.GetHMACSHA256(Global.ValidationKey) }
 					},
 					CorrelationID = requestInfo.CorrelationID
 				}),
@@ -795,24 +791,14 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
-		#region JSON Web Token, Session JSON
-		internal static byte[] GetEncryptionKey(this Session session) => session.SessionID.GetHMACHash(Global.EncryptionKey, "BLAKE256").GenerateHashKey(256);
+		#region Heper: keys, session, online status, ...
+		internal static byte[] GetEncryptionKey(this Session session) => session.SessionID.GetHMACHash(Global.EncryptionKey, "SHA512").GenerateHashKey(256);
 
-		internal static byte[] GetEncryptionIV(this Session session) => session.SessionID.GetHMACHash(Global.EncryptionKey, "BLAKE256").GenerateHashKey(128);
-
-		internal static string GetJSONWebToken(this Session session)
-			=> UserIdentity.GetJSONWebToken
-			(
-				session.User.ID,
-				session.SessionID,
-				Global.EncryptionKey,
-				Global.JWTKey,
-				payload => payload["j2f"] = $"{session.Verification.ToString()}|{UtilityService.NewUUID}".Encrypt(Global.EncryptionKey)
-			);
+		internal static byte[] GetEncryptionIV(this Session session) => session.SessionID.GetHMACHash(Global.EncryptionKey, "SHA256").GenerateHashKey(128);
 
 		internal static void UpdateSessionJson(this Session session, JObject json)
 		{
-			json["ID"] = session.SessionID.Encrypt(Global.EncryptionKey.Reverse(), true);
+			json["ID"] = session.SessionID.HexToBytes().Encrypt(Global.EncryptionKey.Reverse().GenerateHashKey(256), Global.EncryptionKey.GenerateHashKey(128)).ToHex();
 			json["Keys"] = new JObject
 			{
 				{
@@ -836,7 +822,7 @@ namespace net.vieapps.Services.APIGateway
 					Global.JWTKey
 				}
 			};
-			json["JWT"] = session.GetJSONWebToken();
+			json["Token"] = session.GetAuthenticateToken();
 		}
 
 		//internal static async Task SendOnlineStatusAsync(this Session session, bool isOnline)
@@ -861,7 +847,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
-		#region WAMP connections & updaters
+		#region Helper: WAMP connections & updaters
 		internal static Task OpenChannelsAsync()
 			=> Global.OpenChannelsAsync(
 				(sender, args) =>

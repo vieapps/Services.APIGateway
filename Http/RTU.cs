@@ -93,7 +93,7 @@ namespace net.vieapps.Services.APIGateway
 				websocket.Extra.TryGetValue("Referrer", out object urlReferrer);
 				var ipAddress = $"{(websocket.RemoteEndPoint as IPEndPoint).Address}";
 
-				session = Global.GetSession(null, queryString.ToNameValueCollection(), userAgent as string, ipAddress, new Uri(urlReferrer as string));
+				session = Global.GetSession(queryString.ToNameValueCollection(), userAgent as string, ipAddress, new Uri(urlReferrer as string));
 				session.DeviceID = request.Get("x-device-id", session.DeviceID);
 				session.AppName = request.Get("x-app-name", session.AppName);
 				session.AppPlatform = request.Get("x-app-platform", session.AppPlatform);
@@ -102,8 +102,8 @@ namespace net.vieapps.Services.APIGateway
 					throw new InvalidTokenException("Device identity is not found");
 
 				// verify client credential
-				await Global.UpdateSessionAsync(session, appToken).ConfigureAwait(false);
-				if (!await Global.CurrentHttpContext.IsSessionExistAsync(session).ConfigureAwait(false))
+				await Global.UpdateWithAuthenticateTokenAsync(session, appToken).ConfigureAwait(false);
+				if (!await Global.IsSessionExistAsync(session).ConfigureAwait(false))
 					throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 			}
 			catch (Exception ex)

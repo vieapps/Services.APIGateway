@@ -34,6 +34,7 @@ namespace net.vieapps.Services.APIGateway
 			WAMPConnections.CloseChannels();
 			Global.CancellationTokenSource.Cancel();
 			Global.CancellationTokenSource.Dispose();
+			Global.RSA.Dispose();
 		}
 
 		public IConfiguration Configuration { get; }
@@ -106,9 +107,10 @@ namespace net.vieapps.Services.APIGateway
 
 			JsonConvert.DefaultSettings = () => new JsonSerializerSettings()
 			{
-				Formatting = Formatting.Indented,
+				Formatting = Formatting.None,
 				ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
-				DateTimeZoneHandling = DateTimeZoneHandling.Local
+				DateTimeZoneHandling = DateTimeZoneHandling.Local,
+				TypeNameHandling = TypeNameHandling.Auto
 			};
 
 			var routerInfo = WAMPConnections.GetRouterInfo();

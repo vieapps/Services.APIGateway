@@ -1,5 +1,6 @@
 ﻿#region Related components
 using System;
+using System.Linq;
 using System.IO;
 using System.Diagnostics;
 using System.Threading.Tasks;
@@ -29,7 +30,15 @@ namespace net.vieapps.Services.APIGateway
 	{
 		public static void Main(string[] args)
 		{
-			WebHost.CreateDefaultBuilder(args).UseStartup<Startup>().UseKestrel().Build().Run();
+			// run
+			WebHost.CreateDefaultBuilder(args)
+				.UseStartup<Startup>()
+				.UseKestrel()
+				.UseUrls($"http://0.0.0.0:{args.FirstOrDefault(a => a.IsStartsWith("/port:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/port:", "").Trim() ?? "8030"}")
+				.Build()
+				.Run();
+
+			// dispose
 			RTU.WebSocket.Dispose();
 			WAMPConnections.CloseChannels();
 			Global.CancellationTokenSource.Cancel();

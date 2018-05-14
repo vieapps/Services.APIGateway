@@ -144,7 +144,7 @@ namespace net.vieapps.Services.APIGateway
 				session.SendOnlineStatusAsync(true),
 				Global.WriteLogsAsync("RTU",
 					"The real-time updater of a client's device is started" + "\r\n" +
-					$"- Account: {(session.User.ID.Equals("") ? "Visitor" : $"{session.User.Name} [{session.User.ID}]")}" + "\r\n" +
+					$"- Account: {(session.User.ID.Equals("") ? "Visitor" : session.User.ID)}" + "\r\n" +
 					$"- Session: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
 					$"- App Info: {session.AppName} @ {session.AppPlatform} - {session.AppOrigin} [IP: {session.IP} - Agent: {session.AppAgent}]"
 				)
@@ -211,7 +211,7 @@ namespace net.vieapps.Services.APIGateway
 				session.SendOnlineStatusAsync(false),
 				Global.WriteLogsAsync("RTU",
 					$"The real-time updater of a client's device is stopped" + "\r\n" +
-					$"- Account: {(session.User.ID.Equals("") ? "Visitor" : $"{session.User.Name} [{session.User.ID}]")}" + "\r\n" +
+					$"- Account: {(session.User.ID.Equals("") ? "Visitor" : session.User.ID)}" + "\r\n" +
 					$"- Session: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
 					$"- App Info: {session.AppName} @ {session.AppPlatform} - {session.AppOrigin} [IP: {session.IP} - Agent: {session.AppAgent}]"
 				)

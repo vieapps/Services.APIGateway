@@ -101,7 +101,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-				context.WriteError(ex, request, $"Error occurred while preparing token: {ex.Message}", false);
+				context.WriteError(ex, request, null, false);
 				return;
 			}
 			#endregion
@@ -152,8 +152,8 @@ namespace net.vieapps.Services.APIGateway
 
 					try
 					{
-						registered = registered.Decrypt(request.Session.GetEncryptionKey(), request.Session.GetEncryptionIV());
-						input = input.Decrypt(request.Session.GetEncryptionKey(), request.Session.GetEncryptionIV());
+						registered = registered.Decrypt(context.GetEncryptionKey(request.Session), context.GetEncryptionIV(request.Session));
+						input = input.Decrypt(context.GetEncryptionKey(request.Session), context.GetEncryptionIV(request.Session));
 					}
 					catch (Exception ex)
 					{
@@ -166,7 +166,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					context.WriteError(ex, request, $"Error occurred while verifying captcha: {ex.Message}");
+					context.WriteError(ex, request);
 					return;
 				}
 			#endregion
@@ -303,7 +303,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					context.WriteError(ex, request, $"Error occurred while processing account: {ex.Message}");
+					context.WriteError(ex, request);
 					return;
 				}
 			#endregion
@@ -329,7 +329,7 @@ namespace net.vieapps.Services.APIGateway
 						break;
 
 					default:
-						context.WriteError(new MethodNotAllowedException(request.Verb), request, $"Method {request.Verb} is not allowed",false);
+						context.WriteError(new MethodNotAllowedException(request.Verb), request, null, false);
 						break;
 				}
 
@@ -347,7 +347,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					context.WriteError(ex, request, $"Error occurred while activating: {ex.Message}");
+					context.WriteError(ex, request);
 				}
 			}
 
@@ -360,7 +360,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					context.WriteError(ex, request, $"Error [{request.ServiceName}/{request.ObjectName}] => {ex.Message}");
+					context.WriteError(ex, request);
 				}
 		}
 
@@ -369,7 +369,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			if (string.IsNullOrWhiteSpace(session?.SessionID))
 				return false;
-			else if (session.User.ID.Equals("") && await InternalAPIs.Cache.ExistsAsync($"Session#{session.SessionID}").ConfigureAwait(false))
+			else if (await InternalAPIs.Cache.ExistsAsync($"Session#{session.SessionID}").ConfigureAwait(false))
 				return true;
 			else
 				return await context.IsSessionExistAsync(session).ConfigureAwait(false);
@@ -391,7 +391,7 @@ namespace net.vieapps.Services.APIGateway
 							requestInfo.Session.DeviceID = (requestInfo.Session.AppName + "/" + requestInfo.Session.AppPlatform + "@" + (requestInfo.Session.AppAgent ?? "N/A")).GetHMACBLAKE128(requestInfo.Session.SessionID, true) + "@pwa";
 
 						// store identity into cache for further use
-						await InternalAPIs.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.SessionID.Encrypt(Global.EncryptionKey, true), 7).ConfigureAwait(false);
+						await InternalAPIs.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.SessionID.Encrypt(Global.EncryptionKey), 7).ConfigureAwait(false);
 					}
 
 					// register session
@@ -399,7 +399,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 						// validate
 						var register = requestInfo.Query["register"].HexToBytes().Decrypt(Global.EncryptionKey.Reverse().GenerateHashKey(256), Global.EncryptionKey.GenerateHashKey(128)).ToHex();
-						if (!requestInfo.Session.SessionID.IsEquals(register) || !register.Encrypt(Global.EncryptionKey, true).IsEquals(await InternalAPIs.Cache.GetAsync<string>($"Session#{requestInfo.Session.SessionID}").ConfigureAwait(false)))
+						if (!requestInfo.Session.SessionID.IsEquals(register) || !register.Encrypt(Global.EncryptionKey).IsEquals(await InternalAPIs.Cache.GetAsync<string>($"Session#{requestInfo.Session.SessionID}").ConfigureAwait(false)))
 							throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 
 						// register with user service
@@ -415,7 +415,7 @@ namespace net.vieapps.Services.APIGateway
 						{ "ID", requestInfo.Session.SessionID },
 						{ "DeviceID", requestInfo.Session.DeviceID }
 					};
-					requestInfo.Session.UpdateSessionJson(json);
+					context.UpdateSessionJson(requestInfo.Session, json);
 
 					await context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None).ConfigureAwait(false);
 					if (Global.IsDebugLogEnabled && Global.IsDebugResultsEnabled)
@@ -423,7 +423,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					context.WriteError(ex, requestInfo, $"Error occurred while registering session: {ex.Message}");
+					context.WriteError(ex, requestInfo);
 				}
 
 			// session of authenticated account
@@ -440,8 +440,10 @@ namespace net.vieapps.Services.APIGateway
 						CorrelationID = requestInfo.CorrelationID
 					}).ConfigureAwait(false);
 
-					// verify identity
-					if (!requestInfo.Session.User.ID.IsEquals(session.Get<string>("UserID")))
+					// check
+					if (session == null)
+						throw new SessionNotFoundException();
+					else if (!requestInfo.Session.User.ID.IsEquals(session.Get<string>("UserID")))
 						throw new InvalidTokenException();
 
 					// update session
@@ -450,10 +452,10 @@ namespace net.vieapps.Services.APIGateway
 					session["IP"] = requestInfo.Session.IP;
 					session["DeviceID"] = requestInfo.Session.DeviceID;
 					session["AppInfo"] = requestInfo.Session.AppName + " @ " + requestInfo.Session.AppPlatform;
-					session["OSInfo"] = context.GetOSInfo() + $" [{context.Request.Headers["User-Agent"].First()}]";
+					session["OSInfo"] = $"{requestInfo.Session.AppAgent.GetOSInfo()} [{requestInfo.Session.AppAgent}]";
 					session["Online"] = true;
 
-					// register with user service
+					// renew with user service
 					var body = session.ToString(Formatting.None);
 					await context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Session", "POST")
 					{
@@ -471,7 +473,7 @@ namespace net.vieapps.Services.APIGateway
 						{ "ID", requestInfo.Session.SessionID },
 						{ "DeviceID", requestInfo.Session.DeviceID }
 					};
-					requestInfo.Session.UpdateSessionJson(json);
+					context.UpdateSessionJson(requestInfo.Session, json);
 
 					await context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None).ConfigureAwait(false);
 					if (Global.IsDebugLogEnabled & Global.IsDebugResultsEnabled)
@@ -479,7 +481,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					context.WriteError(ex, requestInfo, $"Error occurred while registering session: {ex.Message}");
+					context.WriteError(ex, requestInfo);
 				}
 		}
 		#endregion
@@ -497,7 +499,7 @@ namespace net.vieapps.Services.APIGateway
 				{ "IP", requestInfo.Session.IP },
 				{ "DeviceID", requestInfo.Session.DeviceID },
 				{ "AppInfo", requestInfo.Session.AppName + " @ " + requestInfo.Session.AppPlatform },
-				{ "OSInfo", requestInfo.Header.ContainsKey("user-agent") ? requestInfo.Header["user-agent"].GetOSInfo() + " [" + requestInfo.Header["user-agent"] + "]" : "Unknown" },
+				{ "OSInfo", $"{requestInfo.Session.AppAgent.GetOSInfo()} [{requestInfo.Session.AppAgent}]" },
 				{ "Verification", is2FAVerified },
 				{ "Online", isOnline }
 			};
@@ -525,7 +527,7 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				// check
-				if (!requestInfo.Session.SessionID.Encrypt(Global.EncryptionKey, true).IsEquals(await InternalAPIs.Cache.GetAsync<string>($"Session#{requestInfo.Session.SessionID}").ConfigureAwait(false)))
+				if (!await context.CheckSessionExistAsync(requestInfo.Session).ConfigureAwait(false))
 					throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 
 				// validate
@@ -597,7 +599,7 @@ namespace net.vieapps.Services.APIGateway
 						{ "ID", requestInfo.Session.SessionID },
 						{ "DeviceID", requestInfo.Session.DeviceID }
 					};
-					requestInfo.Session.UpdateSessionJson(json);
+					context.UpdateSessionJson(requestInfo.Session, json);
 				}
 
 				// response
@@ -622,7 +624,7 @@ namespace net.vieapps.Services.APIGateway
 				).ConfigureAwait(false);
 
 				// show error
-				context.WriteError(ex, requestInfo, $"Error occurred while signing-in a session: {ex.Message}");
+				context.WriteError(ex, requestInfo);
 			}
 		}
 		#endregion
@@ -684,7 +686,7 @@ namespace net.vieapps.Services.APIGateway
 					{ "ID", requestInfo.Session.SessionID },
 					{ "DeviceID", requestInfo.Session.DeviceID }
 				};
-				requestInfo.Session.UpdateSessionJson(json);
+				context.UpdateSessionJson(requestInfo.Session, json);
 
 				// response
 				await Task.WhenAll(
@@ -708,7 +710,7 @@ namespace net.vieapps.Services.APIGateway
 				).ConfigureAwait(false);
 
 				// show error
-				context.WriteError(ex, requestInfo, $"Error occurred while validating OTP session: {ex.Message}");
+				context.WriteError(ex, requestInfo);
 			}
 		}
 		#endregion
@@ -742,7 +744,7 @@ namespace net.vieapps.Services.APIGateway
 					{ "ID", requestInfo.Session.SessionID },
 					{ "DeviceID", requestInfo.Session.DeviceID }
 				};
-				requestInfo.Session.UpdateSessionJson(json);
+				context.UpdateSessionJson(requestInfo.Session, json);
 
 				await context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None).ConfigureAwait(false);
 				if (Global.IsDebugLogEnabled && Global.IsDebugResultsEnabled)
@@ -750,7 +752,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-				context.WriteError(ex, requestInfo, $"Error occurred while signing-out a session: {ex.Message}");
+				context.WriteError(ex, requestInfo);
 			}
 		}
 		#endregion
@@ -783,7 +785,7 @@ namespace net.vieapps.Services.APIGateway
 				{ "ID", requestInfo.Session.SessionID },
 				{ "DeviceID", requestInfo.Session.DeviceID }
 			};
-			requestInfo.Session.UpdateSessionJson(json);
+			context.UpdateSessionJson(requestInfo.Session, json);
 
 			await context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None).ConfigureAwait(false);
 			if (Global.IsDebugLogEnabled && Global.IsDebugResultsEnabled)
@@ -796,7 +798,17 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static byte[] GetEncryptionIV(this Session session) => session.SessionID.GetHMACHash(Global.EncryptionKey, "SHA256").GenerateHashKey(128);
 
-		internal static void UpdateSessionJson(this Session session, JObject json)
+		internal static byte[] GetEncryptionKey(this HttpContext context, Session session)
+			=> context.Items.ContainsKey("EncryptionKey")
+				? context.Items["EncryptionKey"] as byte[]
+				: (context.Items["EncryptionKey"] = session.GetEncryptionKey()) as byte[];
+
+		internal static byte[] GetEncryptionIV(this HttpContext context, Session session)
+			=> context.Items.ContainsKey("EncryptionIV")
+				? context.Items["EncryptionIV"] as byte[]
+				: (context.Items["EncryptionIV"] = session.GetEncryptionIV()) as byte[];
+
+		internal static void UpdateSessionJson(this HttpContext context, Session session, JObject json)
 		{
 			json["ID"] = session.SessionID.HexToBytes().Encrypt(Global.EncryptionKey.Reverse().GenerateHashKey(256), Global.EncryptionKey.GenerateHashKey(128)).ToHex();
 			json["Keys"] = new JObject
@@ -922,13 +934,13 @@ namespace net.vieapps.Services.APIGateway
 				};
 
 				// update
-				new Session
+				Global.CurrentHttpContext.UpdateSessionJson(new Session
 				{
 					SessionID = sessionID,
 					DeviceID = deviceID,
 					User = user,
 					Verification = verification
-				}.UpdateSessionJson(json);
+				}, json);
 
 				await new UpdateMessage
 				{
@@ -954,12 +966,12 @@ namespace net.vieapps.Services.APIGateway
 				};
 
 				// update
-				new Session
+				Global.CurrentHttpContext.UpdateSessionJson(new Session
 				{
 					SessionID = sessionID,
 					DeviceID = deviceID,
 					User = user
-				}.UpdateSessionJson(json);
+				}, json);
 
 				await new UpdateMessage
 				{

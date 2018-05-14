@@ -269,7 +269,7 @@ namespace net.vieapps.Services.APIGateway
 					session.User.ID = sessionInfo.Get<string>("UserID");
 
 					if (session.User.Equals(""))
-						session.User = new UserIdentity("", session.SessionID, new List<string> { SystemRole.All.ToString() }, new List<Privilege>());
+						session.User = new User("", session.SessionID, new List<string> { SystemRole.All.ToString() }, new List<Privilege>());
 					else
 						session.User = sessionInfo.Get<string>("AccessToken").ParseAccessToken(Global.ECCKey);
 

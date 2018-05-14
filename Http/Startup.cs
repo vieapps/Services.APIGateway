@@ -30,6 +30,10 @@ namespace net.vieapps.Services.APIGateway
 	{
 		public static void Main(string[] args)
 		{
+			// setup console
+			if (Environment.UserInteractive)
+				Console.OutputEncoding = System.Text.Encoding.UTF8;
+
 			// run
 			WebHost.CreateDefaultBuilder(args)
 				.UseStartup<Startup>()
@@ -119,13 +123,15 @@ namespace net.vieapps.Services.APIGateway
 				Formatting = Formatting.None,
 				ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
 				DateTimeZoneHandling = DateTimeZoneHandling.Local,
-				TypeNameHandling = TypeNameHandling.Auto
+				TypeNameHandling = TypeNameHandling.Auto,
+				MissingMemberHandling = MissingMemberHandling.Ignore
 			};
 
 			var routerInfo = WAMPConnections.GetRouterInfo();
 			logger.LogDebug($"Attempting to connect to WAMP router [{routerInfo.Item1}{routerInfo.Item2}]");
 			Task.Run(() => InternalAPIs.OpenChannelsAsync()).ConfigureAwait(false);
 			InternalAPIs.Cache = new Cache("VIEApps-API-Gateway", this.Configuration.GetAppSetting("Cache/ExpirationTime", 30), this.Configuration.GetAppSetting("Cache/Provider", "Redis"));
+			Global.CreateRSA();
 			RTU.Initialize(loggerFactory);
 
 			app.UseErrorCodePages();

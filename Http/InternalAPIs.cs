@@ -372,7 +372,25 @@ namespace net.vieapps.Services.APIGateway
 			else if (await InternalAPIs.Cache.ExistsAsync($"Session#{session.SessionID}").ConfigureAwait(false))
 				return true;
 			else
-				return await context.IsSessionExistAsync(session).ConfigureAwait(false);
+			{
+				if (await context.IsSessionExistAsync(session).ConfigureAwait(false))
+				{
+					var run = Task.Run(async () =>
+					{
+						if (!await InternalAPIs.Cache.ExistsAsync($"Session#{session.SessionID}").ConfigureAwait(false))
+							await InternalAPIs.Cache.SetAsync($"Session#{session.SessionID}", session.SessionID.Encrypt(Global.EncryptionKey)).ConfigureAwait(false);
+					}).ConfigureAwait(false);
+					return true;
+				}
+				{
+					var run = Task.Run(async () =>
+					{
+						if (await InternalAPIs.Cache.ExistsAsync($"Session#{session.SessionID}").ConfigureAwait(false))
+							await InternalAPIs.Cache.RemoveAsync($"Session#{session.SessionID}").ConfigureAwait(false);
+					}).ConfigureAwait(false);
+					return false;
+				}
+			}
 		}
 		#endregion
 
@@ -570,6 +588,7 @@ namespace net.vieapps.Services.APIGateway
 					},
 					CorrelationID = requestInfo.CorrelationID
 				}).ConfigureAwait(false);
+				var oldSessionID = requestInfo.Session.SessionID;
 
 				// two-factors authentication
 				var require2FA = json["Require2FA"] != null
@@ -587,10 +606,9 @@ namespace net.vieapps.Services.APIGateway
 				else
 				{
 					// register new session
-					await InternalAPIs.Cache.RemoveAsync($"Session#{requestInfo.Session.SessionID}").ConfigureAwait(false);
-
-					requestInfo.Session.User = json.FromJson<UserIdentity>();
 					requestInfo.Session.SessionID = UtilityService.NewUUID;
+					requestInfo.Session.User = json.FromJson<User>();
+					requestInfo.Session.User.SessionID = requestInfo.Session.SessionID;
 					await context.CreateSessionAsync(requestInfo).ConfigureAwait(false);
 
 					// response
@@ -605,7 +623,8 @@ namespace net.vieapps.Services.APIGateway
 				// response
 				await Task.WhenAll(
 					context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None),
-					InternalAPIs.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP)
+					InternalAPIs.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP),
+					InternalAPIs.Cache.RemoveAsync($"Session#{oldSessionID}")
 				).ConfigureAwait(false);
 				if (Global.IsDebugLogEnabled && Global.IsDebugResultsEnabled)
 					await context.WriteLogsAsync("InternalAPIs", $"End process => Response:\r\n{json.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
@@ -676,7 +695,7 @@ namespace net.vieapps.Services.APIGateway
 				// register new session
 				await InternalAPIs.Cache.RemoveAsync("Session#" + requestInfo.Session.SessionID).ConfigureAwait(false);
 
-				requestInfo.Session.User = json.FromJson<UserIdentity>();
+				requestInfo.Session.User = json.FromJson<User>();
 				requestInfo.Session.SessionID = UtilityService.NewUUID;
 				await context.CreateSessionAsync(requestInfo, true).ConfigureAwait(false);
 
@@ -735,7 +754,7 @@ namespace net.vieapps.Services.APIGateway
 
 				// create & register the new session of visitor
 				requestInfo.Session.SessionID = UtilityService.NewUUID;
-				requestInfo.Session.User = new UserIdentity("", requestInfo.Session.SessionID, new List<string> { SystemRole.All.ToString() }, new List<Privilege>());
+				requestInfo.Session.User = new User("", requestInfo.Session.SessionID, new List<string> { SystemRole.All.ToString() }, new List<Privilege>());
 				await context.CreateSessionAsync(requestInfo).ConfigureAwait(false);
 
 				// response
@@ -764,7 +783,7 @@ namespace net.vieapps.Services.APIGateway
 			var json = await context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Activate", "GET", requestInfo.Query, requestInfo.Header, "", requestInfo.Extra, requestInfo.CorrelationID)).ConfigureAwait(false);
 
 			// get user information & register the session
-			requestInfo.Session.User = json.FromJson<UserIdentity>();
+			requestInfo.Session.User = json.FromJson<User>();
 			var body = requestInfo.GenerateSessionJson().ToString(Formatting.None);
 			await Task.WhenAll(
 				context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Session", "POST")
@@ -922,7 +941,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				// prepare
 				var sessionID = (message.Data["Session"] as JValue).Value as string;
-				var user = (message.Data["User"] as JObject).FromJson<UserIdentity>();
+				var user = (message.Data["User"] as JObject).FromJson<User>();
 				var deviceID = (message.Data["Device"] as JValue).Value as string;
 				var verification = (message.Data["Verification"] as JValue).Value.CastAs<bool>();
 
@@ -955,7 +974,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				// prepare
 				var sessionID = (message.Data["Session"] as JValue).Value as string;
-				var user = (message.Data["User"] as JObject).FromJson<UserIdentity>();
+				var user = (message.Data["User"] as JObject).FromJson<User>();
 				var deviceID = (message.Data["Device"] as JValue).Value as string;
 
 				var json = new JObject()

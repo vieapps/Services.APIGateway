@@ -10,7 +10,7 @@ namespace net.vieapps.Services.APIGateway
 {
 	internal static class ExternalAPIs
 	{
-		internal static Dictionary<string, object> APIs = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+		internal static Dictionary<string, object> APIs { get; } = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
 
 		internal static Task ProcessRequestAsync(HttpContext context) => Task.CompletedTask;
 	}

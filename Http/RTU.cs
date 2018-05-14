@@ -1,13 +1,13 @@
 ﻿#region Related components
 using System;
 using System.Linq;
-using System.Dynamic;
+using System.Net;
+using System.Net.WebSockets;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Threading.Tasks;
-using System.Net;
-using System.Net.WebSockets;
 using System.Diagnostics;
+using System.Dynamic;
 
 using Microsoft.AspNetCore.Http;
 
@@ -31,7 +31,7 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static void Initialize()
 		{
-			RTU.WebSocket = new Components.WebSockets.WebSocket(Logger.GetLoggerFactory())
+			RTU.WebSocket = new Components.WebSockets.WebSocket(Logger.GetLoggerFactory(), null, Global.CancellationTokenSource.Token)
 			{
 				OnError = (websocket, exception) =>
 				{
@@ -378,14 +378,12 @@ namespace net.vieapps.Services.APIGateway
 
 			// send & write logs
 			await Task.WhenAll(
-				websocket.SendAsync(message.ToString(Global.IsDebugResultsEnabled ? Formatting.Indented : Formatting.None), true),
+				websocket.SendAsync(message.ToString(Global.IsDebugResultsEnabled ? Formatting.Indented : Formatting.None), true, Global.CancellationTokenSource.Token),
 				Global.WriteLogsAsync("InternalAPIs", msg ?? "Error occurred while processing with real-time updater", exception)
 			).ConfigureAwait(false);
 		}
 
-		static async Task SendAsync(this ManagedWebSocket websocket, UpdateMessage message)
-		{
-			await websocket.SendAsync(message.ToJson().ToString(Global.IsDebugResultsEnabled ? Formatting.Indented : Formatting.None), true).ConfigureAwait(false);
-		}
+		static Task SendAsync(this ManagedWebSocket websocket, UpdateMessage message)
+			=> websocket.SendAsync(message.ToJson().ToString(Global.IsDebugResultsEnabled ? Formatting.Indented : Formatting.None), true, Global.CancellationTokenSource.Token);
 	}
 }

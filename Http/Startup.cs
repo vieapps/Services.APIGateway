@@ -21,6 +21,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Caching.Distributed;
 
 using Newtonsoft.Json;
+
 using net.vieapps.Components.Utility;
 using net.vieapps.Components.Caching;
 #endregion
@@ -35,7 +36,7 @@ namespace net.vieapps.Services.APIGateway
 			if (Environment.UserInteractive)
 				Console.OutputEncoding = System.Text.Encoding.UTF8;
 
-			// run
+			// run the web host with Kestrel
 			WebHost.CreateDefaultBuilder(args)
 				.UseStartup<Startup>()
 				.UseKestrel()
@@ -43,7 +44,7 @@ namespace net.vieapps.Services.APIGateway
 				.Build()
 				.Run();
 
-			// dispose
+			// dispose objects
 			RTU.WebSocket.Dispose();
 			WAMPConnections.CloseChannels();
 			Global.CancellationTokenSource.Cancel();

@@ -1,7 +1,6 @@
 ﻿#region Related components
 using System;
 using System.IO;
-using System.Web;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Reactive.Subjects;
@@ -24,7 +23,7 @@ namespace net.vieapps.Services.APIGateway
 	internal static class InternalAPIs
 	{
 		internal static Cache Cache { get; set; }
-		readonly static List<string> ExcludedHeaders = "connection,accept,accept-encoding,accept-language,host,cache-control,cookie,content-type,content-length,referer,user-agent,origin,upgrade-insecure-requests,ms-aspnetcore-token,x-original-proto,x-original-for".ToList();
+		internal static List<string> ExcludedHeaders { get; } = "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,ms-aspnetcore-token,x-original-proto,x-original-for".ToList();
 
 		internal static async Task ProcessRequestAsync(HttpContext context)
 		{
@@ -46,7 +45,7 @@ namespace net.vieapps.Services.APIGateway
 				query["object-identity"] = executionFilePaths.Length > 2 && !string.IsNullOrWhiteSpace(executionFilePaths[2]) ? executionFilePaths[2].GetANSIUri() : "";
 			});
 
-			var request = new RequestInfo()
+			var request = new RequestInfo
 			{
 				Session = context.GetSession(),
 				Verb = context.Request.Method,
@@ -113,14 +112,11 @@ namespace net.vieapps.Services.APIGateway
 				request.Session.User.SessionID = request.Session.SessionID;
 			}
 
-			// user principal
-			context.User = new UserPrincipal(request.Session.User);
-
 			// request body
 			if (request.Verb.IsEquals("POST") || request.Verb.IsEquals("PUT"))
 				try
 				{
-					request.Body = await context.ReadTextAsync().ConfigureAwait(false);
+					request.Body = await context.ReadTextAsync(Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -165,7 +161,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					context.WriteError(ex, request);
+					context.WriteError(ex, request, null, false);
 					return;
 				}
 			#endregion
@@ -274,7 +270,8 @@ namespace net.vieapps.Services.APIGateway
 						if (!captchaIsValid)
 							throw new InvalidSessionException("Captcha code is invalid");
 
-						if (request.Session.SessionID.Encrypt(Global.EncryptionKey.Reverse(), true).Equals(request.GetHeaderParameter("x-create")))
+						var requestCreateAccount = request.GetHeaderParameter("x-create");
+						if (!string.IsNullOrWhiteSpace(requestCreateAccount) && requestCreateAccount.Equals(request.Session.SessionID.GetEncryptedID()))
 							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
 							{
 								{ "x-create", "" }
@@ -302,10 +299,13 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					context.WriteError(ex, request);
+					context.WriteError(ex, request, null, false);
 					return;
 				}
 			#endregion
+
+			// set user principal
+			context.User = new UserPrincipal(request.Session.User);
 
 			// request of sessions
 			if (isSessionProccessed)
@@ -354,7 +354,7 @@ namespace net.vieapps.Services.APIGateway
 			else
 				try
 				{
-					var response = await context.CallServiceAsync(request).ConfigureAwait(false);
+					var response = await context.CallServiceAsync(request, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 					await context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None).ConfigureAwait(false);
 				}
 				catch (Exception ex)
@@ -415,7 +415,7 @@ namespace net.vieapps.Services.APIGateway
 					else
 					{
 						// validate
-						var register = requestInfo.Query["register"].HexToBytes().Decrypt(Global.EncryptionKey.Reverse().GenerateHashKey(256), Global.EncryptionKey.GenerateHashKey(128)).ToHex();
+						var register = requestInfo.Query["register"].GetDecryptedID();
 						if (!requestInfo.Session.SessionID.IsEquals(register) || !register.Encrypt(Global.EncryptionKey).IsEquals(await InternalAPIs.Cache.GetAsync<string>($"Session#{requestInfo.Session.SessionID}").ConfigureAwait(false)))
 							throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 
@@ -462,7 +462,7 @@ namespace net.vieapps.Services.APIGateway
 							{ "Signature", requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey) }
 						},
 						CorrelationID = requestInfo.CorrelationID
-					}).ConfigureAwait(false);
+					}, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 
 					// check
 					if (session == null)
@@ -489,7 +489,7 @@ namespace net.vieapps.Services.APIGateway
 							{ "Signature", body.GetHMACSHA256(Global.ValidationKey) }
 						},
 						CorrelationID = requestInfo.CorrelationID
-					}).ConfigureAwait(false);
+					}, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 
 					// response
 					var json = new JObject
@@ -546,7 +546,7 @@ namespace net.vieapps.Services.APIGateway
 					{ "Signature", body.GetHMACSHA256(Global.ValidationKey) }
 				},
 				CorrelationID = requestInfo.CorrelationID
-			}).ConfigureAwait(false);
+			}, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 
 			await requestInfo.Session.SendOnlineStatusAsync(true).ConfigureAwait(false);
 		}
@@ -600,10 +600,10 @@ namespace net.vieapps.Services.APIGateway
 						{ "Signature", body.GetHMACSHA256(Global.ValidationKey) }
 					},
 					CorrelationID = requestInfo.CorrelationID
-				}).ConfigureAwait(false);
-				var oldSessionID = requestInfo.Session.SessionID;
+				}, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 
 				// two-factors authentication
+				var oldSessionID = string.Empty;
 				var require2FA = json["Require2FA"] != null
 					? (json["Require2FA"] as JValue).Value.CastAs<bool>()
 					: false;
@@ -619,6 +619,7 @@ namespace net.vieapps.Services.APIGateway
 				else
 				{
 					// register new session
+					oldSessionID = requestInfo.Session.SessionID;
 					requestInfo.Session.SessionID = UtilityService.NewUUID;
 					requestInfo.Session.User = json.FromJson<User>();
 					requestInfo.Session.User.SessionID = requestInfo.Session.SessionID;
@@ -637,7 +638,7 @@ namespace net.vieapps.Services.APIGateway
 				await Task.WhenAll(
 					context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None),
 					InternalAPIs.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP),
-					InternalAPIs.Cache.RemoveAsync($"Session#{oldSessionID}"),
+					string.IsNullOrWhiteSpace(oldSessionID) ? Task.CompletedTask : InternalAPIs.Cache.RemoveAsync($"Session#{oldSessionID}"),
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync("InternalAPIs", new List<string>
 					{
 						$"<REST> Successfully process request of session (sign-in)",
@@ -708,11 +709,10 @@ namespace net.vieapps.Services.APIGateway
 						{ "Info", info.Encrypt(Global.EncryptionKey) }
 					}.ToString(Formatting.None),
 					CorrelationID = requestInfo.CorrelationID
-				}).ConfigureAwait(false);
+				}, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 
 				// register new session
-				await InternalAPIs.Cache.RemoveAsync("Session#" + requestInfo.Session.SessionID).ConfigureAwait(false);
-
+				var oldSessionID = requestInfo.Session.SessionID;
 				requestInfo.Session.User = json.FromJson<User>();
 				requestInfo.Session.SessionID = UtilityService.NewUUID;
 				await context.CreateSessionAsync(requestInfo, true).ConfigureAwait(false);
@@ -729,6 +729,7 @@ namespace net.vieapps.Services.APIGateway
 				await Task.WhenAll(
 					context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None),
 					InternalAPIs.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP),
+					InternalAPIs.Cache.RemoveAsync($"Session#{oldSessionID}"),
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync("InternalAPIs", new List<string>
 					{
 						$"<REST> Successfully process request of session (OTP validation)",
@@ -767,10 +768,14 @@ namespace net.vieapps.Services.APIGateway
 					throw new InvalidRequestException();
 
 				// call service to perform sign out
-				await context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Session", "DELETE", requestInfo.Query, requestInfo.Header, null, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+				await context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Session", "DELETE", requestInfo.Query, requestInfo.Header)
 				{
-					{ "Signature", requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey) }
-				}, requestInfo.CorrelationID)).ConfigureAwait(false);
+					Extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+					{
+						{ "Signature", requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey) }
+					},
+					CorrelationID = requestInfo.CorrelationID
+				}, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 
 				// send update message
 				await requestInfo.Session.SendOnlineStatusAsync(false).ConfigureAwait(false);
@@ -826,7 +831,7 @@ namespace net.vieapps.Services.APIGateway
 						{ "Signature", body.GetHMACSHA256(Global.ValidationKey) }
 					},
 					CorrelationID = requestInfo.CorrelationID
-				}),
+				}, Global.CancellationTokenSource.Token),
 				requestInfo.Session.SendOnlineStatusAsync(true)
 			).ConfigureAwait(false);
 
@@ -866,9 +871,13 @@ namespace net.vieapps.Services.APIGateway
 				? context.Items["EncryptionIV"] as byte[]
 				: (context.Items["EncryptionIV"] = session.GetEncryptionIV()) as byte[];
 
+		static string GetEncryptedID(this string sessionID) => sessionID.HexToBytes().Encrypt(Global.EncryptionKey.Reverse().GenerateHashKey(256), Global.EncryptionKey.GenerateHashKey(128)).ToHex();
+
+		static string GetDecryptedID(this string sessionID) => sessionID.HexToBytes().Decrypt(Global.EncryptionKey.Reverse().GenerateHashKey(256), Global.EncryptionKey.GenerateHashKey(128)).ToHex();
+
 		internal static void UpdateSessionJson(this HttpContext context, Session session, JObject json)
 		{
-			json["ID"] = session.SessionID.HexToBytes().Encrypt(Global.EncryptionKey.Reverse().GenerateHashKey(256), Global.EncryptionKey.GenerateHashKey(128)).ToHex();
+			json["ID"] = session.SessionID.GetEncryptedID();
 			json["Keys"] = new JObject
 			{
 				{

@@ -29,13 +29,13 @@ namespace net.vieapps.Services.APIGateway
 	{
 		internal static Components.WebSockets.WebSocket WebSocket { get; private set; }
 
-		internal static void Initialize(ILoggerFactory loggerFactory)
+		internal static void Initialize()
 		{
-			RTU.WebSocket = new Components.WebSockets.WebSocket(loggerFactory)
+			RTU.WebSocket = new Components.WebSockets.WebSocket(Logger.GetLoggerFactory())
 			{
 				OnError = (websocket, exception) =>
 				{
-					Global.WriteLogsAsync("RTU", $"Error occurred while processing: {exception.Message}", exception);
+					Global.WriteLogsAsync("InternalAPIs", $"<RTU> {exception.Message}", exception);
 				},
 				OnConnectionEstablished = (websocket) =>
 				{
@@ -50,7 +50,7 @@ namespace net.vieapps.Services.APIGateway
 					Task.Run(() => RTU.WhenMessageReceivedAsync(websocket, result, data)).ConfigureAwait(false);
 				}
 			};
-			loggerFactory.CreateLogger<RequestHandler>().LogDebug($"The {Global.ServiceName} WebSocket is started - Buffer size: {Components.WebSockets.WebSocket.ReceiveBufferSize:#,##0} bytes");
+			Global.Logger.LogInformation($"The {Global.ServiceName} WebSocket is started - Buffer size: {Components.WebSockets.WebSocket.ReceiveBufferSize:#,##0} bytes");
 		}
 
 		static async Task WhenConnectionEstablishedAsync(ManagedWebSocket websocket)
@@ -108,7 +108,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-				await Global.WriteLogsAsync("RTU", "Error occurred while preparing token of RTU", ex).ConfigureAwait(false);
+				await Global.WriteLogsAsync("InternalAPIs", $"<RTU> {ex.Message}", ex).ConfigureAwait(false);
 
 				if (ex is TokenNotFoundException || ex is InvalidTokenException || ex is InvalidTokenSignatureException || ex is InvalidSessionException || ex is InvalidRequestException)
 					await websocket.SendAsync(ex).ConfigureAwait(false);
@@ -142,8 +142,8 @@ namespace net.vieapps.Services.APIGateway
 			// register online session
 			await Task.WhenAll(
 				session.SendOnlineStatusAsync(true),
-				Global.WriteLogsAsync("RTU",
-					"The real-time updater of a client's device is started" + "\r\n" +
+				Global.WriteLogsAsync("InternalAPIs",
+					"<RTU> The real-time updater of a client's device is started" + "\r\n" +
 					$"- Account: {(session.User.ID.Equals("") ? "Visitor" : session.User.ID)}" + "\r\n" +
 					$"- Session: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
 					$"- App Info: {session.AppName} @ {session.AppPlatform} - {session.AppOrigin} [IP: {session.IP} - Agent: {session.AppAgent}]"
@@ -162,8 +162,8 @@ namespace net.vieapps.Services.APIGateway
 								{
 									await websocket.SendAsync(message).ConfigureAwait(false);
 									if (Global.IsDebugLogEnabled)
-										await Global.WriteLogsAsync("RTU",
-											$"Push the message to the subscriber's device successful" + "\r\n" +
+										await Global.WriteLogsAsync("InternalAPIs",
+											$"<RTU> Push the message to the subscriber's device successful" + "\r\n" +
 											$"- Session: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
 											$"- App Info: {session.AppName} @ {session.AppPlatform} - {session.AppOrigin} [IP: {session.IP} - Agent: {session.AppAgent}]" + "\r\n" +
 											$"- Message:\r\n{message.Data.ToString(Formatting.Indented)}"
@@ -171,10 +171,10 @@ namespace net.vieapps.Services.APIGateway
 								}
 								catch (Exception ex)
 								{
-									await Global.WriteLogsAsync("RTU", $"Error occurred while pushing message to the subscriber's device\r\n{message.ToJson().ToString(Formatting.None)}", ex).ConfigureAwait(false);
+									await Global.WriteLogsAsync("InternalAPIs", $"<RTU> Error occurred while pushing message to the subscriber's device\r\n{message.ToJson().ToString(Formatting.None)}", ex).ConfigureAwait(false);
 								}
 						},
-						exception => Global.WriteLogsAsync("RTU", "Error occurred while fetching messages", exception).ConfigureAwait(false)
+						exception => Global.WriteLogsAsync("InternalAPIs", "<RTU> Error occurred while fetching messages", exception).ConfigureAwait(false)
 					);
 		}
 
@@ -186,7 +186,7 @@ namespace net.vieapps.Services.APIGateway
 
 			if (s == null || updater == null)
 			{
-				await Global.WriteLogsAsync("RTU", "Close the connection (unknown reason)");
+				await Global.WriteLogsAsync("InternalAPIs", "<RTU> Close the connection (unknown reason)");
 				if (updater != null)
 					try
 					{
@@ -203,14 +203,14 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-				await Global.WriteLogsAsync("RTU", $"Error occurred while disposing updater: {session.ToJson().ToString(Formatting.None)}", ex).ConfigureAwait(false);
+				await Global.WriteLogsAsync("InternalAPIs", $"<RTU> Error occurred while disposing updater: {session.ToJson().ToString(Formatting.None)}", ex).ConfigureAwait(false);
 			}
 
 			// update online status
 			await Task.WhenAll(
 				session.SendOnlineStatusAsync(false),
-				Global.WriteLogsAsync("RTU",
-					$"The real-time updater of a client's device is stopped" + "\r\n" +
+				Global.WriteLogsAsync("InternalAPIs",
+					$"<RTU> The real-time updater of a client's device is stopped" + "\r\n" +
 					$"- Account: {(session.User.ID.Equals("") ? "Visitor" : session.User.ID)}" + "\r\n" +
 					$"- Session: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
 					$"- App Info: {session.AppName} @ {session.AppPlatform} - {session.AppOrigin} [IP: {session.IP} - Agent: {session.AppAgent}]"
@@ -230,7 +230,7 @@ namespace net.vieapps.Services.APIGateway
 			websocket.Extra.TryGetValue("Session", out object s);
 			var session = s as Session;
 			if (Global.IsDebugLogEnabled)
-				await Global.WriteLogsAsync("RTU", $"(RTU) Begin request => {verb} /{serviceName ?? "unknown"}/{objectName ?? "unknown"}").ConfigureAwait(false);
+				await Global.WriteLogsAsync("InternalAPIs", $"<RTU> Begin request => {verb} /{serviceName ?? "unknown"}/{objectName ?? "unknown"}").ConfigureAwait(false);
 
 			// refresh the session
 			if ("PING".IsEquals(verb))
@@ -274,7 +274,7 @@ namespace net.vieapps.Services.APIGateway
 						session.User = sessionInfo.Get<string>("AccessToken").ParseAccessToken(Global.ECCKey);
 
 					if (Global.IsDebugLogEnabled)
-						await Global.WriteLogsAsync("RTU", $"(RTU) End request => Patch a session successful{(Global.IsDebugResultsEnabled ? "\r\n" + session.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None) : "")}").ConfigureAwait(false);
+						await Global.WriteLogsAsync("InternalAPIs", $"<RTU> End request => Patch a session successful{(Global.IsDebugResultsEnabled ? "\r\n" + session.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None) : "")}").ConfigureAwait(false);
 				}
 			}
 
@@ -306,8 +306,8 @@ namespace net.vieapps.Services.APIGateway
 
 					stopwatch.Stop();
 					if (Global.IsDebugLogEnabled)
-						await Global.WriteLogsAsync("RTU",
-							$"(RTU) End request => Success" + "\r\n" +
+						await Global.WriteLogsAsync("InternalAPIs",
+							$"<RTU> End request => Success" + "\r\n" +
 							$"- Execution times: {stopwatch.GetElapsedTimes()}" + "\r\n" +
 							$"- Session: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
 							$"- App Info: {session.AppName} @ {session.AppPlatform} - {session.AppOrigin} [IP: {session.IP} - Agent: {session.AppAgent}]" + "\r\n" +
@@ -318,7 +318,7 @@ namespace net.vieapps.Services.APIGateway
 				catch (Exception ex)
 				{
 					await Task.WhenAll(
-						Global.WriteLogsAsync("RTU", $"(RTU) End request => Error occurred while processing request: {requestInfo?.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex),
+						Global.WriteLogsAsync("InternalAPIs", $"<RTU> End request => Error occurred while processing request: {requestInfo?.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex),
 						websocket.SendAsync(ex, $"Error occurred while processing request: {requestInfo?.ToJson().ToString(Formatting.Indented)}")
 					).ConfigureAwait(false);
 				}
@@ -379,7 +379,7 @@ namespace net.vieapps.Services.APIGateway
 			// send & write logs
 			await Task.WhenAll(
 				websocket.SendAsync(message.ToString(Global.IsDebugResultsEnabled ? Formatting.Indented : Formatting.None), true),
-				Global.WriteLogsAsync("RTU", msg ?? "Error occurred while processing with real-time updater", exception)
+				Global.WriteLogsAsync("InternalAPIs", msg ?? "Error occurred while processing with real-time updater", exception)
 			).ConfigureAwait(false);
 		}
 

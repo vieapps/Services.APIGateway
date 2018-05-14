@@ -20,12 +20,12 @@ using net.vieapps.Components.Utility;
 
 namespace net.vieapps.Services.APIGateway
 {
-	public class RequestHandler
+	public class Handler
 	{
 		readonly RequestDelegate _next;
 		readonly IHostingEnvironment _hostingEnvironment;
 
-		public RequestHandler(RequestDelegate next, IHostingEnvironment hostingEnvironment)
+		public Handler(RequestDelegate next, IHostingEnvironment hostingEnvironment)
 		{
 			this._next = next;
 			this._hostingEnvironment = hostingEnvironment;
@@ -68,7 +68,7 @@ namespace net.vieapps.Services.APIGateway
 			catch (InvalidOperationException) { }
 			catch (Exception ex)
 			{
-				await context.WriteLogsAsync("RequestHandler", $"Error occurred while invoking the next middleware: {ex.Message}", ex);
+				Global.Logger.LogError($"Error occurred while invoking the next middleware: {ex.Message}", ex);
 			}
 		}
 
@@ -160,6 +160,8 @@ namespace net.vieapps.Services.APIGateway
 							{ "ETag", eTag },
 							{ "Last-Modifed", $"{lastModifed.ToHttpString()}" }
 						}, true);
+						if (Global.IsDebugLogEnabled)
+							Global.Logger.LogDebug($"Response to request of static file with code 304 to reduce traffic ({filePath})");
 						return;
 					}
 				}
@@ -185,16 +187,15 @@ namespace net.vieapps.Services.APIGateway
 					{ "Cache-Control", "public" },
 					{ "Expires", $"{DateTime.Now.AddDays(7).ToHttpString()}" },
 				});
-				await Task.WhenAll(
-					context.WriteAsync(staticContent.ToBytes()),
-					Global.IsDebugLogEnabled ? context.WriteLogsAsync("StaticFiles", $"End request => Response static file successful ({filePath} - {fileInfo.Length:#,##0} bytes)") : Task.CompletedTask
-				).ConfigureAwait(false);
+				await context.WriteAsync(staticContent.ToBytes()).ConfigureAwait(false);
+				if (Global.IsDebugLogEnabled)
+					Global.Logger.LogDebug($"Response to request of static file successful ({filePath} - {fileInfo.Length:#,##0} bytes)");
 			}
 			catch (Exception ex)
 			{
 				if (!(ex is InvalidOperationException))
-					await context.WriteLogsAsync("StaticFiles", $"End request => Error occurred while processing static file [{requestUri}]", ex);
-				context.ShowHttpError(ex.GetHttpStatusCode(), ex.Message, ex.GetType().GetTypeName(true), context.GetCorrelationID());
+					Global.Logger.LogError($"Error occurred while processing request of static file [{requestUri}]", ex);
+				context.ShowHttpError(ex.GetHttpStatusCode(), ex.Message, ex.GetType().GetTypeName(true), context.GetCorrelationID(), ex, Global.IsDebugLogEnabled);
 			}
 		}
 	}

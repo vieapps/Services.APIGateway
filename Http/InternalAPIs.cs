@@ -24,14 +24,13 @@ namespace net.vieapps.Services.APIGateway
 	internal static class InternalAPIs
 	{
 		internal static Cache Cache { get; set; }
+		readonly static List<string> ExcludedHeaders = "connection,accept,accept-encoding,accept-language,host,cache-control,cookie,content-type,content-length,referer,user-agent,origin,upgrade-insecure-requests,ms-aspnetcore-token,x-original-proto,x-original-for".ToList();
 
 		internal static async Task ProcessRequestAsync(HttpContext context)
 		{
-			// track
-			var requestUri = context.GetRequestUri();
-			await context.WriteLogsAsync("InternalAPIs", $"Begin process => {context.Request.Method} {requestUri.PathAndQuery}").ConfigureAwait(false);
-
 			#region prepare the requesting information			
+			var requestUri = context.GetRequestUri();
+
 			var queryString = requestUri.ParseQuery(query =>
 			{
 				var executionFilePath = requestUri.PathAndQuery;
@@ -54,7 +53,7 @@ namespace net.vieapps.Services.APIGateway
 				ServiceName = queryString["service-name"],
 				ObjectName = queryString["object-name"],
 				Query = queryString,
-				Header = context.Request.Headers.ToNameValueCollection().ToDictionary(dictionary => "connection,accept,accept-encoding,accept-language,host,referer,user-agent,origin,cache-control,cookie,upgrade-insecure-requests,ms-aspnetcore-token,x-original-proto,x-original-for".ToList().ForEach(name => dictionary.Remove(name))),
+				Header = context.Request.Headers.ToNameValueCollection().ToDictionary(dictionary => ExcludedHeaders.ForEach(name => dictionary.Remove(name))),
 				CorrelationID = context.GetCorrelationID()
 			};
 
@@ -308,7 +307,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 			#endregion
 
-			// process the request of session
+			// request of sessions
 			if (isSessionProccessed)
 				switch (request.Verb)
 				{
@@ -333,7 +332,7 @@ namespace net.vieapps.Services.APIGateway
 						break;
 				}
 
-			// process the request of activation
+			// request of activations
 			else if (isActivationProccessed)
 			{
 				// prepare device identity
@@ -351,7 +350,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 			}
 
-			// process the request of services
+			// request of services
 			else
 				try
 				{
@@ -435,9 +434,16 @@ namespace net.vieapps.Services.APIGateway
 					};
 					context.UpdateSessionJson(requestInfo.Session, json);
 
-					await context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None).ConfigureAwait(false);
-					if (Global.IsDebugLogEnabled && Global.IsDebugResultsEnabled)
-						await context.WriteLogsAsync("InternalAPIs", $"End process => Response:\r\n{json.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
+					await Task.WhenAll(
+						context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None),
+						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync("InternalAPIs", new List<string>
+						{
+							$"<REST> Successfully process request of session (anonymous registration)",
+							$"Request:\r\n{requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+							$"Response:\r\n{json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+							$"Execution times: {context.GetExecutionTimes()}"
+						})
+					).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -493,9 +499,16 @@ namespace net.vieapps.Services.APIGateway
 					};
 					context.UpdateSessionJson(requestInfo.Session, json);
 
-					await context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None).ConfigureAwait(false);
-					if (Global.IsDebugLogEnabled & Global.IsDebugResultsEnabled)
-						await context.WriteLogsAsync("InternalAPIs", $"End process => Response:\r\n{json.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
+					await Task.WhenAll(
+						context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None),
+						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync("InternalAPIs", new List<string>
+						{
+							$"<REST> Successfully process request of session (authenticated user registration)",
+							$"Request:\r\n{requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+							$"Response:\r\n{json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+							$"Execution times: {context.GetExecutionTimes()}"
+						})
+					).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -624,10 +637,15 @@ namespace net.vieapps.Services.APIGateway
 				await Task.WhenAll(
 					context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None),
 					InternalAPIs.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP),
-					InternalAPIs.Cache.RemoveAsync($"Session#{oldSessionID}")
+					InternalAPIs.Cache.RemoveAsync($"Session#{oldSessionID}"),
+					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync("InternalAPIs", new List<string>
+					{
+						$"<REST> Successfully process request of session (sign-in)",
+						$"Request:\r\n{requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"Response:\r\n{json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"Execution times: {context.GetExecutionTimes()}"
+					})
 				).ConfigureAwait(false);
-				if (Global.IsDebugLogEnabled && Global.IsDebugResultsEnabled)
-					await context.WriteLogsAsync("InternalAPIs", $"End process => Response:\r\n{json.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
@@ -710,10 +728,15 @@ namespace net.vieapps.Services.APIGateway
 				// response
 				await Task.WhenAll(
 					context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None),
-					InternalAPIs.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP)
+					InternalAPIs.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP),
+					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync("InternalAPIs", new List<string>
+					{
+						$"<REST> Successfully process request of session (OTP validation)",
+						$"Request:\r\n{requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"Response:\r\n{json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"Execution times: {context.GetExecutionTimes()}"
+					})
 				).ConfigureAwait(false);
-				if (Global.IsDebugLogEnabled && Global.IsDebugResultsEnabled)
-					await context.WriteLogsAsync("InternalAPIs", $"End process => Response:\r\n{json.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
@@ -753,6 +776,7 @@ namespace net.vieapps.Services.APIGateway
 				await requestInfo.Session.SendOnlineStatusAsync(false).ConfigureAwait(false);
 
 				// create & register the new session of visitor
+				var oldSessionID = requestInfo.Session.SessionID;
 				requestInfo.Session.SessionID = UtilityService.NewUUID;
 				requestInfo.Session.User = new User("", requestInfo.Session.SessionID, new List<string> { SystemRole.All.ToString() }, new List<Privilege>());
 				await context.CreateSessionAsync(requestInfo).ConfigureAwait(false);
@@ -765,9 +789,17 @@ namespace net.vieapps.Services.APIGateway
 				};
 				context.UpdateSessionJson(requestInfo.Session, json);
 
-				await context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None).ConfigureAwait(false);
-				if (Global.IsDebugLogEnabled && Global.IsDebugResultsEnabled)
-					await context.WriteLogsAsync("InternalAPIs", $"End process => Response:\r\n{json.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
+				await Task.WhenAll(
+					context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None),
+					InternalAPIs.Cache.RemoveAsync($"Session#{oldSessionID}"),
+					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync("InternalAPIs", new List<string>
+					{
+						$"<REST> Successfully process request of session (sign-out)",
+						$"Request:\r\n{requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"Response:\r\n{json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"Execution times: {context.GetExecutionTimes()}"
+					})
+				).ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
@@ -806,9 +838,16 @@ namespace net.vieapps.Services.APIGateway
 			};
 			context.UpdateSessionJson(requestInfo.Session, json);
 
-			await context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None).ConfigureAwait(false);
-			if (Global.IsDebugLogEnabled && Global.IsDebugResultsEnabled)
-				await context.WriteLogsAsync("InternalAPIs", $"End process => Response:\r\n{json.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
+			await Task.WhenAll(
+				context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None),
+				!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync("InternalAPIs", new List<string>
+				{
+						$"<REST> Successfully process request of session (activation)",
+						$"Request:\r\n{requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"Response:\r\n{json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"Execution times: {context.GetExecutionTimes()}"
+				})
+			).ConfigureAwait(false);
 		}
 		#endregion
 
@@ -856,7 +895,6 @@ namespace net.vieapps.Services.APIGateway
 			json["Token"] = session.GetAuthenticateToken();
 		}
 
-		//internal static async Task SendOnlineStatusAsync(this Session session, bool isOnline)
 		internal static Task SendOnlineStatusAsync(this Session session, bool isOnline)
 		{
 			return session.User == null || session.User.ID.Equals("") || session.User.IsSystemAccount
@@ -878,12 +916,15 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
-		#region Helper: WAMP connections & updaters
-		internal static Task OpenChannelsAsync()
-			=> Global.OpenChannelsAsync(
+		#region Helper: WAMP connections & real-time updaters
+		internal static void OpenWAMPChannels(int waitingTimes = 6789)
+		{
+			var routerInfo = WAMPConnections.GetRouterInfo();
+			Global.Logger.LogInformation($"Attempting to connect to WAMP router [{routerInfo.Item1}{routerInfo.Item2}]");
+			Global.OpenWAMPChannels(
 				(sender, args) =>
 				{
-					Global.WriteLogs("InternalAPIs", $"Incomming channel is established - Session ID: {args.SessionId}");
+					Global.Logger.LogInformation($"Incomming channel to WAMP router is established - Session ID: {args.SessionId}");
 					InternalAPIs.InterCommunicateMessageUpdater = WAMPConnections.IncommingChannel.RealmProxy.Services
 						.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
 						.Subscribe(
@@ -893,30 +934,32 @@ namespace net.vieapps.Services.APIGateway
 								{
 									await InternalAPIs.ProcessInterCommunicateMessageAsync(message).ConfigureAwait(false);
 									if (Global.IsDebugLogEnabled)
-										await Global.WriteLogsAsync("InternalAPIs", $"Process an inter-communicate message successful\r\n{message?.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
+										await Global.WriteLogsAsync("InternalAPIs", $"<RTU> Process an inter-communicate message successful\r\n{message?.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
 								}
 								catch (Exception ex)
 								{
-									await Global.WriteLogsAsync("InternalAPIs", $"Error occurred while processing an inter-communicate message\r\n{message?.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex).ConfigureAwait(false);
+									await Global.WriteLogsAsync("InternalAPIs", $"<RTU> {ex.Message} => {message?.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex).ConfigureAwait(false);
 								}
 							},
-							exception => Global.WriteLogs("InternalAPIs", "Error occurred while fetching inter-communicate message", exception)
+							exception => Global.WriteLogs("InternalAPIs", $"<RTU> {exception.Message}", exception)
 						);
 				},
 				(sender, args) =>
 				{
-					Global.WriteLogs("InternalAPIs", $"Outgoing channel is established - Session ID: {args.SessionId}");
+					Global.Logger.LogInformation($"Outgoing channel to WAMP router is established - Session ID: {args.SessionId}");
 					try
 					{
-						Task.WaitAll(new[] { Global.InitializeLoggingServiceAsync(), Global.InitializeRTUServiceAsync() }, 4567);
-						Global.WriteLogs("InternalAPIs", "Initializing helper services succesful");
+						Task.WaitAll(new[] { Global.InitializeLoggingServiceAsync(), Global.InitializeRTUServiceAsync() }, waitingTimes > 0 ? waitingTimes : 6789, Global.CancellationTokenSource.Token);
+						Global.Logger.LogInformation("Helper services succesfully initialized");
 					}
 					catch (Exception ex)
 					{
-						Global.WriteLogs("InternalAPIs", "Error occurred while initializing helper services", ex);
+						Global.Logger.LogError($"Error occurred while initializing helper services: {ex.Message}", ex);
 					}
-				}
+				},
+				waitingTimes
 			);
+		}
 
 		static ISubject<UpdateMessage> UpdateMessagePublisher = null;
 		static IDisposable InterCommunicateMessageUpdater = null;
@@ -926,11 +969,12 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				await Global.RTUService.SendInterCommunicateMessageAsync(message, Global.CancellationTokenSource.Token).ConfigureAwait(false);
-				await Global.WriteLogsAsync("InternalAPIs", $"Send an inter-communicate message successful\r\n{message.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}").ConfigureAwait(false);
+				if (Global.IsDebugResultsEnabled)
+					await Global.WriteLogsAsync("InternalAPIs", $"<RTU> Send an inter-communicate message successful\r\n{message.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}").ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
-				await Global.WriteLogsAsync("InternalAPIs", "Error occurred while sending an inter-communicate message", ex).ConfigureAwait(false);
+				await Global.WriteLogsAsync("InternalAPIs", $"<RTU> {ex.Message}", ex).ConfigureAwait(false);
 			}
 		}
 
@@ -1011,7 +1055,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					Global.WriteLogs("InternalAPIs", $"Error occurred while publishing an update message: {message.ToJson().ToString(Formatting.Indented)}", ex);
+					Global.WriteLogs("InternalAPIs", $"<RTU> {ex.Message} => {message.ToJson().ToString(Formatting.Indented)}", ex);
 				}
 
 			else
@@ -1021,7 +1065,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					Global.WriteLogs("InternalAPIs", $"Error occurred while publishing an update message: {message.ToJson().ToString(Formatting.Indented)}", ex);
+					Global.WriteLogs("InternalAPIs", $"<RTU> {ex.Message} => {message.ToJson().ToString(Formatting.Indented)}", ex);
 				}
 		}
 
@@ -1036,7 +1080,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					await Global.WriteLogsAsync("InternalAPIs", $"Error occurred while publishing an update message: {message.ToJson().ToString(Formatting.Indented)}", ex).ConfigureAwait(false);
+					await Global.WriteLogsAsync("InternalAPIs", $"<RTU> {ex.Message} => {message.ToJson().ToString(Formatting.Indented)}", ex).ConfigureAwait(false);
 				}
 
 			else
@@ -1046,7 +1090,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					await Global.WriteLogsAsync("InternalAPIs", $"Error occurred while publishing an update message: {message.ToJson().ToString(Formatting.Indented)}", ex).ConfigureAwait(false);
+					await Global.WriteLogsAsync("InternalAPIs", $"<RTU> {ex.Message} => {message.ToJson().ToString(Formatting.Indented)}", ex).ConfigureAwait(false);
 				}
 		}
 		#endregion

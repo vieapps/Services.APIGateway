@@ -1,7 +1,8 @@
 ﻿#region Related components
 using System;
-using System.Linq;
 using System.IO;
+using System.Linq;
+using System.Net;
 using System.Diagnostics;
 using System.Threading.Tasks;
 
@@ -56,17 +57,22 @@ namespace net.vieapps.Services.APIGateway
 
 		public void ConfigureServices(IServiceCollection services)
 		{
+			// mandatory services
 			services.AddResponseCompression(options => options.EnableForHttps = true);
-			services.AddLogging(builder => builder.SetMinimumLevel(UtilityService.GetAppSetting("Logs:Level", this.Configuration.GetAppSetting("Logging/LogLevel/Default", "Warning")).ToEnum<LogLevel>()));
+			services.AddLogging(builder => builder.SetMinimumLevel(UtilityService.GetAppSetting("Logs:Level", this.Configuration.GetAppSetting("Logging/LogLevel/Default", "Information")).ToEnum<LogLevel>()));
 			services.AddHttpContextAccessor();
 			services.AddCache(options => this.Configuration.GetSection("Cache").Bind(options));
+
 			/*
+			 // session state
 			services.AddSession(options =>
 			{
 				options.IdleTimeout = TimeSpan.FromMinutes(30);
 				options.Cookie.Name = "VIEApps-Session";
 				options.Cookie.HttpOnly = true;
 			});
+
+			// authentication
 			services.AddAuthentication(options => options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme)
 				.AddCookie(options =>
 				{
@@ -84,6 +90,8 @@ namespace net.vieapps.Services.APIGateway
 					ValidationAlgorithm = ValidationAlgorithm.HMACSHA256
 				});
 			*/
+
+			// IIS integration
 			services.Configure<IISOptions>(options =>
 			{
 				options.ForwardClientCertificate = false;
@@ -93,16 +101,20 @@ namespace net.vieapps.Services.APIGateway
 
 		public void Configure(IApplicationBuilder app)
 		{
+			// mandatory settings
 			var stopwatch = Stopwatch.StartNew();
 			Global.ServiceName = "APIGateway";
 
 			var loggerFactory = app.ApplicationServices.GetService<ILoggerFactory>();
+			var logger = loggerFactory.CreateLogger<Startup>();
+			logger.LogInformation($"The {Global.ServiceName} HTTP service is starting");
+
 			Logger.AssignLoggerFactory(loggerFactory);
-
+			Global.Logger = loggerFactory.CreateLogger<Handler>();
 			Global.ServiceProvider = app.ApplicationServices;
-			Global.Logger = loggerFactory.CreateLogger<RequestHandler>();
+			Global.CreateRSA();
 
-			var logLevel = UtilityService.GetAppSetting("Logs:Level", this.Configuration.GetAppSetting("Logging/LogLevel/Default", "Warning")).ToEnum<LogLevel>();
+			var logLevel = UtilityService.GetAppSetting("Logs:Level", this.Configuration.GetAppSetting("Logging/LogLevel/Default", "Information")).ToEnum<LogLevel>();
 			var path = UtilityService.GetAppSetting("Path:Logs");
 			if (!string.IsNullOrWhiteSpace(path) && Directory.Exists(path))
 			{
@@ -112,36 +124,33 @@ namespace net.vieapps.Services.APIGateway
 			else
 				path = null;
 
-			var logger = loggerFactory.CreateLogger<Startup>();
-			logger.LogInformation($"Start {Global.ServiceName} HTTP service");
-			logger.LogDebug($"Logging is enabled [{logLevel}]");
+			logger.LogInformation($"Logging is enabled [{logLevel}]");
 			if (!string.IsNullOrWhiteSpace(path))
-				logger.LogDebug($"Rolling log files is enabled [{path}]");
+				logger.LogInformation($"Rolling log files is enabled [{path}]");
 
 			JsonConvert.DefaultSettings = () => new JsonSerializerSettings()
 			{
 				Formatting = Formatting.None,
 				ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
 				DateTimeZoneHandling = DateTimeZoneHandling.Local,
-				TypeNameHandling = TypeNameHandling.Auto,
-				MissingMemberHandling = MissingMemberHandling.Ignore
+				TypeNameHandling = TypeNameHandling.Auto
 			};
 
-			var routerInfo = WAMPConnections.GetRouterInfo();
-			logger.LogDebug($"Attempting to connect to WAMP router [{routerInfo.Item1}{routerInfo.Item2}]");
-			Task.Run(() => InternalAPIs.OpenChannelsAsync()).ConfigureAwait(false);
-			InternalAPIs.Cache = new Cache("VIEApps-API-Gateway", this.Configuration.GetAppSetting("Cache/ExpirationTime", 30), this.Configuration.GetAppSetting("Cache/Provider", "Redis"));
-			Global.CreateRSA();
-			RTU.Initialize(loggerFactory);
-
+			// initialize middlewares
 			app.UseErrorCodePages();
 			app.UseResponseCompression();
 			app.UseCache();
 			//app.UseSession();
 			//app.UseAuthentication();
 			app.UseWebSockets(new WebSocketOptions { ReceiveBufferSize = Components.WebSockets.WebSocket.ReceiveBufferSize });
-			app.UseMiddleware<RequestHandler>();
+			app.UseMiddleware<Handler>();
 
+			// initialize service
+			InternalAPIs.Cache = new Cache("VIEApps-API-Gateway", this.Configuration.GetAppSetting("Cache/ExpirationTime", 30), this.Configuration.GetAppSetting("Cache/Provider", "Redis"));
+			InternalAPIs.OpenWAMPChannels();
+			RTU.Initialize();
+
+			// done
 			stopwatch.Stop();
 			logger.LogInformation($"The {Global.ServiceName} HTTP service is started - Execution times: {stopwatch.GetElapsedTimes()}");
 		}

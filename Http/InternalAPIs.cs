@@ -45,30 +45,30 @@ namespace net.vieapps.Services.APIGateway
 				query["object-identity"] = executionFilePaths.Length > 2 && !string.IsNullOrWhiteSpace(executionFilePaths[2]) ? executionFilePaths[2].GetANSIUri() : "";
 			});
 
-			var request = new RequestInfo
+			var requestInfo = new RequestInfo
 			{
 				Session = context.GetSession(),
 				Verb = context.Request.Method,
 				ServiceName = queryString["service-name"],
 				ObjectName = queryString["object-name"],
 				Query = queryString,
-				Header = context.Request.Headers.ToNameValueCollection().ToDictionary(dictionary => ExcludedHeaders.ForEach(name => dictionary.Remove(name))),
+				Header = context.Request.Headers.ToDictionary(dictionary => InternalAPIs.ExcludedHeaders.ForEach(name => dictionary.Remove(name))),
 				CorrelationID = context.GetCorrelationID()
 			};
 
 			bool isSessionProccessed = false, isSessionInitialized = false, isAccountProccessed = false, isActivationProccessed = false;
 
-			if (request.ServiceName.IsEquals("users"))
+			if (requestInfo.ServiceName.IsEquals("users"))
 			{
-				if ("session".IsEquals(request.ObjectName))
+				if ("session".IsEquals(requestInfo.ObjectName))
 				{
 					isSessionProccessed = true;
-					isSessionInitialized = request.Verb.IsEquals("GET");
+					isSessionInitialized = requestInfo.Verb.IsEquals("GET");
 				}
-				else if ("account".IsEquals(request.ObjectName))
-					isAccountProccessed = request.Verb.IsEquals("POST") || request.Verb.IsEquals("PUT");
-				else if ("activate".IsEquals(request.ObjectName))
-					isActivationProccessed = request.Verb.IsEquals("GET");
+				else if ("account".IsEquals(requestInfo.ObjectName))
+					isAccountProccessed = requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT");
+				else if ("activate".IsEquals(requestInfo.ObjectName))
+					isActivationProccessed = requestInfo.Verb.IsEquals("GET");
 			}
 			#endregion
 
@@ -77,56 +77,56 @@ namespace net.vieapps.Services.APIGateway
 			{
 				var tokenIsRequired = isActivationProccessed
 					? false
-					: isSessionInitialized && (request.Session.User.ID.Equals("") || request.Session.User.IsSystemAccount) && !request.Query.ContainsKey("register")
+					: isSessionInitialized && (requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.IsSystemAccount) && !requestInfo.Query.ContainsKey("register")
 						? false
-						: request.ServiceName.IsEquals("indexes")
+						: requestInfo.ServiceName.IsEquals("indexes")
 							? false
 							: true;
 
 				// parse and update information from token
-				var appToken = request.GetParameter("x-app-token");
+				var appToken = requestInfo.GetParameter("x-app-token");
 				if (!string.IsNullOrWhiteSpace(appToken))
 				{
-					request.Header["x-app-token"] = appToken;
-					await context.UpdateWithAuthenticateTokenAsync(request.Session, appToken).ConfigureAwait(false);
+					requestInfo.Header["x-app-token"] = appToken;
+					await context.UpdateWithAuthenticateTokenAsync(requestInfo.Session, appToken).ConfigureAwait(false);
 				}
 				else if (tokenIsRequired)
 					throw new InvalidSessionException("Session is invalid (Token is not found)");
 
 				// check existed of session
-				if (tokenIsRequired && !await context.CheckSessionExistAsync(request.Session).ConfigureAwait(false))
+				if (tokenIsRequired && !await context.CheckSessionExistAsync(requestInfo.Session).ConfigureAwait(false))
 					throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 			}
 			catch (Exception ex)
 			{
-				context.WriteError(ex, request, null, false);
+				context.WriteError(ex, requestInfo, null, false);
 				return;
 			}
 			#endregion
 
 			#region prepare others (session identity, user principal, request body)
 			// new session
-			if (string.IsNullOrWhiteSpace(request.Session.SessionID))
+			if (string.IsNullOrWhiteSpace(requestInfo.Session.SessionID))
 			{
-				request.Session.SessionID = UtilityService.NewUUID;
-				request.Session.User.SessionID = request.Session.SessionID;
+				requestInfo.Session.SessionID = UtilityService.NewUUID;
+				requestInfo.Session.User.SessionID = requestInfo.Session.SessionID;
 			}
 
 			// request body
-			if (request.Verb.IsEquals("POST") || request.Verb.IsEquals("PUT"))
+			if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT"))
 				try
 				{
-					request.Body = await context.ReadTextAsync(Global.CancellationTokenSource.Token).ConfigureAwait(false);
+					requestInfo.Body = await context.ReadTextAsync(Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
 					await context.WriteLogsAsync("InternalAPIs", "Error occurred while parsing body of the request", ex).ConfigureAwait(false);
 				}
 
-			else if (request.Verb.IsEquals("GET") && request.Query.ContainsKey("x-body"))
+			else if (requestInfo.Verb.IsEquals("GET") && requestInfo.Query.ContainsKey("x-body"))
 				try
 				{
-					request.Body = request.Query["x-body"].Url64Decode();
+					requestInfo.Body = requestInfo.Query["x-body"].Url64Decode();
 				}
 				catch (Exception ex)
 				{
@@ -137,18 +137,18 @@ namespace net.vieapps.Services.APIGateway
 			#region [extra] verify captcha
 			// verfy captcha
 			var captchaIsValid = false;
-			if (request.Header.ContainsKey("x-captcha"))
+			if (requestInfo.Header.ContainsKey("x-captcha"))
 				try
 				{
-					request.Header.TryGetValue("x-captcha-registered", out string registered);
-					request.Header.TryGetValue("x-captcha-input", out string input);
+					requestInfo.Header.TryGetValue("x-captcha-registered", out string registered);
+					requestInfo.Header.TryGetValue("x-captcha-input", out string input);
 					if (string.IsNullOrWhiteSpace(registered) || string.IsNullOrWhiteSpace(input))
 						throw new InvalidSessionException("Captcha code is invalid");
 
 					try
 					{
-						registered = registered.Decrypt(context.GetEncryptionKey(request.Session), context.GetEncryptionIV(request.Session));
-						input = input.Decrypt(context.GetEncryptionKey(request.Session), context.GetEncryptionIV(request.Session));
+						registered = registered.Decrypt(context.GetEncryptionKey(requestInfo.Session), context.GetEncryptionIV(requestInfo.Session));
+						input = input.Decrypt(context.GetEncryptionKey(requestInfo.Session), context.GetEncryptionIV(requestInfo.Session));
 					}
 					catch (Exception ex)
 					{
@@ -161,7 +161,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					context.WriteError(ex, request, null, false);
+					context.WriteError(ex, requestInfo, null, false);
 					return;
 				}
 			#endregion
@@ -170,7 +170,7 @@ namespace net.vieapps.Services.APIGateway
 			if (isAccountProccessed)
 				try
 				{
-					var requestBody = request.GetBodyExpando();
+					var requestBody = requestInfo.GetBodyExpando();
 					if (requestBody == null)
 						throw new InvalidSessionException("Request JSON is invalid (empty)");
 
@@ -180,7 +180,7 @@ namespace net.vieapps.Services.APIGateway
 						try
 						{
 							email = Global.RSA.Decrypt(email);
-							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
+							requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
 							{
 								{ "Email", email.Encrypt(Global.EncryptionKey) }
 							};
@@ -196,7 +196,7 @@ namespace net.vieapps.Services.APIGateway
 						try
 						{
 							password = Global.RSA.Decrypt(password);
-							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
+							requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
 							{
 								{ "Password", password.Encrypt(Global.EncryptionKey) }
 							};
@@ -212,7 +212,7 @@ namespace net.vieapps.Services.APIGateway
 						try
 						{
 							oldPassword = Global.RSA.Decrypt(oldPassword);
-							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
+							requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
 							{
 								{ "OldPassword", oldPassword.Encrypt(Global.EncryptionKey) }
 							};
@@ -227,7 +227,7 @@ namespace net.vieapps.Services.APIGateway
 					if (!string.IsNullOrWhiteSpace(roles))
 						try
 						{
-							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
+							requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
 							{
 								{ "Roles", Global.RSA.Decrypt(roles).Encrypt(Global.EncryptionKey) }
 							};
@@ -239,7 +239,7 @@ namespace net.vieapps.Services.APIGateway
 					if (!string.IsNullOrWhiteSpace(privileges))
 						try
 						{
-							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
+							requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
 							{
 								{ "Privileges", Global.RSA.Decrypt(privileges).Encrypt(Global.EncryptionKey) }
 							};
@@ -247,14 +247,14 @@ namespace net.vieapps.Services.APIGateway
 						catch { }
 
 					// prepare information of related service
-					var relatedInfo = request.Query.ContainsKey("related-service")
+					var relatedInfo = requestInfo.Query.ContainsKey("related-service")
 						? requestBody.Get<string>("RelatedInfo")
 						: null;
 					if (!string.IsNullOrWhiteSpace(relatedInfo))
 						try
 						{
 							relatedInfo = Global.RSA.Decrypt(relatedInfo);
-							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
+							requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
 							{
 								{ "RelatedInfo", relatedInfo.Encrypt(Global.EncryptionKey) }
 							};
@@ -262,7 +262,7 @@ namespace net.vieapps.Services.APIGateway
 						catch { }
 
 					// preapare
-					var objectIdentity = request.GetObjectIdentity();
+					var objectIdentity = requestInfo.GetObjectIdentity();
 
 					// prepare to register/create new account
 					if (string.IsNullOrWhiteSpace(objectIdentity))
@@ -270,9 +270,9 @@ namespace net.vieapps.Services.APIGateway
 						if (!captchaIsValid)
 							throw new InvalidSessionException("Captcha code is invalid");
 
-						var requestCreateAccount = request.GetHeaderParameter("x-create");
-						if (!string.IsNullOrWhiteSpace(requestCreateAccount) && requestCreateAccount.Equals(request.Session.SessionID.GetEncryptedID()))
-							request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
+						var requestCreateAccount = requestInfo.GetHeaderParameter("x-create");
+						if (!string.IsNullOrWhiteSpace(requestCreateAccount) && requestCreateAccount.Equals(requestInfo.Session.SessionID.GetEncryptedID()))
+							requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
 							{
 								{ "x-create", "" }
 							};
@@ -280,7 +280,7 @@ namespace net.vieapps.Services.APIGateway
 
 					// prepare to invite
 					else if ("invite".IsEquals(objectIdentity))
-						request.Extra = new Dictionary<string, string>(request.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
+						requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
 						{
 							{ "x-invite", "" }
 						};
@@ -299,36 +299,36 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					context.WriteError(ex, request, null, false);
+					context.WriteError(ex, requestInfo, null, false);
 					return;
 				}
 			#endregion
 
 			// set user principal
-			context.User = new UserPrincipal(request.Session.User);
+			context.User = new UserPrincipal(requestInfo.Session.User);
 
 			// request of sessions
 			if (isSessionProccessed)
-				switch (request.Verb)
+				switch (requestInfo.Verb)
 				{
 					case "GET":
-						await context.RegisterSessionAsync(request).ConfigureAwait(false);
+						await context.RegisterSessionAsync(requestInfo).ConfigureAwait(false);
 						break;
 
 					case "POST":
-						await context.SignSessionInAsync(request).ConfigureAwait(false);
+						await context.SignSessionInAsync(requestInfo).ConfigureAwait(false);
 						break;
 
 					case "PUT":
-						await context.ValidateOTPSessionAsync(request).ConfigureAwait(false);
+						await context.ValidateOTPSessionAsync(requestInfo).ConfigureAwait(false);
 						break;
 
 					case "DELETE":
-						await context.SignSessionOutAsync(request).ConfigureAwait(false);
+						await context.SignSessionOutAsync(requestInfo).ConfigureAwait(false);
 						break;
 
 					default:
-						context.WriteError(new MethodNotAllowedException(request.Verb), request, null, false);
+						context.WriteError(new MethodNotAllowedException(requestInfo.Verb), requestInfo, null, false);
 						break;
 				}
 
@@ -336,17 +336,17 @@ namespace net.vieapps.Services.APIGateway
 			else if (isActivationProccessed)
 			{
 				// prepare device identity
-				if (string.IsNullOrWhiteSpace(request.Session.DeviceID))
-					request.Session.DeviceID = (request.Session.AppName + "/" + request.Session.AppPlatform + "@" + (request.Session.AppAgent ?? "N/A")).GetHMACSHA384(request.Session.SessionID, true) + "@pwa";
+				if (string.IsNullOrWhiteSpace(requestInfo.Session.DeviceID))
+					requestInfo.Session.DeviceID = (requestInfo.Session.AppName + "/" + requestInfo.Session.AppPlatform + "@" + (requestInfo.Session.AppAgent ?? "N/A")).GetHMACSHA384(requestInfo.Session.SessionID, true) + "@pwa";
 
 				// activate
 				try
 				{
-					await context.ActivateAsync(request).ConfigureAwait(false);
+					await context.ActivateAsync(requestInfo).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
-					context.WriteError(ex, request);
+					context.WriteError(ex, requestInfo);
 				}
 			}
 
@@ -354,12 +354,12 @@ namespace net.vieapps.Services.APIGateway
 			else
 				try
 				{
-					var response = await context.CallServiceAsync(request, Global.CancellationTokenSource.Token).ConfigureAwait(false);
-					await context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None).ConfigureAwait(false);
+					var response = await context.CallServiceAsync(requestInfo, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+					await context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
-					context.WriteError(ex, request);
+					context.WriteError(ex, requestInfo);
 				}
 		}
 
@@ -435,7 +435,7 @@ namespace net.vieapps.Services.APIGateway
 					context.UpdateSessionJson(requestInfo.Session, json);
 
 					await Task.WhenAll(
-						context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None),
+						context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync("InternalAPIs", new List<string>
 						{
 							$"<REST> Successfully process request of session (anonymous registration)",
@@ -500,7 +500,7 @@ namespace net.vieapps.Services.APIGateway
 					context.UpdateSessionJson(requestInfo.Session, json);
 
 					await Task.WhenAll(
-						context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None),
+						context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync("InternalAPIs", new List<string>
 						{
 							$"<REST> Successfully process request of session (authenticated user registration)",
@@ -636,7 +636,7 @@ namespace net.vieapps.Services.APIGateway
 
 				// response
 				await Task.WhenAll(
-					context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None),
+					context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 					InternalAPIs.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP),
 					string.IsNullOrWhiteSpace(oldSessionID) ? Task.CompletedTask : InternalAPIs.Cache.RemoveAsync($"Session#{oldSessionID}"),
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync("InternalAPIs", new List<string>
@@ -727,7 +727,7 @@ namespace net.vieapps.Services.APIGateway
 
 				// response
 				await Task.WhenAll(
-					context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None),
+					context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 					InternalAPIs.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP),
 					InternalAPIs.Cache.RemoveAsync($"Session#{oldSessionID}"),
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync("InternalAPIs", new List<string>
@@ -795,7 +795,7 @@ namespace net.vieapps.Services.APIGateway
 				context.UpdateSessionJson(requestInfo.Session, json);
 
 				await Task.WhenAll(
-					context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None),
+					context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 					InternalAPIs.Cache.RemoveAsync($"Session#{oldSessionID}"),
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync("InternalAPIs", new List<string>
 					{
@@ -844,7 +844,7 @@ namespace net.vieapps.Services.APIGateway
 			context.UpdateSessionJson(requestInfo.Session, json);
 
 			await Task.WhenAll(
-				context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None),
+				context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 				!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync("InternalAPIs", new List<string>
 				{
 						$"<REST> Successfully process request of session (activation)",
@@ -892,8 +892,8 @@ namespace net.vieapps.Services.APIGateway
 					"AES",
 					new JObject
 					{
-						{ "Key", session.GetEncryptionKey().ToHex() },
-						{ "IV", session.GetEncryptionIV().ToHex() }
+						{ "Key", context.GetEncryptionKey(session).ToHex() },
+						{ "IV", context.GetEncryptionIV(session).ToHex() }
 					}
 				},
 				{

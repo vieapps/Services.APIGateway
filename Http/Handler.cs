@@ -186,8 +186,9 @@ namespace net.vieapps.Services.APIGateway
 					{ "Last-Modified", $"{fileInfo.LastWriteTime.ToHttpString()}" },
 					{ "Cache-Control", "public" },
 					{ "Expires", $"{DateTime.Now.AddDays(7).ToHttpString()}" },
+					{ "X-CorrelationID", context.GetCorrelationID() }
 				});
-				await context.WriteAsync(staticContent.ToBytes()).ConfigureAwait(false);
+				await context.WriteAsync(staticContent.ToArraySegment(), Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				if (Global.IsDebugLogEnabled)
 					Global.Logger.LogDebug($"Response to request of static file successful ({filePath} - {fileInfo.Length:#,##0} bytes)");
 			}

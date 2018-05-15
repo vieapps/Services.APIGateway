@@ -35,7 +35,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				OnError = (websocket, exception) =>
 				{
-					Global.WriteLogs("RTU", $"{exception.Message}", exception);
+					Global.WriteLogs(RTU.Logger, "RTU", $"Got error while processing: {exception.Message} ({websocket?.ID} {websocket?.RemoteEndPoint})", exception);
 				},
 				OnConnectionEstablished = (websocket) =>
 				{
@@ -108,7 +108,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-				await Global.WriteLogsAsync("RTU", $"{ex.Message}", ex).ConfigureAwait(false);
+				await Global.WriteLogsAsync(RTU.Logger, "RTU", $"{ex.Message}", ex).ConfigureAwait(false);
 
 				if (ex is TokenNotFoundException || ex is InvalidTokenException || ex is InvalidTokenSignatureException || ex is InvalidSessionException || ex is InvalidRequestException)
 					await websocket.SendAsync(ex).ConfigureAwait(false);
@@ -191,7 +191,7 @@ namespace net.vieapps.Services.APIGateway
 
 			if (s == null || updater == null)
 			{
-				await Global.WriteLogsAsync(RTU.Logger, "RTU", $"Close the connection (Close status: {websocket.CloseStatus} - Description: {websocket.CloseStatusDescription})");
+				await Global.WriteLogsAsync(RTU.Logger, "RTU", $"Close the connection without attached information (Close status: {websocket?.CloseStatus} - Description: {websocket?.CloseStatusDescription})");
 				if (updater != null)
 					try
 					{
@@ -270,7 +270,7 @@ namespace net.vieapps.Services.APIGateway
 			else if ("PATCH".IsEquals(verb) && "users".IsEquals(serviceName) && "session".IsEquals(objectName) && extra != null && extra.ContainsKey("x-session"))
 			{
 				// call user service
-				var json = await Global.CallServiceAsync(new RequestInfo
+				var request = new RequestInfo
 				{
 					Session = new Session(session)
 					{
@@ -287,7 +287,8 @@ namespace net.vieapps.Services.APIGateway
 						{ "Signature", $"x-session-temp-token-{extra["x-session"]}".GetHMACSHA256(Global.ValidationKey) }
 					},
 					CorrelationID = Global.GetCorrelationID()
-				}, Global.CancellationTokenSource.Token, RTU.Logger).ConfigureAwait(false);
+				};
+				var json = await Global.CallServiceAsync(request, Global.CancellationTokenSource.Token, RTU.Logger).ConfigureAwait(false);
 
 				// check results
 				if (json == null)
@@ -336,7 +337,69 @@ namespace net.vieapps.Services.APIGateway
 			// create new session (anonymous only)
 			else if ("NEW".IsEquals(verb) && "users".IsEquals(serviceName) && "session".IsEquals(objectName) && extra != null && extra.ContainsKey("x-session") && session.User.ID.Equals(""))
 			{
+				// prepare request
+				var sessionID = extra["x-session"].GetDecryptedID();
+				var request = new RequestInfo
+				{
+					Session = new Session(session)
+					{
+						SessionID = sessionID,
+						User = new User("", sessionID, new List<string> { SystemRole.All.ToString() }, new List<Privilege>())
+					},
+					ServiceName = "Users",
+					ObjectName = "Session",
+					Verb = "POST",
+					Header = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+					Extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+					CorrelationID = Global.GetCorrelationID()
+				};
 
+				request.Body = request.GenerateSessionJson().ToString(Formatting.None);
+				request.Extra["Signature"] = request.Body.GetHMACSHA256(Global.ValidationKey);
+
+				// call user service
+				var json = await Global.CallServiceAsync(request, Global.CancellationTokenSource.Token, RTU.Logger).ConfigureAwait(false);
+
+				// check results
+				if (json == null)
+				{
+					if (Global.IsDebugResultsEnabled)
+						await Global.WriteLogsAsync(RTU.Logger, "RTU",
+							$"End process => Failed to renew session when got no returing information" + "\r\n" +
+							$"- Session Info: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
+							$"- App Info: {session.AppName} @ {session.AppPlatform} - {session.AppOrigin} [IP: {session.IP} - Agent: {session.AppAgent}]" + "\r\n" +
+							$"- Connection Info: {websocket.ID} @ {websocket.RemoteEndPoint}"
+						).ConfigureAwait(false);
+					return;
+				}
+
+				// assign new information
+				session.SessionID = json.ToExpandoObject().Get<string>("ID");
+				session.User = new User("", session.SessionID, new List<string> { SystemRole.All.ToString() }, new List<Privilege>());
+
+				// send update message
+				json = new JObject
+				{
+					{ "ID", session.SessionID },
+					{ "DeviceID", session.DeviceID }
+				};
+				session.UpdateSessionJson(json, Global.CurrentHttpContext?.Items);
+
+				await websocket.SendAsync(new UpdateMessage
+				{
+					Type = "Users#Session#Update",
+					DeviceID = session.DeviceID,
+					Data = json
+				}).ConfigureAwait(false);
+
+				if (Global.IsDebugResultsEnabled)
+					await Global.WriteLogsAsync(RTU.Logger, "RTU",
+						$"End process => Successfully renew session" + "\r\n" +
+						$"- Session Info: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
+						$"- App Info: {session.AppName} @ {session.AppPlatform} - {session.AppOrigin} [IP: {session.IP} - Agent: {session.AppAgent}]" + "\r\n" +
+						$"- Connection Info: {websocket.ID} @ {websocket.RemoteEndPoint}" + "\r\n" +
+						$"- Response: {json.ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}"
+					).ConfigureAwait(false);
 			}
 
 			// call service to process the request
@@ -425,22 +488,24 @@ namespace net.vieapps.Services.APIGateway
 
 			msg = msg ?? (wampError != null ? wampError.Item2 : exception.Message);
 			var type = wampError != null ? wampError.Item3 : exception.GetType().GetTypeName(true);
+			var code = wampError != null ? wampError.Item1 : exception.GetHttpStatusCode();
 
 			var message = new JObject()
 			{
 				{ "Message", type },
 				{ "Type", type },
+				{ "Code", code },
 				{ "CorrelationID", Global.GetCorrelationID() }
 			};
 
 			if (Global.IsDebugStacksEnabled)
 			{
 				if (wampError != null)
-					message.Add(new JProperty("Stack", wampError.Item4));
+					message["Stack"] = wampError.Item4;
 
 				else
 				{
-					message.Add(new JProperty("Stack", exception.StackTrace));
+					message["Stack"] = exception.StackTrace;
 					if (exception.InnerException != null)
 					{
 						var inners = new JArray();
@@ -448,7 +513,7 @@ namespace net.vieapps.Services.APIGateway
 						var inner = exception.InnerException;
 						while (inner != null)
 						{
-							inners.Add(new JObject()
+							inners.Add(new JObject
 							{
 								{ "Error", "(" + counter + "): " + inner.Message + " [" + inner.GetType().ToString() + "]" },
 								{ "Stack", inner.StackTrace }
@@ -456,12 +521,12 @@ namespace net.vieapps.Services.APIGateway
 							counter++;
 							inner = inner.InnerException;
 						}
-						message.Add(new JProperty("Inners", inners));
+						message["Inners"] = inners;
 					}
 				}
 			}
 
-			message = new JObject()
+			message = new JObject
 			{
 				{ "Type", "Error" },
 				{ "Data", message }

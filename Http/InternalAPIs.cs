@@ -23,9 +23,12 @@ namespace net.vieapps.Services.APIGateway
 {
 	internal static class InternalAPIs
 	{
+
+		#region Properties
 		internal static Cache Cache { get; set; }
 		internal static ILogger Logger { get; set; }
 		internal static List<string> ExcludedHeaders { get; } = "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,ms-aspnetcore-token,x-original-proto,x-original-for".ToList();
+		#endregion
 
 		internal static async Task ProcessRequestAsync(HttpContext context)
 		{
@@ -161,8 +164,10 @@ namespace net.vieapps.Services.APIGateway
 
 					try
 					{
-						registered = registered.Decrypt(context.GetEncryptionKey(requestInfo.Session), context.GetEncryptionIV(requestInfo.Session));
-						input = input.Decrypt(context.GetEncryptionKey(requestInfo.Session), context.GetEncryptionIV(requestInfo.Session));
+						var key = context.GetEncryptionKey(requestInfo.Session);
+						var iv = context.GetEncryptionIV(requestInfo.Session);
+						registered = registered.Decrypt(key, iv);
+						input = input.Decrypt(key, iv);
 					}
 					catch (Exception ex)
 					{
@@ -325,7 +330,7 @@ namespace net.vieapps.Services.APIGateway
 			// set user principal
 			context.User = new UserPrincipal(requestInfo.Session.User);
 
-			// request of sessions
+			// process request of sessions
 			if (isSessionProccessed)
 				switch (requestInfo.Verb)
 				{
@@ -350,7 +355,7 @@ namespace net.vieapps.Services.APIGateway
 						break;
 				}
 
-			// request of activations
+			// process request of activations
 			else if (isActivationProccessed)
 			{
 				// prepare device identity
@@ -368,7 +373,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 			}
 
-			// request of services
+			// process request of services
 			else
 				try
 				{
@@ -892,10 +897,6 @@ namespace net.vieapps.Services.APIGateway
 					? items["EncryptionIV"] as byte[]
 					: (items["EncryptionIV"] = sessionID.GetEncryptionIV()) as byte[]
 				: sessionID.GetEncryptionIV();
-
-		internal static byte[] GetEncryptionKey(this Session session) => session.SessionID.GetEncryptionKey();
-
-		internal static byte[] GetEncryptionIV(this Session session) => session.SessionID.GetEncryptionIV();
 
 		internal static byte[] GetEncryptionKey(this HttpContext context, Session session) => session.SessionID.GetEncryptionKey(context.Items);
 

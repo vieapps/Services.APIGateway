@@ -200,9 +200,11 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		// for logging
+		#region classes for logging
 		public class RTU { }
 		public class InternalAPIs { }
 		public class ExternalAPIs { }
+		#endregion
+
 	}
 }

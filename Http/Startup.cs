@@ -133,8 +133,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				Formatting = Formatting.None,
 				ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
-				DateTimeZoneHandling = DateTimeZoneHandling.Local,
-				TypeNameHandling = TypeNameHandling.Auto
+				DateTimeZoneHandling = DateTimeZoneHandling.Local
 			};
 
 			// initialize middlewares

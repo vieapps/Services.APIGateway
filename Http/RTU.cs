@@ -35,7 +35,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				OnError = (websocket, exception) =>
 				{
-					Global.WriteLogsAsync("InternalAPIs", $"<RTU> {exception.Message}", exception);
+					Global.WriteLogs("RTU", $"{exception.Message}", exception);
 				},
 				OnConnectionEstablished = (websocket) =>
 				{
@@ -50,7 +50,7 @@ namespace net.vieapps.Services.APIGateway
 					Task.Run(() => RTU.WhenMessageReceivedAsync(websocket, result, data)).ConfigureAwait(false);
 				}
 			};
-			Global.Logger.LogInformation($"The {Global.ServiceName} WebSocket is started - Buffer size: {Components.WebSockets.WebSocket.ReceiveBufferSize:#,##0} bytes");
+			Global.Logger.LogInformation($"The {Global.ServiceName} RTU service with WebSocket is started - Buffer size: {Components.WebSockets.WebSocket.ReceiveBufferSize:#,##0} bytes");
 		}
 
 		static async Task WhenConnectionEstablishedAsync(ManagedWebSocket websocket)
@@ -108,7 +108,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-				await Global.WriteLogsAsync("InternalAPIs", $"<RTU> {ex.Message}", ex).ConfigureAwait(false);
+				await Global.WriteLogsAsync("RTU", $"{ex.Message}", ex).ConfigureAwait(false);
 
 				if (ex is TokenNotFoundException || ex is InvalidTokenException || ex is InvalidTokenSignatureException || ex is InvalidSessionException || ex is InvalidRequestException)
 					await websocket.SendAsync(ex).ConfigureAwait(false);
@@ -122,10 +122,7 @@ namespace net.vieapps.Services.APIGateway
 			if (queryString.ContainsKey("x-restart"))
 			{
 				// send knock message
-				await websocket.SendAsync(new UpdateMessage()
-				{
-					Type = "Knock"
-				}).ConfigureAwait(false);
+				await websocket.SendAsync(new UpdateMessage { Type = "Knock" }).ConfigureAwait(false);
 
 				// wait for a few times
 				try
@@ -142,40 +139,48 @@ namespace net.vieapps.Services.APIGateway
 			// register online session
 			await Task.WhenAll(
 				session.SendOnlineStatusAsync(true),
-				Global.WriteLogsAsync("InternalAPIs",
-					"<RTU> The real-time updater of a client's device is started" + "\r\n" +
-					$"- Account: {(session.User.ID.Equals("") ? "Visitor" : session.User.ID)}" + "\r\n" +
-					$"- Session: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
-					$"- App Info: {session.AppName} @ {session.AppPlatform} - {session.AppOrigin} [IP: {session.IP} - Agent: {session.AppAgent}]"
+				!Global.IsDebugLogEnabled ? Task.CompletedTask : Global.WriteLogsAsync("RTU",
+					$"The real-time updater of a client's device is started (Account: {(session.User.ID.Equals("") ? "Visitor" : session.User.ID)})" + "\r\n" +
+					$"- Session Info: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
+					$"- App Info: {session.AppName} @ {session.AppPlatform} - {session.AppOrigin} [IP: {session.IP} - Agent: {session.AppAgent}]" + "\r\n" +
+					$"- Connection Info: {websocket.ID} @ {websocket.RemoteEndPoint}"
 				)
 			).ConfigureAwait(false);
 
 			// push
 			websocket.Extra["Session"] = session;
 			websocket.Extra["Updater"] = WAMPConnections.IncommingChannel.RealmProxy.Services
-					.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages")
-					.Subscribe(
-						async (message) =>
-						{
-							if (message.DeviceID.Equals("*") || message.DeviceID.IsEquals(session.DeviceID))
-								try
-								{
-									await websocket.SendAsync(message).ConfigureAwait(false);
-									if (Global.IsDebugLogEnabled)
-										await Global.WriteLogsAsync("InternalAPIs",
-											$"<RTU> Push the message to the subscriber's device successful" + "\r\n" +
-											$"- Session: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
-											$"- App Info: {session.AppName} @ {session.AppPlatform} - {session.AppOrigin} [IP: {session.IP} - Agent: {session.AppAgent}]" + "\r\n" +
-											$"- Message:\r\n{message.Data.ToString(Formatting.Indented)}"
-										).ConfigureAwait(false);
-								}
-								catch (Exception ex)
-								{
-									await Global.WriteLogsAsync("InternalAPIs", $"<RTU> Error occurred while pushing message to the subscriber's device\r\n{message.ToJson().ToString(Formatting.None)}", ex).ConfigureAwait(false);
-								}
-						},
-						exception => Global.WriteLogsAsync("InternalAPIs", "<RTU> Error occurred while fetching messages", exception).ConfigureAwait(false)
-					);
+				.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages")
+				.Subscribe(
+					async (message) =>
+					{
+						if (message.DeviceID.Equals("*") || message.DeviceID.IsEquals(session.DeviceID))
+							try
+							{
+								await websocket.SendAsync(message).ConfigureAwait(false);
+								if (Global.IsDebugResultsEnabled)
+									await Global.WriteLogsAsync("RTU",
+										$"Push the message to the subscriber's device successful (Account: {(session.User.ID.Equals("") ? "Visitor" : session.User.ID)})" + "\r\n" +
+										$"- Session Info: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
+										$"- App Info: {session.AppName} @ {session.AppPlatform} - {session.AppOrigin} [IP: {session.IP} - Agent: {session.AppAgent}]" + "\r\n" +
+										$"- Connection Info: {websocket.ID} @ {websocket.RemoteEndPoint}" + "\r\n" +
+										$"- Message:\r\n{message.Data.ToString(Formatting.Indented)}"
+									).ConfigureAwait(false);
+							}
+							catch (Exception ex)
+							{
+								await Global.WriteLogsAsync("RTU", 
+									$"Pushing error: {ex.Message}" + "\r\n" +
+									$"- Account: {(session.User.ID.Equals("") ? "Visitor" : session.User.ID)}" + "\r\n" +
+									$"- Session Info: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
+									$"- App Info: {session.AppName} @ {session.AppPlatform} - {session.AppOrigin} [IP: {session.IP} - Agent: {session.AppAgent}]" + "\r\n" +
+									$"- Connection Info: {websocket.ID} @ {websocket.RemoteEndPoint}" + "\r\n" +
+									$"- Message: {message.ToJson().ToString(Formatting.None)}"
+								, ex).ConfigureAwait(false);
+							}
+					},
+					exception => Global.WriteLogs("RTU", $"Error occurred while fetching messages: {exception.Message}", exception)
+				);
 		}
 
 		static async Task WhenConnectionBrokenAsync(ManagedWebSocket websocket)
@@ -186,7 +191,7 @@ namespace net.vieapps.Services.APIGateway
 
 			if (s == null || updater == null)
 			{
-				await Global.WriteLogsAsync("InternalAPIs", "<RTU> Close the connection (unknown reason)");
+				await Global.WriteLogsAsync("RTU", $"Close the connection (Close status: {websocket.CloseStatus} - Description: {websocket.CloseStatusDescription})");
 				if (updater != null)
 					try
 					{
@@ -197,72 +202,108 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			var session = s as Session;
-			try
-			{
-				(updater as IDisposable).Dispose();
-			}
-			catch (Exception ex)
-			{
-				await Global.WriteLogsAsync("InternalAPIs", $"<RTU> Error occurred while disposing updater: {session.ToJson().ToString(Formatting.None)}", ex).ConfigureAwait(false);
-			}
+			if (updater != null)
+				try
+				{
+					(updater as IDisposable).Dispose();
+				}
+				catch (Exception ex)
+				{
+					await Global.WriteLogsAsync("RTU", $"Error occurred while disposing updater: {session?.ToJson().ToString(Formatting.None)}", ex).ConfigureAwait(false);
+				}
 
 			// update online status
-			await Task.WhenAll(
-				session.SendOnlineStatusAsync(false),
-				Global.WriteLogsAsync("InternalAPIs",
-					$"<RTU> The real-time updater of a client's device is stopped" + "\r\n" +
-					$"- Account: {(session.User.ID.Equals("") ? "Visitor" : session.User.ID)}" + "\r\n" +
-					$"- Session: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
-					$"- App Info: {session.AppName} @ {session.AppPlatform} - {session.AppOrigin} [IP: {session.IP} - Agent: {session.AppAgent}]"
-				)
-			).ConfigureAwait(false);
+			if (session != null)
+				await Task.WhenAll(
+					session.SendOnlineStatusAsync(false),
+					!Global.IsDebugLogEnabled ? Task.CompletedTask : Global.WriteLogsAsync("RTU",
+						$"The real-time updater of a client's device is stopped (Account: {(session.User.ID.Equals("") ? "Visitor" : session.User.ID)})" + "\r\n" +
+						$"- Session Info: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
+						$"- App Info: {session.AppName} @ {session.AppPlatform} - {session.AppOrigin} [IP: {session.IP} - Agent: {session.AppAgent}]" + "\r\n" +
+						$"- Connection Info: {websocket.ID} @ {websocket.RemoteEndPoint}"
+					)
+				).ConfigureAwait(false);
 		}
 
 		static async Task WhenMessageReceivedAsync(ManagedWebSocket websocket, WebSocketReceiveResult result, byte[] data)
 		{
+			// check message
+			var requestMsg = result.MessageType.Equals(WebSocketMessageType.Text) ? data.GetString() : null;
+			if (string.IsNullOrWhiteSpace(requestMsg))
+				return;
+
+			// check session
+			websocket.Extra.TryGetValue("Session", out object s);
+			if (!(s is Session session))
+			{
+				await Global.WriteLogsAsync("RTU", $"No session is attached to WebSocket ({websocket.ID} {websocket.RemoteEndPoint})").ConfigureAwait(false);
+				return;
+			}
+
 			// prepare information
-			var requestInfo = (result.MessageType.Equals(WebSocketMessageType.Text) ? data.GetString() : "{}").ToExpandoObject();
+			var requestInfo = requestMsg.ToExpandoObject();
 			var serviceName = requestInfo.Get<string>("ServiceName");
 			var objectName = requestInfo.Get<string>("ObjectName");
 			var verb = (requestInfo.Get<string>("Verb") ?? "GET").ToUpper();
 			var extra = requestInfo.Get<Dictionary<string, string>>("Extra");
 
-			websocket.Extra.TryGetValue("Session", out object s);
-			var session = s as Session;
 			if (Global.IsDebugLogEnabled)
-				await Global.WriteLogsAsync("InternalAPIs", $"<RTU> Begin request => {verb} /{serviceName ?? "unknown"}/{objectName ?? "unknown"}").ConfigureAwait(false);
+				await Global.WriteLogsAsync("RTU", $"Begin process => {verb} /{serviceName}/{objectName}").ConfigureAwait(false);
 
 			// refresh the session
 			if ("PING".IsEquals(verb))
-				await websocket.SendAsync(new UpdateMessage()
-				{
-					Type = "Pong",
-					DeviceID = session.DeviceID
-				}).ConfigureAwait(false);
+				await Task.WhenAll(
+					websocket.SendAsync(new UpdateMessage
+					{
+						Type = "Pong",
+						DeviceID = session.DeviceID
+					}),
+					!Global.IsDebugResultsEnabled ? Task.CompletedTask : Global.WriteLogsAsync("RTU",
+						$"End process => Successfully refresh (Account: {(session.User.ID.Equals("") ? "Visitor" : session.User.ID)})" + "\r\n" +
+						$"- Session Info: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
+						$"- App Info: {session.AppName} @ {session.AppPlatform} - {session.AppOrigin} [IP: {session.IP} - Agent: {session.AppAgent}]" + "\r\n" +
+						$"- Connection Info: {websocket.ID} @ {websocket.RemoteEndPoint}"
+					)
+				).ConfigureAwait(false);
 
 			// update the session
 			else if ("PATCH".IsEquals(verb) && "users".IsEquals(serviceName) && "session".IsEquals(objectName) && extra != null && extra.ContainsKey("x-session"))
 			{
-				var sessionInfo = (await Global.CurrentHttpContext.CallServiceAsync(new RequestInfo()
+				// call user service
+				var json = await Global.CallServiceAsync(new RequestInfo
 				{
 					Session = new Session(session)
 					{
-						SessionID = extra["x-session"].Decrypt(Global.EncryptionKey.Reverse(), true)
+						SessionID = extra["x-session"].GetDecryptedID()
 					},
 					ServiceName = "Users",
 					ObjectName = "Session",
 					Header = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
 					{
-						{ "x-app-token", $"x-token-{extra["x-session"]}" }
+						{ "x-app-token", $"x-session-temp-token-{extra["x-session"]}" }
 					},
 					Extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
 					{
-						{ "Signature", $"x-token-{extra["x-session"]}".GetHMACSHA256(Global.ValidationKey) }
+						{ "Signature", $"x-session-temp-token-{extra["x-session"]}".GetHMACSHA256(Global.ValidationKey) }
 					},
 					CorrelationID = Global.GetCorrelationID()
-				}).ConfigureAwait(false)).ToExpandoObject();
+				}, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+
+				// check results
+				if (json == null)
+				{
+					if (Global.IsDebugResultsEnabled)
+						await Global.WriteLogsAsync("RTU",
+							$"End process => Failed to patch when got no returing information (Account: {(session.User.ID.Equals("") ? "Visitor" : session.User.ID)})" + "\r\n" +
+							$"- Session Info: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
+							$"- App Info: {session.AppName} @ {session.AppPlatform} - {session.AppOrigin} [IP: {session.IP} - Agent: {session.AppAgent}]" + "\r\n" +
+							$"- Connection Info: {websocket.ID} @ {websocket.RemoteEndPoint}"
+						).ConfigureAwait(false);
+					return;
+				}
 
 				// only patch when not expired
+				var sessionInfo = json.ToExpandoObject();
 				if (DateTime.Parse(sessionInfo.Get<string>("ExpiredAt")) >= DateTime.Now)
 				{
 					session.SessionID = sessionInfo.Get<string>("ID");
@@ -273,31 +314,65 @@ namespace net.vieapps.Services.APIGateway
 					else
 						session.User = sessionInfo.Get<string>("AccessToken").ParseAccessToken(Global.ECCKey);
 
-					if (Global.IsDebugLogEnabled)
-						await Global.WriteLogsAsync("InternalAPIs", $"<RTU> End request => Patch a session successful{(Global.IsDebugResultsEnabled ? "\r\n" + session.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None) : "")}").ConfigureAwait(false);
+					if (Global.IsDebugResultsEnabled)
+						await Global.WriteLogsAsync("RTU",
+							$"End process => Successfully patch the session (Account: {(session.User.ID.Equals("") ? "Visitor" : session.User.ID)})" + "\r\n" +
+							$"- Session Info: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
+							$"- App Info: {session.AppName} @ {session.AppPlatform} - {session.AppOrigin} [IP: {session.IP} - Agent: {session.AppAgent}]" + "\r\n" +
+							$"- Connection Info: {websocket.ID} @ {websocket.RemoteEndPoint}" + "\r\n" +
+							$"- Response: {session.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}"
+						).ConfigureAwait(false);
 				}
+				else if (Global.IsDebugResultsEnabled)
+					await Global.WriteLogsAsync("RTU",
+						$"End process => Failed to patch because the session is expired (Account: {(session.User.ID.Equals("") ? "Visitor" : session.User.ID)})" + "\r\n" +
+						$"- Session Info: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
+						$"- App Info: {session.AppName} @ {session.AppPlatform} - {session.AppOrigin} [IP: {session.IP} - Agent: {session.AppAgent}]" + "\r\n" +
+						$"- Connection Info: {websocket.ID} @ {websocket.RemoteEndPoint}" + "\r\n" +
+						$"- Response: {session.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}"
+					).ConfigureAwait(false);
 			}
 
 			// call service to process the request
 			else if (!string.IsNullOrWhiteSpace(serviceName))
 			{
+				var stopwatch = Stopwatch.StartNew();
 				try
 				{
-					var stopwatch = Stopwatch.StartNew();
+					// call the requested service
+					var request = new RequestInfo
+					{
+						Session = session,
+						ServiceName = serviceName,
+						ObjectName = objectName,
+						Verb = verb,
+						Query = requestInfo.Get<Dictionary<string, string>>("Query") ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+						Header = requestInfo.Get<Dictionary<string, string>>("Header") ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+						Body = requestInfo.Get<string>("Body") ?? "",
+						Extra = new Dictionary<string, string>(extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase),
+						CorrelationID = Global.GetCorrelationID()
+					};
 
-					var request = new RequestInfo(session, serviceName, objectName, verb, requestInfo.Get<Dictionary<string, string>>("Query"), requestInfo.Get<Dictionary<string, string>>("Header"), requestInfo.Get<string>("Body"), extra, Global.GetCorrelationID());
 					if (serviceName.IsEquals("Users"))
-						request.Extra["Signature"] = verb.IsEquals("POST") || verb.IsEquals("PUT")
-							? request.Body.GetHMACSHA256(Global.ValidationKey)
-							: (request.Header.ContainsKey("x-app-token") ? request.Header["x-app-token"] : $"x-token-{session.SessionID}").GetHMACSHA256(Global.ValidationKey);
-					var json = await Global.CurrentHttpContext.CallServiceAsync(request).ConfigureAwait(false);
+					{
+						if (verb.IsEquals("POST") || verb.IsEquals("PUT"))
+							request.Extra["Signature"] = request.Body.GetHMACSHA256(Global.ValidationKey);
+						else
+						{
+							if (!request.Header.ContainsKey("x-app-token"))
+								request.Header["x-app-token"] = session.User.GetAuthenticateToken(Global.EncryptionKey, Global.JWTKey);
+							request.Extra["Signature"] = request.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey);
+						}
+					}
+
+					var json = await Global.CallServiceAsync(request, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 
 					// send the update message
 					var @event = request.GetObjectIdentity();
 					@event = !string.IsNullOrWhiteSpace(@event) && !@event.IsValidUUID()
 						? @event
 						: verb;
-					await websocket.SendAsync(new UpdateMessage()
+					await websocket.SendAsync(new UpdateMessage
 					{
 						Type = serviceName.GetCapitalizedFirstLetter() + (string.IsNullOrWhiteSpace(objectName) ? "" : "#" + objectName.GetCapitalizedFirstLetter() + "#" + @event.GetCapitalizedFirstLetter()),
 						DeviceID = session.DeviceID,
@@ -305,21 +380,31 @@ namespace net.vieapps.Services.APIGateway
 					}).ConfigureAwait(false);
 
 					stopwatch.Stop();
-					if (Global.IsDebugLogEnabled)
-						await Global.WriteLogsAsync("InternalAPIs",
-							$"<RTU> End request => Success" + "\r\n" +
+					if (Global.IsDebugResultsEnabled)
+						await Global.WriteLogsAsync("RTU",
+							$"End process => Success (Account: {(session.User.ID.Equals("") ? "Visitor" : session.User.ID)})" + "\r\n" +
 							$"- Execution times: {stopwatch.GetElapsedTimes()}" + "\r\n" +
-							$"- Session: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
+							$"- Session Info: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
 							$"- App Info: {session.AppName} @ {session.AppPlatform} - {session.AppOrigin} [IP: {session.IP} - Agent: {session.AppAgent}]" + "\r\n" +
-							$"- Request:\r\n{requestInfo.ToJson().ToString(Formatting.Indented)}" + "\r\n" +
-							$"- Response:\r\n{json.ToString(Formatting.Indented)}"
+							$"- Connection Info: {websocket.ID} @ {websocket.RemoteEndPoint}" + "\r\n" +
+							$"- Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}" + "\r\n" +
+							$"- Response: {json.ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}"
 						).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
+					stopwatch.Stop();
 					await Task.WhenAll(
-						Global.WriteLogsAsync("InternalAPIs", $"<RTU> End request => Error occurred while processing request: {requestInfo?.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex),
-						websocket.SendAsync(ex, $"Error occurred while processing request: {requestInfo?.ToJson().ToString(Formatting.Indented)}")
+						websocket.SendAsync(ex, $"Error: {ex.Message}"),
+						Global.WriteLogsAsync("RTU",
+							$"End process => Error occurred: {ex.Message}" + "\r\n" +
+							$"- Execution times: {stopwatch.GetElapsedTimes()}" + "\r\n" +
+							$"- Account: {(session.User.ID.Equals("") ? "Visitor" : session.User.ID)}" + "\r\n" +
+							$"- Session Info: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
+							$"- App Info: {session.AppName} @ {session.AppPlatform} - {session.AppOrigin} [IP: {session.IP} - Agent: {session.AppAgent}]" + "\r\n" +
+							$"- Connection Info: {websocket.ID} @ {websocket.RemoteEndPoint}" + "\r\n" +
+							$"- Request: {requestInfo?.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}"
+						, ex)
 					).ConfigureAwait(false);
 				}
 			}
@@ -379,7 +464,7 @@ namespace net.vieapps.Services.APIGateway
 			// send & write logs
 			await Task.WhenAll(
 				websocket.SendAsync(message.ToString(Global.IsDebugResultsEnabled ? Formatting.Indented : Formatting.None), true, Global.CancellationTokenSource.Token),
-				Global.WriteLogsAsync("InternalAPIs", msg ?? "Error occurred while processing with real-time updater", exception)
+				Global.WriteLogsAsync("RTU", msg ?? $"Error with real-time updater: {exception.Message}", exception)
 			).ConfigureAwait(false);
 		}
 

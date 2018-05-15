@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Reactive.Subjects;
 
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -23,6 +24,7 @@ namespace net.vieapps.Services.APIGateway
 	internal static class InternalAPIs
 	{
 		internal static Cache Cache { get; set; }
+		internal static ILogger Logger { get; set; }
 		internal static List<string> ExcludedHeaders { get; } = "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,ms-aspnetcore-token,x-original-proto,x-original-for".ToList();
 
 		internal static async Task ProcessRequestAsync(HttpContext context)
@@ -75,6 +77,21 @@ namespace net.vieapps.Services.APIGateway
 			#region prepare token
 			try
 			{
+				// get token
+				var appToken = requestInfo.GetParameter("x-app-token");
+
+				// support for Bearer token
+				if (string.IsNullOrWhiteSpace(appToken) && requestInfo.Header.ContainsKey("authorization"))
+				{
+					appToken = requestInfo.GetHeaderParameter("authorization");
+					appToken = appToken.IsStartsWith("Bearer") ? appToken.ToArray(" ").Last() : null;
+				}
+
+				// re-assign
+				if (!requestInfo.Header.ContainsKey("x-app-token"))
+					requestInfo.Header["x-app-token"] = appToken;
+
+				// parse and update information from token
 				var tokenIsRequired = isActivationProccessed
 					? false
 					: isSessionInitialized && (requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.IsSystemAccount) && !requestInfo.Query.ContainsKey("register")
@@ -83,13 +100,8 @@ namespace net.vieapps.Services.APIGateway
 							? false
 							: true;
 
-				// parse and update information from token
-				var appToken = requestInfo.GetParameter("x-app-token");
 				if (!string.IsNullOrWhiteSpace(appToken))
-				{
-					requestInfo.Header["x-app-token"] = appToken;
 					await context.UpdateWithAuthenticateTokenAsync(requestInfo.Session, appToken).ConfigureAwait(false);
-				}
 				else if (tokenIsRequired)
 					throw new InvalidSessionException("Session is invalid (Token is not found)");
 
@@ -99,7 +111,9 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-				context.WriteError(ex, requestInfo, null, false);
+				context.WriteError(InternalAPIs.Logger, ex, requestInfo, null, false);
+				if (Global.IsDebugLogEnabled)
+					Global.Logger.LogError(ex.Message, ex);
 				return;
 			}
 			#endregion
@@ -120,7 +134,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					await context.WriteLogsAsync("InternalAPIs", "Error occurred while parsing body of the request", ex).ConfigureAwait(false);
+					await context.WriteLogsAsync(InternalAPIs.Logger, "InternalAPIs", "Error occurred while parsing body of the request", ex).ConfigureAwait(false);
 				}
 
 			else if (requestInfo.Verb.IsEquals("GET") && requestInfo.Query.ContainsKey("x-body"))
@@ -130,7 +144,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					await context.WriteLogsAsync("InternalAPIs", "Error occurred while parsing body of the 'x-body' parameter", ex).ConfigureAwait(false);
+					await context.WriteLogsAsync(InternalAPIs.Logger, "InternalAPIs", "Error occurred while parsing body of the 'x-body' parameter", ex).ConfigureAwait(false);
 				}
 			#endregion
 
@@ -161,7 +175,9 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					context.WriteError(ex, requestInfo, null, false);
+					context.WriteError(InternalAPIs.Logger, ex, requestInfo, null, false);
+					if (Global.IsDebugLogEnabled)
+						Global.Logger.LogError(ex.Message, ex);
 					return;
 				}
 			#endregion
@@ -299,7 +315,9 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					context.WriteError(ex, requestInfo, null, false);
+					context.WriteError(InternalAPIs.Logger, ex, requestInfo, null, false);
+					if (Global.IsDebugLogEnabled)
+						Global.Logger.LogError(ex.Message, ex);
 					return;
 				}
 			#endregion
@@ -359,17 +377,22 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					context.WriteError(ex, requestInfo);
+					context.WriteError(InternalAPIs.Logger, ex, requestInfo);
 				}
 		}
 
 		#region Check existing of a session
-		static async Task<bool> CheckSessionExistAsync(this HttpContext context, Session session)
+		internal static async Task<bool> CheckSessionExistAsync(this HttpContext context, Session session)
 		{
 			if (string.IsNullOrWhiteSpace(session?.SessionID))
 				return false;
+
 			else if (await InternalAPIs.Cache.ExistsAsync($"Session#{session.SessionID}").ConfigureAwait(false))
+			{
+				Global.Logger.LogInformation($"The session is existed in the cache ({session.SessionID})");
 				return true;
+			}
+
 			else
 			{
 				if (await context.IsSessionExistAsync(session).ConfigureAwait(false))
@@ -379,14 +402,17 @@ namespace net.vieapps.Services.APIGateway
 						if (!await InternalAPIs.Cache.ExistsAsync($"Session#{session.SessionID}").ConfigureAwait(false))
 							await InternalAPIs.Cache.SetAsync($"Session#{session.SessionID}", session.SessionID.Encrypt(Global.EncryptionKey)).ConfigureAwait(false);
 					}).ConfigureAwait(false);
+					InternalAPIs.Logger.LogInformation($"The session is existed in the system, and cache is updated ({session.SessionID})");
 					return true;
 				}
+				else
 				{
 					var run = Task.Run(async () =>
 					{
 						if (await InternalAPIs.Cache.ExistsAsync($"Session#{session.SessionID}").ConfigureAwait(false))
 							await InternalAPIs.Cache.RemoveAsync($"Session#{session.SessionID}").ConfigureAwait(false);
 					}).ConfigureAwait(false);
+					InternalAPIs.Logger.LogInformation($"The session is not existed in the system ({session.SessionID})");
 					return false;
 				}
 			}
@@ -436,9 +462,9 @@ namespace net.vieapps.Services.APIGateway
 
 					await Task.WhenAll(
 						context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
-						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync("InternalAPIs", new List<string>
+						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "InternalAPIs", new List<string>
 						{
-							$"Successfully process request of session (anonymous registration)",
+							$"Successfully process request of session (registration of anonymous user)",
 							$"Request:\r\n{requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
 							$"Response:\r\n{json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
 							$"Execution times: {context.GetExecutionTimes()}"
@@ -447,7 +473,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					context.WriteError(ex, requestInfo);
+					context.WriteError(InternalAPIs.Logger, ex, requestInfo);
 				}
 
 			// session of authenticated account
@@ -462,7 +488,7 @@ namespace net.vieapps.Services.APIGateway
 							{ "Signature", requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey) }
 						},
 						CorrelationID = requestInfo.CorrelationID
-					}, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+					}, Global.CancellationTokenSource.Token, InternalAPIs.Logger).ConfigureAwait(false);
 
 					// check
 					if (session == null)
@@ -472,7 +498,7 @@ namespace net.vieapps.Services.APIGateway
 
 					// update session
 					session["RenewedAt"] = DateTime.Now;
-					session["ExpiredAt"] = DateTime.Now.AddDays(60);
+					session["ExpiredAt"] = DateTime.Now.AddDays(90);
 					session["AccessToken"] = requestInfo.Session.User.GetAccessToken(Global.ECCKey);
 					session["IP"] = requestInfo.Session.IP;
 					session["DeviceID"] = requestInfo.Session.DeviceID;
@@ -490,7 +516,7 @@ namespace net.vieapps.Services.APIGateway
 							{ "Signature", body.GetHMACSHA256(Global.ValidationKey) }
 						},
 						CorrelationID = requestInfo.CorrelationID
-					}, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+					}, Global.CancellationTokenSource.Token, InternalAPIs.Logger).ConfigureAwait(false);
 
 					// response
 					var json = new JObject
@@ -502,9 +528,9 @@ namespace net.vieapps.Services.APIGateway
 
 					await Task.WhenAll(
 						context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
-						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync("InternalAPIs", new List<string>
+						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "InternalAPIs", new List<string>
 						{
-							$"Successfully process request of session (authenticated user registration)",
+							$"Successfully process request of session (registration of authenticated user)",
 							$"Request:\r\n{requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
 							$"Response:\r\n{json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
 							$"Execution times: {context.GetExecutionTimes()}"
@@ -513,20 +539,19 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					context.WriteError(ex, requestInfo);
+					context.WriteError(InternalAPIs.Logger, ex, requestInfo);
 				}
 		}
 		#endregion
 
 		#region Create a session
-		static async Task CreateSessionAsync(this HttpContext context, RequestInfo requestInfo, bool is2FAVerified = false, bool isOnline = true)
-		{
-			var body = new JObject
+		internal static JObject GenerateSessionJson(this RequestInfo requestInfo, bool is2FAVerified = false, bool isOnline = true)
+			=> new JObject
 			{
 				{ "ID", requestInfo.Session.SessionID },
 				{ "IssuedAt", DateTime.Now },
 				{ "RenewedAt", DateTime.Now },
-				{ "ExpiredAt", DateTime.Now.AddDays(60) },
+				{ "ExpiredAt", DateTime.Now.AddDays(90) },
 				{ "UserID", requestInfo.Session.User.ID },
 				{ "AccessToken", requestInfo.Session.User.GetAccessToken(Global.ECCKey) },
 				{ "IP", requestInfo.Session.IP },
@@ -535,8 +560,11 @@ namespace net.vieapps.Services.APIGateway
 				{ "OSInfo", $"{requestInfo.Session.AppAgent.GetOSInfo()} [{requestInfo.Session.AppAgent}]" },
 				{ "Verification", is2FAVerified },
 				{ "Online", isOnline }
-			}.ToString(Formatting.None);
+			};
 
+		static async Task CreateSessionAsync(this HttpContext context, RequestInfo requestInfo, bool is2FAVerified = false, bool isOnline = true)
+		{
+			var body = requestInfo.GenerateSessionJson(is2FAVerified, isOnline).ToString(Formatting.None);
 			await context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Session", "POST")
 			{
 				Body = body,
@@ -545,8 +573,7 @@ namespace net.vieapps.Services.APIGateway
 					{ "Signature", body.GetHMACSHA256(Global.ValidationKey) }
 				},
 				CorrelationID = requestInfo.CorrelationID
-			}, Global.CancellationTokenSource.Token).ConfigureAwait(false);
-
+			}, Global.CancellationTokenSource.Token, InternalAPIs.Logger).ConfigureAwait(false);
 			await requestInfo.Session.SendOnlineStatusAsync(true).ConfigureAwait(false);
 		}
 		#endregion
@@ -600,7 +627,7 @@ namespace net.vieapps.Services.APIGateway
 						{ "Signature", body.GetHMACSHA256(Global.ValidationKey) }
 					},
 					CorrelationID = requestInfo.CorrelationID
-				}, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+				}, Global.CancellationTokenSource.Token, InternalAPIs.Logger).ConfigureAwait(false);
 
 				// two-factors authentication
 				var oldSessionID = string.Empty;
@@ -638,7 +665,7 @@ namespace net.vieapps.Services.APIGateway
 					context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 					InternalAPIs.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP),
 					string.IsNullOrWhiteSpace(oldSessionID) ? Task.CompletedTask : InternalAPIs.Cache.RemoveAsync($"Session#{oldSessionID}"),
-					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync("InternalAPIs", new List<string>
+					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (sign-in)",
 						$"Request:\r\n{requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
@@ -661,7 +688,7 @@ namespace net.vieapps.Services.APIGateway
 				).ConfigureAwait(false);
 
 				// show error
-				context.WriteError(ex, requestInfo);
+				context.WriteError(InternalAPIs.Logger, ex, requestInfo);
 			}
 		}
 		#endregion
@@ -708,7 +735,7 @@ namespace net.vieapps.Services.APIGateway
 						{ "Info", info.Encrypt(Global.EncryptionKey) }
 					}.ToString(Formatting.None),
 					CorrelationID = requestInfo.CorrelationID
-				}, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+				}, Global.CancellationTokenSource.Token, InternalAPIs.Logger).ConfigureAwait(false);
 
 				// register new session
 				var oldSessionID = requestInfo.Session.SessionID;
@@ -729,7 +756,7 @@ namespace net.vieapps.Services.APIGateway
 					context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 					InternalAPIs.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP),
 					InternalAPIs.Cache.RemoveAsync($"Session#{oldSessionID}"),
-					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync("InternalAPIs", new List<string>
+					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (OTP validation)",
 						$"Request:\r\n{requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
@@ -752,7 +779,7 @@ namespace net.vieapps.Services.APIGateway
 				).ConfigureAwait(false);
 
 				// show error
-				context.WriteError(ex, requestInfo);
+				context.WriteError(InternalAPIs.Logger, ex, requestInfo);
 			}
 		}
 		#endregion
@@ -774,7 +801,7 @@ namespace net.vieapps.Services.APIGateway
 						{ "Signature", requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey) }
 					},
 					CorrelationID = requestInfo.CorrelationID
-				}, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+				}, Global.CancellationTokenSource.Token, InternalAPIs.Logger).ConfigureAwait(false);
 
 				// send update message
 				await requestInfo.Session.SendOnlineStatusAsync(false).ConfigureAwait(false);
@@ -796,7 +823,8 @@ namespace net.vieapps.Services.APIGateway
 				await Task.WhenAll(
 					context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 					InternalAPIs.Cache.RemoveAsync($"Session#{oldSessionID}"),
-					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync("InternalAPIs", new List<string>
+					InternalAPIs.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.SessionID.Encrypt(Global.EncryptionKey), 7),
+					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (sign-out)",
 						$"Request:\r\n{requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
@@ -807,7 +835,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-				context.WriteError(ex, requestInfo);
+				context.WriteError(InternalAPIs.Logger, ex, requestInfo);
 			}
 		}
 		#endregion
@@ -816,7 +844,7 @@ namespace net.vieapps.Services.APIGateway
 		static async Task ActivateAsync(this HttpContext context, RequestInfo requestInfo)
 		{
 			// call service to activate
-			var json = await context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Activate", "GET", requestInfo.Query, requestInfo.Header, "", requestInfo.Extra, requestInfo.CorrelationID)).ConfigureAwait(false);
+			var json = await context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Activate", "GET", requestInfo.Query, requestInfo.Header, "", requestInfo.Extra, requestInfo.CorrelationID), Global.CancellationTokenSource.Token, InternalAPIs.Logger).ConfigureAwait(false);
 
 			// get user information & register the session
 			requestInfo.Session.User = json.FromJson<User>();
@@ -833,7 +861,7 @@ namespace net.vieapps.Services.APIGateway
 
 			await Task.WhenAll(
 				context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
-				!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync("InternalAPIs", new List<string>
+				!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "InternalAPIs", new List<string>
 				{
 						$"Successfully process request of session (activation)",
 						$"Request:\r\n{requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
@@ -845,25 +873,43 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Heper: keys, session, online status, ...
-		internal static byte[] GetEncryptionKey(this Session session) => session.SessionID.GetHMACHash(Global.EncryptionKey, "SHA512").GenerateHashKey(256);
+		internal static byte[] GetEncryptionKey(this string sessionID)
+			=> sessionID.GetHMACHash(Global.EncryptionKey, "SHA512").GenerateHashKey(256);
 
-		internal static byte[] GetEncryptionIV(this Session session) => session.SessionID.GetHMACHash(Global.EncryptionKey, "SHA256").GenerateHashKey(128);
+		internal static byte[] GetEncryptionIV(this string sessionID)
+			=> sessionID.GetHMACHash(Global.EncryptionKey, "SHA256").GenerateHashKey(128);
 
-		internal static byte[] GetEncryptionKey(this HttpContext context, Session session)
-			=> context.Items.ContainsKey("EncryptionKey")
-				? context.Items["EncryptionKey"] as byte[]
-				: (context.Items["EncryptionKey"] = session.GetEncryptionKey()) as byte[];
+		internal static byte[] GetEncryptionKey(this string sessionID, IDictionary<object, object> items)
+			=> items != null
+				? items.ContainsKey("EncryptionKey")
+					? items["EncryptionKey"] as byte[]
+					: (items["EncryptionKey"] = sessionID.GetEncryptionKey()) as byte[]
+				: sessionID.GetEncryptionKey();
 
-		internal static byte[] GetEncryptionIV(this HttpContext context, Session session)
-			=> context.Items.ContainsKey("EncryptionIV")
-				? context.Items["EncryptionIV"] as byte[]
-				: (context.Items["EncryptionIV"] = session.GetEncryptionIV()) as byte[];
+		internal static byte[] GetEncryptionIV(this string sessionID, IDictionary<object, object> items)
+			=> items != null
+				? items.ContainsKey("EncryptionIV")
+					? items["EncryptionIV"] as byte[]
+					: (items["EncryptionIV"] = sessionID.GetEncryptionIV()) as byte[]
+				: sessionID.GetEncryptionIV();
 
-		internal static string GetEncryptedID(this string sessionID) => sessionID.HexToBytes().Encrypt(Global.EncryptionKey.Reverse().GenerateHashKey(256), Global.EncryptionKey.GenerateHashKey(128)).ToHex();
+		internal static byte[] GetEncryptionKey(this Session session) => session.SessionID.GetEncryptionKey();
 
-		internal static string GetDecryptedID(this string sessionID) => sessionID.HexToBytes().Decrypt(Global.EncryptionKey.Reverse().GenerateHashKey(256), Global.EncryptionKey.GenerateHashKey(128)).ToHex();
+		internal static byte[] GetEncryptionIV(this Session session) => session.SessionID.GetEncryptionIV();
 
-		internal static void UpdateSessionJson(this HttpContext context, Session session, JObject json)
+		internal static byte[] GetEncryptionKey(this HttpContext context, Session session) => session.SessionID.GetEncryptionKey(context.Items);
+
+		internal static byte[] GetEncryptionIV(this HttpContext context, Session session) => session.SessionID.GetEncryptionIV(context.Items);
+
+		internal static byte[] GetEncryptionKey(this Session session, IDictionary<object, object> items) => session.SessionID.GetEncryptionKey(items);
+
+		internal static byte[] GetEncryptionIV(this Session session, IDictionary<object, object> items) => session.SessionID.GetEncryptionIV(items);
+
+		internal static string GetEncryptedID(this string sessionID) => sessionID.HexToBytes().Encrypt(Global.EncryptionKey.GetEncryptionKey(), Global.ValidationKey.GetEncryptionIV()).ToHex();
+
+		internal static string GetDecryptedID(this string sessionID) => sessionID.HexToBytes().Decrypt(Global.EncryptionKey.GetEncryptionKey(), Global.ValidationKey.GetEncryptionIV()).ToHex();
+
+		internal static void UpdateSessionJson(this Session session, JObject json, IDictionary<object, object> items)
 		{
 			json["ID"] = session.SessionID.GetEncryptedID();
 			json["Keys"] = new JObject
@@ -880,8 +926,8 @@ namespace net.vieapps.Services.APIGateway
 					"AES",
 					new JObject
 					{
-						{ "Key", context.GetEncryptionKey(session).ToHex() },
-						{ "IV", context.GetEncryptionIV(session).ToHex() }
+						{ "Key", session.GetEncryptionKey(items).ToHex() },
+						{ "IV", session.GetEncryptionIV(items).ToHex() }
 					}
 				},
 				{
@@ -891,6 +937,8 @@ namespace net.vieapps.Services.APIGateway
 			};
 			json["Token"] = session.GetAuthenticateToken();
 		}
+
+		internal static void UpdateSessionJson(this HttpContext context, Session session, JObject json) => session.UpdateSessionJson(json, context.Items);
 
 		internal static Task SendOnlineStatusAsync(this Session session, bool isOnline)
 		{
@@ -931,14 +979,14 @@ namespace net.vieapps.Services.APIGateway
 								{
 									await InternalAPIs.ProcessInterCommunicateMessageAsync(message).ConfigureAwait(false);
 									if (Global.IsDebugLogEnabled)
-										await Global.WriteLogsAsync("InternalAPIs", $"<RTU> Process an inter-communicate message successful\r\n{message?.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
+										await Global.WriteLogsAsync(RTU.Logger, "RTU", $"Process an inter-communicate message successful\r\n{message?.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
 								}
 								catch (Exception ex)
 								{
-									await Global.WriteLogsAsync("InternalAPIs", $"<RTU> {ex.Message} => {message?.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex).ConfigureAwait(false);
+									await Global.WriteLogsAsync(RTU.Logger, "RTU", $"{ex.Message} => {message?.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex).ConfigureAwait(false);
 								}
 							},
-							exception => Global.WriteLogs("InternalAPIs", $"<RTU> {exception.Message}", exception)
+							exception => Global.WriteLogs(RTU.Logger, "RTU", $"{exception.Message}", exception)
 						);
 				},
 				(sender, args) =>
@@ -947,7 +995,7 @@ namespace net.vieapps.Services.APIGateway
 					try
 					{
 						Task.WaitAll(new[] { Global.InitializeLoggingServiceAsync(), Global.InitializeRTUServiceAsync() }, waitingTimes > 0 ? waitingTimes : 6789, Global.CancellationTokenSource.Token);
-						Global.Logger.LogInformation("Helper services succesfully initialized");
+						Global.Logger.LogInformation("Helper services are succesfully initialized");
 					}
 					catch (Exception ex)
 					{
@@ -967,11 +1015,11 @@ namespace net.vieapps.Services.APIGateway
 			{
 				await Global.RTUService.SendInterCommunicateMessageAsync(message, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				if (Global.IsDebugResultsEnabled)
-					await Global.WriteLogsAsync("InternalAPIs", $"<RTU> Send an inter-communicate message successful\r\n{message.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}").ConfigureAwait(false);
+					await Global.WriteLogsAsync(RTU.Logger, "RTU", $"Send an inter-communicate message successful\r\n{message.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}").ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
-				await Global.WriteLogsAsync("InternalAPIs", $"<RTU> {ex.Message}", ex).ConfigureAwait(false);
+				await Global.WriteLogsAsync(RTU.Logger, "RTU", $"{ex.Message}", ex).ConfigureAwait(false);
 			}
 		}
 
@@ -1052,7 +1100,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					Global.WriteLogs("InternalAPIs", $"<RTU> {ex.Message} => {message.ToJson().ToString(Formatting.Indented)}", ex);
+					Global.WriteLogs(RTU.Logger, "RTU", $"{ex.Message} => {message.ToJson().ToString(Formatting.Indented)}", ex);
 				}
 
 			else
@@ -1062,7 +1110,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					Global.WriteLogs("InternalAPIs", $"<RTU> {ex.Message} => {message.ToJson().ToString(Formatting.Indented)}", ex);
+					Global.WriteLogs(RTU.Logger, "RTU", $"{ex.Message} => {message.ToJson().ToString(Formatting.Indented)}", ex);
 				}
 		}
 
@@ -1077,7 +1125,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					await Global.WriteLogsAsync("InternalAPIs", $"<RTU> {ex.Message} => {message.ToJson().ToString(Formatting.Indented)}", ex).ConfigureAwait(false);
+					await Global.WriteLogsAsync(RTU.Logger, "RTU", $"{ex.Message} => {message.ToJson().ToString(Formatting.Indented)}", ex).ConfigureAwait(false);
 				}
 
 			else
@@ -1087,7 +1135,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					await Global.WriteLogsAsync("InternalAPIs", $"<RTU> {ex.Message} => {message.ToJson().ToString(Formatting.Indented)}", ex).ConfigureAwait(false);
+					await Global.WriteLogsAsync(RTU.Logger, "RTU", $"{ex.Message} => {message.ToJson().ToString(Formatting.Indented)}", ex).ConfigureAwait(false);
 				}
 		}
 		#endregion

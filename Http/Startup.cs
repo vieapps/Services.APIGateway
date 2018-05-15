@@ -61,8 +61,8 @@ namespace net.vieapps.Services.APIGateway
 			// mandatory services
 			services.AddResponseCompression(options => options.EnableForHttps = true);
 			services.AddLogging(builder => builder.SetMinimumLevel(UtilityService.GetAppSetting("Logs:Level", this.Configuration.GetAppSetting("Logging/LogLevel/Default", "Information")).ToEnum<LogLevel>()));
-			services.AddHttpContextAccessor();
 			services.AddCache(options => this.Configuration.GetSection("Cache").Bind(options));
+			services.AddHttpContextAccessor();
 
 			/*
 			 // session state
@@ -148,7 +148,9 @@ namespace net.vieapps.Services.APIGateway
 			// initialize service
 			InternalAPIs.Cache = new Cache("VIEApps-API-Gateway", this.Configuration.GetAppSetting("Cache/ExpirationTime", 30), this.Configuration.GetAppSetting("Cache/Provider", "Redis"));
 			InternalAPIs.OpenWAMPChannels();
+			InternalAPIs.Logger = loggerFactory.CreateLogger<Handler.InternalAPIs>();
 			RTU.Initialize();
+			RTU.Logger = loggerFactory.CreateLogger<Handler.RTU>();
 
 			// done
 			stopwatch.Stop();

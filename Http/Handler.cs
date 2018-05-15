@@ -35,7 +35,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			// request of WebSocket
 			if (context.WebSockets.IsWebSocketRequest)
-				await RTU.WebSocket.WrapAsync(context).ConfigureAwait(false);
+				await APIGateway.RTU.WebSocket.WrapAsync(context).ConfigureAwait(false);
 
 			// request of HTTP
 			else
@@ -103,12 +103,12 @@ namespace net.vieapps.Services.APIGateway
 				await this.ProcessStaticRequestAsync(context, executionFilePaths[0]).ConfigureAwait(false);
 
 			// request to external APIs
-			else if (ExternalAPIs.APIs.ContainsKey(executionFilePaths[0]))
-				await ExternalAPIs.ProcessRequestAsync(context).ConfigureAwait(false);
+			else if (APIGateway.ExternalAPIs.APIs.ContainsKey(executionFilePaths[0]))
+				await APIGateway.ExternalAPIs.ProcessRequestAsync(context).ConfigureAwait(false);
 
 			// request to internal APIs
 			else
-				await InternalAPIs.ProcessRequestAsync(context).ConfigureAwait(false);
+				await APIGateway.InternalAPIs.ProcessRequestAsync(context).ConfigureAwait(false);
 		}
 
 		internal async Task ProcessStaticRequestAsync(HttpContext context, string path)
@@ -199,5 +199,10 @@ namespace net.vieapps.Services.APIGateway
 				context.ShowHttpError(ex.GetHttpStatusCode(), ex.Message, ex.GetType().GetTypeName(true), context.GetCorrelationID(), ex, Global.IsDebugLogEnabled);
 			}
 		}
+
+		// for logging
+		public class RTU { }
+		public class InternalAPIs { }
+		public class ExternalAPIs { }
 	}
 }

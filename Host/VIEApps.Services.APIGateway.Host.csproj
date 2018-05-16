@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
 		<TargetFramework>netstandard2.0</TargetFramework>
@@ -8,10 +8,10 @@
 		<Company>VIEApps.net</Company>
 		<Product>VIEApps NGX</Product>
 		<Copyright>© 2018 VIEApps.net</Copyright>
-		<Version>10.1.5.1804</Version>
-		<AssemblyVersion>10.1.5.1804</AssemblyVersion>
-		<FileVersion>10.1.5.1804</FileVersion>
-		<InformationalVersion>v10.1.netstandard-2+rev:2018.04.24</InformationalVersion>
+		<Version>10.2.0.1806</Version>
+		<AssemblyVersion>10.2.0.1806</AssemblyVersion>
+		<FileVersion>10.2.0.1806</FileVersion>
+		<InformationalVersion>v10.2.netstandard-2+rev:2018.05.16</InformationalVersion>
 		<RootNamespace>VIEApps.Services.APIGateway</RootNamespace>
 	</PropertyGroup>
 

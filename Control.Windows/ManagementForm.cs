@@ -1,11 +1,7 @@
 ﻿#region Related components
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -51,12 +47,12 @@ namespace net.vieapps.Services.APIGateway
 
 		internal void RefreshServices()
 		{
-			if (Global.ServiceManager == null)
-				Global.ServiceManager = Global.Component._outgoingChannel.RealmProxy.Services.GetCalleeProxy<IServiceManager>(ProxyInterceptor.Create());
+			if (Program.ServiceManager == null)
+				Program.ServiceManager = WAMPConnections.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IServiceManager>(ProxyInterceptor.Create());
 
 			this.BusinessServices.Clear();
-			Global.ServiceManager.GetAvailableBusinessServices()
-				.ForEach(kvp => this.BusinessServices.Add($"net.vieapps.services.{kvp.Key}", Global.ServiceManager.IsBusinessServiceRunning(kvp.Key)));
+			Program.ServiceManager.GetAvailableBusinessServices()
+				.ForEach(kvp => this.BusinessServices.Add($"net.vieapps.services.{kvp.Key}", Program.ServiceManager.IsBusinessServiceRunning(kvp.Key)));
 		}
 
 		void DisplayServices()
@@ -65,7 +61,7 @@ namespace net.vieapps.Services.APIGateway
 			this.BusinessServices
 				.OrderBy(kvp => kvp.Key)
 				.ForEach(kvp => this.Services.Items.Add(new ListViewItem(new[] { kvp.Key, kvp.Value ? "Running" : "Stopped" })));
-			Global.MainForm.UpdateServicesInfo(this.BusinessServices.Count, this.BusinessServices.Where(kvp => kvp.Value).Count());
+			Program.MainForm.UpdateServicesInfo(this.BusinessServices.Count, this.BusinessServices.Where(kvp => kvp.Value).Count());
 		}
 
 		void OnSelected()
@@ -93,35 +89,24 @@ namespace net.vieapps.Services.APIGateway
 				{
 					try
 					{
-						Global.ServiceManager.StopBusinessService(name.ToArray('.').Last());
+						Program.ServiceManager.StopBusinessService(name.ToArray('.').Last());
 						this.BusinessServices[name] = false;
 					}
-					catch (Exception ex)
-					{
-						Global.WriteLog($"Error occurred while stopping a business service: {ex.Message}", ex);
-					}
+					catch { }
 				})
-				.ContinueWith(task =>
-				{
-					this.DisplayServices();
-				});
+				.ContinueWith(task => this.DisplayServices());
+
 			else
 				Task.Run(() =>
 				{
 					try
 					{
-						Global.ServiceManager.StartBusinessService(name.ToArray('.').Last());
+						Program.ServiceManager.StartBusinessService(name.ToArray('.').Last());
 						this.BusinessServices[name] = true;
 					}
-					catch (Exception ex)
-					{
-						Global.WriteLog($"Error occurred while starting a business service: {ex.Message}", ex);
-					}
+					catch { }
 				})
-				.ContinueWith(task =>
-				{
-					this.DisplayServices();
-				});
+				.ContinueWith(task => this.DisplayServices());
 		}
 	}
 }

@@ -37,10 +37,12 @@ namespace net.vieapps.Services.APIGateway
 				Console.OutputEncoding = System.Text.Encoding.UTF8;
 
 			// run the web host with Kestrel
+			var port = (args.FirstOrDefault(a => a.IsStartsWith("/port:")) ?? UtilityService.GetAppSetting("HttpPort", "8024"))
+				.Replace(StringComparison.OrdinalIgnoreCase, "/port:", "").Trim();
 			WebHost.CreateDefaultBuilder(args)
 				.UseStartup<Startup>()
 				.UseKestrel()
-				.UseUrls($"http://0.0.0.0:{args.FirstOrDefault(a => a.IsStartsWith("/port:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/port:", "").Trim() ?? "8030"}")
+				.UseUrls($"http://0.0.0.0:{port}")
 				.Build()
 				.Run();
 
@@ -119,7 +121,7 @@ namespace net.vieapps.Services.APIGateway
 			var path = UtilityService.GetAppSetting("Path:Logs");
 			if (!string.IsNullOrWhiteSpace(path) && Directory.Exists(path))
 			{
-				path += Path.DirectorySeparatorChar.ToString() + Global.ServiceName.ToLower() + ".http_{Date}.txt";
+				path = Path.Combine(path, "{Date}_" + Global.ServiceName.ToLower() + ".http.txt");
 				loggerFactory.AddFile(path, logLevel);
 			}
 			else

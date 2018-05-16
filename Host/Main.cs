@@ -18,20 +18,16 @@ using net.vieapps.Components.Utility;
 
 namespace net.vieapps.Services.APIGateway
 {
-    public class HostingComponent
+    public class HostComponent
     {
 		IServiceComponent ServiceComponent { get; set; }
-
-		bool IsUserInteractive { get; set; }
 
 		public void Start(string[] args)
 		{
 			// prepare
 			var apiCall = args?.FirstOrDefault(a => a.IsStartsWith("/agc:"));
 			var apiCallToStop = apiCall != null && apiCall.IsEquals("/agc:s");
-
-			this.IsUserInteractive = apiCall == null;
-			if (this.IsUserInteractive)
+			if (Environment.UserInteractive)
 				Console.OutputEncoding = System.Text.Encoding.UTF8;
 
 			// prepare type name
@@ -50,9 +46,9 @@ namespace net.vieapps.Services.APIGateway
 			// stop if has no type name of a service component
 			if (string.IsNullOrWhiteSpace(typeName))
 			{
-				if (this.IsUserInteractive)
+				if (Environment.UserInteractive)
 				{
-					Console.WriteLine($"VIEApps NGX API Gateway - Service Hoster v{AssemblyName.GetAssemblyName(Assembly.GetExecutingAssembly().Location).Version}");
+					Console.WriteLine($"VIEApps NGX API Gateway - Service Hoster v{Assembly.GetExecutingAssembly().GetVersion()}");
 					Console.WriteLine("");
 					Console.WriteLine("Syntax: VIEApps.Services.APIGateway.Host /svc:<service-component-namespace,service-assembly>");
 					Console.WriteLine("");
@@ -70,7 +66,7 @@ namespace net.vieapps.Services.APIGateway
 			if (serviceType == null)
 			{
 				Console.WriteLine($"The type of the service component is not found [{typeName}]");
-				if (this.IsUserInteractive)
+				if (Environment.UserInteractive)
 					Console.ReadLine();
 				return;
 			}
@@ -79,12 +75,10 @@ namespace net.vieapps.Services.APIGateway
 			if (this.ServiceComponent == null || !(this.ServiceComponent is IService))
 			{
 				Console.WriteLine($"The type of the service component is invalid [{serviceType.GetTypeName()}]");
-				if (this.IsUserInteractive)
+				if (Environment.UserInteractive)
 					Console.ReadLine();
 				return;
 			}
-			else
-				this.ServiceComponent.IsUserInteractive = this.IsUserInteractive;
 
 			// prepare default settings of Json.NET
 			JsonConvert.DefaultSettings = () => new JsonSerializerSettings()
@@ -124,7 +118,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// prepare the signal to start/stop when the service was called from API Gateway
 			EventWaitHandle waitHandle = null;
-			if (!this.IsUserInteractive)
+			if (!Environment.UserInteractive)
 			{
 				// get the flag of the existing instance
 				waitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, uri, out bool createdNew);
@@ -152,7 +146,7 @@ namespace net.vieapps.Services.APIGateway
 			ServiceBase.ServiceComponent = this.ServiceComponent as ServiceBase;
 
 			// wait for exit signal
-			if (this.IsUserInteractive)
+			if (Environment.UserInteractive)
 			{
 				logger.LogInformation($"The service [{uri}] is started. PID: {Process.GetCurrentProcess().Id}\r\n=====> Press RETURN to terminate...");
 				Console.ReadLine();

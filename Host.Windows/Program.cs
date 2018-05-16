@@ -5,7 +5,7 @@ namespace net.vieapps.Services.APIGateway
 {
 	class Program
 	{
-		static HostingComponent HostingComponent = new HostingComponent();
+		static HostComponent HostComponent = new HostComponent();
 
 		static void Main(string[] args)
 		{
@@ -14,7 +14,7 @@ namespace net.vieapps.Services.APIGateway
 				Program.ConsoleEventHandler = new ConsoleEventDelegate(Program.ConsoleEventCallback);
 				Program.SetConsoleCtrlHandler(Program.ConsoleEventHandler, true);
 			}
-			Program.HostingComponent.Start(args);
+			Program.HostComponent.Start(args);
 		}
 
 		static bool ConsoleEventCallback(int eventCode)
@@ -25,7 +25,7 @@ namespace net.vieapps.Services.APIGateway
 				case 1:        // Ctrl + Break
 				case 2:        // Close
 				case 6:        // Shutdown
-					Program.HostingComponent.Stop();
+					Program.HostComponent.Stop();
 					break;
 			}
 			return false;

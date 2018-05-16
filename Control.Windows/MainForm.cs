@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -17,13 +18,15 @@ namespace net.vieapps.Services.APIGateway
 
 		void MainForm_Load(object sender, EventArgs args)
 		{
-			Global.Component.Start(this._args, async () =>
+			Program.CancellationTokenSource = new CancellationTokenSource();
+			Program.Component = new ControlComponent(Program.CancellationTokenSource.Token);
+			Program.Component.Start(this._args, async () =>
 			{
 				await Task.Delay(567).ConfigureAwait(false);
-				if (Global.ServiceManager != null)
+				if (Program.ServiceManager != null)
 				{
-					var services = Global.ServiceManager.GetAvailableBusinessServices();
-					services.Select(kvp => kvp.Key).ToList().ForEach(name => services[name] = Global.ServiceManager.IsBusinessServiceRunning(name) ? "Yes" : "No");
+					var services = Program.ServiceManager.GetAvailableBusinessServices();
+					services.Select(kvp => kvp.Key).ToList().ForEach(name => services[name] = Program.ServiceManager.IsBusinessServiceRunning(name) ? "Yes" : "No");
 					this.UpdateServicesInfo(services.Count, services.Where(kvp => kvp.Value.Equals("Yes")).Count());
 				}
 			});
@@ -31,20 +34,22 @@ namespace net.vieapps.Services.APIGateway
 
 		void MainForm_FormClosed(object sender, FormClosedEventArgs args)
 		{
-			Global.Component.Dispose();
+			Program.Component.Dispose();
+			Program.CancellationTokenSource.Cancel();
+			Program.CancellationTokenSource.Dispose();
 		}
 
 		void ManageServices_Click(object sender, EventArgs args)
 		{
-			if (!Global.Component._status.Equals("Ready"))
+			if (!Program.Component.Status.Equals("Ready"))
 				return;
 
-			if (Global.ManagementForm == null)
-				Global.ManagementForm = new ManagementForm();
+			if (Program.ManagementForm == null)
+				Program.ManagementForm = new ManagementForm();
 
-			Global.ManagementForm.Initialize();
-			Global.ManagementForm.Show();
-			Global.ManagementForm.Focus();
+			Program.ManagementForm.Initialize();
+			Program.ManagementForm.Show();
+			Program.ManagementForm.Focus();
 		}
 
 		void ClearLogs_Click(object sender, EventArgs args)

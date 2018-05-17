@@ -32,7 +32,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// prepare type name
 			var typeName = args?.FirstOrDefault(a => a.IsStartsWith("/svc:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/svc:", "");
-			var configFilename = "VIEApps.Services.APIGateway" + (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : ".dll") + ".config";
+			var configFilename = $"VIEApps.Services.APIGateway.{(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "exe" : "dll")}.config";
 			if (string.IsNullOrWhiteSpace(typeName) && File.Exists(configFilename) && args?.FirstOrDefault(a => a.IsStartsWith("/svn:")) != null)
 				try
 				{
@@ -113,10 +113,10 @@ namespace net.vieapps.Services.APIGateway
 				loggerFactory.AddFile(logsPath + "{Date}_" + (this.ServiceComponent as IService).ServiceName.ToLower() + ".txt", logLevel);
 			}
 
-			var logger = loggerFactory.CreateLogger(this.ServiceComponent.GetType());
-			var uri = (this.ServiceComponent as IService).ServiceURI;
+			var logger = this.ServiceComponent.Logger = loggerFactory.CreateLogger(this.ServiceComponent.GetType());
 
 			// prepare the signal to start/stop when the service was called from API Gateway
+			var uri = (this.ServiceComponent as IService).ServiceURI;
 			EventWaitHandle waitHandle = null;
 			if (!Environment.UserInteractive)
 			{
@@ -136,19 +136,19 @@ namespace net.vieapps.Services.APIGateway
 					return;
 				}
 			}
-			else
-				logger.LogInformation($"The service [{uri}] is starting...");
 
 			// start the service component
+			logger.LogInformation($"The service [{uri}] is starting...");
 			this.ServiceComponent.Start(args, "false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", "")) ? false : true);
 
 			// assign the static instance of the service component
 			ServiceBase.ServiceComponent = this.ServiceComponent as ServiceBase;
+			logger.LogInformation($"The service [{uri}] is started. PID: {Process.GetCurrentProcess().Id}");
 
 			// wait for exit signal
 			if (Environment.UserInteractive)
 			{
-				logger.LogInformation($"The service [{uri}] is started. PID: {Process.GetCurrentProcess().Id}\r\n=====> Press RETURN to terminate...");
+				logger.LogInformation($"=====> Press RETURN to terminate...");
 				Console.ReadLine();
 				this.Stop();
 			}

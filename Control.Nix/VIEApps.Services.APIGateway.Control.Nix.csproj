@@ -1,9 +1,10 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFramework>netstandard2.0</TargetFramework>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>netcoreapp2.0</TargetFramework>
 		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
-		<AssemblyName>VIEApps.Services.APIGateway.Control</AssemblyName>
+		<AssemblyName>VIEApps.Services.APIGateway</AssemblyName>
 		<AssemblyTitle>VIEApps NGX API Gateway</AssemblyTitle>
 		<Authors>VIEApps.net</Authors>
 		<Company>VIEApps.net</Company>
@@ -13,10 +14,16 @@
 		<AssemblyVersion>10.2.0.1806</AssemblyVersion>
 		<FileVersion>10.2.0.1806</FileVersion>
 		<InformationalVersion>v10.2.netstandard-2+rev:2018.06.01</InformationalVersion>
+		<StartupObject>net.vieapps.Services.APIGateway.Program</StartupObject>
 	</PropertyGroup>
 
 	<ItemGroup>
-	  <ProjectReference Include="..\..\Base\VIEApps.Services.Base.csproj" />
+	  <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="2.0.2" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\..\Base\VIEApps.Services.Base.csproj" />
+		<ProjectReference Include="..\Control\VIEApps.Services.APIGateway.Control.csproj" />
 	</ItemGroup>
 
 </Project>

@@ -107,7 +107,7 @@ namespace net.vieapps.Services.APIGateway
 				var lines = new List<string>();
 				while (logs.TryDequeue(out string log))
 					lines.Add(log);
-				await UtilityService.WriteTextFileAsync(Path.Combine(LoggingService.LogsPath, DateTime.Now.ToString("yyyy-MM-dd_HH") + "." + name + ".txt"), lines, true, null, this._cancellationTokenSource.Token).ConfigureAwait(false);
+				await UtilityService.WriteTextFileAsync(Path.Combine(LoggingService.LogsPath, DateTime.Now.ToString("yyyyMMdd-HH") + "_" + name + ".txt"), lines, true, null, this._cancellationTokenSource.Token).ConfigureAwait(false);
 			}
 			catch { }
 			finally

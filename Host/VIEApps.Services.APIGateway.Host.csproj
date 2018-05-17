@@ -2,6 +2,7 @@
 
 	<PropertyGroup>
 		<TargetFramework>netstandard2.0</TargetFramework>
+		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
 		<AssemblyName>VIEApps.Services.APIGateway.Host.Component</AssemblyName>
 		<AssemblyTitle>VIEApps NGX API Gateway</AssemblyTitle>
 		<Authors>VIEApps.net</Authors>
@@ -12,7 +13,6 @@
 		<AssemblyVersion>10.2.0.1806</AssemblyVersion>
 		<FileVersion>10.2.0.1806</FileVersion>
 		<InformationalVersion>v10.2.netstandard-2+rev:2018.05.16</InformationalVersion>
-		<RootNamespace>VIEApps.Services.APIGateway</RootNamespace>
 	</PropertyGroup>
 
 	<ItemGroup>

@@ -38,7 +38,7 @@ namespace net.vieapps.Services.APIGateway
 		readonly CancellationTokenSource _cancellationTokenSource;
 		internal IDisposable _communicator = null;
 		readonly internal LoggingService _loggingService = null;
-		readonly string _serviceHoster = UtilityService.GetAppSetting("ServiceHoster", "VIEApps.Services.APIGateway.Host.exe");
+		readonly string _serviceHoster = UtilityService.GetAppSetting("Controller:ServiceHoster", "VIEApps.Services.APIGateway.Host.exe");
 		internal Dictionary<string, string> _availableServices = null;
 		readonly Dictionary<string, int> _runningServices = new Dictionary<string, int>();
 		readonly List<SystemEx.IAsyncDisposable> _helperServices = new List<SystemEx.IAsyncDisposable>();

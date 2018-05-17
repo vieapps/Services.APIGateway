@@ -2,6 +2,7 @@
 using System;
 using System.Net;
 using System.IO;
+using System.Linq;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Collections.Generic;
@@ -23,12 +24,12 @@ namespace net.vieapps.Services.APIGateway
 	public class Handler
 	{
 		readonly RequestDelegate _next;
-		readonly IHostingEnvironment _hostingEnvironment;
+		readonly IHostingEnvironment _environment;
 
-		public Handler(RequestDelegate next, IHostingEnvironment hostingEnvironment)
+		public Handler(RequestDelegate next, IHostingEnvironment environment)
 		{
 			this._next = next;
-			this._hostingEnvironment = hostingEnvironment;
+			this._environment = environment;
 		}
 
 		public async Task Invoke(HttpContext context)
@@ -118,8 +119,8 @@ namespace net.vieapps.Services.APIGateway
 			{
 				// prepare
 				var rootPath = path.IsEquals("statics")
-					? UtilityService.GetAppSetting("Path:StaticFiles", this._hostingEnvironment.ContentRootPath + "/data-files/statics")
-					: this._hostingEnvironment.ContentRootPath;
+					? UtilityService.GetAppSetting("Path:StaticFiles", this._environment.ContentRootPath + "/data-files/statics")
+					: this._environment.ContentRootPath;
 
 				var filePath = string.IsNullOrWhiteSpace(requestUri.PathAndQuery)
 					? "/geo/countries.json"
@@ -154,14 +155,9 @@ namespace net.vieapps.Services.APIGateway
 					// update header and stop
 					if (isNotModified)
 					{
-						context.SetResponseHeaders((int)HttpStatusCode.NotModified, new Dictionary<string, string>
-						{
-							{ "Cache-Control", "public" },
-							{ "ETag", eTag },
-							{ "Last-Modifed", $"{lastModifed.ToHttpString()}" }
-						}, true);
+						context.SetResponseHeaders((int)HttpStatusCode.NotModified, eTag, lastModifed.ToUnixTimestamp(), "public", context.GetCorrelationID());
 						if (Global.IsDebugLogEnabled)
-							Global.Logger.LogDebug($"Response to request of static file with code 304 to reduce traffic ({filePath})");
+							Global.Logger.LogDebug($"Response to request of static file with status code 304 to reduce traffic ({filePath})");
 						return;
 					}
 				}
@@ -172,16 +168,16 @@ namespace net.vieapps.Services.APIGateway
 					throw new FileNotFoundException($"Not Found [{requestUri}]");
 
 				// prepare body
-				new FileExtensionContentTypeProvider().TryGetContentType(fileInfo.Name, out string staticMimeType);
+				var staticMimeType = fileInfo.GetMimeType();
 				var staticContent = await UtilityService.ReadTextFileAsync(fileInfo).ConfigureAwait(false);
 				staticContent = staticMimeType.IsEndsWith("json")
 					? JObject.Parse(staticContent).ToString(Formatting.Indented)
 					: staticContent;
 
 				// response
-				context.SetResponseHeaders((int)HttpStatusCode.OK, new Dictionary<string, string>
+				context.SetResponseHeaders((int)HttpStatusCode.OK, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
 				{
-					{ "Content-Type", (string.IsNullOrWhiteSpace(staticMimeType) ? "text/plain" : staticMimeType) + "; charset=utf-8" },
+					{ "Content-Type", $"{staticMimeType}; charset=utf-8" },
 					{ "ETag", eTag },
 					{ "Last-Modified", $"{fileInfo.LastWriteTime.ToHttpString()}" },
 					{ "Cache-Control", "public" },

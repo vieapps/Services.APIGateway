@@ -156,7 +156,7 @@ namespace net.vieapps.Services.APIGateway
 				MailSender.Messages.Remove(msg.ID);
 
 				Global.OnSendEmailSuccess?.Invoke(
-					"The email has been sent" + "\r\n" +
+					"The email message has been sent" + "\r\n" +
 					$"- ID: {msg.ID}" + "\r\n" +
 					$"- From: {msg.From}" + "\r\n" +
 					$"- To: {msg.To}" + (!msg.Cc.Equals("") ? " / " + msg.Cc : "") + (!msg.Bcc.Equals("") ? " / " + msg.Bcc : "") + "\r\n" +

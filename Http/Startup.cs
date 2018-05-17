@@ -121,7 +121,7 @@ namespace net.vieapps.Services.APIGateway
 			var path = UtilityService.GetAppSetting("Path:Logs");
 			if (!string.IsNullOrWhiteSpace(path) && Directory.Exists(path))
 			{
-				path = Path.Combine(path, "{Date}_" + Global.ServiceName.ToLower() + ".http.txt");
+				path = Path.Combine(path, "{Date}" + $"_{Global.ServiceName.ToLower()}.http.txt");
 				loggerFactory.AddFile(path, logLevel);
 			}
 			else
@@ -139,7 +139,7 @@ namespace net.vieapps.Services.APIGateway
 			};
 
 			// initialize middlewares
-			app.UseErrorCodePages();
+			app.UseStatusCodeHandler();
 			app.UseResponseCompression();
 			app.UseCache();
 			//app.UseSession();

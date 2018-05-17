@@ -16,12 +16,12 @@ namespace net.vieapps.Services.APIGateway
 {
 	static class Program
 	{
-		internal static CancellationTokenSource CancellationTokenSource = null;
-		internal static MainForm MainForm = null;
-		internal static ManagementForm ManagementForm = null;
-		internal static IServiceManager ServiceManager = null;
-		internal static ILoggingService LoggingService = null;
-		internal static ControlComponent Component = null;
+		internal static CancellationTokenSource CancellationTokenSource { get; set; } = null;
+		internal static MainForm MainForm { get; set; } = null;
+		internal static ManagementForm ManagementForm { get; set; } = null;
+		internal static IServiceManager ServiceManager { get; set; } = null;
+		internal static ILoggingService LoggingService { get; set; } = null;
+		internal static ControlComponent Component { get; set; } = null;
 
 		[STAThread]
 		static void Main(string[] args)
@@ -49,46 +49,39 @@ namespace net.vieapps.Services.APIGateway
 			catch { }
 #endif
 
-			var loggerFactory = new ServiceCollection()
-				.AddLogging(builder => builder.SetMinimumLevel(logLevel))
-				.BuildServiceProvider()
-				.GetService<ILoggerFactory>();
-
+			Logger.AssignLoggerFactory(new ServiceCollection().AddLogging(builder => builder.SetMinimumLevel(logLevel)).BuildServiceProvider().GetService<ILoggerFactory>());
 			var path = UtilityService.GetAppSetting("Path:Logs");
 			if (Directory.Exists(path))
 			{
 				path = Path.Combine(path, "{Date}_apigateway.controller.txt");
-				loggerFactory.AddFile(path, logLevel);
+				Logger.GetLoggerFactory().AddFile(path, logLevel);
 			}
 
-			Logger.AssignLoggerFactory(loggerFactory);
-			var logger = loggerFactory.CreateLogger<ControlComponent>();
+			// setup event handlers
+			Program.SetupEventHandlers(Logger.CreateLogger<ControlComponent>());
 
+			// run as a Windows desktop app
+			if (Environment.UserInteractive)
+			{
+				Application.EnableVisualStyles();
+				Application.SetCompatibleTextRenderingDefault(false);
+				Program.GetServiceManager();
+				Program.MainForm = new MainForm(args);
+				Application.Run(Program.MainForm);
+			}
+
+			// run as a Windows service
+			else
+				System.ServiceProcess.ServiceBase.Run(new ServiceRunner());
+		}
+
+		static void SetupEventHandlers(ILogger logger)
+		{
 			Global.OnProcess = Global.OnSendRTUMessageSuccess = (message) =>
 			{
 				logger.LogInformation(message);
 				if (Environment.UserInteractive)
 					Program.MainForm.UpdateLogs(message);
-			};
-
-			Global.OnSendEmailSuccess = (message) =>
-			{
-				logger.LogInformation(message);
-				if (Environment.UserInteractive)
-					Program.MainForm.UpdateLogs(message);
-				if (Program.LoggingService == null)
-					Program.LoggingService = WAMPConnections.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<ILoggingService>(ProxyInterceptor.Create());
-				Task.Run(() => Program.LoggingService.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "Emails", message)).ConfigureAwait(false);
-			};
-
-			Global.OnSendWebHookSuccess = (message) =>
-			{
-				logger.LogInformation(message);
-				if (Environment.UserInteractive)
-					Program.MainForm.UpdateLogs(message);
-				if (Program.LoggingService == null)
-					Program.LoggingService = WAMPConnections.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<ILoggingService>(ProxyInterceptor.Create());
-				Task.Run(() => Program.LoggingService.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "WebHooks", message)).ConfigureAwait(false);
 			};
 
 			Global.OnError = Global.OnSendRTUMessageFailure = (message, exception) =>
@@ -98,14 +91,34 @@ namespace net.vieapps.Services.APIGateway
 					Program.MainForm.UpdateLogs(message);
 			};
 
+			Global.OnLogsUpdated = (serviceName, message) =>
+			{
+				if (Environment.UserInteractive && (!"APIGateway".IsEquals(serviceName) ? true : !message.IsContains("email message") && !message.IsContains("web-hook message")))
+					Program.MainForm.UpdateLogs(message);
+			};
+
+			Global.OnSendEmailSuccess = (message) =>
+			{
+				logger.LogInformation(message);
+				if (Environment.UserInteractive)
+					Program.MainForm.UpdateLogs(message);
+				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "Emails", message)).ConfigureAwait(false);
+			};
+
+			Global.OnSendWebHookSuccess = (message) =>
+			{
+				logger.LogInformation(message);
+				if (Environment.UserInteractive)
+					Program.MainForm.UpdateLogs(message);
+				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "WebHooks", message)).ConfigureAwait(false);
+			};
+
 			Global.OnSendEmailFailure = (message, exception) =>
 			{
 				logger.LogError(message, exception);
 				if (Environment.UserInteractive)
 					Program.MainForm.UpdateLogs(message);
-				if (Program.LoggingService == null)
-					Program.LoggingService = WAMPConnections.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<ILoggingService>(ProxyInterceptor.Create());
-				Task.Run(() => Program.LoggingService.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "Emails", message, exception.GetStack())).ConfigureAwait(false);
+				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "Emails", message, exception.GetStack())).ConfigureAwait(false);
 			};
 
 			Global.OnSendWebHookFailure = (message, exception) =>
@@ -113,41 +126,21 @@ namespace net.vieapps.Services.APIGateway
 				logger.LogError(message, exception);
 				if (Environment.UserInteractive)
 					Program.MainForm.UpdateLogs(message);
-				if (Program.LoggingService == null)
-					Program.LoggingService = WAMPConnections.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<ILoggingService>(ProxyInterceptor.Create());
-				Task.Run(() => Program.LoggingService.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "WebHooks", message, exception.GetStack())).ConfigureAwait(false);
+				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "WebHooks", message, exception.GetStack())).ConfigureAwait(false);
 			};
 
 			Global.OnServiceStarted = Global.OnServiceStopped = Global.OnGotServiceMessage = (serviceName, message) =>
 			{
-				logger.LogInformation($"-- {serviceName} -------\r\n{message}");
+				logger.LogInformation($"[{serviceName}] => {message}");
 				if (Environment.UserInteractive)
-					Program.MainForm.UpdateLogs($"-- {serviceName} -------\r\n{message}");
+					Program.MainForm.UpdateLogs($"[{serviceName}] => {message}");
 			};
-
-			Global.OnLogsUpdated = (serviceName, message) =>
-			{
-				if (!"APIGateway".IsEquals(serviceName))
-				{
-					logger.LogInformation(message);
-					if (Environment.UserInteractive)
-						Program.MainForm.UpdateLogs(message);
-				}
-			};
-
-			// run as a Windows desktop app
-			if (Environment.UserInteractive)
-			{
-				Application.EnableVisualStyles();
-				Application.SetCompatibleTextRenderingDefault(false);
-
-				Program.MainForm = new MainForm(args);
-				Application.Run(Program.MainForm);
-			}
-
-			// run as a Windows service
-			else
-				System.ServiceProcess.ServiceBase.Run(new ServiceRunner());
 		}
+
+		internal static ILoggingService GetLoggingService()
+			=> Program.LoggingService ?? (Program.LoggingService = WAMPConnections.OutgoingChannel?.RealmProxy.Services.GetCalleeProxy<ILoggingService>(ProxyInterceptor.Create()));
+
+		internal static IServiceManager GetServiceManager()
+			=> Program.ServiceManager ?? (Program.ServiceManager = WAMPConnections.OutgoingChannel?.RealmProxy.Services.GetCalleeProxy<IServiceManager>(ProxyInterceptor.Create()));
 	}
 }

@@ -22,11 +22,12 @@ namespace net.vieapps.Services.APIGateway
 			Program.Component = new ControlComponent(Program.CancellationTokenSource.Token);
 			Program.Component.Start(this._args, async () =>
 			{
-				await Task.Delay(567).ConfigureAwait(false);
-				if (Program.ServiceManager != null)
+				await Task.Delay(1234).ConfigureAwait(false);
+				var serviceManager = Program.GetServiceManager();
+				if (serviceManager != null)
 				{
-					var services = Program.ServiceManager.GetAvailableBusinessServices();
-					services.Select(kvp => kvp.Key).ToList().ForEach(name => services[name] = Program.ServiceManager.IsBusinessServiceRunning(name) ? "Yes" : "No");
+					var services = serviceManager.GetAvailableBusinessServices();
+					services.Select(kvp => kvp.Key).ToList().ForEach(name => services[name] = serviceManager.IsBusinessServiceRunning(name) ? "Yes" : "No");
 					this.UpdateServicesInfo(services.Count, services.Where(kvp => kvp.Value.Equals("Yes")).Count());
 				}
 			});
@@ -41,21 +42,16 @@ namespace net.vieapps.Services.APIGateway
 
 		void ManageServices_Click(object sender, EventArgs args)
 		{
-			if (!Program.Component.Status.Equals("Ready"))
-				return;
-
-			if (Program.ManagementForm == null)
-				Program.ManagementForm = new ManagementForm();
-
-			Program.ManagementForm.Initialize();
-			Program.ManagementForm.Show();
-			Program.ManagementForm.Focus();
+			if (Program.Component.Status.Equals("Ready"))
+			{
+				Program.ManagementForm = Program.ManagementForm ?? new ManagementForm();
+				Program.ManagementForm.Initialize();
+				Program.ManagementForm.Show();
+				Program.ManagementForm.Focus();
+			}
 		}
 
-		void ClearLogs_Click(object sender, EventArgs args)
-		{
-			this.Logs.Text = "";
-		}
+		void ClearLogs_Click(object sender, EventArgs args) => this.Logs.Text = "";
 
 		public delegate void UpdateLogsDelegator(string logs);
 

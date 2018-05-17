@@ -12,10 +12,7 @@ namespace net.vieapps.Services.APIGateway
 {
 	public partial class ManagementForm : Form
 	{
-		public ManagementForm()
-		{
-			this.InitializeComponent();
-		}
+		public ManagementForm() => this.InitializeComponent();
 
 		void ServicesForm_FormClosing(object sender, FormClosingEventArgs e)
 		{
@@ -23,15 +20,9 @@ namespace net.vieapps.Services.APIGateway
 			e.Cancel = true;
 		}
 
-		void Services_SelectedIndexChanged(object sender, EventArgs e)
-		{
-			this.OnSelected();
-		}
+		void Services_SelectedIndexChanged(object sender, EventArgs e) => this.OnSelected();
 
-		void Change_Click(object sender, EventArgs e)
-		{
-			this.OnChange();
-		}
+		void Change_Click(object sender, EventArgs e) => this.OnChange();
 
 		internal void Initialize()
 		{
@@ -47,20 +38,21 @@ namespace net.vieapps.Services.APIGateway
 
 		internal void RefreshServices()
 		{
-			if (Program.ServiceManager == null)
-				Program.ServiceManager = WAMPConnections.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IServiceManager>(ProxyInterceptor.Create());
-
 			this.BusinessServices.Clear();
-			Program.ServiceManager.GetAvailableBusinessServices()
-				.ForEach(kvp => this.BusinessServices.Add($"net.vieapps.services.{kvp.Key}", Program.ServiceManager.IsBusinessServiceRunning(kvp.Key)));
+			var serviceManager = Program.GetServiceManager();
+			serviceManager.GetAvailableBusinessServices().ForEach(kvp =>
+			{
+				this.BusinessServices.Add($"net.vieapps.services.{kvp.Key}", serviceManager.IsBusinessServiceRunning(kvp.Key));
+			});
 		}
 
 		void DisplayServices()
 		{
 			this.Services.Items.Clear();
-			this.BusinessServices
-				.OrderBy(kvp => kvp.Key)
-				.ForEach(kvp => this.Services.Items.Add(new ListViewItem(new[] { kvp.Key, kvp.Value ? "Running" : "Stopped" })));
+			this.BusinessServices.OrderBy(kvp => kvp.Key).ForEach(kvp =>
+			{
+				this.Services.Items.Add(new ListViewItem(new[] { kvp.Key, kvp.Value ? "Running" : "Stopped" }));
+			});
 			Program.MainForm.UpdateServicesInfo(this.BusinessServices.Count, this.BusinessServices.Where(kvp => kvp.Value).Count());
 		}
 
@@ -84,29 +76,39 @@ namespace net.vieapps.Services.APIGateway
 				return;
 
 			var name = this.Services.SelectedItems[0].Text;
+			var serviceManager = Program.GetServiceManager();
+
 			if (this.BusinessServices[name])
 				Task.Run(() =>
 				{
 					try
 					{
-						Program.ServiceManager.StopBusinessService(name.ToArray('.').Last());
+						serviceManager.StopBusinessService(name.ToArray('.').Last());
 						this.BusinessServices[name] = false;
 					}
-					catch { }
+					catch (Exception ex)
+					{
+						Global.OnError($"Cannot stop the business service: {ex.Message}", ex);
+					}
 				})
-				.ContinueWith(task => this.DisplayServices());
+				.ContinueWith(task => this.DisplayServices(), TaskContinuationOptions.OnlyOnRanToCompletion)
+				.ConfigureAwait(false);
 
 			else
 				Task.Run(() =>
 				{
 					try
 					{
-						Program.ServiceManager.StartBusinessService(name.ToArray('.').Last());
+						serviceManager.StartBusinessService(name.ToArray('.').Last());
 						this.BusinessServices[name] = true;
 					}
-					catch { }
+					catch (Exception ex)
+					{
+						Global.OnError($"Cannot start the business service: {ex.Message}", ex);
+					}
 				})
-				.ContinueWith(task => this.DisplayServices());
+				.ContinueWith(task => this.DisplayServices(), TaskContinuationOptions.OnlyOnRanToCompletion)
+				.ConfigureAwait(false);
 		}
 	}
 }

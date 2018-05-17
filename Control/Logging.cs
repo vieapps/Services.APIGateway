@@ -102,18 +102,17 @@ namespace net.vieapps.Services.APIGateway
 				await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
 
 			this._logsAreFlushing = true;
-			try
-			{
-				var lines = new List<string>();
-				while (logs.TryDequeue(out string log))
-					lines.Add(log);
-				await UtilityService.WriteTextFileAsync(Path.Combine(LoggingService.LogsPath, DateTime.Now.ToString("yyyyMMdd-HH") + "_" + name + ".txt"), lines, true, null, this._cancellationTokenSource.Token).ConfigureAwait(false);
-			}
-			catch { }
-			finally
-			{
-				this._logsAreFlushing = false;
-			}
+			var lines = new List<string>();
+			while (logs.TryDequeue(out string log))
+				lines.Add(log);
+			if (lines.Count > 0)
+				try
+				{
+					var filename = $"{DateTime.Now.ToString("yyyyMMdd")}_{name}.{DateTime.Now.ToString("HH")}.txt";
+					await UtilityService.WriteTextFileAsync(Path.Combine(LoggingService.LogsPath, filename), lines, true, null, this._cancellationTokenSource.Token).ConfigureAwait(false);
+				}
+				catch { }
+			this._logsAreFlushing = false;
 		}
 
 		internal void FlushAllLogs()

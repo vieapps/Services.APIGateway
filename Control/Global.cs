@@ -14,17 +14,35 @@ namespace net.vieapps.Services.APIGateway
 {
 	public interface IServiceManager
 	{
+		/// <summary>
+		/// Gets all available business services
+		/// </summary>
+		/// <returns></returns>
 		[WampProcedure("net.vieapps.apigateway.controller.get")]
 		Dictionary<string, string> GetAvailableBusinessServices();
 
+		/// <summary>
+		/// Checks to see a business service is running or not
+		/// </summary>
+		/// <param name="name"></param>
+		/// <returns></returns>
 		[WampProcedure("net.vieapps.apigateway.controller.state")]
 		bool IsBusinessServiceRunning(string name);
 
+		/// <summary>
+		/// Starts a business service
+		/// </summary>
+		/// <param name="name"></param>
+		/// <param name="arguments"></param>
 		[WampProcedure("net.vieapps.apigateway.controller.start")]
 		void StartBusinessService(string name, string arguments = null);
 
+		/// <summary>
+		/// Stops a business service
+		/// </summary>
+		/// <param name="name"></param>
 		[WampProcedure("net.vieapps.apigateway.controller.stop")]
-		void StopBusinessService(string name, bool updateStatus = true);
+		void StopBusinessService(string name);
 	}
 
 	//  --------------------------------------------------------

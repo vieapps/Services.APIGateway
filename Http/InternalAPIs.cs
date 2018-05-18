@@ -32,6 +32,7 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static async Task ProcessRequestAsync(HttpContext context)
 		{
+
 			#region prepare the requesting information			
 			var requestUri = context.GetRequestUri();
 
@@ -81,18 +82,18 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				// get token
-				var appToken = requestInfo.GetParameter("x-app-token");
+				var token = requestInfo.GetParameter("x-app-token");
 
 				// support for Bearer token
-				if (string.IsNullOrWhiteSpace(appToken) && requestInfo.Header.ContainsKey("authorization"))
+				if (string.IsNullOrWhiteSpace(token) && requestInfo.Header.ContainsKey("authorization"))
 				{
-					appToken = requestInfo.GetHeaderParameter("authorization");
-					appToken = appToken.IsStartsWith("Bearer") ? appToken.ToArray(" ").Last() : null;
+					token = requestInfo.GetHeaderParameter("authorization");
+					token = token.IsStartsWith("Bearer") ? token.ToArray(" ").Last() : null;
 				}
 
 				// re-assign
 				if (!requestInfo.Header.ContainsKey("x-app-token"))
-					requestInfo.Header["x-app-token"] = appToken;
+					requestInfo.Header["x-app-token"] = token;
 
 				// parse and update information from token
 				var tokenIsRequired = isActivationProccessed
@@ -103,8 +104,8 @@ namespace net.vieapps.Services.APIGateway
 							? false
 							: true;
 
-				if (!string.IsNullOrWhiteSpace(appToken))
-					await context.UpdateWithAuthenticateTokenAsync(requestInfo.Session, appToken).ConfigureAwait(false);
+				if (!string.IsNullOrWhiteSpace(token))
+					await context.UpdateWithAuthenticateTokenAsync(requestInfo.Session, token).ConfigureAwait(false);
 				else if (tokenIsRequired)
 					throw new InvalidSessionException("Session is invalid (Token is not found)");
 
@@ -121,13 +122,10 @@ namespace net.vieapps.Services.APIGateway
 			}
 			#endregion
 
-			#region prepare others (session identity, user principal, request body)
+			#region prepare others (session identity, request body)
 			// new session
 			if (string.IsNullOrWhiteSpace(requestInfo.Session.SessionID))
-			{
-				requestInfo.Session.SessionID = UtilityService.NewUUID;
-				requestInfo.Session.User.SessionID = requestInfo.Session.SessionID;
-			}
+				requestInfo.Session.SessionID = requestInfo.Session.User.SessionID = UtilityService.NewUUID;
 
 			// request body
 			if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT"))
@@ -201,10 +199,7 @@ namespace net.vieapps.Services.APIGateway
 						try
 						{
 							email = Global.RSA.Decrypt(email);
-							requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
-							{
-								{ "Email", email.Encrypt(Global.EncryptionKey) }
-							};
+							requestInfo.Extra["Email"] = email.Encrypt(Global.EncryptionKey);
 						}
 						catch (Exception ex)
 						{
@@ -217,10 +212,7 @@ namespace net.vieapps.Services.APIGateway
 						try
 						{
 							password = Global.RSA.Decrypt(password);
-							requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
-							{
-								{ "Password", password.Encrypt(Global.EncryptionKey) }
-							};
+							requestInfo.Extra["Password"] = password.Encrypt(Global.EncryptionKey);
 						}
 						catch (Exception ex)
 						{
@@ -233,10 +225,7 @@ namespace net.vieapps.Services.APIGateway
 						try
 						{
 							oldPassword = Global.RSA.Decrypt(oldPassword);
-							requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
-							{
-								{ "OldPassword", oldPassword.Encrypt(Global.EncryptionKey) }
-							};
+							requestInfo.Extra["OldPassword"] = oldPassword.Encrypt(Global.EncryptionKey);
 						}
 						catch (Exception ex)
 						{
@@ -248,24 +237,24 @@ namespace net.vieapps.Services.APIGateway
 					if (!string.IsNullOrWhiteSpace(roles))
 						try
 						{
-							requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
-							{
-								{ "Roles", Global.RSA.Decrypt(roles).Encrypt(Global.EncryptionKey) }
-							};
+							requestInfo.Extra["Roles"] = Global.RSA.Decrypt(roles).Encrypt(Global.EncryptionKey);
 						}
-						catch { }
+						catch (Exception ex)
+						{
+							await context.WriteLogsAsync(InternalAPIs.Logger, "InternalAPIs", $"Error occurred while parsing roles: {ex.Message}", ex);
+						}
 
 					// prepare privileges
 					var privileges = requestBody.Get<string>("Privileges");
 					if (!string.IsNullOrWhiteSpace(privileges))
 						try
 						{
-							requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
-							{
-								{ "Privileges", Global.RSA.Decrypt(privileges).Encrypt(Global.EncryptionKey) }
-							};
+							requestInfo.Extra["Privileges"] = Global.RSA.Decrypt(privileges).Encrypt(Global.EncryptionKey);
 						}
-						catch { }
+						catch (Exception ex)
+						{
+							await context.WriteLogsAsync(InternalAPIs.Logger, "InternalAPIs", $"Error occurred while parsing privileges: {ex.Message}", ex);
+						}
 
 					// prepare information of related service
 					var relatedInfo = requestInfo.Query.ContainsKey("related-service")
@@ -275,12 +264,12 @@ namespace net.vieapps.Services.APIGateway
 						try
 						{
 							relatedInfo = Global.RSA.Decrypt(relatedInfo);
-							requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
-							{
-								{ "RelatedInfo", relatedInfo.Encrypt(Global.EncryptionKey) }
-							};
+							requestInfo.Extra["RelatedInfo"] = relatedInfo.Encrypt(Global.EncryptionKey);
 						}
-						catch { }
+						catch (Exception ex)
+						{
+							await context.WriteLogsAsync(InternalAPIs.Logger, "InternalAPIs", $"Error occurred while parsing information of related service: {ex.Message}", ex);
+						}
 
 					// preapare
 					var objectIdentity = requestInfo.GetObjectIdentity();
@@ -293,18 +282,12 @@ namespace net.vieapps.Services.APIGateway
 
 						var requestCreateAccount = requestInfo.GetHeaderParameter("x-create");
 						if (!string.IsNullOrWhiteSpace(requestCreateAccount) && requestCreateAccount.Equals(requestInfo.Session.SessionID.GetEncryptedID()))
-							requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
-							{
-								{ "x-create", "" }
-							};
+							requestInfo.Extra["x-create"] = "";
 					}
 
 					// prepare to invite
 					else if ("invite".IsEquals(objectIdentity))
-						requestInfo.Extra = new Dictionary<string, string>(requestInfo.Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
-						{
-							{ "x-invite", "" }
-						};
+						requestInfo.Extra["x-invite"] = "";
 
 					// prepare to reset password
 					else if ("reset".IsEquals(objectIdentity) && (string.IsNullOrWhiteSpace(email) || !captchaIsValid))
@@ -637,13 +620,13 @@ namespace net.vieapps.Services.APIGateway
 				// two-factors authentication
 				var oldSessionID = string.Empty;
 				var require2FA = json["Require2FA"] != null
-					? (json["Require2FA"] as JValue).Value.CastAs<bool>()
+					? json.Get<bool>("Require2FA")
 					: false;
 
 				if (require2FA)
 					json = new JObject
 					{
-						{ "ID", (json["ID"] as JValue).Value as string },
+						{ "ID", json.Get<string>("ID") },
 						{ "Require2FA", true },
 						{ "Providers", json["Providers"] as JArray }
 					};
@@ -705,9 +688,6 @@ namespace net.vieapps.Services.APIGateway
 			{
 				// prepare
 				var body = requestInfo.GetBodyExpando();
-				if (body == null)
-					throw new InvalidTokenException("OTP is invalid (empty)");
-
 				var id = body.Get<string>("ID");
 				var otp = body.Get<string>("OTP");
 				var info = body.Get<string>("Info");
@@ -733,7 +713,7 @@ namespace net.vieapps.Services.APIGateway
 					ServiceName = "Users",
 					ObjectName = "OTP",
 					Verb = "POST",
-					Body = new JObject()
+					Body = new JObject
 					{
 						{ "ID", id.Encrypt(Global.EncryptionKey) },
 						{ "OTP", otp.Encrypt(Global.EncryptionKey) },
@@ -818,7 +798,7 @@ namespace net.vieapps.Services.APIGateway
 				await context.CreateSessionAsync(requestInfo).ConfigureAwait(false);
 
 				// response
-				var json = new JObject()
+				var json = new JObject
 				{
 					{ "ID", requestInfo.Session.SessionID },
 					{ "DeviceID", requestInfo.Session.DeviceID }
@@ -857,7 +837,7 @@ namespace net.vieapps.Services.APIGateway
 			await context.CreateSessionAsync(requestInfo).ConfigureAwait(false);
 
 			// response
-			json = new JObject()
+			json = new JObject
 			{
 				{ "ID", requestInfo.Session.SessionID },
 				{ "DeviceID", requestInfo.Session.DeviceID }
@@ -1035,7 +1015,7 @@ namespace net.vieapps.Services.APIGateway
 				var deviceID = (message.Data["Device"] as JValue).Value as string;
 				var verification = (message.Data["Verification"] as JValue).Value.CastAs<bool>();
 
-				var json = new JObject()
+				var json = new JObject
 				{
 					{ "ID", sessionID },
 					{ "UserID", user.ID },
@@ -1067,7 +1047,7 @@ namespace net.vieapps.Services.APIGateway
 				var user = (message.Data["User"] as JObject).FromJson<User>();
 				var deviceID = (message.Data["Device"] as JValue).Value as string;
 
-				var json = new JObject()
+				var json = new JObject
 				{
 					{ "ID", sessionID },
 					{ "UserID", user.ID },

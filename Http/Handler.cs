@@ -118,19 +118,14 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				// prepare
-				var rootPath = path.IsEquals("statics")
-					? UtilityService.GetAppSetting("Path:StaticFiles", this._environment.ContentRootPath + "/data-files/statics")
-					: this._environment.ContentRootPath;
+				FileInfo fileInfo = null;
 
-				var filePath = string.IsNullOrWhiteSpace(requestUri.PathAndQuery)
-					? "/geo/countries.json"
-					: requestUri.PathAndQuery;
-
+				var filePath = requestUri.PathAndQuery;
 				if (filePath.IndexOf("?") > 0)
 					filePath = filePath.Left(filePath.IndexOf("?"));
 
-				filePath = (rootPath + filePath.Replace("/statics/", "/")).Replace("//", "/").Replace(@"\", "/").Replace("/", Path.DirectorySeparatorChar.ToString());
-				FileInfo fileInfo = null;
+				filePath = (path.IsEquals("statics") ? UtilityService.GetAppSetting("Path:StaticFiles", this._environment.ContentRootPath + "/data-files/statics") : this._environment.ContentRootPath) + filePath.Replace("/statics/", "/");
+				filePath = filePath.Replace("//", "/").Replace(@"\", "/").Replace("/", Path.DirectorySeparatorChar.ToString());
 
 				// check caching headers to reduce traffic
 				var eTag = "Static#" + $"{requestUri}".ToLower().GenerateUUID();
@@ -157,7 +152,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 						context.SetResponseHeaders((int)HttpStatusCode.NotModified, eTag, lastModifed.ToUnixTimestamp(), "public", context.GetCorrelationID());
 						if (Global.IsDebugLogEnabled)
-							Global.Logger.LogDebug($"Response to request of static file with status code 304 to reduce traffic ({filePath})");
+							context.WriteLogs("StaticFiles", $"Response to request of static file with status code 304 to reduce traffic ({filePath})");
 						return;
 					}
 				}
@@ -168,30 +163,28 @@ namespace net.vieapps.Services.APIGateway
 					throw new FileNotFoundException($"Not Found [{requestUri}]");
 
 				// prepare body
-				var staticMimeType = fileInfo.GetMimeType();
-				var staticContent = await UtilityService.ReadTextFileAsync(fileInfo).ConfigureAwait(false);
-				staticContent = staticMimeType.IsEndsWith("json")
-					? JObject.Parse(staticContent).ToString(Formatting.Indented)
-					: staticContent;
+				var fileMimeType = fileInfo.GetMimeType();
+				var fileContent = fileMimeType.IsEndsWith("json")
+					? JObject.Parse(await UtilityService.ReadTextFileAsync(fileInfo, null, Global.CancellationTokenSource.Token).ConfigureAwait(false)).ToString(Formatting.Indented).ToBytes()
+					: await UtilityService.ReadBinaryFileAsync(fileInfo, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 
 				// response
-				context.SetResponseHeaders((int)HttpStatusCode.OK, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+				context.SetResponseHeaders((int)HttpStatusCode.OK, new Dictionary<string, string>
 				{
-					{ "Content-Type", $"{staticMimeType}; charset=utf-8" },
+					{ "Content-Type", $"{fileMimeType}; charset=utf-8" },
 					{ "ETag", eTag },
 					{ "Last-Modified", $"{fileInfo.LastWriteTime.ToHttpString()}" },
 					{ "Cache-Control", "public" },
 					{ "Expires", $"{DateTime.Now.AddDays(7).ToHttpString()}" },
 					{ "X-CorrelationID", context.GetCorrelationID() }
 				});
-				await context.WriteAsync(staticContent.ToArraySegment(), Global.CancellationTokenSource.Token).ConfigureAwait(false);
+				await context.WriteAsync(fileContent.ToArraySegment(), Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				if (Global.IsDebugLogEnabled)
-					Global.Logger.LogDebug($"Response to request of static file successful ({filePath} - {fileInfo.Length:#,##0} bytes)");
+					context.WriteLogs("StaticFiles", $"Response to request of static file successful ({filePath} - {fileInfo.Length:#,##0} bytes)");
 			}
 			catch (Exception ex)
 			{
-				if (!(ex is InvalidOperationException))
-					Global.Logger.LogError($"Error occurred while processing request of static file [{requestUri}]", ex);
+				context.WriteLogs("StaticFiles", $"Error occurred while processing request of static file [{requestUri}]", ex);
 				context.ShowHttpError(ex.GetHttpStatusCode(), ex.Message, ex.GetType().GetTypeName(true), context.GetCorrelationID(), ex, Global.IsDebugLogEnabled);
 			}
 		}

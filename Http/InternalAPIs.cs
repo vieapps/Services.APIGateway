@@ -925,7 +925,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			return session.User == null || session.User.ID.Equals("") || session.User.IsSystemAccount
 				? Task.CompletedTask
-				: InternalAPIs.SendInterCommunicateMessageAsync(new CommunicateMessage("Users")
+				: new CommunicateMessage("Users")
 				{
 					Type = "OnlineStatus",
 					Data = new JObject
@@ -938,7 +938,7 @@ namespace net.vieapps.Services.APIGateway
 						{ "IP", session.IP },
 						{ "IsOnline", isOnline },
 					}
-				});
+				}.PublishAsync(RTU.Logger);
 		}
 		#endregion
 
@@ -946,12 +946,12 @@ namespace net.vieapps.Services.APIGateway
 		internal static void OpenWAMPChannels(int waitingTimes = 6789)
 		{
 			var routerInfo = WAMPConnections.GetRouterInfo();
-			Global.Logger.LogInformation($"Attempting to connect to WAMP router [{routerInfo.Item1}{routerInfo.Item2}]");
+			Global.Logger.LogInformation($"Attempting to connect to WAMP router [{routerInfo.Item1}{(routerInfo.Item1.EndsWith("/") ? "" : "/")}{routerInfo.Item2}]");
 			Global.OpenWAMPChannels(
 				(sender, args) =>
 				{
 					Global.Logger.LogInformation($"Incomming channel to WAMP router is established - Session ID: {args.SessionId}");
-					InternalAPIs.InterCommunicateMessageUpdater = WAMPConnections.IncommingChannel.RealmProxy.Services
+					Global.InterCommunicateMessageUpdater = WAMPConnections.IncommingChannel.RealmProxy.Services
 						.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
 						.Subscribe(
 							async (message) =>
@@ -960,7 +960,7 @@ namespace net.vieapps.Services.APIGateway
 								{
 									await InternalAPIs.ProcessInterCommunicateMessageAsync(message).ConfigureAwait(false);
 									if (Global.IsDebugLogEnabled)
-										await Global.WriteLogsAsync(RTU.Logger, "RTU", $"Process an inter-communicate message successful\r\n{message?.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
+										await Global.WriteLogsAsync(RTU.Logger, "RTU", $"Process an inter-communicate message successful {message?.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
 								}
 								catch (Exception ex)
 								{
@@ -987,33 +987,16 @@ namespace net.vieapps.Services.APIGateway
 			);
 		}
 
-		static ISubject<UpdateMessage> UpdateMessagePublisher = null;
-		static IDisposable InterCommunicateMessageUpdater = null;
-
-		internal static async Task SendInterCommunicateMessageAsync(CommunicateMessage message)
-		{
-			try
-			{
-				await Global.RTUService.SendInterCommunicateMessageAsync(message, Global.CancellationTokenSource.Token).ConfigureAwait(false);
-				if (Global.IsDebugResultsEnabled)
-					await Global.WriteLogsAsync(RTU.Logger, "RTU", $"Send an inter-communicate message successful\r\n{message.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}").ConfigureAwait(false);
-			}
-			catch (Exception ex)
-			{
-				await Global.WriteLogsAsync(RTU.Logger, "RTU", $"{ex.Message}", ex).ConfigureAwait(false);
-			}
-		}
-
 		internal static async Task ProcessInterCommunicateMessageAsync(CommunicateMessage message)
 		{
 			// update users' sessions with new access token
 			if (message.Type.Equals("Session#Update"))
 			{
 				// prepare
-				var sessionID = (message.Data["Session"] as JValue).Value as string;
-				var user = (message.Data["User"] as JObject).FromJson<User>();
-				var deviceID = (message.Data["Device"] as JValue).Value as string;
-				var verification = (message.Data["Verification"] as JValue).Value.CastAs<bool>();
+				var sessionID = message.Data.Get<string>("Session");
+				var user = message.Data.Get<JObject>("User").FromJson<User>();
+				var deviceID = message.Data.Get<string>("Device");
+				var verification = message.Data.Get<bool>("Verification");
 
 				var json = new JObject
 				{
@@ -1022,30 +1005,30 @@ namespace net.vieapps.Services.APIGateway
 					{ "DeviceID", deviceID }
 				};
 
-				// update
-				Global.CurrentHttpContext.UpdateSessionJson(new Session
+				new Session
 				{
 					SessionID = sessionID,
 					DeviceID = deviceID,
 					User = user,
 					Verification = verification
-				}, json);
+				}.UpdateSessionJson(json, Global.CurrentHttpContext?.Items);
 
+				// send update message
 				await new UpdateMessage
 				{
 					Type = "Users#Session#Update",
 					DeviceID = deviceID,
 					Data = json
-				}.PublishAsync().ConfigureAwait(false);
+				}.PublishAsync(RTU.Logger).ConfigureAwait(false);
 			}
 
 			// revoke users' sessions
 			else if (message.Type.Equals("Session#Revoke"))
 			{
 				// prepare
-				var sessionID = (message.Data["Session"] as JValue).Value as string;
-				var user = (message.Data["User"] as JObject).FromJson<User>();
-				var deviceID = (message.Data["Device"] as JValue).Value as string;
+				var sessionID = message.Data.Get<string>("Session");
+				var user = message.Data.Get<JObject>("User").FromJson<User>();
+				var deviceID = message.Data.Get<string>("Device");
 
 				var json = new JObject
 				{
@@ -1054,70 +1037,21 @@ namespace net.vieapps.Services.APIGateway
 					{ "DeviceID", deviceID },
 				};
 
-				// update
-				Global.CurrentHttpContext.UpdateSessionJson(new Session
+				new Session
 				{
 					SessionID = sessionID,
 					DeviceID = deviceID,
 					User = user
-				}, json);
+				}.UpdateSessionJson(json, Global.CurrentHttpContext?.Items);
 
+				// send update message
 				await new UpdateMessage
 				{
 					Type = "Users#Session#Revoke",
 					DeviceID = deviceID,
 					Data = json
-				}.PublishAsync().ConfigureAwait(false);
+				}.PublishAsync(RTU.Logger).ConfigureAwait(false);
 			}
-		}
-
-		internal static void Publish(this UpdateMessage message)
-		{
-			if (InternalAPIs.UpdateMessagePublisher == null)
-				try
-				{
-					InternalAPIs.UpdateMessagePublisher = WAMPConnections.OutgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages");
-					InternalAPIs.UpdateMessagePublisher.OnNext(message);
-				}
-				catch (Exception ex)
-				{
-					Global.WriteLogs(RTU.Logger, "RTU", $"{ex.Message} => {message.ToJson().ToString(Formatting.Indented)}", ex);
-				}
-
-			else
-				try
-				{
-					InternalAPIs.UpdateMessagePublisher.OnNext(message);
-				}
-				catch (Exception ex)
-				{
-					Global.WriteLogs(RTU.Logger, "RTU", $"{ex.Message} => {message.ToJson().ToString(Formatting.Indented)}", ex);
-				}
-		}
-
-		internal static async Task PublishAsync(this UpdateMessage message)
-		{
-			if (InternalAPIs.UpdateMessagePublisher == null)
-				try
-				{
-					await WAMPConnections.OpenOutgoingChannelAsync().ConfigureAwait(false);
-					InternalAPIs.UpdateMessagePublisher = WAMPConnections.OutgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages");
-					InternalAPIs.UpdateMessagePublisher.OnNext(message);
-				}
-				catch (Exception ex)
-				{
-					await Global.WriteLogsAsync(RTU.Logger, "RTU", $"{ex.Message} => {message.ToJson().ToString(Formatting.Indented)}", ex).ConfigureAwait(false);
-				}
-
-			else
-				try
-				{
-					InternalAPIs.UpdateMessagePublisher.OnNext(message);
-				}
-				catch (Exception ex)
-				{
-					await Global.WriteLogsAsync(RTU.Logger, "RTU", $"{ex.Message} => {message.ToJson().ToString(Formatting.Indented)}", ex).ConfigureAwait(false);
-				}
 		}
 		#endregion
 

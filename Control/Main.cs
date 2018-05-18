@@ -94,8 +94,8 @@ namespace net.vieapps.Services.APIGateway
 			// connect to WAMP router to open channels
 			async Task openChannelsAsync()
 			{
-				var info = WAMPConnections.GetRouterInfo();
-				Global.OnProcess?.Invoke($"Attempting to connect to WAMP router [{info.Item1}{info.Item2}]");
+				var routerInfo = WAMPConnections.GetRouterInfo();
+				Global.OnProcess?.Invoke($"Attempting to connect to WAMP router [{routerInfo.Item1}{(routerInfo.Item1.EndsWith("/") ? "" : "/")}{routerInfo.Item2}]");
 
 				await Task.WhenAll(
 					WAMPConnections.OpenIncomingChannelAsync(
@@ -554,10 +554,14 @@ namespace net.vieapps.Services.APIGateway
 
 		void PrepareRecycleBin()
 		{
+			var connectionStrings = new Dictionary<string, string>();
+			var dataSources = new Dictionary<string, XmlNode>();
+			var dbProviderFactories = new Dictionary<string, XmlNode>();
+
 			var filenames = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
 				? $"{this._serviceHoster}.config|{this._serviceHoster.Replace(".exe", ".x86.exe")}.config".ToList("|")
 				: $"{this._serviceHoster}.dll.config|{this._serviceHoster.Replace(".dll", ".x86.dll")}.config".ToList("|");
-			var connectionStrings = new Dictionary<string, string>();
+
 			filenames.Where(filename => File.Exists(filename)).ForEach(filename =>
 			{
 				var xml = new XmlDocument();
@@ -573,38 +577,47 @@ namespace net.vieapps.Services.APIGateway
 					}
 
 				if (xml.DocumentElement.SelectNodes("/configuration/net.vieapps.repositories/dataSources/dataSource") is XmlNodeList dataSourceNodes)
-				{
-					Global.OnProcess?.Invoke("Construct data sources");
 					foreach (XmlNode dataSourceNode in dataSourceNodes)
 					{
-						var connectionStringName = dataSourceNode.Attributes["connectionStringName"]?.Value;
-						if (!string.IsNullOrWhiteSpace(connectionStringName) && connectionStrings.ContainsKey(connectionStringName))
+						var dataSourceName = dataSourceNode.Attributes["name"]?.Value;
+						if (!string.IsNullOrWhiteSpace(dataSourceName) && !dataSources.ContainsKey(dataSourceName))
 						{
-							var attribute = xml.CreateAttribute("connectionString");
-							attribute.Value = connectionStrings[connectionStringName];
-							dataSourceNode.Attributes.Append(attribute);
+							var connectionStringName = dataSourceNode.Attributes["connectionStringName"]?.Value;
+							if (!string.IsNullOrWhiteSpace(connectionStringName) && connectionStrings.ContainsKey(connectionStringName))
+							{
+								var attribute = xml.CreateAttribute("connectionString");
+								attribute.Value = connectionStrings[connectionStringName];
+								dataSourceNode.Attributes.Append(attribute);
+								dataSources[dataSourceName] = dataSourceNode;
+							}
 						}
 					}
-					RepositoryStarter.ConstructDataSources(dataSourceNodes, (msg, ex) =>
-					{
-						if (ex != null)
-							Global.OnError?.Invoke(msg, ex);
-						else
-							Global.OnProcess?.Invoke(msg);
-					});
-				}
 
 				if (xml.DocumentElement.SelectNodes("/configuration/dbProviderFactories/add") is XmlNodeList dbProviderFactoryNodes)
-				{
-					Global.OnProcess?.Invoke("Construct database provider factories");
-					RepositoryStarter.ConstructDbProviderFactories(dbProviderFactoryNodes, (msg, ex) =>
+					foreach (XmlNode dbProviderFactoryNode in dbProviderFactoryNodes)
 					{
-						if (ex != null)
-							Global.OnError?.Invoke(msg, ex);
-						else
-							Global.OnProcess?.Invoke(msg);
-					});
-				}
+						var invariant = dbProviderFactoryNode.Attributes["invariant"]?.Value;
+						if (!string.IsNullOrWhiteSpace(invariant) && !dbProviderFactories.ContainsKey(invariant))
+							dbProviderFactories[invariant] = dbProviderFactoryNode;
+					}
+			});
+
+			Global.OnProcess?.Invoke("Construct database provider factories");
+			RepositoryStarter.ConstructDbProviderFactories(dbProviderFactories.Values.ToList(), (msg, ex) =>
+			{
+				if (ex != null)
+					Global.OnError?.Invoke(msg, ex);
+				else
+					Global.OnProcess?.Invoke(msg);
+			});
+
+			Global.OnProcess?.Invoke("Construct data sources");
+			RepositoryStarter.ConstructDataSources(dataSources.Values.ToList(), (msg, ex) =>
+			{
+				if (ex != null)
+					Global.OnError?.Invoke(msg, ex);
+				else
+					Global.OnProcess?.Invoke(msg);
 			});
 		}
 
@@ -613,9 +626,11 @@ namespace net.vieapps.Services.APIGateway
 			// prepare data sources
 			var versionDataSources = new List<string>();
 			var trashDataSources = new List<string>();
+
 			var filenames = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
 				? $"{this._serviceHoster}.config|{this._serviceHoster.Replace(".exe", ".x86.exe")}.config".ToList("|")
 				: $"{this._serviceHoster}.dll.config|{this._serviceHoster.Replace(".dll", ".x86.dll")}.config".ToList("|");
+
 			filenames.Where(filename => File.Exists(filename)).ForEach(filename =>
 			{
 				var xml = new XmlDocument();

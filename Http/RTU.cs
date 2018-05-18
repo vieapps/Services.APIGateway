@@ -50,7 +50,7 @@ namespace net.vieapps.Services.APIGateway
 					Task.Run(() => RTU.WhenMessageReceivedAsync(websocket, result, data)).ConfigureAwait(false);
 				}
 			};
-			Global.Logger.LogInformation($"The {Global.ServiceName} RTU service with WebSocket is started - Buffer size: {Components.WebSockets.WebSocket.ReceiveBufferSize:#,##0} bytes");
+			Global.Logger.LogInformation($"The {Global.ServiceName} RTU is initialized - Buffer size: {Components.WebSockets.WebSocket.ReceiveBufferSize:#,##0} bytes - Keep-Alive interval: {RTU.WebSocket.KeepAliveInterval.TotalSeconds} second(s)");
 		}
 
 		static async Task WhenConnectionEstablishedAsync(ManagedWebSocket websocket)
@@ -63,11 +63,7 @@ namespace net.vieapps.Services.APIGateway
 				queryString = websocket.RequestUri.ParseQuery();
 
 				if (!queryString.ContainsKey("x-request"))
-				{
-					await websocket.SendAsync(new InvalidRequestException("Request is not found")).ConfigureAwait(false);
-					RTU.WebSocket.CloseWebSocket(websocket, WebSocketCloseStatus.InvalidPayloadData, "Request is not found");
-					return;
-				}
+					throw new InvalidRequestException("Request is not found");
 
 				ExpandoObject request;
 				try
@@ -76,18 +72,12 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					await websocket.SendAsync(new InvalidRequestException($"Request is invalid ({ex.Message})", ex)).ConfigureAwait(false);
-					RTU.WebSocket.CloseWebSocket(websocket, WebSocketCloseStatus.InvalidPayloadData, $"Request is invalid ({ex.Message})");
-					return;
+					throw new InvalidRequestException($"Request is invalid ({ex.Message})", ex);
 				}
 
 				var appToken = request.Get<string>("x-app-token");
 				if (string.IsNullOrWhiteSpace(appToken))
-				{
-					await websocket.SendAsync(new TokenNotFoundException("Token is not found")).ConfigureAwait(false);
-					RTU.WebSocket.CloseWebSocket(websocket);
-					return;
-				}
+					throw new TokenNotFoundException("Token is not found");
 
 				websocket.Extra.TryGetValue("User-Agent", out object userAgent);
 				websocket.Extra.TryGetValue("Referrer", out object urlReferrer);
@@ -108,7 +98,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-				await Global.WriteLogsAsync(RTU.Logger, "RTU", $"{ex.Message}", ex).ConfigureAwait(false);
+				await Global.WriteLogsAsync(RTU.Logger, "RTU", ex.Message, ex).ConfigureAwait(false);
 
 				if (ex is TokenNotFoundException || ex is InvalidTokenException || ex is InvalidTokenSignatureException || ex is InvalidSessionException || ex is InvalidRequestException)
 					await websocket.SendAsync(ex).ConfigureAwait(false);
@@ -118,7 +108,7 @@ namespace net.vieapps.Services.APIGateway
 				return;
 			}
 
-			// wait for few times before connecting to WAMP router because Reactive.NET needs few times
+			// wait for few times before connecting to WAMP router because Reactive.NET needs
 			if (queryString.ContainsKey("x-restart"))
 			{
 				// send knock message
@@ -164,7 +154,7 @@ namespace net.vieapps.Services.APIGateway
 										$"- Session Info: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
 										$"- App Info: {session.AppName} @ {session.AppPlatform} - {session.AppOrigin} [IP: {session.IP} - Agent: {session.AppAgent}]" + "\r\n" +
 										$"- Connection Info: {websocket.ID} @ {websocket.RemoteEndPoint}" + "\r\n" +
-										$"- Message:\r\n{message.Data.ToString(Formatting.Indented)}"
+										$"- Message: {message.Data.ToString(Formatting.Indented)}"
 									).ConfigureAwait(false);
 							}
 							catch (Exception ex)
@@ -191,7 +181,7 @@ namespace net.vieapps.Services.APIGateway
 
 			if (s == null || updater == null)
 			{
-				await Global.WriteLogsAsync(RTU.Logger, "RTU", $"Close the connection without attached information (Close status: {websocket?.CloseStatus} - Description: {websocket?.CloseStatusDescription})");
+				await Global.WriteLogsAsync(RTU.Logger, "RTU", $"Connection is closed without attached information (Close status: {websocket?.CloseStatus} - Description: {websocket?.CloseStatusDescription})");
 				if (updater != null)
 					try
 					{
@@ -464,7 +454,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					stopwatch.Stop();
 					await Task.WhenAll(
-						websocket.SendAsync(ex, $"Error: {ex.Message}"),
+						websocket.SendAsync(ex),
 						Global.WriteLogsAsync(RTU.Logger, "RTU",
 							$"End process => Error occurred: {ex.Message}" + "\r\n" +
 							$"- Execution times: {stopwatch.GetElapsedTimes()}" + "\r\n" +
@@ -490,7 +480,7 @@ namespace net.vieapps.Services.APIGateway
 			var type = wampError != null ? wampError.Item3 : exception.GetType().GetTypeName(true);
 			var code = wampError != null ? wampError.Item1 : exception.GetHttpStatusCode();
 
-			var message = new JObject()
+			var message = new JObject
 			{
 				{ "Message", type },
 				{ "Type", type },

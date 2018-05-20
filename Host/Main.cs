@@ -4,8 +4,8 @@ using System.IO;
 using System.Linq;
 using System.Xml;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Diagnostics;
-using System.Reflection;
 using System.Runtime.InteropServices;
 
 using Microsoft.Extensions.Logging;
@@ -21,10 +21,12 @@ namespace net.vieapps.Services.APIGateway
     public class HostComponent
     {
 		IServiceComponent ServiceComponent { get; set; }
+		ILogger Logger { get; set; }
 
 		public void Start(string[] args)
 		{
 			// prepare
+			var stopwatch = Stopwatch.StartNew();
 			var apiCall = args?.FirstOrDefault(a => a.IsStartsWith("/agc:"));
 			var apiCallToStop = apiCall != null && apiCall.IsEquals("/agc:s");
 			var isUserInteractive = Environment.UserInteractive && apiCall == null;
@@ -49,7 +51,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				if (isUserInteractive)
 				{
-					Console.WriteLine($"VIEApps NGX API Gateway - Service Hoster v{Assembly.GetExecutingAssembly().GetVersion()}");
+					Console.WriteLine($"VIEApps NGX API Gateway - Service Hoster v{typeof(HostComponent).Assembly.GetVersion()}");
 					Console.WriteLine("");
 					Console.WriteLine("Syntax: VIEApps.Services.APIGateway.Host /svc:<service-component-namespace,service-assembly>");
 					Console.WriteLine("");
@@ -75,10 +77,31 @@ namespace net.vieapps.Services.APIGateway
 			this.ServiceComponent = serviceType.CreateInstance() as IServiceComponent;
 			if (this.ServiceComponent == null || !(this.ServiceComponent is IService))
 			{
-				Console.WriteLine($"The type of the service component is invalid [{serviceType.GetTypeName()}]");
+				Console.WriteLine($"The type of the service component is invalid [{typeName}]");
 				if (isUserInteractive)
 					Console.ReadLine();
 				return;
+			}
+
+			// prepare the signal to start/stop when the service was called from API Gateway
+			EventWaitHandle waitHandle = null;
+			if (!isUserInteractive)
+			{
+				// get the flag of the existing instance
+				waitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, (this.ServiceComponent as IService).ServiceURI, out bool createdNew);
+
+				// process the call to stop
+				if (apiCallToStop)
+				{
+					// raise an event to stop current existing instance
+					if (!createdNew)
+						waitHandle.Set();
+
+					// then exit
+					waitHandle.Dispose();
+					this.ServiceComponent.Dispose();
+					return;
+				}
 			}
 
 			// prepare default settings of Json.NET
@@ -101,54 +124,49 @@ namespace net.vieapps.Services.APIGateway
 			catch { }
 #endif
 
-			Logger.AssignLoggerFactory(new ServiceCollection().AddLogging(builder => builder.SetMinimumLevel(logLevel)).BuildServiceProvider().GetService<ILoggerFactory>());
+			Components.Utility.Logger.AssignLoggerFactory(new ServiceCollection().AddLogging(builder => builder.SetMinimumLevel(logLevel)).BuildServiceProvider().GetService<ILoggerFactory>());
 
 			var path = UtilityService.GetAppSetting("Path:Logs");
 			if (Directory.Exists(path))
 			{
 				path = Path.Combine(path, "{Date}_" + (this.ServiceComponent as IService).ServiceName.ToLower() + ".txt");
-				Logger.GetLoggerFactory().AddFile(path, logLevel);
+				Components.Utility.Logger.GetLoggerFactory().AddFile(path, logLevel);
 			}
+			else
+				path = null;
 
 			if (isUserInteractive)
-				Logger.GetLoggerFactory().AddConsole(logLevel);
+				Components.Utility.Logger.GetLoggerFactory().AddConsole(logLevel);
 
-			var logger = this.ServiceComponent.Logger = Logger.GetLoggerFactory().CreateLogger(this.ServiceComponent.GetType());
-
-			// prepare the signal to start/stop when the service was called from API Gateway
-			var uri = (this.ServiceComponent as IService).ServiceURI;
-			EventWaitHandle waitHandle = null;
-			if (!isUserInteractive)
-			{
-				// get the flag of the existing instance
-				waitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, uri, out bool createdNew);
-
-				// process the call to stop
-				if (apiCallToStop)
-				{
-					// raise an event to stop current existing instance
-					if (!createdNew)
-						waitHandle.Set();
-
-					// then exit
-					waitHandle.Dispose();
-					this.ServiceComponent.Dispose();
-					return;
-				}
-			}
+			this.Logger = this.ServiceComponent.Logger = Components.Utility.Logger.CreateLogger(serviceType);
 
 			// start the service component
-			logger.LogInformation($"The service [{uri}] is starting...");
-			this.ServiceComponent.Start(args, "false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", "")) ? false : true);
+			this.Logger.LogInformation($"The service is starting");
+			this.Logger.LogInformation($"Version: {serviceType.Assembly.GetVersion()}");
+			this.Logger.LogInformation($"Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? $"Windows {RuntimeInformation.OSArchitecture}" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? $"Linux {RuntimeInformation.OSArchitecture}" : $"Other {RuntimeInformation.OSArchitecture} OS")} ({RuntimeInformation.OSDescription.Trim()})");
+			this.ServiceComponent.Start(
+				args,
+				"false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", "")) ? false : true,
+				service =>
+				{
+					this.Logger.LogInformation($"WAMP router URI: {WAMPConnections.GetRouterInfo().Item1}");
+					this.Logger.LogInformation($"Logs path: {UtilityService.GetAppSetting("Path:Logs")}");
+					this.Logger.LogInformation($"Default logging level: {logLevel}");
+					if (!string.IsNullOrWhiteSpace(path))
+						this.Logger.LogInformation($"Rolling log files is enabled - Path format: {path}");
+					stopwatch.Stop();
+					this.Logger.LogInformation($"The service is started - PID: {Process.GetCurrentProcess().Id} - URI: {service.ServiceURI} - Execution times: {stopwatch.GetElapsedTimes()}");
+					return Task.CompletedTask;
+				}
+			);
 
 			// assign the static instance of the service component
 			ServiceBase.ServiceComponent = this.ServiceComponent as ServiceBase;
-			logger.LogInformation($"The service [{uri}] is started. PID: {Process.GetCurrentProcess().Id}");
 
 			// wait for exit signal
 			if (isUserInteractive)
 			{
-				logger.LogInformation($"=====> Press RETURN to terminate...");
+				this.Logger.LogInformation($"=====> Press RETURN to terminate...");
 				Console.ReadLine();
 				this.Stop();
 			}
@@ -163,6 +181,7 @@ namespace net.vieapps.Services.APIGateway
 		public void Stop()
 		{
 			this.ServiceComponent?.Dispose();
+			this.Logger.LogInformation($"The service is stopped");
 		}
 	}
 }

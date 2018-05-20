@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -18,9 +17,7 @@ namespace net.vieapps.Services.APIGateway
 
 		void MainForm_Load(object sender, EventArgs args)
 		{
-			Program.CancellationTokenSource = new CancellationTokenSource();
-			Program.Component = new ControlComponent(Program.CancellationTokenSource.Token);
-			Program.Component.Start(this._args, async () =>
+			Program.Start(this._args, async () =>
 			{
 				await Task.Delay(1234).ConfigureAwait(false);
 				var serviceManager = Program.GetServiceManager();
@@ -33,12 +30,7 @@ namespace net.vieapps.Services.APIGateway
 			});
 		}
 
-		void MainForm_FormClosed(object sender, FormClosedEventArgs args)
-		{
-			Program.Component.Dispose();
-			Program.CancellationTokenSource.Cancel();
-			Program.CancellationTokenSource.Dispose();
-		}
+		private void MainForm_FormClosed(object sender, FormClosedEventArgs args) => Program.Stop();
 
 		void ManageServices_Click(object sender, EventArgs args)
 		{

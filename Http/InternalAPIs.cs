@@ -28,27 +28,19 @@ namespace net.vieapps.Services.APIGateway
 		internal static Cache Cache { get; set; }
 		internal static ILogger Logger { get; set; }
 		internal static List<string> ExcludedHeaders { get; } = "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,ms-aspnetcore-token,x-original-proto,x-original-for".ToList();
+		internal static HashSet<string> NoTokenRequiredServices { get; } = (UtilityService.GetAppSetting("NoTokenRequiredServices", "") + "|indexes").ToLower().ToHashSet('|', true);
 		#endregion
 
 		internal static async Task ProcessRequestAsync(HttpContext context)
 		{
 
 			#region prepare the requesting information			
-			var requestUri = context.GetRequestUri();
-
-			var queryString = requestUri.ParseQuery(query =>
+			var queryString = context.Request.QueryString.ToDictionary(query =>
 			{
-				var executionFilePath = requestUri.PathAndQuery;
-				if (executionFilePath.IndexOf("?") > 0)
-					executionFilePath = executionFilePath.Left(executionFilePath.IndexOf("?"));
-				if (executionFilePath.Equals("~/") || executionFilePath.Equals("/"))
-					executionFilePath = "";
-				var executionFilePaths = string.IsNullOrWhiteSpace(executionFilePath)
-					? new[] { "" }
-					: executionFilePath.ToLower().ToArray('/', true);
-				query["service-name"] = !string.IsNullOrWhiteSpace(executionFilePaths[0]) ? executionFilePaths[0].GetANSIUri() : "";
-				query["object-name"] = executionFilePaths.Length > 1 && !string.IsNullOrWhiteSpace(executionFilePaths[1]) ? executionFilePaths[1].GetANSIUri() : "";
-				query["object-identity"] = executionFilePaths.Length > 2 && !string.IsNullOrWhiteSpace(executionFilePaths[2]) ? executionFilePaths[2].GetANSIUri() : "";
+				var pathSegments = context.GetRequestPathSegments();
+				query["service-name"] = !string.IsNullOrWhiteSpace(pathSegments[0]) ? pathSegments[0].GetANSIUri() : "";
+				query["object-name"] = pathSegments.Length > 1 && !string.IsNullOrWhiteSpace(pathSegments[1]) ? pathSegments[1].GetANSIUri() : "";
+				query["object-identity"] = pathSegments.Length > 2 && !string.IsNullOrWhiteSpace(pathSegments[2]) ? pathSegments[2].GetANSIUri() : "";
 			});
 
 			var requestInfo = new RequestInfo
@@ -85,10 +77,10 @@ namespace net.vieapps.Services.APIGateway
 				var token = requestInfo.GetParameter("x-app-token");
 
 				// support for Bearer token
-				if (string.IsNullOrWhiteSpace(token) && requestInfo.Header.ContainsKey("authorization"))
+				if (string.IsNullOrWhiteSpace(token))
 				{
-					token = requestInfo.GetHeaderParameter("authorization");
-					token = token.IsStartsWith("Bearer") ? token.ToArray(" ").Last() : null;
+					token = context.GetHeaderParameter("authorization");
+					token = token != null && token.IsStartsWith("Bearer") ? token.ToArray(" ").Last() : null;
 				}
 
 				// re-assign
@@ -100,9 +92,7 @@ namespace net.vieapps.Services.APIGateway
 					? false
 					: isSessionInitialized && (requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.IsSystemAccount) && !requestInfo.Query.ContainsKey("register")
 						? false
-						: requestInfo.ServiceName.IsEquals("indexes")
-							? false
-							: true;
+						: !InternalAPIs.NoTokenRequiredServices.Contains(requestInfo.ServiceName);
 
 				if (!string.IsNullOrWhiteSpace(token))
 					await context.UpdateWithAuthenticateTokenAsync(requestInfo.Session, token).ConfigureAwait(false);
@@ -453,8 +443,8 @@ namespace net.vieapps.Services.APIGateway
 						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "InternalAPIs", new List<string>
 						{
 							$"Successfully process request of session (registration of anonymous user)",
-							$"Request:\r\n{requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-							$"Response:\r\n{json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+							$"Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+							$"Response: {json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
 							$"Execution times: {context.GetExecutionTimes()}"
 						})
 					).ConfigureAwait(false);
@@ -519,8 +509,8 @@ namespace net.vieapps.Services.APIGateway
 						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "InternalAPIs", new List<string>
 						{
 							$"Successfully process request of session (registration of authenticated user)",
-							$"Request:\r\n{requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-							$"Response:\r\n{json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+							$"Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+							$"Response: {json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
 							$"Execution times: {context.GetExecutionTimes()}"
 						})
 					).ConfigureAwait(false);
@@ -656,8 +646,8 @@ namespace net.vieapps.Services.APIGateway
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (sign-in)",
-						$"Request:\r\n{requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-						$"Response:\r\n{json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"Response: {json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
 						$"Execution times: {context.GetExecutionTimes()}"
 					})
 				).ConfigureAwait(false);
@@ -744,8 +734,8 @@ namespace net.vieapps.Services.APIGateway
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (OTP validation)",
-						$"Request:\r\n{requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-						$"Response:\r\n{json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"Response: {json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
 						$"Execution times: {context.GetExecutionTimes()}"
 					})
 				).ConfigureAwait(false);
@@ -812,8 +802,8 @@ namespace net.vieapps.Services.APIGateway
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (sign-out)",
-						$"Request:\r\n{requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-						$"Response:\r\n{json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"Response: {json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
 						$"Execution times: {context.GetExecutionTimes()}"
 					})
 				).ConfigureAwait(false);
@@ -849,8 +839,8 @@ namespace net.vieapps.Services.APIGateway
 				!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "InternalAPIs", new List<string>
 				{
 						$"Successfully process request of session (activation)",
-						$"Request:\r\n{requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-						$"Response:\r\n{json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"Response: {json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
 						$"Execution times: {context.GetExecutionTimes()}"
 				})
 			).ConfigureAwait(false);

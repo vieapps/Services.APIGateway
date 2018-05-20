@@ -27,6 +27,7 @@ namespace net.vieapps.Services.APIGateway
 	internal static class RTU
 	{
 		internal static Components.WebSockets.WebSocket WebSocket { get; private set; }
+
 		internal static ILogger Logger { get; set; }
 
 		internal static void Initialize()
@@ -50,7 +51,13 @@ namespace net.vieapps.Services.APIGateway
 					Task.Run(() => RTU.WhenMessageReceivedAsync(websocket, result, data)).ConfigureAwait(false);
 				}
 			};
-			Global.Logger.LogInformation($"The {Global.ServiceName} RTU is initialized - Buffer size: {Components.WebSockets.WebSocket.ReceiveBufferSize:#,##0} bytes - Keep-Alive interval: {RTU.WebSocket.KeepAliveInterval.TotalSeconds} second(s)");
+			Global.Logger.LogInformation($"WebSocket ({Global.ServiceName} RTU) is initialized - Buffer size: {Components.WebSockets.WebSocket.ReceiveBufferSize:#,##0} bytes - Keep-Alive interval: {RTU.WebSocket.KeepAliveInterval.TotalSeconds} second(s)");
+		}
+
+		internal static void Dispose()
+		{
+			RTU.WebSocket.Dispose();
+			Global.Logger.LogInformation($"WebSocket ({Global.ServiceName} RTU) is stopped");
 		}
 
 		static async Task WhenConnectionEstablishedAsync(ManagedWebSocket websocket)
@@ -126,18 +133,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 			}
 
-			// register online session
-			await Task.WhenAll(
-				session.SendOnlineStatusAsync(true),
-				!Global.IsDebugLogEnabled ? Task.CompletedTask : Global.WriteLogsAsync(RTU.Logger, "RTU",
-					$"The real-time updater of a client's device is started (Account: {(session.User.ID.Equals("") ? "Visitor" : session.User.ID)})" + "\r\n" +
-					$"- Session Info: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
-					$"- App Info: {session.AppName} @ {session.AppPlatform} - {session.AppOrigin} [IP: {session.IP} - Agent: {session.AppAgent}]" + "\r\n" +
-					$"- Connection Info: {websocket.ID} @ {websocket.RemoteEndPoint}"
-				)
-			).ConfigureAwait(false);
-
-			// push
+			// subscribe to push messages
 			websocket.Extra["Session"] = session;
 			websocket.Extra["Updater"] = WAMPConnections.IncommingChannel.RealmProxy.Services
 				.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages")
@@ -171,15 +167,26 @@ namespace net.vieapps.Services.APIGateway
 					},
 					exception => Global.WriteLogs(RTU.Logger, "RTU", $"Error occurred while fetching messages: {exception.Message}", exception)
 				);
+
+			// register online session
+			await Task.WhenAll(
+				session.SendOnlineStatusAsync(true),
+				!Global.IsDebugLogEnabled ? Task.CompletedTask : Global.WriteLogsAsync(RTU.Logger, "RTU",
+					$"The real-time updater of a client's device is started (Account: {(session.User.ID.Equals("") ? "Visitor" : session.User.ID)})" + "\r\n" +
+					$"- Session Info: {session.SessionID} @ {session.DeviceID}" + "\r\n" +
+					$"- App Info: {session.AppName} @ {session.AppPlatform} - {session.AppOrigin} [IP: {session.IP} - Agent: {session.AppAgent}]" + "\r\n" +
+					$"- Connection Info: {websocket.ID} @ {websocket.RemoteEndPoint}"
+				)
+			).ConfigureAwait(false);
 		}
 
 		static async Task WhenConnectionBrokenAsync(ManagedWebSocket websocket)
 		{
 			// prepare
-			websocket.Extra.TryGetValue("Session", out object s);
+			websocket.Extra.TryGetValue("Session", out object wsession);
 			websocket.Extra.TryGetValue("Updater", out object updater);
 
-			if (s == null || updater == null)
+			if (wsession == null || updater == null)
 			{
 				await Global.WriteLogsAsync(RTU.Logger, "RTU", $"Connection is closed without attached information (Close status: {websocket?.CloseStatus} - Description: {websocket?.CloseStatusDescription})");
 				if (updater != null)
@@ -191,7 +198,7 @@ namespace net.vieapps.Services.APIGateway
 				return;
 			}
 
-			var session = s as Session;
+			var session = wsession as Session;
 			if (updater != null)
 				try
 				{
@@ -223,10 +230,14 @@ namespace net.vieapps.Services.APIGateway
 				return;
 
 			// check session
-			websocket.Extra.TryGetValue("Session", out object s);
-			if (!(s is Session session))
+			websocket.Extra.TryGetValue("Session", out object wsession);
+			if (!(wsession is Session session))
 			{
-				await Global.WriteLogsAsync(RTU.Logger, "RTU", $"No session is attached to WebSocket ({websocket.ID} {websocket.RemoteEndPoint})").ConfigureAwait(false);
+				await Task.WhenAll(
+					Global.WriteLogsAsync(RTU.Logger, "RTU", $"No session is attached to WebSocket ({websocket.ID} {websocket.RemoteEndPoint})"),
+					Global.WriteLogsAsync(RTU.Logger, "RTU", $"Currennt information: {wsession?.ToJson().ToString(Formatting.Indented)}")
+				).ConfigureAwait(false);
+				RTU.WebSocket.CloseWebSocket(websocket, WebSocketCloseStatus.Empty, "To restart");
 				return;
 			}
 

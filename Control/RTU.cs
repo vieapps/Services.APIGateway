@@ -88,10 +88,7 @@ namespace net.vieapps.Services.APIGateway
 					try
 					{
 						this.GetCommunicateSubject(message.ServiceName).OnNext(message);
-						Global.OnSendRTUMessageSuccess?.Invoke(
-							"Publish an inter-communicate message successful" + "\r\n" +
-							$"- Message: {message.Data.ToString(Formatting.None)}"
-						);
+						Global.OnSendRTUMessageSuccess?.Invoke($"Publish an inter-communicate message successful {message.Data.ToString(Formatting.None)}");
 					}
 					catch (Exception exception)
 					{
@@ -127,10 +124,7 @@ namespace net.vieapps.Services.APIGateway
 						message =>
 						{
 							subject.OnNext(message);
-							Global.OnSendRTUMessageSuccess?.Invoke(
-								"Publish an inter-communicate message successful" + "\r\n" +
-								$"- Message: {message.Data.ToString(Formatting.None)}"
-							);
+							Global.OnSendRTUMessageSuccess?.Invoke($"Publish an inter-communicate message successful {message.Data.ToString(Formatting.None)}");
 						},
 						exception => Global.OnSendRTUMessageFailure?.Invoke($"Error occurred while publishing an inter-communicate message: {exception.Message}", exception)
 					);

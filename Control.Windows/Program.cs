@@ -1,13 +1,14 @@
 ﻿#region Related components
 using System;
 using System.IO;
-using System.Windows.Forms;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows.Forms;
 
-using Newtonsoft.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
+
+using Newtonsoft.Json;
 
 using net.vieapps.Components.Utility;
 #endregion
@@ -16,12 +17,16 @@ namespace net.vieapps.Services.APIGateway
 {
 	static class Program
 	{
+
+		#region Properties
 		internal static CancellationTokenSource CancellationTokenSource { get; set; } = null;
 		internal static MainForm MainForm { get; set; } = null;
 		internal static ManagementForm ManagementForm { get; set; } = null;
 		internal static IServiceManager ServiceManager { get; set; } = null;
 		internal static ILoggingService LoggingService { get; set; } = null;
 		internal static ControlComponent Component { get; set; } = null;
+		internal static ILogger Logger { get; set; }
+		#endregion
 
 		[STAThread]
 		static void Main(string[] args)
@@ -49,16 +54,18 @@ namespace net.vieapps.Services.APIGateway
 			catch { }
 #endif
 
-			Logger.AssignLoggerFactory(new ServiceCollection().AddLogging(builder => builder.SetMinimumLevel(logLevel)).BuildServiceProvider().GetService<ILoggerFactory>());
+			Components.Utility.Logger.AssignLoggerFactory(new ServiceCollection().AddLogging(builder => builder.SetMinimumLevel(logLevel)).BuildServiceProvider().GetService<ILoggerFactory>());
+			Program.Logger = Components.Utility.Logger.CreateLogger<ControlComponent>();
+
 			var path = UtilityService.GetAppSetting("Path:Logs");
-			if (Directory.Exists(path))
+			if (path != null && Directory.Exists(path))
 			{
 				path = Path.Combine(path, "{Date}_apigateway.controller.txt");
-				Logger.GetLoggerFactory().AddFile(path, logLevel);
+				Components.Utility.Logger.GetLoggerFactory().AddFile(path, logLevel);
 			}
 
 			// setup event handlers
-			Program.SetupEventHandlers(Logger.CreateLogger<ControlComponent>());
+			Program.SetupEventHandlers();
 
 			// run as a Windows desktop app
 			if (Environment.UserInteractive)
@@ -75,18 +82,18 @@ namespace net.vieapps.Services.APIGateway
 				System.ServiceProcess.ServiceBase.Run(new ServiceRunner());
 		}
 
-		static void SetupEventHandlers(ILogger logger)
+		static void SetupEventHandlers()
 		{
 			Global.OnProcess = Global.OnSendRTUMessageSuccess = (message) =>
 			{
-				logger.LogInformation(message);
+				Program.Logger.LogInformation(message);
 				if (Environment.UserInteractive)
 					Program.MainForm.UpdateLogs(message);
 			};
 
 			Global.OnError = Global.OnSendRTUMessageFailure = (message, exception) =>
 			{
-				logger.LogError(message, exception);
+				Program.Logger.LogError(message, exception);
 				if (Environment.UserInteractive)
 					Program.MainForm.UpdateLogs(message);
 			};
@@ -99,7 +106,7 @@ namespace net.vieapps.Services.APIGateway
 
 			Global.OnSendEmailSuccess = (message) =>
 			{
-				logger.LogInformation(message);
+				Program.Logger.LogInformation(message);
 				if (Environment.UserInteractive)
 					Program.MainForm.UpdateLogs(message);
 				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "Emails", message)).ConfigureAwait(false);
@@ -107,7 +114,7 @@ namespace net.vieapps.Services.APIGateway
 
 			Global.OnSendWebHookSuccess = (message) =>
 			{
-				logger.LogInformation(message);
+				Program.Logger.LogInformation(message);
 				if (Environment.UserInteractive)
 					Program.MainForm.UpdateLogs(message);
 				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "WebHooks", message)).ConfigureAwait(false);
@@ -115,7 +122,7 @@ namespace net.vieapps.Services.APIGateway
 
 			Global.OnSendEmailFailure = (message, exception) =>
 			{
-				logger.LogError(message, exception);
+				Program.Logger.LogError(message, exception);
 				if (Environment.UserInteractive)
 					Program.MainForm.UpdateLogs(message);
 				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "Emails", message, exception.GetStack())).ConfigureAwait(false);
@@ -123,7 +130,7 @@ namespace net.vieapps.Services.APIGateway
 
 			Global.OnSendWebHookFailure = (message, exception) =>
 			{
-				logger.LogError(message, exception);
+				Program.Logger.LogError(message, exception);
 				if (Environment.UserInteractive)
 					Program.MainForm.UpdateLogs(message);
 				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "WebHooks", message, exception.GetStack())).ConfigureAwait(false);
@@ -131,7 +138,7 @@ namespace net.vieapps.Services.APIGateway
 
 			Global.OnServiceStarted = Global.OnServiceStopped = Global.OnGotServiceMessage = (serviceName, message) =>
 			{
-				logger.LogInformation($"[{serviceName}] => {message}");
+				Program.Logger.LogInformation($"[{serviceName}] => {message}");
 				if (Environment.UserInteractive)
 					Program.MainForm.UpdateLogs($"[{serviceName}] => {message}");
 			};
@@ -142,5 +149,19 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static IServiceManager GetServiceManager()
 			=> Program.ServiceManager ?? (Program.ServiceManager = WAMPConnections.OutgoingChannel?.RealmProxy.Services.GetCalleeProxy<IServiceManager>(ProxyInterceptor.Create()));
+
+		internal static void Start(string[] args, Func<Task> nextAsync = null)
+		{
+			Program.CancellationTokenSource = new CancellationTokenSource();
+			Program.Component = new ControlComponent(Program.CancellationTokenSource.Token);
+			Program.Component.Start(args, nextAsync);
+		}
+
+		internal static void Stop()
+		{
+			Program.Component.Dispose();
+			Program.CancellationTokenSource.Cancel();
+			Program.Logger.LogInformation($"The API Gateway Services Controller is stopped");
+		}
 	}
 }

@@ -24,13 +24,8 @@ namespace net.vieapps.Services.APIGateway
 	public class Handler
 	{
 		readonly RequestDelegate _next;
-		readonly IHostingEnvironment _environment;
 
-		public Handler(RequestDelegate next, IHostingEnvironment environment)
-		{
-			this._next = next;
-			this._environment = environment;
-		}
+		public Handler(RequestDelegate next) => this._next = next;
 
 		public async Task Invoke(HttpContext context)
 		{
@@ -66,7 +61,11 @@ namespace net.vieapps.Services.APIGateway
 			{
 				await this._next.Invoke(context).ConfigureAwait(false);
 			}
-			catch (InvalidOperationException) { }
+			catch (InvalidOperationException ex)
+			{
+				if (Global.IsDebugLogEnabled)
+					Global.Logger.LogError($"Error occurred while invoking the next middleware: {ex.Message}", ex);
+			}
 			catch (Exception ex)
 			{
 				Global.Logger.LogError($"Error occurred while invoking the next middleware: {ex.Message}", ex);
@@ -77,18 +76,18 @@ namespace net.vieapps.Services.APIGateway
 		{
 			// prepare
 			context.Items["PipelineStopwatch"] = Stopwatch.StartNew();
-			var requestPath = context.GetRequestPathSegments().First().ToLower();
+			var path = context.GetRequestPathSegments(true).First();
 
 			// request to favicon.ico file
-			if (requestPath.IsEquals("favicon.ico"))
+			if (path.Equals("favicon.ico"))
 				context.ShowHttpError((int)HttpStatusCode.NotFound, "Not Found", "FileNotFoundException", context.GetCorrelationID());
 
 			// request to static segments
-			else if (Global.StaticSegments.Count > 0 && Global.StaticSegments.Contains(requestPath))
+			else if (Global.StaticSegments.Contains(path))
 				await this.ProcessStaticRequestAsync(context).ConfigureAwait(false);
 
 			// request to external APIs
-			else if (APIGateway.ExternalAPIs.APIs.ContainsKey(requestPath))
+			else if (APIGateway.ExternalAPIs.APIs.ContainsKey(path))
 				await APIGateway.ExternalAPIs.ProcessRequestAsync(context).ConfigureAwait(false);
 
 			// request to internal APIs
@@ -98,18 +97,18 @@ namespace net.vieapps.Services.APIGateway
 
 		internal async Task ProcessStaticRequestAsync(HttpContext context)
 		{
+			var requestUri = context.GetRequestUri();
 			try
 			{
 				// prepare
 				FileInfo fileInfo = null;
-				var pathSegments = context.GetRequestPathSegments();
+				var pathSegments = requestUri.GetRequestPathSegments();
 				var filePath = pathSegments[0].IsEquals("statics")
-					? UtilityService.GetAppSetting("Path:StaticFiles", this._environment.ContentRootPath + "/data-files/statics")
-					: this._environment.ContentRootPath;
+					? UtilityService.GetAppSetting("Path:StaticFiles", Global.RootPath + "/data-files/statics")
+					: Global.RootPath;
 				filePath += ("/" + string.Join("/", pathSegments)).Replace("/statics/", "/").Replace("//", "/").Replace(@"\", "/").Replace("/", Path.DirectorySeparatorChar.ToString());
 
 				// check request headers to reduce traffict
-				var requestUri = context.GetRequestUri();
 				var eTag = "Static#" + $"{requestUri}".ToLower().GenerateUUID();
 				if (eTag.IsEquals(context.Request.Headers["If-None-Match"].First()))
 				{
@@ -134,7 +133,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 						context.SetResponseHeaders((int)HttpStatusCode.NotModified, eTag, lastModifed.ToUnixTimestamp(), "public", context.GetCorrelationID());
 						if (Global.IsDebugLogEnabled)
-							context.WriteLogs("StaticFiles", $"Response to request with status code 304 to reduce traffic ({filePath})");
+							await context.WriteLogsAsync("StaticFiles", $"Response to request with status code 304 to reduce traffic ({filePath})").ConfigureAwait(false);
 						return;
 					}
 				}
@@ -160,13 +159,14 @@ namespace net.vieapps.Services.APIGateway
 					{ "Expires", $"{DateTime.Now.AddDays(7).ToHttpString()}" },
 					{ "X-CorrelationID", context.GetCorrelationID() }
 				});
-				await context.WriteAsync(fileContent.ToArraySegment(), Global.CancellationTokenSource.Token).ConfigureAwait(false);
-				if (Global.IsDebugLogEnabled)
-					context.WriteLogs("StaticFiles", $"Response to request successful ({filePath} - {fileInfo.Length:#,##0} bytes)");
+				await Task.WhenAll(
+					context.WriteAsync(fileContent.ToArraySegment(), Global.CancellationTokenSource.Token),
+					!Global.IsDebugLogEnabled ? Task.CompletedTask : context.WriteLogsAsync("StaticFiles", $"Response to request successful ({filePath} - {fileInfo.Length:#,##0} bytes)")
+				).ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
-				context.WriteLogs("StaticFiles", $"Error occurred while processing [{context.GetRequestUri()}]", ex);
+				await context.WriteLogsAsync("StaticFiles", $"Error occurred while processing [{requestUri}]", ex).ConfigureAwait(false);
 				context.ShowHttpError(ex.GetHttpStatusCode(), ex.Message, ex.GetType().GetTypeName(true), context.GetCorrelationID(), ex, Global.IsDebugLogEnabled);
 			}
 		}

@@ -6,6 +6,7 @@ using System.Net;
 using System.Text;
 using System.Diagnostics;
 using System.Threading.Tasks;
+using System.Runtime.InteropServices;
 
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Hosting;
@@ -41,12 +42,13 @@ namespace net.vieapps.Services.APIGateway
 				.Run();
 
 			// dispose objects
-			RTU.WebSocket.Dispose();
-			WAMPConnections.CloseChannels();
 			Global.InterCommunicateMessageUpdater?.Dispose();
+			WAMPConnections.CloseChannels();
+			RTU.Dispose();
+
+			Global.RSA.Dispose();
 			Global.CancellationTokenSource.Cancel();
 			Global.CancellationTokenSource.Dispose();
-			Global.RSA.Dispose();
 			Global.Logger.LogInformation($"The {Global.ServiceName} HTTP service is stopped");
 		}
 
@@ -63,14 +65,15 @@ namespace net.vieapps.Services.APIGateway
 			services.AddHttpContextAccessor();
 
 			// IIS integration
-			services.Configure<IISOptions>(options =>
-			{
-				options.ForwardClientCertificate = false;
-				options.AutomaticAuthentication = true;
-			});
+			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+				services.Configure<IISOptions>(options =>
+				{
+					options.ForwardClientCertificate = false;
+					options.AutomaticAuthentication = false;
+				});
 		}
 
-		public void Configure(IApplicationBuilder app)
+		public void Configure(IApplicationBuilder app, IHostingEnvironment environment)
 		{
 			// settings
 			var stopwatch = Stopwatch.StartNew();
@@ -89,13 +92,19 @@ namespace net.vieapps.Services.APIGateway
 
 			Logger.AssignLoggerFactory(loggerFactory);
 			Global.Logger = loggerFactory.CreateLogger<Startup>();
-			Global.Logger.LogInformation($"The {Global.ServiceName} HTTP service is starting");
-			Global.Logger.LogInformation($"Logging is enabled [{logLevel}]");
-			if (!string.IsNullOrWhiteSpace(path))
-				Global.Logger.LogInformation($"Rolling log files is enabled [{path}]");
 
-			Global.ServiceProvider = app.ApplicationServices;
+			Global.Logger.LogInformation($"The {Global.ServiceName} HTTP service is starting");
+			Global.Logger.LogInformation($"Version: {typeof(Startup).Assembly.GetVersion()}");
+			Global.Logger.LogInformation($"Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? $"Windows {RuntimeInformation.OSArchitecture}" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? $"Linux {RuntimeInformation.OSArchitecture}" : $"Other {RuntimeInformation.OSArchitecture} OS")} ({RuntimeInformation.OSDescription.Trim()})");
+#if DEBUG
+			Global.Logger.LogInformation($"Working mode: DEBUG ({(environment.IsDevelopment() ? "Development" : "Production")})");
+#else
+			Global.Logger.LogInformation($"Working mode: RELEASE ({(environment.IsDevelopment() ? "Development" : "Production")})");
+#endif
+
 			Global.CreateRSA();
+			Global.ServiceProvider = app.ApplicationServices;
+			Global.RootPath = environment.ContentRootPath;
 
 			JsonConvert.DefaultSettings = () => new JsonSerializerSettings()
 			{
@@ -120,11 +129,26 @@ namespace net.vieapps.Services.APIGateway
 			app.UseMiddleware<Handler>();
 
 			// caching & logging
-			InternalAPIs.Cache = new Cache("VIEApps-API-Gateway", this.Configuration.GetAppSetting("Cache/ExpirationTime", 30), this.Configuration.GetAppSetting("Cache/Provider", "Redis"));
+			InternalAPIs.Cache = new Cache("VIEApps-API-Gateway", this.Configuration.GetAppSetting("Cache/ExpirationTime", 30), false, this.Configuration.GetAppSetting("Cache/Provider", "Redis"), loggerFactory);
 			InternalAPIs.Logger = loggerFactory.CreateLogger<Handler.InternalAPIs>();
 			RTU.Logger = loggerFactory.CreateLogger<Handler.RTU>();
 
-			// done
+			// final
+			if (environment.IsDevelopment())
+				Global.Logger.LogInformation($"Listening URI: {UtilityService.GetAppSetting("HttpUri:Listen")}");
+			Global.Logger.LogInformation($"WAMP router URI: {WAMPConnections.GetRouterInfo().Item1}");
+			Global.Logger.LogInformation($"API Gateway HTTP service URI: {UtilityService.GetAppSetting("HttpUri:APIs")}");
+			Global.Logger.LogInformation($"Files HTTP service URI: {UtilityService.GetAppSetting("HttpUri:Files")}");
+			Global.Logger.LogInformation($"Users HTTP service URI: {UtilityService.GetAppSetting("HttpUri:Users")}");
+			Global.Logger.LogInformation($"Root path: {Global.RootPath}");
+			Global.Logger.LogInformation($"Logs path: {UtilityService.GetAppSetting("Path:Logs")}");
+			Global.Logger.LogInformation($"Default logging level: {logLevel}");
+			if (!string.IsNullOrWhiteSpace(path))
+				Global.Logger.LogInformation($"Rolling log files is enabled - Path format: {path}");
+			Global.Logger.LogInformation($"Static files path: {UtilityService.GetAppSetting("Path:StaticFiles")}");
+			Global.Logger.LogInformation($"Static segments: {Global.StaticSegments.ToString(", ")}");
+			Global.Logger.LogInformation($"Show debugs: {Global.IsDebugLogEnabled} - Show results: {Global.IsDebugResultsEnabled} - Show stacks: {Global.IsDebugStacksEnabled}");
+
 			stopwatch.Stop();
 			Global.Logger.LogInformation($"The {Global.ServiceName} HTTP service is started - Execution times: {stopwatch.GetElapsedTimes()}");
 			Global.Logger = loggerFactory.CreateLogger<Handler>();

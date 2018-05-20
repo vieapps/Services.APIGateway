@@ -184,7 +184,10 @@ namespace net.vieapps.Services.APIGateway
 			// run start			
 			Task.Run(() =>
 			{
-				Global.OnProcess?.Invoke($"The API Gateway Services Controller is starting");
+				Global.OnProcess?.Invoke("The API Gateway Services Controller is starting");
+				Global.OnProcess?.Invoke($"Version: {typeof(ControlComponent).Assembly.GetVersion()}");
+				Global.OnProcess?.Invoke($"Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? $"Windows {RuntimeInformation.OSArchitecture}" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? $"Linux {RuntimeInformation.OSArchitecture}" : $"Other {RuntimeInformation.OSArchitecture} OS")} ({RuntimeInformation.OSDescription.Trim()})");
+				Global.OnProcess?.Invoke($"Working mode: {(Environment.UserInteractive ? "App" : "Daemon")}");
 				(Global.StatusPath + "," + LoggingService.LogsPath + "," + MailSender.EmailsPath + "," + WebHookSender.WebHooksPath)
 					.ToArray()
 					.Where(path => !Directory.Exists(path))

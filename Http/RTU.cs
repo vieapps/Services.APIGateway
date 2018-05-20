@@ -233,10 +233,11 @@ namespace net.vieapps.Services.APIGateway
 			websocket.Extra.TryGetValue("Session", out object wsession);
 			if (!(wsession is Session session))
 			{
-				await Task.WhenAll(
-					Global.WriteLogsAsync(RTU.Logger, "RTU", $"No session is attached to WebSocket ({websocket.ID} {websocket.RemoteEndPoint})"),
-					Global.WriteLogsAsync(RTU.Logger, "RTU", $"Currennt information: {wsession?.ToJson().ToString(Formatting.Indented)}")
-				).ConfigureAwait(false);
+				await Global.WriteLogsAsync(RTU.Logger, "RTU", new List<string>
+				{
+					$"No session is attached to this WebSocket ({websocket.ID} {websocket.RemoteEndPoint})",
+					$"Extra information: {wsession?.ToJson().ToString(Formatting.Indented)}"
+				}, null, Global.ServiceName, LogLevel.Critical).ConfigureAwait(false);
 				RTU.WebSocket.CloseWebSocket(websocket, WebSocketCloseStatus.Empty, "To restart");
 				return;
 			}

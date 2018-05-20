@@ -29,27 +29,13 @@ namespace net.vieapps.Services.APIGateway
 	{
 		public static void Main(string[] args)
 		{
-			// setup console
-			if (Environment.UserInteractive)
-				Console.OutputEncoding = Encoding.UTF8;
-
-			// host the HTTP with Kestrel
 			WebHost.CreateDefaultBuilder(args)
+				.CaptureStartupErrors(true)
 				.UseStartup<Startup>()
 				.UseKestrel()
 				.UseUrls((args.FirstOrDefault(a => a.IsStartsWith("/listenuri:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/listenuri:", "").Trim() ?? UtilityService.GetAppSetting("HttpUri:Listen", "http://0.0.0.0:8024")))
 				.Build()
 				.Run();
-
-			// dispose objects
-			Global.InterCommunicateMessageUpdater?.Dispose();
-			WAMPConnections.CloseChannels();
-			RTU.Dispose();
-
-			Global.RSA.Dispose();
-			Global.CancellationTokenSource.Cancel();
-			Global.CancellationTokenSource.Dispose();
-			Global.Logger.LogInformation($"The {Global.ServiceName} HTTP service is stopped");
 		}
 
 		public Startup(IConfiguration configuration) => this.Configuration = configuration;
@@ -58,29 +44,21 @@ namespace net.vieapps.Services.APIGateway
 
 		public void ConfigureServices(IServiceCollection services)
 		{
-			// mandatory services
 			services.AddResponseCompression(options => options.EnableForHttps = true);
-			services.AddLogging(builder => builder.SetMinimumLevel(UtilityService.GetAppSetting("Logs:Level", this.Configuration.GetAppSetting("Logging/LogLevel/Default", "Information")).ToEnum<LogLevel>()));
+			services.AddLogging(builder => builder.SetMinimumLevel(this.Configuration.GetAppSetting("Logging/LogLevel/Default", UtilityService.GetAppSetting("Logs:Level", "Information")).ToEnum<LogLevel>()));
 			services.AddCache(options => this.Configuration.GetSection("Cache").Bind(options));
 			services.AddHttpContextAccessor();
-
-			// IIS integration
-			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-				services.Configure<IISOptions>(options =>
-				{
-					options.ForwardClientCertificate = false;
-					options.AutomaticAuthentication = false;
-				});
 		}
 
-		public void Configure(IApplicationBuilder app, IHostingEnvironment environment)
+		public void Configure(IApplicationBuilder app, IApplicationLifetime appLifetime, IHostingEnvironment environment)
 		{
 			// settings
 			var stopwatch = Stopwatch.StartNew();
+			Console.OutputEncoding = Encoding.UTF8;
 			Global.ServiceName = "APIGateway";
 
 			var loggerFactory = app.ApplicationServices.GetService<ILoggerFactory>();
-			var logLevel = UtilityService.GetAppSetting("Logs:Level", this.Configuration.GetAppSetting("Logging/LogLevel/Default", "Information")).ToEnum<LogLevel>();
+			var logLevel = this.Configuration.GetAppSetting("Logging/LogLevel/Default", UtilityService.GetAppSetting("Logs:Level", "Information")).ToEnum<LogLevel>();
 			var path = UtilityService.GetAppSetting("Path:Logs");
 			if (!string.IsNullOrWhiteSpace(path) && Directory.Exists(path))
 			{
@@ -133,25 +111,55 @@ namespace net.vieapps.Services.APIGateway
 			InternalAPIs.Logger = loggerFactory.CreateLogger<Handler.InternalAPIs>();
 			RTU.Logger = loggerFactory.CreateLogger<Handler.RTU>();
 
-			// final
-			if (environment.IsDevelopment())
-				Global.Logger.LogInformation($"Listening URI: {UtilityService.GetAppSetting("HttpUri:Listen")}");
-			Global.Logger.LogInformation($"WAMP router URI: {WAMPConnections.GetRouterInfo().Item1}");
-			Global.Logger.LogInformation($"API Gateway HTTP service URI: {UtilityService.GetAppSetting("HttpUri:APIs")}");
-			Global.Logger.LogInformation($"Files HTTP service URI: {UtilityService.GetAppSetting("HttpUri:Files")}");
-			Global.Logger.LogInformation($"Users HTTP service URI: {UtilityService.GetAppSetting("HttpUri:Users")}");
-			Global.Logger.LogInformation($"Root path: {Global.RootPath}");
-			Global.Logger.LogInformation($"Logs path: {UtilityService.GetAppSetting("Path:Logs")}");
-			Global.Logger.LogInformation($"Default logging level: {logLevel}");
-			if (!string.IsNullOrWhiteSpace(path))
-				Global.Logger.LogInformation($"Rolling log files is enabled - Path format: {path}");
-			Global.Logger.LogInformation($"Static files path: {UtilityService.GetAppSetting("Path:StaticFiles")}");
-			Global.Logger.LogInformation($"Static segments: {Global.StaticSegments.ToString(", ")}");
-			Global.Logger.LogInformation($"Show debugs: {Global.IsDebugLogEnabled} - Show results: {Global.IsDebugResultsEnabled} - Show stacks: {Global.IsDebugStacksEnabled}");
+			// on started
+			appLifetime.ApplicationStarted.Register(() =>
+			{
+				if (environment.IsDevelopment() || Environment.UserInteractive)
+					Global.Logger.LogInformation($"Listening URI: {UtilityService.GetAppSetting("HttpUri:Listen")}");
+				Global.Logger.LogInformation($"WAMP router URI: {WAMPConnections.GetRouterInfo().Item1}");
+				Global.Logger.LogInformation($"API Gateway HTTP service URI: {UtilityService.GetAppSetting("HttpUri:APIs")}");
+				Global.Logger.LogInformation($"Files HTTP service URI: {UtilityService.GetAppSetting("HttpUri:Files")}");
+				Global.Logger.LogInformation($"Users HTTP service URI: {UtilityService.GetAppSetting("HttpUri:Users")}");
+				Global.Logger.LogInformation($"Root path: {Global.RootPath}");
+				Global.Logger.LogInformation($"Logs path: {UtilityService.GetAppSetting("Path:Logs")}");
+				Global.Logger.LogInformation($"Default logging level: {logLevel} [ASP.NET Core always set logging level by value of appsettings.json]");
+				if (!string.IsNullOrWhiteSpace(path))
+					Global.Logger.LogInformation($"Rolling log files is enabled - Path format: {path}");
+				Global.Logger.LogInformation($"Static files path: {UtilityService.GetAppSetting("Path:StaticFiles")}");
+				Global.Logger.LogInformation($"Static segments: {Global.StaticSegments.ToString(", ")}");
+				Global.Logger.LogInformation($"Show debugs: {Global.IsDebugLogEnabled} - Show results: {Global.IsDebugResultsEnabled} - Show stacks: {Global.IsDebugStacksEnabled}");
 
-			stopwatch.Stop();
-			Global.Logger.LogInformation($"The {Global.ServiceName} HTTP service is started - Execution times: {stopwatch.GetElapsedTimes()}");
-			Global.Logger = loggerFactory.CreateLogger<Handler>();
+				stopwatch.Stop();
+				Global.Logger.LogInformation($"The {Global.ServiceName} HTTP service is started - Execution times: {stopwatch.GetElapsedTimes()}");
+				Global.Logger = loggerFactory.CreateLogger<Handler>();
+			});
+
+			// on stopping
+			appLifetime.ApplicationStopping.Register(() =>
+			{
+				Global.Logger = loggerFactory.CreateLogger<Startup>();
+
+				Global.InterCommunicateMessageUpdater?.Dispose();
+				WAMPConnections.CloseChannels();
+				RTU.Dispose();
+
+				Global.RSA.Dispose();
+				Global.CancellationTokenSource.Cancel();
+			});
+
+			// on stopped
+			appLifetime.ApplicationStopped.Register(() =>
+			{
+				Global.CancellationTokenSource.Dispose();
+				Global.Logger.LogInformation($"The {Global.ServiceName} HTTP service is stopped");
+			});
+
+			// don't terminate the process immediately, wait for the Main thread to exit gracefully
+			Console.CancelKeyPress += (sender, args) =>
+			{
+				appLifetime.StopApplication();
+				args.Cancel = true;
+			};
 		}
 	}
 }

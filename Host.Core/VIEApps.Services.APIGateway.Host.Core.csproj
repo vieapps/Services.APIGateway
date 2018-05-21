@@ -4,7 +4,7 @@
 		<OutputType>Exe</OutputType>
 		<TargetFramework>netcoreapp2.0</TargetFramework>
 		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
-		<AssemblyName>VIEApps.Services.APIGateway.Host</AssemblyName>
+		<AssemblyName>VIEApps.Services.APIGateway.Hosting</AssemblyName>
 		<AssemblyTitle>VIEApps NGX API Gateway</AssemblyTitle>
 		<Authors>VIEApps.net</Authors>
 		<Company>VIEApps.net</Company>
@@ -15,11 +15,27 @@
 		<FileVersion>10.2.0.1806</FileVersion>
 		<InformationalVersion>v10.2.netstandard-2+rev:2018.05.16</InformationalVersion>
 		<StartupObject>net.vieapps.Services.APIGateway.Program</StartupObject>
+		<ApplicationIcon>app.ico</ApplicationIcon>
 	</PropertyGroup>
 
 	<ItemGroup>
+	  <None Remove="app.ico" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Content Include="app.ico" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="2.0.2" />
+	  <PackageReference Include="MySqlConnector" Version="0.40.4" />
+	  <PackageReference Include="Npgsql" Version="3.2.7" />
+	  <PackageReference Include="Serilog.Extensions.Logging.File" Version="1.1.0" />
+	  <PackageReference Include="System.Data.SqlClient" Version="4.4.3" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<ProjectReference Include="..\..\Base\VIEApps.Services.Base.csproj" />
-		<ProjectReference Include="..\Host\VIEApps.Services.APIGateway.Host.csproj" />
 	</ItemGroup>
 
 </Project>

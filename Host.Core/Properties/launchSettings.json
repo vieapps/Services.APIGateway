@@ -1,0 +1,7 @@
+{
+  "profiles": {
+    "VIEApps.Services.APIGateway.Host.All": {
+      "commandName": "Project"
+    }
+  }
+}

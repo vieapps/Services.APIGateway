@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Reflection;
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,13 +19,9 @@ using net.vieapps.Components.Utility;
 
 namespace net.vieapps.Services.APIGateway
 {
-    public class HostingComponent
-    {
-		IServiceComponent ServiceComponent { get; set; }
-
-		ILogger Logger { get; set; }
-
-		public void Start(string[] args)
+	class Program
+	{
+		static void Main(string[] args)
 		{
 			// prepare
 			var stopwatch = Stopwatch.StartNew();
@@ -36,7 +33,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// prepare type name
 			var typeName = args?.FirstOrDefault(a => a.IsStartsWith("/svc:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/svc:", "");
-			var configFilename = $"VIEApps.Services.APIGateway.{(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "exe" : "dll")}.config";
+			var configFilename = $"VIEApps.Services.APIGateway.exe.config";
 			if (string.IsNullOrWhiteSpace(typeName) && File.Exists(configFilename) && args?.FirstOrDefault(a => a.IsStartsWith("/svn:")) != null)
 				try
 				{
@@ -52,7 +49,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				if (isUserInteractive)
 				{
-					Console.WriteLine($"VIEApps NGX API Gateway - Service Hosting v{typeof(HostingComponent).Assembly.GetVersion()}");
+					Console.WriteLine($"VIEApps NGX API Gateway - Service Hosting v{Assembly.GetExecutingAssembly().GetVersion()}");
 					Console.WriteLine("");
 					Console.WriteLine("Syntax: VIEApps.Services.APIGateway.Hosting /svc:<service-component-namespace,service-assembly>");
 					Console.WriteLine("");
@@ -65,7 +62,7 @@ namespace net.vieapps.Services.APIGateway
 				return;
 			}
 
-			// initialize the instance of service component
+			// prepare type of the service component
 			var serviceType = Type.GetType(typeName);
 			if (serviceType == null)
 			{
@@ -75,8 +72,9 @@ namespace net.vieapps.Services.APIGateway
 				return;
 			}
 
-			this.ServiceComponent = serviceType.CreateInstance() as IServiceComponent;
-			if (this.ServiceComponent == null || !(this.ServiceComponent is IService))
+			// initialize the instance of service component
+			var serviceComponent = serviceType.CreateInstance() as IServiceComponent;
+			if (serviceComponent == null || !(serviceComponent is IService))
 			{
 				Console.WriteLine($"The type of the service component is invalid [{typeName}]");
 				if (isUserInteractive)
@@ -89,7 +87,7 @@ namespace net.vieapps.Services.APIGateway
 			if (!isUserInteractive)
 			{
 				// get the flag of the existing instance
-				waitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, (this.ServiceComponent as IService).ServiceURI, out bool createdNew);
+				waitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, (serviceComponent as IService).ServiceURI, out bool createdNew);
 
 				// process the call to stop
 				if (apiCallToStop)
@@ -100,7 +98,7 @@ namespace net.vieapps.Services.APIGateway
 
 					// then exit
 					waitHandle.Dispose();
-					this.ServiceComponent.Dispose();
+					serviceComponent.Dispose();
 					return;
 				}
 			}
@@ -125,64 +123,64 @@ namespace net.vieapps.Services.APIGateway
 			catch { }
 #endif
 
-			Components.Utility.Logger.AssignLoggerFactory(new ServiceCollection().AddLogging(builder => builder.SetMinimumLevel(logLevel)).BuildServiceProvider().GetService<ILoggerFactory>());
+			Logger.AssignLoggerFactory(new ServiceCollection().AddLogging(builder => builder.SetMinimumLevel(logLevel)).BuildServiceProvider().GetService<ILoggerFactory>());
 
 			var path = UtilityService.GetAppSetting("Path:Logs");
 			if (Directory.Exists(path))
 			{
-				path = Path.Combine(path, "{Date}_" + (this.ServiceComponent as IService).ServiceName.ToLower() + ".txt");
-				Components.Utility.Logger.GetLoggerFactory().AddFile(path, logLevel);
+				path = Path.Combine(path, "{Date}_" + (serviceComponent as IService).ServiceName.ToLower() + ".txt");
+				Logger.GetLoggerFactory().AddFile(path, logLevel);
 			}
 			else
 				path = null;
 
 			if (isUserInteractive)
-				Components.Utility.Logger.GetLoggerFactory().AddConsole(logLevel);
+				Logger.GetLoggerFactory().AddConsole(logLevel);
 
-			this.Logger = this.ServiceComponent.Logger = Components.Utility.Logger.CreateLogger(serviceType);
+			var logger = serviceComponent.Logger = Logger.CreateLogger(serviceType);
 
 			// start the service component
-			this.Logger.LogInformation($"The service is starting");
-			this.Logger.LogInformation($"Version: {serviceType.Assembly.GetVersion()}");
-			this.Logger.LogInformation($"Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? $"Windows {RuntimeInformation.OSArchitecture}" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? $"Linux {RuntimeInformation.OSArchitecture}" : $"Other {RuntimeInformation.OSArchitecture} OS")} ({RuntimeInformation.OSDescription.Trim()})");
-			this.ServiceComponent.Start(
+			logger.LogInformation($"The service is starting");
+			logger.LogInformation($"Version: {serviceType.Assembly.GetVersion()}");
+			logger.LogInformation($"Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? $"Windows {RuntimeInformation.OSArchitecture}" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? $"Linux {RuntimeInformation.OSArchitecture}" : $"Other {RuntimeInformation.OSArchitecture} OS")} ({RuntimeInformation.OSDescription.Trim()})");
+
+			serviceComponent.Start(
 				args,
 				"false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", "")) ? false : true,
 				service =>
 				{
-					this.Logger.LogInformation($"WAMP router URI: {WAMPConnections.GetRouterInfo().Item1}");
-					this.Logger.LogInformation($"Logs path: {UtilityService.GetAppSetting("Path:Logs")}");
-					this.Logger.LogInformation($"Default logging level: {logLevel}");
+					logger.LogInformation($"WAMP router URI: {WAMPConnections.GetRouterInfo().Item1}");
+					logger.LogInformation($"Logs path: {UtilityService.GetAppSetting("Path:Logs")}");
+					logger.LogInformation($"Default logging level: {logLevel}");
 					if (!string.IsNullOrWhiteSpace(path))
-						this.Logger.LogInformation($"Rolling log files is enabled - Path format: {path}");
+						logger.LogInformation($"Rolling log files is enabled - Path format: {path}");
 					stopwatch.Stop();
-					this.Logger.LogInformation($"The service is started - PID: {Process.GetCurrentProcess().Id} - URI: {service.ServiceURI} - Execution times: {stopwatch.GetElapsedTimes()}");
-					this.Logger.LogWarning($"=====> Press RETURN to terminate...............");
+					logger.LogInformation($"The service is started - PID: {Process.GetCurrentProcess().Id} - URI: {service.ServiceURI} - Execution times: {stopwatch.GetElapsedTimes()}");
+					if (isUserInteractive)
+						logger.LogWarning($"=====> Press RETURN to terminate...............");
 					return Task.CompletedTask;
 				}
 			);
 
 			// assign the static instance of the service component
-			ServiceBase.ServiceComponent = this.ServiceComponent as ServiceBase;
+			ServiceBase.ServiceComponent = serviceComponent as ServiceBase;
 
 			// wait for exit signal
 			if (isUserInteractive)
 			{
 				Console.ReadLine();
-				this.Stop();
+				serviceComponent.Stop();
+				serviceComponent.Dispose();
 			}
 			else
 			{
 				waitHandle.WaitOne();
 				waitHandle.Dispose();
-				this.Stop();
+				serviceComponent.Stop();
+				serviceComponent.Dispose();
 			}
-		}
 
-		public void Stop()
-		{
-			this.ServiceComponent?.Dispose();
-			this.Logger.LogInformation($"The service is stopped");
+			logger.LogInformation($"The service is stopped");
 		}
 	}
 }

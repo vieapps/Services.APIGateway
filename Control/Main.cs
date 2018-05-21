@@ -31,7 +31,7 @@ namespace net.vieapps.Services.APIGateway
 			this._cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 			this._loggingService = new LoggingService(this._cancellationTokenSource.Token);
 			this._serviceHosting = UtilityService.GetAppSetting("ServiceHosting", "VIEApps.Services.APIGateway.Hosting").Trim();
-			if (this._serviceHosting.IsEndsWith(".exe"))
+			if (this._serviceHosting.IsEndsWith(".exe") || this._serviceHosting.IsEndsWith(".dll"))
 				this._serviceHosting = this._serviceHosting.Left(this._serviceHosting.Length - 4);
 		}
 
@@ -47,7 +47,7 @@ namespace net.vieapps.Services.APIGateway
 		readonly List<IDisposable> _timers = new List<IDisposable>();
 		MailSender _mailSender = null;
 		WebHookSender _webhookSender = null;
-		bool _isHouseKeeperRunning = false, _isTaskSchedulerRunning = false;
+		bool _isHouseKeeperRunning = false, _isTaskSchedulerRunning = false, _isNETCore = RuntimeInformation.FrameworkDescription.Contains(".NET Core");
 		readonly Dictionary<string, Tuple<string, string, string>> _tasks = new Dictionary<string, Tuple<string, string, string>>();
 		readonly List<Tuple<int, string>> _runningTasks = new List<Tuple<int, string>>();
 
@@ -158,7 +158,7 @@ namespace net.vieapps.Services.APIGateway
 										}
 										catch (Exception ex)
 										{
-											Global.OnError?.Invoke("Error occurred while invoking the next action", ex);
+											Global.OnError?.Invoke($"Error occurred while invoking the next action: {ex.Message}", ex);
 										}
 								}, TaskContinuationOptions.OnlyOnRanToCompletion)
 								.ConfigureAwait(false);
@@ -192,8 +192,13 @@ namespace net.vieapps.Services.APIGateway
 			{
 				Global.OnProcess?.Invoke("The API Gateway Services Controller is starting");
 				Global.OnProcess?.Invoke($"Version: {typeof(Controller).Assembly.GetVersion()}");
-				Global.OnProcess?.Invoke($"Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? $"Windows {RuntimeInformation.OSArchitecture}" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? $"Linux {RuntimeInformation.OSArchitecture}" : $"Other {RuntimeInformation.OSArchitecture} OS")} ({RuntimeInformation.OSDescription.Trim()})");
-				Global.OnProcess?.Invoke($"Working mode: {(Environment.UserInteractive ? "App" : "Daemon")}");
+				Global.OnProcess?.Invoke($"Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : $"Other OS")} {RuntimeInformation.OSArchitecture} ({RuntimeInformation.OSDescription.Trim()})");
+#if DEBUG
+				Global.OnProcess?.Invoke($"Working mode: {(Environment.UserInteractive ? "Console App" : "Daemon")} (DEBUG)");
+#else
+				Global.OnProcess?.Invoke($"Working mode: {(Environment.UserInteractive ? "Console App" : "Daemon")} (RELEASE)");
+#endif
+
 				(Global.StatusPath + "," + LoggingService.LogsPath + "," + MailSender.EmailsPath + "," + WebHookSender.WebHooksPath)
 					.ToArray()
 					.Where(path => !Directory.Exists(path))
@@ -232,10 +237,23 @@ namespace net.vieapps.Services.APIGateway
 			this.GetAvailableBusinessServices();
 
 			// start all services
-			if (File.Exists(this._serviceHosting + (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "")))
-				this._availableServices.ForEach(kvp => this.StartBusinessService(kvp.Key));
+			var serviceHosting = this._serviceHosting + (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "");
+			if (File.Exists(serviceHosting))
+				foreach (var kvp in this._availableServices)
+					Task.Run(async () =>
+					{
+						try
+						{
+							await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
+							this.StartBusinessService(kvp.Key);
+						}
+						catch (Exception ex)
+						{
+							Global.OnError?.Invoke($"Error occurred while registering business service [{kvp.Key}] => {ex.Message}", ex);
+						}
+					}).ConfigureAwait(false);
 			else
-				Global.OnError?.Invoke($"The service hosting [{this._serviceHosting}] is not found", null);
+				Global.OnError?.Invoke($"The service hosting [{serviceHosting}] is not found", null);
 		}
 
 		public Dictionary<string, string> GetAvailableBusinessServices()
@@ -278,9 +296,7 @@ namespace net.vieapps.Services.APIGateway
 			var serviceArguments = (arguments ?? "") + $" /agc:{(Environment.UserInteractive ? "g" : "r")} /svc:{serviceType} /svn:{name.ToLower()}";
 
 			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-			{
 				serviceHosting += ".exe";
-			}
 
 			Global.OnProcess?.Invoke($"[{name.ToLower()}] => The service is starting...");
 			var process = UtilityService.RunProcess(
@@ -334,9 +350,7 @@ namespace net.vieapps.Services.APIGateway
 					var serviceArguments = $"/agc:s /svc:{serviceType} /svn:{name.ToLower()}";
 
 					if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-					{
 						serviceHosting += ".exe";
-					}
 
 					UtilityService.RunProcess(serviceHosting, serviceArguments, (sender, args) => this.KillProcess(processID));
 
@@ -573,7 +587,7 @@ namespace net.vieapps.Services.APIGateway
 
 			var filenames = new List<string>
 			{
-				this._serviceHosting + (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : ".dll") + ".config"
+				this._serviceHosting + (this._isNETCore ? ".dll" : ".exe") + ".config"
 			};
 			filenames.Add(filenames[0].Replace(".config", ".x86.config"));
 			filenames.Where(filename => File.Exists(filename)).ForEach(filename =>
@@ -643,7 +657,7 @@ namespace net.vieapps.Services.APIGateway
 
 			var filenames = new List<string>
 			{
-				this._serviceHosting + (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : ".dll") + ".config"
+				this._serviceHosting + (this._isNETCore ? ".dll" : ".exe") + ".config"
 			};
 			filenames.Add(filenames[0].Replace(".config", ".x86.config"));
 			filenames.Where(filename => File.Exists(filename)).ForEach(filename =>

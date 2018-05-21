@@ -36,6 +36,15 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\..\Base\VIEApps.Services.Base.csproj" />
+		<ProjectReference Include="..\..\Books\Service\VIEApps.Services.Books.csproj" />
+		<ProjectReference Include="..\..\Files\Service\VIEApps.Services.Files.csproj" />
+		<ProjectReference Include="..\..\Indexes\VIEApps.Services.Indexes.csproj" />
+		<ProjectReference Include="..\..\Libraries\Service\VIEApps.Services.Libraries.csproj" />
+		<ProjectReference Include="..\..\Marketplaces\VIEApps.Services.Marketplaces.csproj" />
+		<ProjectReference Include="..\..\MssReports\VIEApps.Services.MssReports.csproj" />
+		<ProjectReference Include="..\..\OTPs\Authenticator\VIEApps.Services.OTPs.Authenticator.csproj" />
+		<ProjectReference Include="..\..\Systems\VIEApps.Services.Systems.csproj" />
+		<ProjectReference Include="..\..\Users\Service\VIEApps.Services.Users.csproj" />
 	</ItemGroup>
 
 </Project>

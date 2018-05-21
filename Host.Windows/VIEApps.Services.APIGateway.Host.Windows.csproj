@@ -7,7 +7,7 @@
     <OutputType>Exe</OutputType>
     <FileAlignment>512</FileAlignment>
     <RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
-    <AssemblyName>VIEApps.Services.APIGateway.Host</AssemblyName>
+    <AssemblyName>VIEApps.Services.APIGateway.Hosting</AssemblyName>
     <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
     <TargetFrameworkProfile />
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>

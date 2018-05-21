@@ -24,7 +24,7 @@ namespace net.vieapps.Services.APIGateway
 		internal static ManagementForm ManagementForm { get; set; } = null;
 		internal static IServiceManager ServiceManager { get; set; } = null;
 		internal static ILoggingService LoggingService { get; set; } = null;
-		internal static ControlComponent Component { get; set; } = null;
+		internal static Controller Component { get; set; } = null;
 		internal static ILogger Logger { get; set; }
 		#endregion
 
@@ -55,7 +55,7 @@ namespace net.vieapps.Services.APIGateway
 #endif
 
 			Components.Utility.Logger.AssignLoggerFactory(new ServiceCollection().AddLogging(builder => builder.SetMinimumLevel(logLevel)).BuildServiceProvider().GetService<ILoggerFactory>());
-			Program.Logger = Components.Utility.Logger.CreateLogger<ControlComponent>();
+			Program.Logger = Components.Utility.Logger.CreateLogger<Controller>();
 
 			var path = UtilityService.GetAppSetting("Path:Logs");
 			if (path != null && Directory.Exists(path))
@@ -153,7 +153,7 @@ namespace net.vieapps.Services.APIGateway
 		internal static void Start(string[] args, Func<Task> nextAsync = null)
 		{
 			Program.CancellationTokenSource = new CancellationTokenSource();
-			Program.Component = new ControlComponent(Program.CancellationTokenSource.Token);
+			Program.Component = new Controller(Program.CancellationTokenSource.Token);
 			Program.Component.Start(args, nextAsync);
 		}
 

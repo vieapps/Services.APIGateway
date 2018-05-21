@@ -18,9 +18,10 @@ using net.vieapps.Components.Utility;
 
 namespace net.vieapps.Services.APIGateway
 {
-    public class HostComponent
+    public class HostingComponent
     {
 		IServiceComponent ServiceComponent { get; set; }
+
 		ILogger Logger { get; set; }
 
 		public void Start(string[] args)
@@ -51,11 +52,11 @@ namespace net.vieapps.Services.APIGateway
 			{
 				if (isUserInteractive)
 				{
-					Console.WriteLine($"VIEApps NGX API Gateway - Service Hoster v{typeof(HostComponent).Assembly.GetVersion()}");
+					Console.WriteLine($"VIEApps NGX API Gateway - Service Hosting v{typeof(HostingComponent).Assembly.GetVersion()}");
 					Console.WriteLine("");
-					Console.WriteLine("Syntax: VIEApps.Services.APIGateway.Host /svc:<service-component-namespace,service-assembly>");
+					Console.WriteLine("Syntax: VIEApps.Services.APIGateway.Hosting /svc:<service-component-namespace,service-assembly>");
 					Console.WriteLine("");
-					Console.WriteLine("Ex.: VIEApps.Services.APIGateway.Host /svc:net.vieapps.Services.Systems.ServiceComponent,VIEApps.Services.Systems");
+					Console.WriteLine("Ex.: VIEApps.Services.APIGateway.Hosting /svc:net.vieapps.Services.Systems.ServiceComponent,VIEApps.Services.Systems");
 					Console.WriteLine("");
 					Console.ReadLine();
 				}
@@ -156,6 +157,7 @@ namespace net.vieapps.Services.APIGateway
 						this.Logger.LogInformation($"Rolling log files is enabled - Path format: {path}");
 					stopwatch.Stop();
 					this.Logger.LogInformation($"The service is started - PID: {Process.GetCurrentProcess().Id} - URI: {service.ServiceURI} - Execution times: {stopwatch.GetElapsedTimes()}");
+					this.Logger.LogWarning($"=====> Press RETURN to terminate...............");
 					return Task.CompletedTask;
 				}
 			);
@@ -166,7 +168,6 @@ namespace net.vieapps.Services.APIGateway
 			// wait for exit signal
 			if (isUserInteractive)
 			{
-				this.Logger.LogInformation($"=====> Press RETURN to terminate...");
 				Console.ReadLine();
 				this.Stop();
 			}

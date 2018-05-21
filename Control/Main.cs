@@ -20,13 +20,19 @@ using net.vieapps.Components.Repository;
 
 namespace net.vieapps.Services.APIGateway
 {
-	public class ControlComponent : IServiceManager, IDisposable
+	public class Controller : IServiceManager, IDisposable
 	{
-
-		public ControlComponent(CancellationToken cancellationToken = default(CancellationToken))
+		/// <summary>
+		/// Creates new instance of services controller
+		/// </summary>
+		/// <param name="cancellationToken"></param>
+		public Controller(CancellationToken cancellationToken = default(CancellationToken))
 		{
 			this._cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 			this._loggingService = new LoggingService(this._cancellationTokenSource.Token);
+			this._serviceHosting = UtilityService.GetAppSetting("ServiceHosting", "VIEApps.Services.APIGateway.Hosting").Trim();
+			if (this._serviceHosting.IsEndsWith(".exe"))
+				this._serviceHosting = this._serviceHosting.Left(this._serviceHosting.Length - 4);
 		}
 
 		#region Attributes
@@ -34,7 +40,7 @@ namespace net.vieapps.Services.APIGateway
 		readonly CancellationTokenSource _cancellationTokenSource;
 		internal IDisposable _communicator = null;
 		readonly internal LoggingService _loggingService = null;
-		readonly string _serviceHoster = UtilityService.GetAppSetting("Controller:ServiceHoster", "VIEApps.Services.APIGateway.Host.exe");
+		readonly string _serviceHosting;
 		internal Dictionary<string, string> _availableServices = null;
 		readonly Dictionary<string, int> _runningServices = new Dictionary<string, int>();
 		readonly List<SystemEx.IAsyncDisposable> _helperServices = new List<SystemEx.IAsyncDisposable>();
@@ -185,7 +191,7 @@ namespace net.vieapps.Services.APIGateway
 			Task.Run(() =>
 			{
 				Global.OnProcess?.Invoke("The API Gateway Services Controller is starting");
-				Global.OnProcess?.Invoke($"Version: {typeof(ControlComponent).Assembly.GetVersion()}");
+				Global.OnProcess?.Invoke($"Version: {typeof(Controller).Assembly.GetVersion()}");
 				Global.OnProcess?.Invoke($"Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? $"Windows {RuntimeInformation.OSArchitecture}" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? $"Linux {RuntimeInformation.OSArchitecture}" : $"Other {RuntimeInformation.OSArchitecture} OS")} ({RuntimeInformation.OSDescription.Trim()})");
 				Global.OnProcess?.Invoke($"Working mode: {(Environment.UserInteractive ? "App" : "Daemon")}");
 				(Global.StatusPath + "," + LoggingService.LogsPath + "," + MailSender.EmailsPath + "," + WebHookSender.WebHooksPath)
@@ -226,10 +232,10 @@ namespace net.vieapps.Services.APIGateway
 			this.GetAvailableBusinessServices();
 
 			// start all services
-			if (File.Exists(this._serviceHoster))
+			if (File.Exists(this._serviceHosting + (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "")))
 				this._availableServices.ForEach(kvp => this.StartBusinessService(kvp.Key));
 			else
-				Global.OnError?.Invoke($"The service hoster [{this._serviceHoster}] is not found", null);
+				Global.OnError?.Invoke($"The service hosting [{this._serviceHosting}] is not found", null);
 		}
 
 		public Dictionary<string, string> GetAvailableBusinessServices()
@@ -239,45 +245,46 @@ namespace net.vieapps.Services.APIGateway
 				this._availableServices = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 				if (ConfigurationManager.GetSection("net.vieapps.services") is AppConfigurationSectionHandler config)
 					if (config.Section.SelectNodes("./add") is XmlNodeList services)
-						foreach (XmlNode service in services)
+						services.ToList().ForEach(service =>
 						{
 							var name = service.Attributes["name"]?.Value;
 							var type = service.Attributes["type"]?.Value;
 							if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(type))
 								this._availableServices[name.ToLower().Trim()] = type.Trim().Replace(" ", "");
-						}
+						});
 			}
 			return this._availableServices;
 		}
 
 		public bool IsBusinessServiceRunning(string name)
-		{
-			return !string.IsNullOrWhiteSpace(name)
+			=> !string.IsNullOrWhiteSpace(name)
 				? this._runningServices.ContainsKey(name.Trim().ToLower())
 				: false;
-		}
 
 		public void StartBusinessService(string name, string arguments = null)
 		{
 			if (string.IsNullOrWhiteSpace(name) || !this._availableServices.ContainsKey(name.ToLower()) || this._runningServices.ContainsKey(name.ToLower()))
 				return;
 
-			var serviceHoster = this._serviceHoster;
+			var serviceHosting = this._serviceHosting;
 			var serviceType = this._availableServices[name.ToLower()];
 
 			if (serviceType.IsEndsWith(",x86"))
 			{
-				serviceHoster = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-					? serviceHoster.Replace(StringComparison.OrdinalIgnoreCase, ".exe", ".x86.exe")
-					: serviceHoster + ".x86";
+				serviceHosting += ".x86";
 				serviceType = serviceType.Left(serviceType.Length - 4);
 			}
 
 			var serviceArguments = (arguments ?? "") + $" /agc:{(Environment.UserInteractive ? "g" : "r")} /svc:{serviceType} /svn:{name.ToLower()}";
 
+			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+			{
+				serviceHosting += ".exe";
+			}
+
 			Global.OnProcess?.Invoke($"[{name.ToLower()}] => The service is starting...");
 			var process = UtilityService.RunProcess(
-				serviceHoster,
+				serviceHosting,
 				serviceArguments,
 				(sender, args) =>
 				{
@@ -315,20 +322,23 @@ namespace net.vieapps.Services.APIGateway
 				{
 					// stop the service
 					var processID = this._runningServices[name.ToLower()];
-					var serviceHoster = this._serviceHoster;
+					var serviceHosting = this._serviceHosting;
 					var serviceType = this._availableServices[name.ToLower()];
 
 					if (serviceType.IsEndsWith(",x86"))
 					{
-						serviceHoster = serviceHoster.IsEndsWith(".exe")
-							? serviceHoster.Replace(StringComparison.OrdinalIgnoreCase, ".exe", ".x86.exe")
-							: serviceHoster + ".x86";
+						serviceHosting += ".x86";
 						serviceType = serviceType.Left(serviceType.Length - 4);
 					}
 
 					var serviceArguments = $"/agc:s /svc:{serviceType} /svn:{name.ToLower()}";
 
-					UtilityService.RunProcess(serviceHoster, serviceArguments, (sender, args) => this.KillProcess(processID));
+					if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+					{
+						serviceHosting += ".exe";
+					}
+
+					UtilityService.RunProcess(serviceHosting, serviceArguments, (sender, args) => this.KillProcess(processID));
 
 					// update status
 					this._runningServices.Remove(name.ToLower());
@@ -561,26 +571,27 @@ namespace net.vieapps.Services.APIGateway
 			var dataSources = new Dictionary<string, XmlNode>();
 			var dbProviderFactories = new Dictionary<string, XmlNode>();
 
-			var filenames = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-				? $"{this._serviceHoster}.config|{this._serviceHoster.Replace(".exe", ".x86.exe")}.config".ToList("|")
-				: $"{this._serviceHoster}.dll.config|{this._serviceHoster.Replace(".dll", ".x86.dll")}.config".ToList("|");
-
+			var filenames = new List<string>
+			{
+				this._serviceHosting + (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : ".dll") + ".config"
+			};
+			filenames.Add(filenames[0].Replace(".config", ".x86.config"));
 			filenames.Where(filename => File.Exists(filename)).ForEach(filename =>
 			{
 				var xml = new XmlDocument();
 				xml.LoadXml(UtilityService.ReadTextFile(filename));
 
 				if (xml.DocumentElement.SelectNodes("/configuration/connectionStrings/add") is XmlNodeList connectionStringNodes)
-					foreach (XmlNode connectionStringNode in connectionStringNodes)
+					connectionStringNodes.ToList().ForEach(connectionStringNode =>
 					{
 						var name = connectionStringNode.Attributes["name"]?.Value;
 						var connectionString = connectionStringNode.Attributes["connectionString"]?.Value;
 						if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(connectionString) && !connectionStrings.ContainsKey(name))
 							connectionStrings[name] = connectionString;
-					}
+					});
 
 				if (xml.DocumentElement.SelectNodes("/configuration/net.vieapps.repositories/dataSources/dataSource") is XmlNodeList dataSourceNodes)
-					foreach (XmlNode dataSourceNode in dataSourceNodes)
+					dataSourceNodes.ToList().ForEach(dataSourceNode =>
 					{
 						var dataSourceName = dataSourceNode.Attributes["name"]?.Value;
 						if (!string.IsNullOrWhiteSpace(dataSourceName) && !dataSources.ContainsKey(dataSourceName))
@@ -594,15 +605,15 @@ namespace net.vieapps.Services.APIGateway
 								dataSources[dataSourceName] = dataSourceNode;
 							}
 						}
-					}
+					});
 
 				if (xml.DocumentElement.SelectNodes("/configuration/dbProviderFactories/add") is XmlNodeList dbProviderFactoryNodes)
-					foreach (XmlNode dbProviderFactoryNode in dbProviderFactoryNodes)
+					dbProviderFactoryNodes.ToList().ForEach(dbProviderFactoryNode =>
 					{
 						var invariant = dbProviderFactoryNode.Attributes["invariant"]?.Value;
 						if (!string.IsNullOrWhiteSpace(invariant) && !dbProviderFactories.ContainsKey(invariant))
 							dbProviderFactories[invariant] = dbProviderFactoryNode;
-					}
+					});
 			});
 
 			Global.OnProcess?.Invoke("Construct database provider factories");
@@ -630,10 +641,11 @@ namespace net.vieapps.Services.APIGateway
 			var versionDataSources = new List<string>();
 			var trashDataSources = new List<string>();
 
-			var filenames = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-				? $"{this._serviceHoster}.config|{this._serviceHoster.Replace(".exe", ".x86.exe")}.config".ToList("|")
-				: $"{this._serviceHoster}.dll.config|{this._serviceHoster.Replace(".dll", ".x86.dll")}.config".ToList("|");
-
+			var filenames = new List<string>
+			{
+				this._serviceHosting + (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : ".dll") + ".config"
+			};
+			filenames.Add(filenames[0].Replace(".config", ".x86.config"));
 			filenames.Where(filename => File.Exists(filename)).ForEach(filename =>
 			{
 				var xml = new XmlDocument();
@@ -813,7 +825,7 @@ namespace net.vieapps.Services.APIGateway
 			GC.SuppressFinalize(this);
 		}
 
-		~ControlComponent()
+		~Controller()
 		{
 			this.Dispose();
 		}

@@ -32,7 +32,7 @@ namespace net.vieapps.Services.APIGateway
 			this._loggingService = new LoggingService(this._cancellationTokenSource.Token);
 			this._serviceHosting = UtilityService.GetAppSetting("ServiceHosting", "VIEApps.Services.APIGateway.Hosting").Trim();
 			if (this._serviceHosting.IsEndsWith(".exe") || this._serviceHosting.IsEndsWith(".dll"))
-				this._serviceHosting = this._serviceHosting.Left(this._serviceHosting.Length - 4);
+				this._serviceHosting = this._serviceHosting.Left(this._serviceHosting.Length - 4).Trim();
 		}
 
 		#region Attributes
@@ -82,7 +82,14 @@ namespace net.vieapps.Services.APIGateway
 			{
 				// register helper services
 				if (this._registerHelperServices)
-					await this.RegisterHelperServicesAsync().ConfigureAwait(false);
+					try
+					{
+						await this.RegisterHelperServicesAsync().ConfigureAwait(false);
+					}
+					catch (Exception ex)
+					{
+						Global.OnError?.Invoke("Error occurred while registering helper services", ex);
+					}
 
 				// call service to update status
 				else
@@ -90,11 +97,16 @@ namespace net.vieapps.Services.APIGateway
 
 				// register timers
 				if (this._registerTimers)
-				{
-					this.RegisterMessagingTimers();
-					this.RegisterSchedulingTimers();
-					Global.OnProcess?.Invoke("The background workers & schedulers are registered");
-				}
+					try
+					{
+						this.RegisterMessagingTimers();
+						this.RegisterSchedulingTimers();
+						Global.OnProcess?.Invoke("The background workers & schedulers are registered");
+					}
+					catch (Exception ex)
+					{
+						Global.OnError?.Invoke("Error occurred while registering background workers & schedulers", ex);
+					}
 			}
 
 			// connect to WAMP router to open channels
@@ -194,9 +206,9 @@ namespace net.vieapps.Services.APIGateway
 				Global.OnProcess?.Invoke($"Version: {typeof(Controller).Assembly.GetVersion()}");
 				Global.OnProcess?.Invoke($"Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : $"Other OS")} {RuntimeInformation.OSArchitecture} ({RuntimeInformation.OSDescription.Trim()})");
 #if DEBUG
-				Global.OnProcess?.Invoke($"Working mode: {(Environment.UserInteractive ? "Console App" : "Daemon")} (DEBUG)");
+				Global.OnProcess?.Invoke($"Working mode: {(Environment.UserInteractive ? "Console App" : "Daemon")} (DEBUG) - Directory: {Directory.GetCurrentDirectory()}");
 #else
-				Global.OnProcess?.Invoke($"Working mode: {(Environment.UserInteractive ? "Console App" : "Daemon")} (RELEASE)");
+				Global.OnProcess?.Invoke($"Working mode: {(Environment.UserInteractive ? "Console App" : "Daemon")} (RELEASE) - Directory: {Directory.GetCurrentDirectory()}");
 #endif
 
 				(Global.StatusPath + "," + LoggingService.LogsPath + "," + MailSender.EmailsPath + "," + WebHookSender.WebHooksPath)
@@ -237,7 +249,7 @@ namespace net.vieapps.Services.APIGateway
 			this.GetAvailableBusinessServices();
 
 			// start all services
-			var serviceHosting = this._serviceHosting + (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "");
+			var serviceHosting = $"{Directory.GetCurrentDirectory()}{Path.DirectorySeparatorChar}{this._serviceHosting}{(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "")}";
 			if (File.Exists(serviceHosting))
 				foreach (var kvp in this._availableServices)
 					Task.Run(async () =>
@@ -295,12 +307,9 @@ namespace net.vieapps.Services.APIGateway
 
 			var serviceArguments = (arguments ?? "") + $" /agc:{(Environment.UserInteractive ? "g" : "r")} /svc:{serviceType} /svn:{name.ToLower()}";
 
-			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-				serviceHosting += ".exe";
-
 			Global.OnProcess?.Invoke($"[{name.ToLower()}] => The service is starting...");
 			var process = UtilityService.RunProcess(
-				serviceHosting,
+				$"{Directory.GetCurrentDirectory()}{Path.DirectorySeparatorChar}{serviceHosting}",
 				serviceArguments,
 				(sender, args) =>
 				{
@@ -349,10 +358,7 @@ namespace net.vieapps.Services.APIGateway
 
 					var serviceArguments = $"/agc:s /svc:{serviceType} /svn:{name.ToLower()}";
 
-					if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-						serviceHosting += ".exe";
-
-					UtilityService.RunProcess(serviceHosting, serviceArguments, (sender, args) => this.KillProcess(processID));
+					UtilityService.RunProcess($"{Directory.GetCurrentDirectory()}{Path.DirectorySeparatorChar}{serviceHosting}", serviceArguments, (sender, args) => this.KillProcess(processID));
 
 					// update status
 					this._runningServices.Remove(name.ToLower());
@@ -363,14 +369,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 		}
 
-		void KillProcess(int processID)
-		{
-			try
-			{
-				UtilityService.KillProcess(processID);
-			}
-			catch { }
-		}
+		void KillProcess(int processID) => ExternalProcess.Kill(processID);
 		#endregion
 
 		#region Register helper services

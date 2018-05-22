@@ -157,7 +157,7 @@ namespace net.vieapps.Services.APIGateway
 					stopwatch.Stop();
 					logger.LogInformation($"The service is started - PID: {Process.GetCurrentProcess().Id} - URI: {service.ServiceURI} - Execution times: {stopwatch.GetElapsedTimes()}");
 					if (isUserInteractive)
-						logger.LogWarning($"=====> Press RETURN to terminate...............");
+						logger.LogWarning($"=====> Type 'exit' to terminate...............");
 					return Task.CompletedTask;
 				}
 			);
@@ -168,7 +168,7 @@ namespace net.vieapps.Services.APIGateway
 			// wait for exit signal
 			if (isUserInteractive)
 			{
-				Console.ReadLine();
+				while (Console.ReadLine() != "exit") { };
 				serviceComponent.Stop();
 				serviceComponent.Dispose();
 			}

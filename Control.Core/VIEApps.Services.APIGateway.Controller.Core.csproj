@@ -4,6 +4,7 @@
 		<OutputType>Exe</OutputType>
 		<TargetFramework>netcoreapp2.0</TargetFramework>
 		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
+		<StartupObject>net.vieapps.Services.APIGateway.Program</StartupObject>
 		<AssemblyName>VIEApps.Services.APIGateway</AssemblyName>
 		<AssemblyTitle>VIEApps NGX API Gateway</AssemblyTitle>
 		<Authors>VIEApps.net</Authors>
@@ -14,7 +15,6 @@
 		<AssemblyVersion>10.2.0.1806</AssemblyVersion>
 		<FileVersion>10.2.0.1806</FileVersion>
 		<InformationalVersion>v10.2.netcore-2+rev:2018.06.01</InformationalVersion>
-		<StartupObject>net.vieapps.Services.APIGateway.Program</StartupObject>
 	</PropertyGroup>
 
 	<ItemGroup>

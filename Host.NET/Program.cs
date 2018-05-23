@@ -51,9 +51,9 @@ namespace net.vieapps.Services.APIGateway
 				{
 					Console.WriteLine($"VIEApps NGX API Gateway - Service Hosting v{Assembly.GetExecutingAssembly().GetVersion()}");
 					Console.WriteLine("");
-					Console.WriteLine("Syntax: VIEApps.Services.APIGateway.Hosting /svc:<service-component-namespace,service-assembly>");
+					Console.WriteLine("Syntax: VIEApps.Services.Hosting /svc:<service-component-namespace,service-assembly>");
 					Console.WriteLine("");
-					Console.WriteLine("Ex.: VIEApps.Services.APIGateway.Hosting /svc:net.vieapps.Services.Systems.ServiceComponent,VIEApps.Services.Systems");
+					Console.WriteLine("Ex.: VIEApps.Services.Hosting /svc:net.vieapps.Services.Systems.ServiceComponent,VIEApps.Services.Systems");
 					Console.WriteLine("");
 					Console.ReadLine();
 				}

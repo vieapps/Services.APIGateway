@@ -101,7 +101,7 @@ namespace net.vieapps.Services.APIGateway
 			Global.OnLogsUpdated = (serviceName, message) =>
 			{
 				if (Environment.UserInteractive && (!"APIGateway".IsEquals(serviceName) ? true : !message.IsContains("email message") && !message.IsContains("web-hook message")))
-					Program.MainForm.UpdateLogs(message);
+					Program.MainForm.UpdateLogs($"[{serviceName.ToLower()}] => {message}");
 			};
 
 			Global.OnSendEmailSuccess = (message) =>

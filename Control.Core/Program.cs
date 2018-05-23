@@ -27,6 +27,7 @@ namespace net.vieapps.Services.APIGateway
 		static void Main(string[] args)
 		{
 			// initialize
+			Console.OutputEncoding = System.Text.Encoding.UTF8;
 			Directory.SetCurrentDirectory(AppDomain.CurrentDomain.BaseDirectory);
 
 			// prepare default settings of Json.NET
@@ -51,15 +52,15 @@ namespace net.vieapps.Services.APIGateway
 
 			Components.Utility.Logger.AssignLoggerFactory(new ServiceCollection().AddLogging(builder => builder.SetMinimumLevel(logLevel)).BuildServiceProvider().GetService<ILoggerFactory>());
 
-			if (Environment.UserInteractive)
-				Components.Utility.Logger.GetLoggerFactory().AddConsole(logLevel);
-
 			var path = UtilityService.GetAppSetting("Path:Logs");
 			if (path != null && Directory.Exists(path))
 			{
 				path = Path.Combine(path, "{Date}_apigateway.controller.txt");
 				Components.Utility.Logger.GetLoggerFactory().AddFile(path, logLevel);
 			}
+
+			if (Environment.UserInteractive)
+				Components.Utility.Logger.GetLoggerFactory().AddConsole(logLevel);
 
 			Program.Logger = Components.Utility.Logger.CreateLogger<Controller>();
 
@@ -95,7 +96,7 @@ namespace net.vieapps.Services.APIGateway
 			Global.OnLogsUpdated = (serviceName, message) =>
 			{
 				if (Environment.UserInteractive && (!"APIGateway".IsEquals(serviceName) ? true : !message.IsContains("email message") && !message.IsContains("web-hook message")))
-					Program.Logger.LogInformation($"[{serviceName}] => {message}");
+					Program.Logger.LogInformation($"[{serviceName.ToLower()}] => {message}");
 			};
 
 			Global.OnSendEmailSuccess = (message) =>

@@ -30,7 +30,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			this._cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 			this._loggingService = new LoggingService(this._cancellationTokenSource.Token);
-			this._serviceHosting = UtilityService.GetAppSetting("ServiceHosting", "VIEApps.Services.APIGateway.Hosting").Trim();
+			this._serviceHosting = UtilityService.GetAppSetting("ServiceHosting", "VIEApps.Services.Hosting").Trim();
 			if (this._serviceHosting.IsEndsWith(".exe") || this._serviceHosting.IsEndsWith(".dll"))
 				this._serviceHosting = this._serviceHosting.Left(this._serviceHosting.Length - 4).Trim();
 		}

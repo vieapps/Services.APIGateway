@@ -3,7 +3,7 @@
 	<PropertyGroup>
 		<TargetFramework>netstandard2.0</TargetFramework>
 		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
-		<AssemblyName>VIEApps.Services.APIGateway.Controller</AssemblyName>
+		<AssemblyName>VIEApps.Services.Controller</AssemblyName>
 		<AssemblyTitle>VIEApps NGX API Gateway</AssemblyTitle>
 		<Authors>VIEApps.net</Authors>
 		<Company>VIEApps.net</Company>
@@ -16,11 +16,7 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-	  <PackageReference Include="Serilog.Extensions.Logging.File" Version="1.1.0" />
-	</ItemGroup>
-
-	<ItemGroup>
-	  <ProjectReference Include="..\..\Base\VIEApps.Services.Base.csproj" />
+		<ProjectReference Include="..\..\Base\VIEApps.Services.Base.csproj" />
 	</ItemGroup>
 
 </Project>

@@ -2,7 +2,6 @@
 using System;
 using System.IO;
 using System.Linq;
-using System.Xml;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Diagnostics;
@@ -28,7 +27,6 @@ namespace net.vieapps.Services.APIGateway
 			var stopwatch = Stopwatch.StartNew();
 
 			var apiCall = args?.FirstOrDefault(a => a.IsStartsWith("/agc:"));
-			var apiCallToStop = apiCall != null && apiCall.IsEquals("/agc:s");
 			var isUserInteractive = Environment.UserInteractive && apiCall == null;
 
 			// prepare type name
@@ -38,7 +36,7 @@ namespace net.vieapps.Services.APIGateway
 				try
 				{
 					var xpath = $"/configuration/net.vieapps.services/add[@name='{args.First(a => a.IsStartsWith("/svn:")).Replace(StringComparison.OrdinalIgnoreCase, "/svn:", "").ToLower()}']";
-					var xml = new XmlDocument();
+					var xml = new System.Xml.XmlDocument();
 					xml.LoadXml(UtilityService.ReadTextFile(configFilename));
 					typeName = xml.DocumentElement.SelectSingleNode(xpath)?.Attributes["type"]?.Value.Replace(" ", "").Replace(StringComparison.OrdinalIgnoreCase, ",x86", "");
 				}
@@ -58,7 +56,7 @@ namespace net.vieapps.Services.APIGateway
 					Console.ReadLine();
 				}
 				else
-					Console.WriteLine("No matched type name is found");
+					Console.WriteLine("Type name is invalid");
 				return;
 			}
 
@@ -98,10 +96,10 @@ namespace net.vieapps.Services.APIGateway
 			if (canUseWaitHandler)
 			{
 				// get the flag of the existing instance
-				waitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, (serviceComponent as IService).ServiceURI, out bool createdNew);
+				waitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, serviceComponent.ServiceURI, out bool createdNew);
 
 				// process the call to stop
-				if (apiCallToStop)
+				if ("/agc:s".IsEquals(apiCall))
 				{
 					// raise an event to stop current existing instance
 					if (!createdNew)
@@ -117,7 +115,7 @@ namespace net.vieapps.Services.APIGateway
 			// prepare default settings of Json.NET
 			JsonConvert.DefaultSettings = () => new JsonSerializerSettings()
 			{
-				Formatting = Newtonsoft.Json.Formatting.Indented,
+				Formatting = Formatting.None,
 				ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
 				DateTimeZoneHandling = DateTimeZoneHandling.Local
 			};
@@ -139,7 +137,7 @@ namespace net.vieapps.Services.APIGateway
 			var path = UtilityService.GetAppSetting("Path:Logs");
 			if (Directory.Exists(path))
 			{
-				path = Path.Combine(path, "{Date}_" + (serviceComponent as IService).ServiceName.ToLower() + ".txt");
+				path = Path.Combine(path, "{Date}_" + serviceComponent.ServiceName.ToLower() + ".txt");
 				Logger.GetLoggerFactory().AddFile(path, logLevel);
 			}
 			else
@@ -155,6 +153,7 @@ namespace net.vieapps.Services.APIGateway
 			logger.LogInformation($"Version: {serviceType.Assembly.GetVersion()}");
 			logger.LogInformation($"Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "Other OS")} {RuntimeInformation.OSArchitecture} ({RuntimeInformation.OSDescription.Trim()})");
 
+			ServiceBase.ServiceComponent = serviceComponent as ServiceBase;
 			serviceComponent.Start(
 				args,
 				"false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", "")) ? false : true,
@@ -173,9 +172,6 @@ namespace net.vieapps.Services.APIGateway
 				}
 			);
 
-			// assign the static instance of the service component
-			ServiceBase.ServiceComponent = serviceComponent as ServiceBase;
-
 			// wait for exit signal
 			if (canUseWaitHandler)
 			{
@@ -183,7 +179,11 @@ namespace net.vieapps.Services.APIGateway
 				waitHandle.Dispose();
 			}
 			else
+			{
 				while (Console.ReadLine() != "exit") { }
+				if (!isUserInteractive && logger.IsEnabled(LogLevel.Debug))
+					logger.LogInformation($"++>> Got 'exit' command input from API Gateway ...............");
+			}
 
 			serviceComponent.Stop();
 			serviceComponent.Dispose();

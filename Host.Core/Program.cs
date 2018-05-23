@@ -24,16 +24,16 @@ namespace net.vieapps.Services.APIGateway
 		static void Main(string[] args)
 		{
 			// prepare
+			Console.OutputEncoding = System.Text.Encoding.UTF8;
 			var stopwatch = Stopwatch.StartNew();
+
 			var apiCall = args?.FirstOrDefault(a => a.IsStartsWith("/agc:"));
 			var apiCallToStop = apiCall != null && apiCall.IsEquals("/agc:s");
 			var isUserInteractive = Environment.UserInteractive && apiCall == null;
-			if (isUserInteractive)
-				Console.OutputEncoding = System.Text.Encoding.UTF8;
 
 			// prepare type name
 			var typeName = args?.FirstOrDefault(a => a.IsStartsWith("/svc:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/svc:", "");
-			var configFilename = $"VIEApps.Services.APIGateway.dll.config";
+			var configFilename = $"VIEApps.Services.APIGateway.{(RuntimeInformation.FrameworkDescription.IsContains(".NET Framework") ? "exe" : "dll")}.config";
 			if (string.IsNullOrWhiteSpace(typeName) && File.Exists(configFilename) && args?.FirstOrDefault(a => a.IsStartsWith("/svn:")) != null)
 				try
 				{
@@ -63,18 +63,28 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// prepare type of the service component
-			var serviceType = Type.GetType(typeName);
-			if (serviceType == null)
+			Type serviceType = null;
+			try
 			{
-				Console.WriteLine($"The type of the service component is not found [{typeName}]");
+				serviceType = Type.GetType(typeName);
+				if (serviceType == null)
+				{
+					Console.WriteLine($"The type of the service component is not found [{typeName}]");
+					if (isUserInteractive)
+						Console.ReadLine();
+					return;
+				}
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"Error occurred while prepare the type of the service component [{typeName}] => {ex.Message}");
 				if (isUserInteractive)
 					Console.ReadLine();
 				return;
 			}
 
 			// initialize the instance of service component
-			var serviceComponent = serviceType.CreateInstance() as IServiceComponent;
-			if (serviceComponent == null || !(serviceComponent is IService))
+			if (!(serviceType.CreateInstance() is IServiceComponent serviceComponent) || !(serviceComponent is IService))
 			{
 				Console.WriteLine($"The type of the service component is invalid [{typeName}]");
 				if (isUserInteractive)
@@ -83,8 +93,9 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// prepare the signal to start/stop when the service was called from API Gateway
+			var canUseWaitHandler = !isUserInteractive && RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 			EventWaitHandle waitHandle = null;
-			if (!isUserInteractive)
+			if (canUseWaitHandler)
 			{
 				// get the flag of the existing instance
 				waitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, (serviceComponent as IService).ServiceURI, out bool createdNew);
@@ -157,7 +168,7 @@ namespace net.vieapps.Services.APIGateway
 					stopwatch.Stop();
 					logger.LogInformation($"The service is started - PID: {Process.GetCurrentProcess().Id} - URI: {service.ServiceURI} - Execution times: {stopwatch.GetElapsedTimes()}");
 					if (isUserInteractive)
-						logger.LogWarning($"=====> Type 'exit' to terminate...............");
+						logger.LogWarning($"=====> Type 'exit' to terminate ...............");
 					return Task.CompletedTask;
 				}
 			);
@@ -166,19 +177,16 @@ namespace net.vieapps.Services.APIGateway
 			ServiceBase.ServiceComponent = serviceComponent as ServiceBase;
 
 			// wait for exit signal
-			if (isUserInteractive)
-			{
-				while (Console.ReadLine() != "exit") { };
-				serviceComponent.Stop();
-				serviceComponent.Dispose();
-			}
-			else
+			if (canUseWaitHandler)
 			{
 				waitHandle.WaitOne();
 				waitHandle.Dispose();
-				serviceComponent.Stop();
-				serviceComponent.Dispose();
 			}
+			else
+				while (Console.ReadLine() != "exit") { }
+
+			serviceComponent.Stop();
+			serviceComponent.Dispose();
 
 			logger.LogInformation($"The service is stopped");
 		}

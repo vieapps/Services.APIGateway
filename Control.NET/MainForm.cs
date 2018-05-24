@@ -22,11 +22,13 @@ namespace net.vieapps.Services.APIGateway
 				await Task.Delay(1234).ConfigureAwait(false);
 				var serviceManager = Program.GetServiceManager();
 				if (serviceManager != null)
-				{
-					var services = serviceManager.GetAvailableBusinessServices();
-					services.Select(kvp => kvp.Key).ToList().ForEach(name => services[name] = serviceManager.IsBusinessServiceRunning(name) ? "Yes" : "No");
-					this.UpdateServicesInfo(services.Count, services.Where(kvp => kvp.Value.Equals("Yes")).Count());
-				}
+					try
+					{
+						var services = serviceManager.GetAvailableBusinessServices();
+						services.Select(kvp => kvp.Key).ToList().ForEach(name => services[name] = serviceManager.IsBusinessServiceRunning(name) ? "Yes" : "No");
+						this.UpdateServicesInfo(services.Count, services.Where(kvp => kvp.Value.Equals("Yes")).Count());
+					}
+					catch { }
 			});
 		}
 

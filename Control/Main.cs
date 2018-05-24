@@ -219,12 +219,12 @@ namespace net.vieapps.Services.APIGateway
 						else
 						{
 							Global.OnProcess?.Invoke($"The incoming channel to WAMP router is broken - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
-							WAMPConnections.IncommingChannel.ReOpen(this._cancellationTokenSource.Token, Global.OnTrack, "Incomming");
+							WAMPConnections.IncommingChannel.ReOpen(this._cancellationTokenSource.Token, Global.OnError, "Incomming");
 						}
 					},
 					(sender, arguments) =>
 					{
-						Global.OnTrack?.Invoke($"The incoming channel to WAMP router got an error: {arguments.Exception.Message}", arguments.Exception);
+						Global.OnError?.Invoke($"The incoming channel to WAMP router got an error: {arguments.Exception.Message}", arguments.Exception);
 					}
 				),
 				WAMPConnections.OpenOutgoingChannelAsync(
@@ -240,12 +240,12 @@ namespace net.vieapps.Services.APIGateway
 						else
 						{
 							Global.OnProcess?.Invoke($"The outgoing channel to WAMP router is broken - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
-							WAMPConnections.OutgoingChannel.ReOpen(this._cancellationTokenSource.Token, Global.OnTrack, "Outgoing");
+							WAMPConnections.OutgoingChannel.ReOpen(this._cancellationTokenSource.Token, Global.OnError, "Outgoing");
 						}
 					},
 					(sender, arguments) =>
 					{
-						Global.OnTrack?.Invoke($"The outgoging channel to WAMP router got an error: {arguments.Exception.Message}", arguments.Exception);
+						Global.OnError?.Invoke($"The outgoging channel to WAMP router got an error: {arguments.Exception.Message}", arguments.Exception);
 					}
 				)
 			}, this._cancellationTokenSource.Token);

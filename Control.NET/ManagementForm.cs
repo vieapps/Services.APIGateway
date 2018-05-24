@@ -40,10 +40,15 @@ namespace net.vieapps.Services.APIGateway
 		{
 			this.BusinessServices.Clear();
 			var serviceManager = Program.GetServiceManager();
-			serviceManager.GetAvailableBusinessServices().ForEach(kvp =>
-			{
-				this.BusinessServices.Add($"net.vieapps.services.{kvp.Key}", serviceManager.IsBusinessServiceRunning(kvp.Key));
-			});
+			if (serviceManager != null)
+				try
+				{
+					serviceManager.GetAvailableBusinessServices().ForEach(kvp =>
+					{
+						this.BusinessServices.Add($"net.vieapps.services.{kvp.Key}", serviceManager.IsBusinessServiceRunning(kvp.Key));
+					});
+				}
+				catch { }
 		}
 
 		void DisplayServices()

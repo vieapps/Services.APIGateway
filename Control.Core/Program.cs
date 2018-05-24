@@ -83,11 +83,6 @@ namespace net.vieapps.Services.APIGateway
 
 		static void SetupEventHandlers()
 		{
-			Global.OnTrack = (message, exception) =>
-			{
-				Program.Logger.LogDebug(message, exception);
-			};
-
 			Global.OnProcess = Global.OnSendRTUMessageSuccess = (message) =>
 			{
 				if (!string.IsNullOrWhiteSpace(message))

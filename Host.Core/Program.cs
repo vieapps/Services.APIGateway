@@ -96,7 +96,7 @@ namespace net.vieapps.Services.APIGateway
 			if (canUseWaitHandler)
 			{
 				// get the flag of the existing instance
-				waitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, serviceComponent.ServiceURI, out bool createdNew);
+				waitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, $"{serviceComponent.ServiceURI}@{Environment.UserName}", out bool createdNew);
 
 				// process the call to stop
 				if ("/agc:s".IsEquals(apiCall))
@@ -146,12 +146,12 @@ namespace net.vieapps.Services.APIGateway
 			if (isUserInteractive)
 				Logger.GetLoggerFactory().AddConsole(logLevel);
 
-			var logger = serviceComponent.Logger = Logger.CreateLogger(serviceType);
+			serviceComponent.Logger = Logger.CreateLogger(serviceType);
 
 			// start the service component
-			logger.LogInformation($"The service is starting");
-			logger.LogInformation($"Version: {serviceType.Assembly.GetVersion()}");
-			logger.LogInformation($"Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "Other OS")} {RuntimeInformation.OSArchitecture} ({RuntimeInformation.OSDescription.Trim()})");
+			serviceComponent.Logger.LogInformation($"The service is starting");
+			serviceComponent.Logger.LogInformation($"Version: {serviceType.Assembly.GetVersion()}");
+			serviceComponent.Logger.LogInformation($"Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "Other OS")} {RuntimeInformation.OSArchitecture} ({RuntimeInformation.OSDescription.Trim()})");
 
 			ServiceBase.ServiceComponent = serviceComponent as ServiceBase;
 			serviceComponent.Start(
@@ -159,15 +159,15 @@ namespace net.vieapps.Services.APIGateway
 				"false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", "")) ? false : true,
 				service =>
 				{
-					logger.LogInformation($"WAMP router URI: {WAMPConnections.GetRouterInfo().Item1}");
-					logger.LogInformation($"Logs path: {UtilityService.GetAppSetting("Path:Logs")}");
-					logger.LogInformation($"Default logging level: {logLevel}");
+					serviceComponent.Logger.LogInformation($"WAMP router URI: {WAMPConnections.GetRouterInfo().Item1}");
+					serviceComponent.Logger.LogInformation($"Logs path: {UtilityService.GetAppSetting("Path:Logs")}");
+					serviceComponent.Logger.LogInformation($"Default logging level: {logLevel}");
 					if (!string.IsNullOrWhiteSpace(path))
-						logger.LogInformation($"Rolling log files is enabled - Path format: {path}");
+						serviceComponent.Logger.LogInformation($"Rolling log files is enabled - Path format: {path}");
 					stopwatch.Stop();
-					logger.LogInformation($"The service is started - PID: {Process.GetCurrentProcess().Id} - URI: {service.ServiceURI} - Execution times: {stopwatch.GetElapsedTimes()}");
+					serviceComponent.Logger.LogInformation($"The service is started - PID: {Process.GetCurrentProcess().Id} - URI: {service.ServiceURI} - Execution times: {stopwatch.GetElapsedTimes()}");
 					if (isUserInteractive)
-						logger.LogWarning($"=====> Type 'exit' to terminate ...............");
+						serviceComponent.Logger.LogWarning($"=====> Type 'exit' to terminate ...............");
 					return Task.CompletedTask;
 				}
 			);
@@ -177,18 +177,18 @@ namespace net.vieapps.Services.APIGateway
 			{
 				waitHandle.WaitOne();
 				waitHandle.Dispose();
+				serviceComponent.Logger.LogDebug($"++>> Got 'stop' call from API Gateway ...............");
 			}
 			else
 			{
 				while (Console.ReadLine() != "exit") { }
-				if (!isUserInteractive && logger.IsEnabled(LogLevel.Debug))
-					logger.LogInformation($"++>> Got 'exit' command input from API Gateway ...............");
+				if (!isUserInteractive)
+					serviceComponent.Logger.LogDebug($"++>> Got 'exit' command from API Gateway ...............");
 			}
 
 			serviceComponent.Stop();
 			serviceComponent.Dispose();
-
-			logger.LogInformation($"The service is stopped");
+			serviceComponent.Logger.LogInformation($"The service is stopped");
 		}
 	}
 }

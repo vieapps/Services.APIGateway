@@ -272,21 +272,26 @@ namespace net.vieapps.Services.APIGateway
 			else if ("PATCH".IsEquals(verb) && "users".IsEquals(serviceName) && "session".IsEquals(objectName) && extra != null && extra.ContainsKey("x-session"))
 			{
 				// call user service
+				var sessionID = extra["x-session"].GetDecryptedID();
 				var request = new RequestInfo
 				{
 					Session = new Session(session)
 					{
-						SessionID = extra["x-session"].GetDecryptedID()
+						SessionID = sessionID,
+						User = new User(session.User)
+						{
+							SessionID = sessionID
+						}
 					},
 					ServiceName = "Users",
 					ObjectName = "Session",
 					Header = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
 					{
-						{ "x-app-token", $"x-session-temp-token-{extra["x-session"]}" }
+						{ "x-app-token", $"x-session-token-{sessionID}" }
 					},
 					Extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
 					{
-						{ "Signature", $"x-session-temp-token-{extra["x-session"]}".GetHMACSHA256(Global.ValidationKey) }
+						{ "Signature", $"x-session-token-{sessionID}".GetHMACSHA256(Global.ValidationKey) }
 					},
 					CorrelationID = Global.GetCorrelationID()
 				};

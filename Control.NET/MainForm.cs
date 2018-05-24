@@ -34,7 +34,7 @@ namespace net.vieapps.Services.APIGateway
 
 		void ManageServices_Click(object sender, EventArgs args)
 		{
-			if (Program.Component.Status.Equals("Ready"))
+			if (Program.Component.State == ServiceState.Ready || Program.Component.State == ServiceState.Connected)
 			{
 				Program.ManagementForm = Program.ManagementForm ?? new ManagementForm();
 				Program.ManagementForm.Initialize();

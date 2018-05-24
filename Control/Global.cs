@@ -60,6 +60,11 @@ namespace net.vieapps.Services.APIGateway
 		public static Action<string, Exception> OnError { get; set; } = (message, exception) => { };
 
 		/// <summary>
+		/// Gets or sets the action to track
+		/// </summary>
+		public static Action<string, Exception> OnTrack { get; set; } = (message, exception) => { };
+
+		/// <summary>
 		/// Gets or sets the action to run when a email message has been sent successful
 		/// </summary>
 		public static Action<string> OnSendEmailSuccess { get; set; } = (message) => { };

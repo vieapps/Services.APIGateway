@@ -365,35 +365,11 @@ namespace net.vieapps.Services.APIGateway
 			if (string.IsNullOrWhiteSpace(session?.SessionID))
 				return false;
 
-			else if (await InternalAPIs.Cache.ExistsAsync($"Session#{session.SessionID}").ConfigureAwait(false))
-			{
-				Global.Logger.LogInformation($"The session is existed in the cache ({session.SessionID})");
+			else if (await context.IsSessionExistAsync(session).ConfigureAwait(false))
 				return true;
-			}
 
 			else
-			{
-				if (await context.IsSessionExistAsync(session).ConfigureAwait(false))
-				{
-					var run = Task.Run(async () =>
-					{
-						if (!await InternalAPIs.Cache.ExistsAsync($"Session#{session.SessionID}").ConfigureAwait(false))
-							await InternalAPIs.Cache.SetAsync($"Session#{session.SessionID}", session.SessionID.Encrypt(Global.EncryptionKey)).ConfigureAwait(false);
-					}).ConfigureAwait(false);
-					InternalAPIs.Logger.LogInformation($"The session is existed in the system, and cache is updated ({session.SessionID})");
-					return true;
-				}
-				else
-				{
-					var run = Task.Run(async () =>
-					{
-						if (await InternalAPIs.Cache.ExistsAsync($"Session#{session.SessionID}").ConfigureAwait(false))
-							await InternalAPIs.Cache.RemoveAsync($"Session#{session.SessionID}").ConfigureAwait(false);
-					}).ConfigureAwait(false);
-					InternalAPIs.Logger.LogInformation($"The session is not existed in the system ({session.SessionID})");
-					return false;
-				}
-			}
+				return await InternalAPIs.Cache.ExistsAsync($"Session#{session.SessionID}").ConfigureAwait(false);
 		}
 		#endregion
 
@@ -543,16 +519,18 @@ namespace net.vieapps.Services.APIGateway
 		static async Task CreateSessionAsync(this HttpContext context, RequestInfo requestInfo, bool is2FAVerified = false, bool isOnline = true)
 		{
 			var body = requestInfo.GenerateSessionJson(is2FAVerified, isOnline).ToString(Formatting.None);
-			await context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Session", "POST")
-			{
-				Body = body,
-				Extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+			await Task.WhenAll(
+				context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Session", "POST")
 				{
-					{ "Signature", body.GetHMACSHA256(Global.ValidationKey) }
-				},
-				CorrelationID = requestInfo.CorrelationID
-			}, Global.CancellationTokenSource.Token, InternalAPIs.Logger).ConfigureAwait(false);
-			await requestInfo.Session.SendOnlineStatusAsync(true).ConfigureAwait(false);
+					Body = body,
+					Extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+					{
+						{ "Signature", body.GetHMACSHA256(Global.ValidationKey) }
+					},
+					CorrelationID = requestInfo.CorrelationID
+				}, Global.CancellationTokenSource.Token, InternalAPIs.Logger),
+				requestInfo.Session.SendOnlineStatusAsync(true)
+			).ConfigureAwait(false);
 		}
 		#endregion
 
@@ -594,11 +572,8 @@ namespace net.vieapps.Services.APIGateway
 					{ "Password", password.Encrypt(Global.EncryptionKey) },
 				}.ToString(Formatting.None);
 
-				var json = await context.CallServiceAsync(new RequestInfo(requestInfo.Session)
+				var json = await context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Session", "PUT")
 				{
-					ServiceName = "Users",
-					ObjectName = "Session",
-					Verb = "PUT",
 					Body = body,
 					Extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
 					{
@@ -941,6 +916,7 @@ namespace net.vieapps.Services.APIGateway
 				(sender, args) =>
 				{
 					Global.Logger.LogInformation($"Incomming channel to WAMP router is established - Session ID: {args.SessionId}");
+					Global.InterCommunicateMessageUpdater?.Dispose();
 					Global.InterCommunicateMessageUpdater = WAMPConnections.IncommingChannel.RealmProxy.Services
 						.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
 						.Subscribe(

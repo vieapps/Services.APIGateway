@@ -83,9 +83,15 @@ namespace net.vieapps.Services.APIGateway
 
 		static void SetupEventHandlers()
 		{
+			Global.OnTrack = (message, exception) =>
+			{
+				Program.Logger.LogDebug(message, exception);
+			};
+
 			Global.OnProcess = Global.OnSendRTUMessageSuccess = (message) =>
 			{
-				Program.Logger.LogInformation(message);
+				if (!string.IsNullOrWhiteSpace(message))
+					Program.Logger.LogInformation(message);
 			};
 
 			Global.OnError = Global.OnSendRTUMessageFailure = (message, exception) =>
@@ -101,14 +107,20 @@ namespace net.vieapps.Services.APIGateway
 
 			Global.OnSendEmailSuccess = (message) =>
 			{
-				Program.Logger.LogInformation(message);
-				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "Emails", message)).ConfigureAwait(false);
+				if (!string.IsNullOrWhiteSpace(message))
+				{
+					Program.Logger.LogInformation(message);
+					Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "Emails", message)).ConfigureAwait(false);
+				}
 			};
 
 			Global.OnSendWebHookSuccess = (message) =>
 			{
-				Program.Logger.LogInformation(message);
-				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "WebHooks", message)).ConfigureAwait(false);
+				if (!string.IsNullOrWhiteSpace(message))
+				{
+					Program.Logger.LogInformation(message);
+					Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "WebHooks", message)).ConfigureAwait(false);
+				}
 			};
 
 			Global.OnSendEmailFailure = (message, exception) =>
@@ -125,7 +137,8 @@ namespace net.vieapps.Services.APIGateway
 
 			Global.OnServiceStarted = Global.OnServiceStopped = Global.OnGotServiceMessage = (serviceName, message) =>
 			{
-				Program.Logger.LogInformation($"[{serviceName}] => {message}");
+				if (!string.IsNullOrWhiteSpace(message))
+					Program.Logger.LogInformation($"[{serviceName}] => {message}");
 			};
 		}
 

@@ -16,6 +16,8 @@ namespace net.vieapps.Services.APIGateway
 
 		void ServicesForm_FormClosing(object sender, FormClosingEventArgs e)
 		{
+			Program.PrepareServices();
+			Program.MainForm.UpdateServicesInfo();
 			this.Hide();
 			e.Cancel = true;
 		}
@@ -24,55 +26,54 @@ namespace net.vieapps.Services.APIGateway
 
 		void Change_Click(object sender, EventArgs e) => this.OnChange();
 
+		public delegate void InitializeDelegator();
+
 		internal void Initialize()
 		{
-			this.ServiceURI.Text = "Service URI";
-			this.ServiceStatus.Text = "Status";
-			this.Services.MultiSelect = false;
-
-			this.RefreshServices();
-			this.DisplayServices();
+			if (base.InvokeRequired)
+				base.Invoke(new InitializeDelegator(this.Initialize), new object[] { });
+			else
+			{
+				this.ServiceURI.Text = "Service URI";
+				this.ServiceStatus.Text = "Status";
+				this.Services.MultiSelect = false;
+				this.DisplayServices();
+			}
 		}
 
-		public Dictionary<string, bool> BusinessServices { get; private set; } = new Dictionary<string, bool>();
-
-		internal void RefreshServices()
-		{
-			this.BusinessServices.Clear();
-			var serviceManager = Program.GetServiceManager();
-			if (serviceManager != null)
-				try
-				{
-					serviceManager.GetAvailableBusinessServices().ForEach(kvp =>
-					{
-						this.BusinessServices.Add($"net.vieapps.services.{kvp.Key}", serviceManager.IsBusinessServiceRunning(kvp.Key));
-					});
-				}
-				catch { }
-		}
+		public delegate void DisplayServicesDelegator();
 
 		void DisplayServices()
 		{
-			this.Services.Items.Clear();
-			this.BusinessServices.OrderBy(kvp => kvp.Key).ForEach(kvp =>
+			if (base.InvokeRequired)
+				base.Invoke(new DisplayServicesDelegator(this.DisplayServices), new object[] { });
+			else
 			{
-				this.Services.Items.Add(new ListViewItem(new[] { kvp.Key, kvp.Value ? "Running" : "Stopped" }));
-			});
-			Program.MainForm.UpdateServicesInfo(this.BusinessServices.Count, this.BusinessServices.Where(kvp => kvp.Value).Count());
+				Program.PrepareServices();
+				Program.MainForm.UpdateServicesInfo();
+				this.Services.Items.Clear();
+				Program.Services.OrderBy(kvp => kvp.Key).ForEach(kvp => this.Services.Items.Add(new ListViewItem(new[] { kvp.Key, kvp.Value ? "Running" : "Stopped" })));
+			}
 		}
+
+		public delegate void OnSelectedDelegator();
 
 		void OnSelected()
 		{
-			if (this.Services.SelectedItems == null || this.Services.SelectedItems.Count < 1)
+			if (base.InvokeRequired)
+				base.Invoke(new OnSelectedDelegator(this.OnSelected), new object[] { });
+			else
 			{
-				this.ServiceName.Visible = this.Change.Enabled = false;
-				return;
+				if (this.Services.SelectedItems == null || this.Services.SelectedItems.Count < 1)
+					this.ServiceName.Visible = this.Change.Enabled = false;
+				else
+				{
+					var name = this.Services.SelectedItems[0].Text;
+					this.ServiceName.Visible = this.Change.Enabled = true;
+					this.ServiceName.Text = $"Service: [{name}]";
+					this.Change.Text = Program.GetServiceState(name.ToArray('.').Last()) ? "Stop" : "Start";
+				}
 			}
-
-			var name = this.Services.SelectedItems[0].Text;
-			this.ServiceName.Visible = this.Change.Enabled = true;
-			this.ServiceName.Text = $"Service: [{name}]";
-			this.Change.Text = this.BusinessServices[name] ? "Stop" : "Start";
 		}
 
 		void OnChange()
@@ -80,16 +81,15 @@ namespace net.vieapps.Services.APIGateway
 			if (this.Services.SelectedItems == null || this.Services.SelectedItems.Count < 1)
 				return;
 
-			var name = this.Services.SelectedItems[0].Text;
-			var serviceManager = Program.GetServiceManager();
+			var name = this.Services.SelectedItems[0].Text.ToArray('.').Last();
 
-			if (this.BusinessServices[name])
+			if (Program.GetServiceState(name))
 				Task.Run(() =>
 				{
 					try
 					{
-						serviceManager.StopBusinessService(name.ToArray('.').Last());
-						this.BusinessServices[name] = false;
+						Program.GetServiceManager().StopBusinessService(name);
+						Program.SetServiceState(name, false);
 					}
 					catch (Exception ex)
 					{
@@ -97,6 +97,7 @@ namespace net.vieapps.Services.APIGateway
 					}
 				})
 				.ContinueWith(task => this.DisplayServices(), TaskContinuationOptions.OnlyOnRanToCompletion)
+				.ContinueWith(task => this.OnSelected(), TaskContinuationOptions.OnlyOnRanToCompletion)
 				.ConfigureAwait(false);
 
 			else
@@ -104,8 +105,8 @@ namespace net.vieapps.Services.APIGateway
 				{
 					try
 					{
-						serviceManager.StartBusinessService(name.ToArray('.').Last());
-						this.BusinessServices[name] = true;
+						Program.GetServiceManager().StartBusinessService(name);
+						Program.SetServiceState(name, true);
 					}
 					catch (Exception ex)
 					{
@@ -113,6 +114,7 @@ namespace net.vieapps.Services.APIGateway
 					}
 				})
 				.ContinueWith(task => this.DisplayServices(), TaskContinuationOptions.OnlyOnRanToCompletion)
+				.ContinueWith(task => this.OnSelected(), TaskContinuationOptions.OnlyOnRanToCompletion)
 				.ConfigureAwait(false);
 		}
 	}

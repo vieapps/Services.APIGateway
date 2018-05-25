@@ -910,8 +910,7 @@ namespace net.vieapps.Services.APIGateway
 		#region Helper: WAMP connections & real-time updaters
 		internal static void OpenWAMPChannels(int waitingTimes = 6789)
 		{
-			var routerInfo = WAMPConnections.GetRouterInfo();
-			Global.Logger.LogInformation($"Attempting to connect to WAMP router [{routerInfo.Item1}{(routerInfo.Item1.EndsWith("/") ? "" : "/")}{routerInfo.Item2}]");
+			Global.Logger.LogInformation($"Attempting to connect to WAMP router [{WAMPConnections.GetRouterStrInfo()}]");
 			Global.OpenWAMPChannels(
 				(sender, args) =>
 				{

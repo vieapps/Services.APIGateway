@@ -23,40 +23,38 @@ namespace net.vieapps.Services.APIGateway
 		static void Main(string[] args)
 		{
 			// prepare
-			Console.OutputEncoding = System.Text.Encoding.UTF8;
 			var stopwatch = Stopwatch.StartNew();
 
 			var apiCall = args?.FirstOrDefault(a => a.IsStartsWith("/agc:"));
 			var isUserInteractive = Environment.UserInteractive && apiCall == null;
 
 			// prepare type name
-			var typeName = args?.FirstOrDefault(a => a.IsStartsWith("/svc:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/svc:", "");
+			var serviceTypeName = args?.FirstOrDefault(a => a.IsStartsWith("/svc:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/svc:", "");
 			var configFilename = $"VIEApps.Services.APIGateway.{(RuntimeInformation.FrameworkDescription.IsContains(".NET Framework") ? "exe" : "dll")}.config";
-			if (string.IsNullOrWhiteSpace(typeName) && File.Exists(configFilename) && args?.FirstOrDefault(a => a.IsStartsWith("/svn:")) != null)
+			if (string.IsNullOrWhiteSpace(serviceTypeName) && File.Exists(configFilename) && args?.FirstOrDefault(a => a.IsStartsWith("/svn:")) != null)
 				try
 				{
 					var xpath = $"/configuration/net.vieapps.services/add[@name='{args.First(a => a.IsStartsWith("/svn:")).Replace(StringComparison.OrdinalIgnoreCase, "/svn:", "").ToLower()}']";
 					var xml = new System.Xml.XmlDocument();
 					xml.LoadXml(UtilityService.ReadTextFile(configFilename));
-					typeName = xml.DocumentElement.SelectSingleNode(xpath)?.Attributes["type"]?.Value.Replace(" ", "").Replace(StringComparison.OrdinalIgnoreCase, ",x86", "");
+					serviceTypeName = xml.DocumentElement.SelectSingleNode(xpath)?.Attributes["type"]?.Value.Replace(" ", "");
+					if (serviceTypeName.IsEndsWith("#x86") || serviceTypeName.IsEndsWith("@x86") || serviceTypeName.IsEndsWith(",x86") || serviceTypeName.IsEndsWith(":x86") || serviceTypeName.IsEndsWith("-x86"))
+						serviceTypeName = serviceTypeName.Left(serviceTypeName.Length - 4);
 				}
 				catch { }
 
 			// stop if has no type name of a service component
-			if (string.IsNullOrWhiteSpace(typeName))
+			if (string.IsNullOrWhiteSpace(serviceTypeName))
 			{
 				if (isUserInteractive)
 				{
-					Console.WriteLine($"VIEApps NGX API Gateway - Service Hosting v{Assembly.GetExecutingAssembly().GetVersion()}");
-					Console.WriteLine("");
-					Console.WriteLine("Syntax: VIEApps.Services.Hosting /svc:<service-component-namespace,service-assembly>");
-					Console.WriteLine("");
-					Console.WriteLine("Ex.: VIEApps.Services.Hosting /svc:net.vieapps.Services.Systems.ServiceComponent,VIEApps.Services.Systems");
-					Console.WriteLine("");
+					Console.WriteLine($"VIEApps NGX API Gateway - Service Hosting v{Assembly.GetExecutingAssembly().GetVersion()}" + "\r\n");
+					Console.WriteLine("Syntax: VIEApps.Services.Hosting /svc:<service-component-namespace,service-assembly>" + "\r\n");
+					Console.WriteLine("Ex.: VIEApps.Services.Hosting /svc:net.vieapps.Services.Systems.ServiceComponent,VIEApps.Services.Systems" + "\r\n");
 					Console.ReadLine();
 				}
 				else
-					Console.WriteLine("Type name is invalid");
+					Console.Error.WriteLine("Service type name is invalid");
 				return;
 			}
 
@@ -64,10 +62,10 @@ namespace net.vieapps.Services.APIGateway
 			Type serviceType = null;
 			try
 			{
-				serviceType = Type.GetType(typeName);
+				serviceType = Type.GetType(serviceTypeName);
 				if (serviceType == null)
 				{
-					Console.WriteLine($"The type of the service component is not found [{typeName}]");
+					Console.Error.WriteLine($"The type of the service component is not found [{serviceTypeName}]");
 					if (isUserInteractive)
 						Console.ReadLine();
 					return;
@@ -75,7 +73,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-				Console.WriteLine($"Error occurred while prepare the type of the service component [{typeName}] => {ex.Message}");
+				Console.Error.WriteLine($"Error occurred while prepare the type of the service component [{serviceTypeName}] => {ex.Message}");
 				if (isUserInteractive)
 					Console.ReadLine();
 				return;
@@ -84,35 +82,36 @@ namespace net.vieapps.Services.APIGateway
 			// initialize the instance of service component
 			if (!(serviceType.CreateInstance() is IServiceComponent serviceComponent) || !(serviceComponent is IService))
 			{
-				Console.WriteLine($"The type of the service component is invalid [{typeName}]");
+				Console.Error.WriteLine($"The type of the service component is invalid [{serviceTypeName}]");
 				if (isUserInteractive)
 					Console.ReadLine();
 				return;
 			}
 
 			// prepare the signal to start/stop when the service was called from API Gateway
-			var canUseWaitHandler = !isUserInteractive && RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
-			EventWaitHandle waitHandle = null;
-			if (canUseWaitHandler)
+			EventWaitHandle eventWaitHandle = null;
+			var useEventWaitHandle = !isUserInteractive && RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+			if (useEventWaitHandle)
 			{
 				// get the flag of the existing instance
-				waitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, $"{serviceComponent.ServiceURI}@{Environment.UserName}", out bool createdNew);
+				eventWaitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, $"{serviceComponent.ServiceURI}@{Environment.UserName}", out bool createdNew);
 
 				// process the call to stop
 				if ("/agc:s".IsEquals(apiCall))
 				{
 					// raise an event to stop current existing instance
 					if (!createdNew)
-						waitHandle.Set();
+						eventWaitHandle.Set();
 
 					// then exit
-					waitHandle.Dispose();
+					eventWaitHandle.Dispose();
 					serviceComponent.Dispose();
 					return;
 				}
 			}
 
-			// prepare default settings of Json.NET
+			// prepare environment
+			Console.OutputEncoding = System.Text.Encoding.UTF8;
 			JsonConvert.DefaultSettings = () => new JsonSerializerSettings()
 			{
 				Formatting = Formatting.None,
@@ -146,12 +145,12 @@ namespace net.vieapps.Services.APIGateway
 			if (isUserInteractive)
 				Logger.GetLoggerFactory().AddConsole(logLevel);
 
-			serviceComponent.Logger = Logger.CreateLogger(serviceType);
+			var logger = serviceComponent.Logger = Logger.CreateLogger(serviceType);
 
 			// start the service component
-			serviceComponent.Logger.LogInformation($"The service is starting");
-			serviceComponent.Logger.LogInformation($"Version: {serviceType.Assembly.GetVersion()}");
-			serviceComponent.Logger.LogInformation($"Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "Other OS")} {RuntimeInformation.OSArchitecture} ({RuntimeInformation.OSDescription.Trim()})");
+			logger.LogInformation($"The service is starting");
+			logger.LogInformation($"Version: {serviceType.Assembly.GetVersion()}");
+			logger.LogInformation($"Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "Other OS")} {RuntimeInformation.OSArchitecture} ({RuntimeInformation.OSDescription.Trim()})");
 
 			ServiceBase.ServiceComponent = serviceComponent as ServiceBase;
 			serviceComponent.Start(
@@ -159,36 +158,37 @@ namespace net.vieapps.Services.APIGateway
 				"false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", "")) ? false : true,
 				service =>
 				{
-					serviceComponent.Logger.LogInformation($"WAMP router URI: {WAMPConnections.GetRouterInfo().Item1}");
-					serviceComponent.Logger.LogInformation($"Logs path: {UtilityService.GetAppSetting("Path:Logs")}");
-					serviceComponent.Logger.LogInformation($"Default logging level: {logLevel}");
+					logger.LogInformation($"WAMP router URI: {WAMPConnections.GetRouterStrInfo()}");
+					logger.LogInformation($"Logs path: {UtilityService.GetAppSetting("Path:Logs")}");
+					logger.LogInformation($"Default logging level: {logLevel}");
 					if (!string.IsNullOrWhiteSpace(path))
-						serviceComponent.Logger.LogInformation($"Rolling log files is enabled - Path format: {path}");
+						logger.LogInformation($"Rolling log files is enabled - Path format: {path}");
 					stopwatch.Stop();
-					serviceComponent.Logger.LogInformation($"The service is started - PID: {Process.GetCurrentProcess().Id} - URI: {service.ServiceURI} - Execution times: {stopwatch.GetElapsedTimes()}");
+					logger.LogInformation($"The service is started - PID: {Process.GetCurrentProcess().Id} - URI: {service.ServiceURI} - Execution times: {stopwatch.GetElapsedTimes()}");
 					if (isUserInteractive)
-						serviceComponent.Logger.LogWarning($"=====> Type 'exit' to terminate ...............");
+						logger.LogWarning($"=====> Type 'exit' to terminate ...............");
 					return Task.CompletedTask;
 				}
 			);
 
 			// wait for exit signal
-			if (canUseWaitHandler)
+			if (useEventWaitHandle)
 			{
-				waitHandle.WaitOne();
-				waitHandle.Dispose();
-				serviceComponent.Logger.LogDebug($"++>> Got 'stop' call from API Gateway ...............");
+				eventWaitHandle.WaitOne();
+				eventWaitHandle.Dispose();
+				logger.LogDebug("++>> Got 'stop' call from API Gateway ...............");
 			}
 			else
 			{
 				while (Console.ReadLine() != "exit") { }
 				if (!isUserInteractive)
-					serviceComponent.Logger.LogDebug($"++>> Got 'exit' command from API Gateway ...............");
+					logger.LogDebug("++>> Got 'exit' command from API Gateway ...............");
 			}
 
 			serviceComponent.Stop();
 			serviceComponent.Dispose();
-			serviceComponent.Logger.LogInformation($"The service is stopped");
+
+			logger.LogInformation("The service is stopped");
 		}
 	}
 }

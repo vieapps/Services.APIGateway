@@ -81,9 +81,9 @@ namespace net.vieapps.Services.APIGateway
 			Global.OnProcess?.Invoke($"Version: {typeof(Controller).Assembly.GetVersion()}");
 			Global.OnProcess?.Invoke($"Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : $"Other OS")} {RuntimeInformation.OSArchitecture} ({RuntimeInformation.OSDescription.Trim()})");
 #if DEBUG
-			Global.OnProcess?.Invoke($"Working mode: {(Environment.UserInteractive ? "Console App" : "Daemon")} (DEBUG)");
+			Global.OnProcess?.Invoke($"Working mode: {(Environment.UserInteractive ? "Interactive App" : "Background Service")} (DEBUG)");
 #else
-			Global.OnProcess?.Invoke($"Working mode: {(Environment.UserInteractive ? "Console App" : "Daemon")} (RELEASE)");
+			Global.OnProcess?.Invoke($"Working mode: {(Environment.UserInteractive ? "Interactive App" : "Background Service")} (RELEASE)");
 #endif
 			Global.OnProcess?.Invoke($"Working directory: {this._workingDirectory}");
 
@@ -106,21 +106,22 @@ namespace net.vieapps.Services.APIGateway
 					});
 
 			if (ConfigurationManager.GetSection("net.vieapps.task.scheduler") is AppConfigurationSectionHandler tasksConfiguration)
-				if (tasksConfiguration.Section.SelectNodes("task") is XmlNodeList taskNodes)
-					taskNodes.ToList()
-						.Where(taskNode => !string.IsNullOrWhiteSpace(taskNode.Attributes["execute"]?.Value) && File.Exists(taskNode.Attributes["execute"].Value))
-						.ForEach(taskNode =>
+				if (tasksConfiguration.Section.SelectNodes("task") is XmlNodeList tasks)
+					tasks.ToList()
+						.Where(task => !string.IsNullOrWhiteSpace(task.Attributes["executable"]?.Value) && File.Exists(task.Attributes["executable"].Value))
+						.ForEach(task =>
 						{
-							var executable = taskNode.Attributes["execute"].Value.Trim();
-							var arguments = (taskNode.Attributes["arguments"]?.Value ?? "").Trim();
+							var executable = task.Attributes["executable"].Value.Trim();
+							var arguments = (task.Attributes["arguments"]?.Value ?? "").Trim();
+							var extra = new Dictionary<string, string>
+							{
+								{ "Time", task.Attributes["time"]?.Value ?? "3" }
+							};
 							var id = (executable + " " + arguments).ToLower().GenerateUUID();
-							var serviceInfo = new ServiceInfo(id, executable, arguments);
-							serviceInfo.Extra["Time"] = taskNode.Attributes["time"]?.Value ?? "3";
-							this._tasks[id] = serviceInfo;
+							this._tasks[id] = new ServiceInfo(id, executable, arguments, extra);
 						});
 
-			var routerInfo = WAMPConnections.GetRouterInfo();
-			Global.OnProcess?.Invoke($"Attempting to connect to WAMP router [{routerInfo.Item1}{(routerInfo.Item1.EndsWith("/") ? "" : "/")}{routerInfo.Item2}]");
+			Global.OnProcess?.Invoke($"Attempting to connect to WAMP router [{WAMPConnections.GetRouterStrInfo()}]");
 			Task.WaitAll(new[]
 			{
 				WAMPConnections.OpenIncomingChannelAsync(
@@ -135,11 +136,7 @@ namespace net.vieapps.Services.APIGateway
 							.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
 							.Subscribe(
 								async (message) => await this.ProcessInterCommunicateMessageAsync(message).ConfigureAwait(false),
-								exception =>
-								{
-									if (this.State == ServiceState.Connected)
-										Global.OnError?.Invoke($"Error occurred while fetching inter-communicate message: {exception.Message}", exception);
-								}
+								exception => Global.OnError?.Invoke($"Error occurred while fetching inter-communicate message: {exception.Message}", this.State == ServiceState.Connected ? exception : null)
 							);
 						Global.OnProcess?.Invoke($"The inter-communicate message updater is{(this.State == ServiceState.Disconnected ? " re-" : " ")}subscribed successful");
 
@@ -184,7 +181,7 @@ namespace net.vieapps.Services.APIGateway
 									var serviceHosting = $"{this._workingDirectory}{this._serviceHosting}{(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "")}";
 									if (File.Exists(serviceHosting))
 										this._businessServices.ForEach(kvp => Task.Run(() => this.StartBusinessService(kvp.Key)).ConfigureAwait(false));
-									else if (this.State != ServiceState.Disconnected)
+									else
 										Global.OnError?.Invoke($"The service hosting [{serviceHosting}] is not found", null);
 								}
 
@@ -267,7 +264,7 @@ namespace net.vieapps.Services.APIGateway
 			this._communicator?.Dispose();
 			this._loggingService?.FlushAllLogs();
 
-			this._helperServices.ForEach(async (s) => await s.DisposeAsync().ConfigureAwait(false));
+			this._helperServices.ForEach(async (service) => await service.DisposeAsync().ConfigureAwait(false));
 			this._cancellationTokenSource.Cancel();
 
 			WAMPConnections.CloseChannels();
@@ -285,35 +282,40 @@ namespace net.vieapps.Services.APIGateway
 				? info.Instance != null
 				: false;
 
+		void PrepareBusinessServiceType(ref string serviceHosting, ref string serviceType)
+		{
+			if (serviceType.IsEndsWith("#x86") || serviceType.IsEndsWith("@x86") || serviceType.IsEndsWith(",x86") || serviceType.IsEndsWith(":x86") || serviceType.IsEndsWith("-x86"))
+			{
+				serviceHosting += ".x86";
+				serviceType = serviceType.Left(serviceType.Length - 4);
+			}
+		}
+
 		public void StartBusinessService(string name, string arguments = null)
 		{
 			if (this.IsBusinessServiceRunning(name))
 				return;
 
+			var stopwatch = Stopwatch.StartNew();
 			name = name.Trim().ToLower();
 			Global.OnProcess?.Invoke($"[{name}] => The service is starting");
 			try
 			{
 				var serviceHosting = $"{this._workingDirectory}{this._serviceHosting}";
 				var serviceType = this._businessServices[name].Executable;
-
-				if (serviceType.IsEndsWith(",x86"))
-				{
-					serviceHosting += ".x86";
-					serviceType = serviceType.Left(serviceType.Length - 4);
-				}
-
+				this.PrepareBusinessServiceType(ref serviceHosting, ref serviceType);
 				this._businessServices[name].Instance = ExternalProcess.Start(
 					serviceHosting,
-					$"{arguments ?? ""} /agc:{(Environment.UserInteractive ? "g" : "r")} /svc:{serviceType}".Trim(),
+					$"/agc:r /svc:{serviceType} {arguments ?? ""}".Trim(),
 					(sender, args) =>
 					{
-						Global.OnServiceStopped?.Invoke(name, $"The sevice is stopped");
 						this._businessServices[name].Instance = null;
+						Global.OnServiceStopped?.Invoke(name, $"The sevice is stopped");
 					},
 					(sender, args) => Global.OnGotServiceMessage?.Invoke(name, args.Data)
 				);
-				Global.OnServiceStarted?.Invoke(name, $"The service is started - Process ID: {this._businessServices[name].Instance.ID}");
+				stopwatch.Stop();
+				Global.OnServiceStarted?.Invoke(name, $"The service is started - Process ID: {this._businessServices[name].Instance.ID} - Warm-up times: {stopwatch.GetElapsedTimes()}");
 			}
 			catch (Exception ex)
 			{
@@ -333,14 +335,8 @@ namespace net.vieapps.Services.APIGateway
 				{
 					var serviceHosting = $"{this._workingDirectory}{this._serviceHosting}";
 					var serviceType = this._businessServices[name].Executable;
-
-					if (serviceType.IsEndsWith(",x86"))
-					{
-						serviceHosting += ".x86";
-						serviceType = serviceType.Left(serviceType.Length - 4);
-					}
-
-					var processInfo = ExternalProcess.Start(serviceHosting, $"/agc:s /svc:{serviceType}", "");
+					this.PrepareBusinessServiceType(ref serviceHosting, ref serviceType);
+					var processInfo = ExternalProcess.Start(serviceHosting, $"/agc:s /svc:{serviceType}", this._workingDirectory);
 					processInfo.Process.Dispose();
 				}
 				catch (Exception ex)
@@ -818,16 +814,17 @@ namespace net.vieapps.Services.APIGateway
 
 	internal class ServiceInfo
 	{
-		public ServiceInfo(string id = "", string executable = "", string arguments = "")
+		public ServiceInfo(string id = "", string executable = "", string arguments = "", Dictionary<string, string> extra = null)
 		{
 			this.ID = id;
 			this.Executable = executable;
 			this.Arguments = arguments;
+			this.Extra = new Dictionary<string, string>(extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
 		}
-		public string ID { get; set; } = "";
-		public string Executable { get; set; } = "";
-		public string Arguments { get; set; } = "";
+		public string ID { get; set; }
+		public string Executable { get; set; }
+		public string Arguments { get; set; }
+		public Dictionary<string, string> Extra { get; }
 		public ExternalProcess.Info Instance { get; set; }
-		public Dictionary<string, string> Extra { get; } = new Dictionary<string, string>();
 	}
 }

@@ -2,6 +2,7 @@
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using net.vieapps.Components.Utility;
 
 namespace net.vieapps.Services.APIGateway
 {
@@ -17,19 +18,16 @@ namespace net.vieapps.Services.APIGateway
 
 		void MainForm_Load(object sender, EventArgs args)
 		{
-			Program.Start(this._args, async () =>
+			Task.Run(async () =>
 			{
-				await Task.Delay(1234).ConfigureAwait(false);
-				var serviceManager = Program.GetServiceManager();
-				if (serviceManager != null)
-					try
-					{
-						var services = serviceManager.GetAvailableBusinessServices();
-						services.Select(kvp => kvp.Key).ToList().ForEach(name => services[name] = serviceManager.IsBusinessServiceRunning(name) ? "Yes" : "No");
-						this.UpdateServicesInfo(services.Count, services.Where(kvp => kvp.Value.Equals("Yes")).Count());
-					}
-					catch { }
-			});
+				await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
+				Program.Start(this._args, async () =>
+				{
+					await Task.Delay(1234).ConfigureAwait(false);
+					Program.PrepareServices();
+					this.UpdateServicesInfo();
+				});
+			}).ConfigureAwait(false);
 		}
 
 		private void MainForm_FormClosed(object sender, FormClosedEventArgs args) => Program.Stop();
@@ -63,18 +61,14 @@ namespace net.vieapps.Services.APIGateway
 				catch { }
 		}
 
-		public delegate void UpdateServicesInfoDelegator(int available, int running);
+		public delegate void UpdateServicesInfoDelegator();
 
-		internal void UpdateServicesInfo(int available, int running)
+		internal void UpdateServicesInfo()
 		{
 			if (base.InvokeRequired)
-				base.Invoke(new UpdateServicesInfoDelegator(this.UpdateServicesInfo), new object[] { available, running });
+				base.Invoke(new UpdateServicesInfoDelegator(this.UpdateServicesInfo), new object[] { });
 			else
-				try
-				{
-					this.ServicesInfo.Text = $"Available services: {available} - Running services: {running}";
-				}
-				catch { }
+				this.ServicesInfo.Text = $"Available services: {Program.Services.Count} - Running services: {Program.Services.Where(svc => svc.Value).Count()}";
 		}
 	}
 }

@@ -4,6 +4,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Collections.Generic;
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,12 +21,13 @@ namespace net.vieapps.Services.APIGateway
 
 		#region Properties
 		internal static CancellationTokenSource CancellationTokenSource { get; set; } = null;
-		internal static MainForm MainForm { get; set; } = null;
-		internal static ManagementForm ManagementForm { get; set; } = null;
 		internal static IServiceManager ServiceManager { get; set; } = null;
 		internal static ILoggingService LoggingService { get; set; } = null;
 		internal static Controller Component { get; set; } = null;
 		internal static ILogger Logger { get; set; }
+		internal static MainForm MainForm { get; set; } = null;
+		internal static ManagementForm ManagementForm { get; set; } = null;
+		internal static Dictionary<string, bool> Services { get; } = new Dictionary<string, bool>();
 		#endregion
 
 		[STAThread]
@@ -55,7 +57,6 @@ namespace net.vieapps.Services.APIGateway
 #endif
 
 			Components.Utility.Logger.AssignLoggerFactory(new ServiceCollection().AddLogging(builder => builder.SetMinimumLevel(logLevel)).BuildServiceProvider().GetService<ILoggerFactory>());
-			Program.Logger = Components.Utility.Logger.CreateLogger<Controller>();
 
 			var path = UtilityService.GetAppSetting("Path:Logs");
 			if (path != null && Directory.Exists(path))
@@ -63,6 +64,8 @@ namespace net.vieapps.Services.APIGateway
 				path = Path.Combine(path, "{Date}_apigateway.controller.txt");
 				Components.Utility.Logger.GetLoggerFactory().AddFile(path, logLevel);
 			}
+
+			Program.Logger = Components.Utility.Logger.CreateLogger<Controller>();
 
 			// setup event handlers
 			Program.SetupEventHandlers();
@@ -136,7 +139,29 @@ namespace net.vieapps.Services.APIGateway
 				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "WebHooks", message, exception.GetStack())).ConfigureAwait(false);
 			};
 
-			Global.OnServiceStarted = Global.OnServiceStopped = Global.OnGotServiceMessage = (serviceName, message) =>
+			Global.OnServiceStarted = (serviceName, message) =>
+			{
+				Program.SetServiceState(serviceName, true);
+				Program.Logger.LogInformation($"[{serviceName}] => {message}");
+				if (Environment.UserInteractive)
+				{
+					Program.MainForm.UpdateLogs($"[{serviceName}] => {message}");
+					Program.MainForm.UpdateServicesInfo();
+				}
+			};
+
+			Global.OnServiceStopped = (serviceName, message) =>
+			{
+				Program.SetServiceState(serviceName, false);
+				Program.Logger.LogInformation($"[{serviceName}] => {message}");
+				if (Environment.UserInteractive)
+				{
+					Program.MainForm.UpdateLogs($"[{serviceName}] => {message}");
+					Program.MainForm.UpdateServicesInfo();
+				}
+			};
+
+			Global.OnGotServiceMessage = (serviceName, message) =>
 			{
 				Program.Logger.LogInformation($"[{serviceName}] => {message}");
 				if (Environment.UserInteractive)
@@ -163,5 +188,27 @@ namespace net.vieapps.Services.APIGateway
 			Program.CancellationTokenSource.Cancel();
 			Program.Logger.LogInformation($"The API Gateway Services Controller is stopped");
 		}
+
+		internal static void PrepareServices()
+		{
+			var serviceManager = Program.GetServiceManager();
+			if (serviceManager != null)
+				try
+				{
+					serviceManager.GetAvailableBusinessServices().ForEach(kvp =>
+					{
+						Program.SetServiceState(kvp.Key, serviceManager.IsBusinessServiceRunning(kvp.Key));
+					});
+				}
+				catch { }
+		}
+
+		internal static void SetServiceState(string name, bool state)
+			=> Program.Services[$"net.vieapps.services.{name}"] = state;
+
+		internal static bool GetServiceState(string name)
+			=> Program.Services.TryGetValue($"net.vieapps.services.{name}", out bool state)
+				? state
+				: false;
 	}
 }

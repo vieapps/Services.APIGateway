@@ -116,7 +116,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				if (environment.IsDevelopment() || Environment.UserInteractive)
 					Global.Logger.LogInformation($"Listening URI: {UtilityService.GetAppSetting("HttpUri:Listen")}");
-				Global.Logger.LogInformation($"WAMP router URI: {WAMPConnections.GetRouterInfo().Item1}");
+				Global.Logger.LogInformation($"WAMP router URI: {WAMPConnections.GetRouterStrInfo()}");
 				Global.Logger.LogInformation($"API Gateway HTTP service URI: {UtilityService.GetAppSetting("HttpUri:APIs")}");
 				Global.Logger.LogInformation($"Files HTTP service URI: {UtilityService.GetAppSetting("HttpUri:Files")}");
 				Global.Logger.LogInformation($"Users HTTP service URI: {UtilityService.GetAppSetting("HttpUri:Users")}");

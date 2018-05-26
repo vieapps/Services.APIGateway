@@ -49,8 +49,8 @@ namespace net.vieapps.Services.APIGateway
 				if (isUserInteractive)
 				{
 					Console.WriteLine($"VIEApps NGX API Gateway - Service Hosting v{Assembly.GetExecutingAssembly().GetVersion()}" + "\r\n");
-					Console.WriteLine("Syntax: VIEApps.Services.Hosting /svc:<service-component-namespace,service-assembly>" + "\r\n");
-					Console.WriteLine("Ex.: VIEApps.Services.Hosting /svc:net.vieapps.Services.Systems.ServiceComponent,VIEApps.Services.Systems" + "\r\n");
+					Console.WriteLine("Syntax: VIEApps.Services.APIGateway /svc:<service-component-namespace,service-assembly>" + "\r\n");
+					Console.WriteLine("Ex.: VIEApps.Services.APIGateway /svc:net.vieapps.Services.Systems.ServiceComponent,VIEApps.Services.Systems" + "\r\n");
 					Console.ReadLine();
 				}
 				else
@@ -80,7 +80,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// initialize the instance of service component
-			if (!(serviceType.CreateInstance() is IServiceComponent serviceComponent) || !(serviceComponent is IService))
+			if (!(serviceType.CreateInstance() is IServiceComponent serviceComponent) || !(serviceComponent is ServiceBase))
 			{
 				Console.Error.WriteLine($"The type of the service component is invalid [{serviceTypeName}]");
 				if (isUserInteractive)
@@ -163,10 +163,14 @@ namespace net.vieapps.Services.APIGateway
 					logger.LogInformation($"Default logging level: {logLevel}");
 					if (!string.IsNullOrWhiteSpace(path))
 						logger.LogInformation($"Rolling log files is enabled - Path format: {path}");
+					logger.LogInformation($"Show debugs: {(service as ServiceBase).IsDebugLogEnabled} - Show results: {(service as ServiceBase).IsDebugResultsEnabled} - Show stacks: {(service as ServiceBase).IsDebugStacksEnabled}");
+
 					stopwatch.Stop();
 					logger.LogInformation($"The service is started - PID: {Process.GetCurrentProcess().Id} - URI: {service.ServiceURI} - Execution times: {stopwatch.GetElapsedTimes()}");
+
 					if (isUserInteractive)
-						logger.LogWarning($"=====> Type 'exit' to terminate ...............");
+						logger.LogWarning($"=====> Enter \"exit\" to terminate ...............");
+
 					return Task.CompletedTask;
 				}
 			);
@@ -176,13 +180,13 @@ namespace net.vieapps.Services.APIGateway
 			{
 				eventWaitHandle.WaitOne();
 				eventWaitHandle.Dispose();
-				logger.LogDebug("++>> Got 'stop' call from API Gateway ...............");
+				logger.LogDebug(">>>>> Got \"stop\" call from API Gateway ...............");
 			}
 			else
 			{
 				while (Console.ReadLine() != "exit") { }
 				if (!isUserInteractive)
-					logger.LogDebug("++>> Got 'exit' command from API Gateway ...............");
+					logger.LogDebug(">>>>> Got \"exit\" command from API Gateway ...............");
 			}
 
 			serviceComponent.Stop();

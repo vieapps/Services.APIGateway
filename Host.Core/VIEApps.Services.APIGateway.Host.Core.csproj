@@ -5,7 +5,7 @@
 		<TargetFramework>netcoreapp2.0</TargetFramework>
 		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
 		<StartupObject>net.vieapps.Services.APIGateway.Program</StartupObject>
-		<AssemblyName>VIEApps.Services.Hosting</AssemblyName>
+		<AssemblyName>VIEApps.Services.APIGateway</AssemblyName>
 		<AssemblyTitle>VIEApps NGX API Gateway</AssemblyTitle>
 		<Authors>VIEApps.net</Authors>
 		<Company>VIEApps.net</Company>

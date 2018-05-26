@@ -96,9 +96,9 @@ namespace net.vieapps.Services.APIGateway
 			RTU.Initialize();
 
 			// middleware
+			app.UseCache();
 			app.UseStatusCodeHandler();
 			app.UseResponseCompression();
-			app.UseCache();
 			app.UseWebSockets(new WebSocketOptions
 			{
 				ReceiveBufferSize = Components.WebSockets.WebSocket.ReceiveBufferSize,
@@ -115,7 +115,7 @@ namespace net.vieapps.Services.APIGateway
 			appLifetime.ApplicationStarted.Register(() =>
 			{
 				if (environment.IsDevelopment() || Environment.UserInteractive)
-					Global.Logger.LogInformation($"Listening URI: {UtilityService.GetAppSetting("HttpUri:Listen")}");
+					Global.Logger.LogInformation($"Listening URI: {UtilityService.GetAppSetting("HttpUri:Listen", "http://0.0.0.0:8024")}");
 				Global.Logger.LogInformation($"WAMP router URI: {WAMPConnections.GetRouterStrInfo()}");
 				Global.Logger.LogInformation($"API Gateway HTTP service URI: {UtilityService.GetAppSetting("HttpUri:APIs")}");
 				Global.Logger.LogInformation($"Files HTTP service URI: {UtilityService.GetAppSetting("HttpUri:Files")}");

@@ -7,7 +7,7 @@
     <OutputType>Exe</OutputType>
     <FileAlignment>512</FileAlignment>
     <RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
-    <AssemblyName>VIEApps.Services.Hosting</AssemblyName>
+    <AssemblyName>VIEApps.Services.APIGateway</AssemblyName>
     <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
     <TargetFrameworkProfile />
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
@@ -79,6 +79,18 @@
     <ProjectReference Include="..\..\Base\VIEApps.Services.Base.csproj">
       <Project>{c496cef5-9ff8-4364-9860-fcdefed4e277}</Project>
       <Name>VIEApps.Services.Base</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\Importers\VIEApps.Services.Importers.csproj">
+      <Project>{15419bdc-267b-4c69-a3b2-78d69ca0aae0}</Project>
+      <Name>VIEApps.Services.Importers</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\OTPs\Vasco\VIEApps.Services.OTPs.Vasco.csproj">
+      <Project>{951df674-fbd1-4713-83e4-764a45c32070}</Project>
+      <Name>VIEApps.Services.OTPs.Vasco</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\Users.WindowsAD\VIEApps.Services.Users.WindowsAD.csproj">
+      <Project>{7c2bffab-7b89-4984-b94b-18c18088829d}</Project>
+      <Name>VIEApps.Services.Users.WindowsAD</Name>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

@@ -1,9 +1,9 @@
 ﻿#region Related components
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Runtime.InteropServices;
 
 using net.vieapps.Components.Utility;
 #endregion
@@ -105,7 +105,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					try
 					{
-						Program.GetServiceManager().StartBusinessService(name);
+						Program.GetServiceManager().StartBusinessService(name, $"/usr:{Environment.UserName.UrlEncode()} /hst:{Environment.MachineName.UrlEncode()} /pfn:{RuntimeInformation.FrameworkDescription.UrlEncode()} /pfo:{RuntimeInformation.OSDescription.Trim().UrlEncode()}");
 						Program.SetServiceState(name, true);
 					}
 					catch (Exception ex)

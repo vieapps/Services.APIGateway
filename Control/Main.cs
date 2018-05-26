@@ -31,9 +31,10 @@ namespace net.vieapps.Services.APIGateway
 		{
 			this._cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 			this._loggingService = new LoggingService(this._cancellationTokenSource.Token);
-			this._serviceHosting = UtilityService.GetAppSetting("ServiceHosting", "VIEApps.Services.Hosting").Trim();
+			this._serviceHosting = UtilityService.GetAppSetting("ServiceHosting", "VIEApps.Services.APIGateway").Trim();
 			if (this._serviceHosting.IsEndsWith(".exe") || this._serviceHosting.IsEndsWith(".dll"))
 				this._serviceHosting = this._serviceHosting.Left(this._serviceHosting.Length - 4).Trim();
+			this._serviceHosting_x86 = UtilityService.GetAppSetting("ServiceHosting:x86", $"{this._serviceHosting}.x86").Trim();
 		}
 
 		#region Attributes
@@ -46,7 +47,7 @@ namespace net.vieapps.Services.APIGateway
 		readonly Dictionary<string, ServiceInfo> _tasks = new Dictionary<string, ServiceInfo>();
 		readonly bool _isNETFramework = RuntimeInformation.FrameworkDescription.IsContains(".NET Framework");
 		readonly string _workingDirectory = Directory.GetCurrentDirectory() + Path.DirectorySeparatorChar.ToString();
-		readonly string _serviceHosting;
+		readonly string _serviceHosting, _serviceHosting_x86;
 		readonly Dictionary<string, ServiceInfo> _businessServices = new Dictionary<string, ServiceInfo>();
 		MailSender _mailSender = null;
 		WebHookSender _webhookSender = null;
@@ -57,11 +58,13 @@ namespace net.vieapps.Services.APIGateway
 		#region Start/Stop controller
 		public void Start(string[] args = null, Func<Task> nextAsync = null)
 		{
+			// prepare arguments
 			var stopwatch = Stopwatch.StartNew();
-#if !DEBUG
 			if (Environment.UserInteractive)
 			{
+#if !DEBUG
 				this._registerHelperServices = this._registerBusinessServices = this._registerTimers = false;
+#endif
 				if (args?.FirstOrDefault(a => a.IsEquals("/all")) != null)
 					this._registerHelperServices = this._registerBusinessServices = this._registerTimers = true;
 				else
@@ -75,8 +78,42 @@ namespace net.vieapps.Services.APIGateway
 							this._registerTimers = arg.IsEquals("/timers:true");
 					});
 			}
-#endif
 
+			// prepare folders
+			new List<string>
+			{
+				Global.StatusPath,
+				LoggingService.LogsPath,
+				MailSender.EmailsPath,
+				WebHookSender.WebHooksPath
+			}.Where(path => !Directory.Exists(path)).ForEach(path => Directory.CreateDirectory(path));
+
+			// prepare business services
+			if (ConfigurationManager.GetSection("net.vieapps.services") is AppConfigurationSectionHandler servicesConfiguration)
+				if (servicesConfiguration.Section.SelectNodes("./add") is XmlNodeList services)
+					services.ToList().ForEach(service =>
+					{
+						var name = service.Attributes["name"]?.Value.Trim().ToLower();
+						var type = service.Attributes["type"]?.Value.Trim().Replace(" ", "");
+						if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(type))
+							this._businessServices[name] = new ServiceInfo(name, service.Attributes["executable"]?.Value.Trim(), type, new Dictionary<string, string> { { "Bitness", service.Attributes["bitness"]?.Value } });
+					});
+
+			// prepare scheduling tasks
+			if (ConfigurationManager.GetSection("net.vieapps.task.scheduler") is AppConfigurationSectionHandler tasksConfiguration)
+				if (tasksConfiguration.Section.SelectNodes("task") is XmlNodeList tasks)
+					tasks.ToList().ForEach(task =>
+					{
+						var executable = task.Attributes["executable"]?.Value.Trim();
+						if (!string.IsNullOrWhiteSpace(executable) && File.Exists(executable))
+						{
+							var arguments = (task.Attributes["arguments"]?.Value ?? "").Trim();
+							var id = (executable + " " + arguments).ToLower().GenerateUUID();
+							this._tasks[id] = new ServiceInfo(id, executable, arguments, new Dictionary<string, string> { { "Time", task.Attributes["time"]?.Value ?? "3" } });
+						}
+					});
+
+			// start
 			Global.OnProcess?.Invoke("The API Gateway Services Controller is starting");
 			Global.OnProcess?.Invoke($"Version: {typeof(Controller).Assembly.GetVersion()}");
 			Global.OnProcess?.Invoke($"Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : $"Other OS")} {RuntimeInformation.OSArchitecture} ({RuntimeInformation.OSDescription.Trim()})");
@@ -86,40 +123,6 @@ namespace net.vieapps.Services.APIGateway
 			Global.OnProcess?.Invoke($"Working mode: {(Environment.UserInteractive ? "Interactive App" : "Background Service")} (RELEASE)");
 #endif
 			Global.OnProcess?.Invoke($"Working directory: {this._workingDirectory}");
-
-			new List<string>
-			{
-				Global.StatusPath,
-				LoggingService.LogsPath,
-				MailSender.EmailsPath,
-				WebHookSender.WebHooksPath
-			}.Where(path => !Directory.Exists(path)).ForEach(path => Directory.CreateDirectory(path));
-
-			if (ConfigurationManager.GetSection("net.vieapps.services") is AppConfigurationSectionHandler servicesConfiguration)
-				if (servicesConfiguration.Section.SelectNodes("./add") is XmlNodeList services)
-					services.ToList().ForEach(service =>
-					{
-						var name = service.Attributes["name"]?.Value.Trim().ToLower();
-						var type = service.Attributes["type"]?.Value.Trim().Replace(" ", "");
-						if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(type))
-							this._businessServices[name] = new ServiceInfo(name, type);
-					});
-
-			if (ConfigurationManager.GetSection("net.vieapps.task.scheduler") is AppConfigurationSectionHandler tasksConfiguration)
-				if (tasksConfiguration.Section.SelectNodes("task") is XmlNodeList tasks)
-					tasks.ToList()
-						.Where(task => !string.IsNullOrWhiteSpace(task.Attributes["executable"]?.Value) && File.Exists(task.Attributes["executable"].Value))
-						.ForEach(task =>
-						{
-							var executable = task.Attributes["executable"].Value.Trim();
-							var arguments = (task.Attributes["arguments"]?.Value ?? "").Trim();
-							var extra = new Dictionary<string, string>
-							{
-								{ "Time", task.Attributes["time"]?.Value ?? "3" }
-							};
-							var id = (executable + " " + arguments).ToLower().GenerateUUID();
-							this._tasks[id] = new ServiceInfo(id, executable, arguments, extra);
-						});
 
 			Global.OnProcess?.Invoke($"Attempting to connect to WAMP router [{WAMPConnections.GetRouterStrInfo()}]");
 			Task.WaitAll(new[]
@@ -177,13 +180,7 @@ namespace net.vieapps.Services.APIGateway
 									}
 
 								if (this._registerBusinessServices)
-								{
-									var serviceHosting = $"{this._workingDirectory}{this._serviceHosting}{(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "")}";
-									if (File.Exists(serviceHosting))
 										this._businessServices.ForEach(kvp => Task.Run(() => this.StartBusinessService(kvp.Key)).ConfigureAwait(false));
-									else
-										Global.OnError?.Invoke($"The service hosting [{serviceHosting}] is not found", null);
-								}
 
 								if (nextAsync != null)
 									try
@@ -255,11 +252,7 @@ namespace net.vieapps.Services.APIGateway
 
 			this._timers.ForEach(timer => timer.Dispose());
 			this._tasks.Values.ForEach(serviceInfo => ExternalProcess.Stop(serviceInfo.Instance));
-			this._businessServices.Keys.ToList().ForEach(name =>
-			{
-				this.StopBusinessService(name);
-				Global.OnProcess?.Invoke($"[{name.ToLower()}] => The service is stopped");
-			});
+			this._businessServices.Keys.ToList().ForEach(name => this.StopBusinessService(name, () => Global.OnProcess?.Invoke($"[{name.ToLower()}] => The service is stopped")));
 
 			this._communicator?.Dispose();
 			this._loggingService?.FlushAllLogs();
@@ -282,13 +275,16 @@ namespace net.vieapps.Services.APIGateway
 				? info.Instance != null
 				: false;
 
-		void PrepareBusinessServiceType(ref string serviceHosting, ref string serviceType)
+		Tuple<string, string> PrepareServiceHosting(string name)
 		{
-			if (serviceType.IsEndsWith("#x86") || serviceType.IsEndsWith("@x86") || serviceType.IsEndsWith(",x86") || serviceType.IsEndsWith(":x86") || serviceType.IsEndsWith("-x86"))
-			{
-				serviceHosting += ".x86";
-				serviceType = serviceType.Left(serviceType.Length - 4);
-			}
+			var serviceInfo = this._businessServices[name];
+			serviceInfo.Extra.TryGetValue("Bitness", out string bitness);
+			var serviceHosting = !string.IsNullOrWhiteSpace(serviceInfo.Executable)
+					? serviceInfo.Executable
+					: "x86".IsEquals(bitness) || "32bits".IsEquals(bitness) ? this._serviceHosting_x86 : this._serviceHosting;
+			if (serviceHosting.IndexOf(Path.DirectorySeparatorChar) < 0)
+				serviceHosting = this._workingDirectory + serviceHosting;
+			return new Tuple<string, string>(serviceHosting, serviceInfo.Arguments);
 		}
 
 		public void StartBusinessService(string name, string arguments = null)
@@ -296,14 +292,17 @@ namespace net.vieapps.Services.APIGateway
 			if (this.IsBusinessServiceRunning(name))
 				return;
 
-			var stopwatch = Stopwatch.StartNew();
 			name = name.Trim().ToLower();
 			Global.OnProcess?.Invoke($"[{name}] => The service is starting");
 			try
 			{
-				var serviceHosting = $"{this._workingDirectory}{this._serviceHosting}";
-				var serviceType = this._businessServices[name].Executable;
-				this.PrepareBusinessServiceType(ref serviceHosting, ref serviceType);
+				var serviceInfo = this.PrepareServiceHosting(name);
+				var serviceHosting = serviceInfo.Item1;
+				var serviceType = serviceInfo.Item2;
+
+				if (!File.Exists(serviceHosting + (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "")))
+					throw new FileNotFoundException($"The service hosting is not found [{serviceHosting + (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "")}]");
+
 				this._businessServices[name].Instance = ExternalProcess.Start(
 					serviceHosting,
 					$"/agc:r /svc:{serviceType} {arguments ?? ""}".Trim(),
@@ -314,12 +313,11 @@ namespace net.vieapps.Services.APIGateway
 					},
 					(sender, args) => Global.OnGotServiceMessage?.Invoke(name, args.Data)
 				);
-				stopwatch.Stop();
-				Global.OnServiceStarted?.Invoke(name, $"The service is started - Process ID: {this._businessServices[name].Instance.ID} - Warm-up times: {stopwatch.GetElapsedTimes()}");
+				Global.OnServiceStarted?.Invoke(name, $"The service is started - Process ID: {this._businessServices[name].Instance.ID} [{serviceHosting} {$"/agc:r /svc:{serviceType} {arguments ?? ""}".Trim()}]");
 			}
 			catch (Exception ex)
 			{
-				Global.OnError?.Invoke($"Cannot start the service [{name}] => {ex.Message}", ex);
+				Global.OnError?.Invoke($"[{name}] => Cannot start the service: {ex.Message}", ex is FileNotFoundException ? null : ex);
 			}
 		}
 
@@ -333,10 +331,10 @@ namespace net.vieapps.Services.APIGateway
 			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
 				try
 				{
-					var serviceHosting = $"{this._workingDirectory}{this._serviceHosting}";
-					var serviceType = this._businessServices[name].Executable;
-					this.PrepareBusinessServiceType(ref serviceHosting, ref serviceType);
-					var processInfo = ExternalProcess.Start(serviceHosting, $"/agc:s /svc:{serviceType}", this._workingDirectory);
+					var serviceInfo = this.PrepareServiceHosting(name);
+					var serviceHosting = serviceInfo.Item1;
+					var serviceType = serviceInfo.Item2;
+					var processInfo = ExternalProcess.Start(serviceHosting, $"/agc:s /svc:{serviceType}", "");
 					processInfo.Process.Dispose();
 				}
 				catch (Exception ex)
@@ -345,6 +343,15 @@ namespace net.vieapps.Services.APIGateway
 				}
 			else
 				ExternalProcess.Stop(this._businessServices[name].Instance, info => { }, ex => Global.OnError?.Invoke($"Error occurred while stopping the service [{name}] => {ex.Message}", ex));
+		}
+
+		internal void StopBusinessService(string name, Action onStopped = null)
+		{
+			if (this.IsBusinessServiceRunning(name))
+			{
+				this.StopBusinessService(name);
+				onStopped?.Invoke();
+			}
 		}
 		#endregion
 
@@ -812,6 +819,7 @@ namespace net.vieapps.Services.APIGateway
 
 	}
 
+	#region Service information
 	internal class ServiceInfo
 	{
 		public ServiceInfo(string id = "", string executable = "", string arguments = "", Dictionary<string, string> extra = null)
@@ -827,4 +835,6 @@ namespace net.vieapps.Services.APIGateway
 		public Dictionary<string, string> Extra { get; }
 		public ExternalProcess.Info Instance { get; set; }
 	}
+	#endregion
+
 }

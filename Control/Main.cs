@@ -45,7 +45,6 @@ namespace net.vieapps.Services.APIGateway
 		readonly List<SystemEx.IAsyncDisposable> _helperServices = new List<SystemEx.IAsyncDisposable>();
 		readonly List<IDisposable> _timers = new List<IDisposable>();
 		readonly Dictionary<string, ServiceInfo> _tasks = new Dictionary<string, ServiceInfo>();
-		readonly bool _isNETFramework = RuntimeInformation.FrameworkDescription.IsContains(".NET Framework");
 		readonly string _workingDirectory = Directory.GetCurrentDirectory() + Path.DirectorySeparatorChar.ToString();
 		readonly string _serviceHosting, _serviceHosting_x86;
 		readonly Dictionary<string, ServiceInfo> _businessServices = new Dictionary<string, ServiceInfo>();
@@ -632,10 +631,16 @@ namespace net.vieapps.Services.APIGateway
 			var dataSources = new Dictionary<string, XmlNode>();
 			var dbProviderFactories = new Dictionary<string, XmlNode>();
 
+#if DEBUG
+			Global.OnProcess($"Prepare recycle-bin information [{(this._serviceHosting.IndexOf(Path.DirectorySeparatorChar) < 0 ? this._workingDirectory : "")}{this._serviceHosting}]");
+#endif
+
 			new List<string>
 			{
-				this._serviceHosting + $".{(this._isNETFramework ? "exe" : "dll")}.config",
-				this._serviceHosting + $".{(this._isNETFramework ? "exe" : "dll")}.x86.config"
+				$"{(this._serviceHosting.IndexOf(Path.DirectorySeparatorChar) < 0 ? this._workingDirectory : "")}{this._serviceHosting}.exe.config",
+				$"{(this._serviceHosting.IndexOf(Path.DirectorySeparatorChar) < 0 ? this._workingDirectory : "")}{this._serviceHosting}.dll.config",
+				$"{(this._serviceHosting.IndexOf(Path.DirectorySeparatorChar) < 0 ? this._workingDirectory : "")}{this._serviceHosting}.x86.exe.config",
+				$"{(this._serviceHosting.IndexOf(Path.DirectorySeparatorChar) < 0 ? this._workingDirectory : "")}{this._serviceHosting}.x86.dll.config"
 			}.Where(filename => File.Exists(filename)).ForEach(filename =>
 			{
 				var xml = new XmlDocument();
@@ -676,7 +681,10 @@ namespace net.vieapps.Services.APIGateway
 					});
 			});
 
-			Global.OnProcess?.Invoke("Construct database provider factories");
+#if DEBUG
+			Global.OnProcess?.Invoke($"Construct database provider factories ({dbProviderFactories.Count:#,##0})");
+#endif
+
 			RepositoryStarter.ConstructDbProviderFactories(dbProviderFactories.Values.ToList(), (msg, ex) =>
 			{
 				if (ex != null)
@@ -685,7 +693,10 @@ namespace net.vieapps.Services.APIGateway
 					Global.OnProcess?.Invoke(msg);
 			});
 
-			Global.OnProcess?.Invoke("Construct data sources");
+#if DEBUG
+			Global.OnProcess?.Invoke($"Construct data sources ({dataSources.Count:#,##0}) - Total of connection strings: {connectionStrings.Count:#,##0}");
+#endif
+
 			RepositoryStarter.ConstructDataSources(dataSources.Values.ToList(), (msg, ex) =>
 			{
 				if (ex != null)
@@ -703,8 +714,10 @@ namespace net.vieapps.Services.APIGateway
 
 			new List<string>
 			{
-				this._serviceHosting + $".{(this._isNETFramework ? "exe" : "dll")}.config",
-				this._serviceHosting + $".{(this._isNETFramework ? "exe" : "dll")}.x86.config"
+				$"{(this._serviceHosting.IndexOf(Path.DirectorySeparatorChar) < 0 ? this._workingDirectory : "")}{this._serviceHosting}.exe.config",
+				$"{(this._serviceHosting.IndexOf(Path.DirectorySeparatorChar) < 0 ? this._workingDirectory : "")}{this._serviceHosting}.dll.config",
+				$"{(this._serviceHosting.IndexOf(Path.DirectorySeparatorChar) < 0 ? this._workingDirectory : "")}{this._serviceHosting}.x86.exe.config",
+				$"{(this._serviceHosting.IndexOf(Path.DirectorySeparatorChar) < 0 ? this._workingDirectory : "")}{this._serviceHosting}.x86.dll.config"
 			}.Where(filename => File.Exists(filename)).ForEach(filename =>
 			{
 				var xml = new XmlDocument();

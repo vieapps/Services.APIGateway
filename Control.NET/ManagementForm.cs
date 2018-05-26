@@ -16,7 +16,7 @@ namespace net.vieapps.Services.APIGateway
 
 		void ServicesForm_FormClosing(object sender, FormClosingEventArgs e)
 		{
-			Program.PrepareServices();
+			Program.Refresh();
 			Program.MainForm.UpdateServicesInfo();
 			this.Hide();
 			e.Cancel = true;
@@ -49,7 +49,7 @@ namespace net.vieapps.Services.APIGateway
 				base.Invoke(new DisplayServicesDelegator(this.DisplayServices), new object[] { });
 			else
 			{
-				Program.PrepareServices();
+				Program.Refresh();
 				Program.MainForm.UpdateServicesInfo();
 				this.Services.Items.Clear();
 				Program.Services.OrderBy(kvp => kvp.Key).ForEach(kvp => this.Services.Items.Add(new ListViewItem(new[] { kvp.Key, kvp.Value ? "Running" : "Stopped" })));
@@ -71,7 +71,7 @@ namespace net.vieapps.Services.APIGateway
 					var name = this.Services.SelectedItems[0].Text;
 					this.ServiceName.Visible = this.Change.Enabled = true;
 					this.ServiceName.Text = $"Service: [{name}]";
-					this.Change.Text = Program.GetServiceState(name.ToArray('.').Last()) ? "Stop" : "Start";
+					this.Change.Text = Program.GetState(name.ToArray('.').Last()) ? "Stop" : "Start";
 				}
 			}
 		}
@@ -83,20 +83,23 @@ namespace net.vieapps.Services.APIGateway
 
 			var name = this.Services.SelectedItems[0].Text.ToArray('.').Last();
 
-			if (Program.GetServiceState(name))
+			if (Program.GetState(name))
 				Task.Run(() =>
 				{
 					try
 					{
 						Program.GetServiceManager().StopBusinessService(name);
-						Program.SetServiceState(name, false);
 					}
 					catch (Exception ex)
 					{
 						Global.OnError($"Cannot stop the business service: {ex.Message}", ex);
 					}
 				})
-				.ContinueWith(task => this.DisplayServices(), TaskContinuationOptions.OnlyOnRanToCompletion)
+				.ContinueWith(async (task) =>
+				{
+					await Task.Delay(UtilityService.GetRandomNumber(456, 789)).ConfigureAwait(false);
+					this.DisplayServices();
+				}, TaskContinuationOptions.OnlyOnRanToCompletion)
 				.ContinueWith(task => this.OnSelected(), TaskContinuationOptions.OnlyOnRanToCompletion)
 				.ConfigureAwait(false);
 
@@ -105,15 +108,18 @@ namespace net.vieapps.Services.APIGateway
 				{
 					try
 					{
-						Program.GetServiceManager().StartBusinessService(name, $"/usr:{Environment.UserName.UrlEncode()} /hst:{Environment.MachineName.UrlEncode()} /pfn:{RuntimeInformation.FrameworkDescription.UrlEncode()} /pfo:{RuntimeInformation.OSDescription.Trim().UrlEncode()}");
-						Program.SetServiceState(name, true);
+						Program.GetServiceManager().StartBusinessService(name, Program.Controller.GetServiceArguments());
 					}
 					catch (Exception ex)
 					{
 						Global.OnError($"Cannot start the business service: {ex.Message}", ex);
 					}
 				})
-				.ContinueWith(task => this.DisplayServices(), TaskContinuationOptions.OnlyOnRanToCompletion)
+				.ContinueWith(async (task) =>
+				{
+					await Task.Delay(UtilityService.GetRandomNumber(456, 789)).ConfigureAwait(false);
+					this.DisplayServices();
+				}, TaskContinuationOptions.OnlyOnRanToCompletion)
 				.ContinueWith(task => this.OnSelected(), TaskContinuationOptions.OnlyOnRanToCompletion)
 				.ConfigureAwait(false);
 		}

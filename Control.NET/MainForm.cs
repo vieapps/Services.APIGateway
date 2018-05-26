@@ -1,14 +1,17 @@
-﻿using System;
+﻿#region Related components
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+
 using net.vieapps.Components.Utility;
+#endregion
 
 namespace net.vieapps.Services.APIGateway
 {
 	public partial class MainForm : Form
 	{
-		string[] _args = null;
+		readonly string[] _args;
 
 		public MainForm(string[] args = null)
 		{
@@ -23,8 +26,9 @@ namespace net.vieapps.Services.APIGateway
 				await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
 				Program.Start(this._args, async () =>
 				{
+					Program.Controller.GetAvailableBusinessServices().Keys.ForEach(uri => Program.Services[uri] = false);
 					await Task.Delay(1234).ConfigureAwait(false);
-					Program.PrepareServices();
+					Program.Refresh();
 					this.UpdateServicesInfo();
 				});
 			}).ConfigureAwait(false);
@@ -34,7 +38,7 @@ namespace net.vieapps.Services.APIGateway
 
 		void ManageServices_Click(object sender, EventArgs args)
 		{
-			if (Program.Component.State == ServiceState.Ready || Program.Component.State == ServiceState.Connected)
+			if (Program.Controller.State == ServiceState.Ready || Program.Controller.State == ServiceState.Connected)
 			{
 				Program.ManagementForm = Program.ManagementForm ?? new ManagementForm();
 				Program.ManagementForm.Initialize();
@@ -49,26 +53,32 @@ namespace net.vieapps.Services.APIGateway
 
 		internal void UpdateLogs(string logs)
 		{
-			if (base.InvokeRequired)
-				base.Invoke(new UpdateLogsDelegator(this.UpdateLogs), new object[] { logs });
-			else
-				try
+			try
+			{
+				if (base.InvokeRequired)
+					base.Invoke(new UpdateLogsDelegator(this.UpdateLogs), new object[] { logs });
+				else
 				{
 					this.Logs.AppendText(logs + "\r\n");
 					this.Logs.SelectionStart = this.Logs.TextLength;
 					this.Logs.ScrollToCaret();
 				}
-				catch { }
+			}
+			catch { }
 		}
 
 		public delegate void UpdateServicesInfoDelegator();
 
 		internal void UpdateServicesInfo()
 		{
-			if (base.InvokeRequired)
-				base.Invoke(new UpdateServicesInfoDelegator(this.UpdateServicesInfo), new object[] { });
-			else
-				this.ServicesInfo.Text = $"Available services: {Program.Services.Count} - Running services: {Program.Services.Where(svc => svc.Value).Count()}";
+			try
+			{
+				if (base.InvokeRequired)
+					base.Invoke(new UpdateServicesInfoDelegator(this.UpdateServicesInfo), new object[] { });
+				else
+					this.ServicesInfo.Text = $"Available services: {Program.Services.Count} - Running services: {Program.Services.Where(svc => svc.Value).Count()}";
+			}
+			catch { }
 		}
 	}
 }

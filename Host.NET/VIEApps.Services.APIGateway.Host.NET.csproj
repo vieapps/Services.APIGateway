@@ -41,7 +41,8 @@
     <StartupObject>net.vieapps.Services.APIGateway.Program</StartupObject>
   </PropertyGroup>
   <PropertyGroup>
-    <ApplicationIcon>app.ico</ApplicationIcon>
+    <ApplicationIcon>
+    </ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
@@ -71,9 +72,6 @@
     <PackageReference Include="System.Data.SqlClient">
       <Version>4.4.3</Version>
     </PackageReference>
-  </ItemGroup>
-  <ItemGroup>
-    <Content Include="app.ico" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\Base\VIEApps.Services.Base.csproj">

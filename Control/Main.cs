@@ -53,6 +53,21 @@ namespace net.vieapps.Services.APIGateway
 		WebHookSender _webhookSender = null;
 		bool _isHouseKeeperRunning = false, _isTaskSchedulerRunning = false;
 		bool _registerHelperServices = true, _registerBusinessServices = true, _registerTimers = true, _disposed = false;
+
+		/// <summary>
+		/// Gets the number of registered helper serivces
+		/// </summary>
+		public int NumberOfHelperServices => this._helperServices.Count;
+
+		/// <summary>
+		/// Gets the number of scheduling tasks
+		/// </summary>
+		public int NumberOfTasks => this._tasks.Count;
+
+		/// <summary>
+		/// Gets the number of scheduling timers
+		/// </summary>
+		public int NumberOfTimers => this._timers.Count;
 		#endregion
 
 		#region Start/Stop controller
@@ -172,7 +187,7 @@ namespace net.vieapps.Services.APIGateway
 									{
 										this.RegisterMessagingTimers();
 										this.RegisterSchedulingTimers();
-										Global.OnProcess?.Invoke("The background workers & schedulers are registered");
+										Global.OnProcess?.Invoke($"The background workers & schedulers are registered - Number of scheduling timers: {this.NumberOfTimers:#,##0} - Number of scheduling tasks: {this.NumberOfTasks:#,##0}");
 									}
 									catch (Exception ex)
 									{
@@ -180,7 +195,10 @@ namespace net.vieapps.Services.APIGateway
 									}
 
 								if (this._registerBusinessServices)
-										this._businessServices.ForEach(kvp => Task.Run(() => this.StartBusinessService(kvp.Key)).ConfigureAwait(false));
+								{
+									var svcArgs = this.GetServiceArguments();
+									this._businessServices.ForEach(kvp => Task.Run(() => this.StartBusinessService(kvp.Key, svcArgs)).ConfigureAwait(false));
+								}
 
 								if (nextAsync != null)
 									try
@@ -267,13 +285,38 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Start/Stop business service
+		/// <summary>
+		/// Gets the collection of available businness services
+		/// </summary>
+		/// <returns></returns>
 		public Dictionary<string, string> GetAvailableBusinessServices()
-			=> this._businessServices.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.Executable);
+			=> this._businessServices.ToDictionary(kvp => $"net.vieapps.services.{kvp.Key}", kvp => kvp.Value.Arguments);
 
+		/// <summary>
+		/// Gets the state that determines a business service is available or not
+		/// </summary>
+		/// <param name="name"></param>
+		/// <returns></returns>
+		public bool IsBusinessServiceAvailable(string name)
+			=> !string.IsNullOrWhiteSpace(name) && this._businessServices.ContainsKey(name.Trim().ToLower());
+
+		/// <summary>
+		/// Gets the state that determines a business service is running or not
+		/// </summary>
+		/// <param name="name"></param>
+		/// <returns></returns>
 		public bool IsBusinessServiceRunning(string name)
+			=> this.GetServiceProcess(name) != null;
+
+		/// <summary>
+		/// Gets the process information of a business service
+		/// </summary>
+		/// <param name="name"></param>
+		/// <returns></returns>
+		public ExternalProcess.Info GetServiceProcess(string name)
 			=> !string.IsNullOrWhiteSpace(name) && this._businessServices.TryGetValue(name.Trim().ToLower(), out ServiceInfo info)
-				? info.Instance != null
-				: false;
+				? info.Instance
+				: null;
 
 		Tuple<string, string> PrepareServiceHosting(string name)
 		{
@@ -287,12 +330,27 @@ namespace net.vieapps.Services.APIGateway
 			return new Tuple<string, string>(serviceHosting, serviceInfo.Arguments);
 		}
 
+		/// <summary>
+		/// Gets the arguments for starting a business service with environment information
+		/// </summary>
+		/// <returns></returns>
+		public string GetServiceArguments()
+			=> $"/usr:{Environment.UserName?.UrlEncode()} /hst:{Environment.MachineName?.UrlEncode()} /pfn:{RuntimeInformation.FrameworkDescription.UrlEncode()} /pfo:{RuntimeInformation.OSDescription.Trim().UrlEncode()}";
+
+		/// <summary>
+		/// Starts a business service
+		/// </summary>
+		/// <param name="name"></param>
+		/// <param name="arguments"></param>
 		public void StartBusinessService(string name, string arguments = null)
 		{
-			if (this.IsBusinessServiceRunning(name))
+			name = name?.Trim().ToLower();
+			if (!this.IsBusinessServiceAvailable(name))
+				throw new ServiceNotFoundException($"The service [net.vieapps.services.{name}] is not found");
+
+			else if (this.IsBusinessServiceRunning(name))
 				return;
 
-			name = name.Trim().ToLower();
 			Global.OnProcess?.Invoke($"[{name}] => The service is starting");
 			try
 			{
@@ -321,12 +379,19 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
+		/// <summary>
+		/// Stops a business service
+		/// </summary>
+		/// <param name="name"></param>
 		public void StopBusinessService(string name)
 		{
-			if (!this.IsBusinessServiceRunning(name))
+			name = name?.Trim().ToLower();
+			if (!this.IsBusinessServiceAvailable(name))
+				throw new ServiceNotFoundException($"The service [net.vieapps.services.{name}] is not found");
+
+			else if (!this.IsBusinessServiceRunning(name))
 				return;
 
-			name = name.Trim().ToLower();
 			Global.OnProcess?.Invoke($"[{name}] => The service is stopping");
 			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
 				try
@@ -345,7 +410,27 @@ namespace net.vieapps.Services.APIGateway
 				ExternalProcess.Stop(this._businessServices[name].Instance, info => { }, ex => Global.OnError?.Invoke($"Error occurred while stopping the service [{name}] => {ex.Message}", ex));
 		}
 
-		internal void StopBusinessService(string name, Action onStopped = null)
+		/// <summary>
+		/// Starts a business service
+		/// </summary>
+		/// <param name="name"></param>
+		/// <param name="arguments"></param>
+		/// <param name="onStarted"></param>
+		public void StartBusinessService(string name, string arguments, Action onStarted)
+		{
+			if (!this.IsBusinessServiceRunning(name))
+			{
+				this.StartBusinessService(name, arguments);
+				onStarted?.Invoke();
+			}
+		}
+
+		/// <summary>
+		/// Stops a business service
+		/// </summary>
+		/// <param name="name"></param>
+		/// <param name="onStopped"></param>
+		public void StopBusinessService(string name, Action onStopped)
 		{
 			if (this.IsBusinessServiceRunning(name))
 			{
@@ -380,6 +465,8 @@ namespace net.vieapps.Services.APIGateway
 
 			this._helperServices.Add(await WAMPConnections.IncommingChannel.RealmProxy.Services.RegisterCallee(new RTUService(), RegistrationInterceptor.Create()).ConfigureAwait(false));
 			Global.OnProcess?.Invoke($"The real-time update (RTU) service is{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
+
+			Global.OnProcess?.Invoke($"Number of helper services: {this.NumberOfHelperServices:#,##0}");
 		}
 		#endregion
 

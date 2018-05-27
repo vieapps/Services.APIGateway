@@ -34,22 +34,10 @@ namespace net.vieapps.Services.APIGateway
 		{
 			RTU.WebSocket = new Components.WebSockets.WebSocket(Components.Utility.Logger.GetLoggerFactory(), null, Global.CancellationTokenSource.Token)
 			{
-				OnError = (websocket, exception) =>
-				{
-					Global.WriteLogs(RTU.Logger, "RTU", $"Got error while processing: {exception.Message} ({websocket?.ID} {websocket?.RemoteEndPoint})", exception);
-				},
-				OnConnectionEstablished = (websocket) =>
-				{
-					Task.Run(() => RTU.WhenConnectionEstablishedAsync(websocket)).ConfigureAwait(false);
-				},
-				OnConnectionBroken = (websocket) =>
-				{
-					Task.Run(() => RTU.WhenConnectionBrokenAsync(websocket)).ConfigureAwait(false);
-				},
-				OnMessageReceived = (websocket, result, data) =>
-				{
-					Task.Run(() => RTU.WhenMessageReceivedAsync(websocket, result, data)).ConfigureAwait(false);
-				}
+				OnError = (websocket, exception) => Global.WriteLogs(RTU.Logger, "RTU", $"Got error while processing: {exception.Message} ({websocket?.ID} {websocket?.RemoteEndPoint})", exception),
+				OnConnectionEstablished = (websocket) => Task.Run(() => RTU.WhenConnectionIsEstablishedAsync(websocket)).ConfigureAwait(false),
+				OnConnectionBroken = (websocket) => Task.Run(() => RTU.WhenConnectionIsBrokenAsync(websocket)).ConfigureAwait(false),
+				OnMessageReceived = (websocket, result, data) => Task.Run(() => RTU.WhenMessageIsReceivedAsync(websocket, result, data)).ConfigureAwait(false)
 			};
 			Global.Logger.LogInformation($"WebSocket ({Global.ServiceName} RTU) is initialized - Buffer size: {Components.WebSockets.WebSocket.ReceiveBufferSize:#,##0} bytes - Keep-Alive interval: {RTU.WebSocket.KeepAliveInterval.TotalSeconds} second(s)");
 		}
@@ -60,7 +48,7 @@ namespace net.vieapps.Services.APIGateway
 			Global.Logger.LogInformation($"WebSocket ({Global.ServiceName} RTU) is stopped");
 		}
 
-		static async Task WhenConnectionEstablishedAsync(ManagedWebSocket websocket)
+		static async Task WhenConnectionIsEstablishedAsync(ManagedWebSocket websocket)
 		{
 			// prepare
 			Session session = null;
@@ -70,7 +58,7 @@ namespace net.vieapps.Services.APIGateway
 				queryString = websocket.RequestUri.ParseQuery();
 
 				if (!queryString.ContainsKey("x-request"))
-					throw new InvalidRequestException("Request is not found");
+					throw new InvalidRequestException("\"x-request\" is not found");
 
 				ExpandoObject request;
 				try
@@ -180,7 +168,7 @@ namespace net.vieapps.Services.APIGateway
 			).ConfigureAwait(false);
 		}
 
-		static async Task WhenConnectionBrokenAsync(ManagedWebSocket websocket)
+		static async Task WhenConnectionIsBrokenAsync(ManagedWebSocket websocket)
 		{
 			// prepare
 			websocket.Extra.TryGetValue("Session", out object wsession);
@@ -222,7 +210,7 @@ namespace net.vieapps.Services.APIGateway
 				).ConfigureAwait(false);
 		}
 
-		static async Task WhenMessageReceivedAsync(ManagedWebSocket websocket, WebSocketReceiveResult result, byte[] data)
+		static async Task WhenMessageIsReceivedAsync(ManagedWebSocket websocket, WebSocketReceiveResult result, byte[] data)
 		{
 			// check message
 			var requestMsg = result.MessageType.Equals(WebSocketMessageType.Text) ? data.GetString() : null;
@@ -247,7 +235,7 @@ namespace net.vieapps.Services.APIGateway
 			var serviceName = requestInfo.Get<string>("ServiceName");
 			var objectName = requestInfo.Get<string>("ObjectName");
 			var verb = (requestInfo.Get<string>("Verb") ?? "GET").ToUpper();
-			var extra = requestInfo.Get<Dictionary<string, string>>("Extra");
+			var extra = requestInfo.Get<Dictionary<string, string>>("Extra") ?? new Dictionary<string, string>();
 
 			if (Global.IsDebugLogEnabled)
 				await Global.WriteLogsAsync(RTU.Logger, "RTU", $"Begin process => {verb} /{serviceName}/{objectName}").ConfigureAwait(false);
@@ -269,7 +257,7 @@ namespace net.vieapps.Services.APIGateway
 				).ConfigureAwait(false);
 
 			// update the session
-			else if ("PATCH".IsEquals(verb) && "users".IsEquals(serviceName) && "session".IsEquals(objectName) && extra != null && extra.ContainsKey("x-session"))
+			else if ("PATCH".IsEquals(verb) && "users".IsEquals(serviceName) && "session".IsEquals(objectName) && extra.ContainsKey("x-session"))
 			{
 				// call user service
 				var sessionID = extra["x-session"].GetDecryptedID();
@@ -342,7 +330,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// create new session (anonymous only)
-			else if ("NEW".IsEquals(verb) && "users".IsEquals(serviceName) && "session".IsEquals(objectName) && extra != null && extra.ContainsKey("x-session") && session.User.ID.Equals(""))
+			else if ("NEW".IsEquals(verb) && "users".IsEquals(serviceName) && "session".IsEquals(objectName) && extra.ContainsKey("x-session") && session.User.ID.Equals(""))
 			{
 				// prepare request
 				var sessionID = extra["x-session"].GetDecryptedID();
@@ -499,7 +487,7 @@ namespace net.vieapps.Services.APIGateway
 
 			var message = new JObject
 			{
-				{ "Message", type },
+				{ "Message", msg },
 				{ "Type", type },
 				{ "Code", code },
 				{ "CorrelationID", Global.GetCorrelationID() }
@@ -541,12 +529,12 @@ namespace net.vieapps.Services.APIGateway
 
 			// send & write logs
 			await Task.WhenAll(
-				websocket.SendAsync(message.ToString(Global.IsDebugResultsEnabled ? Formatting.Indented : Formatting.None), true, Global.CancellationTokenSource.Token),
+				websocket.SendAsync(message.ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None), true, Global.CancellationTokenSource.Token),
 				Global.WriteLogsAsync(RTU.Logger, "RTU", msg ?? $"Error with real-time updater: {exception.Message}", exception)
 			).ConfigureAwait(false);
 		}
 
 		static Task SendAsync(this ManagedWebSocket websocket, UpdateMessage message)
-			=> websocket.SendAsync(message.ToJson().ToString(Global.IsDebugResultsEnabled ? Formatting.Indented : Formatting.None), true, Global.CancellationTokenSource.Token);
+			=> websocket.SendAsync(message.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None), true, Global.CancellationTokenSource.Token);
 	}
 }

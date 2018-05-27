@@ -44,6 +44,7 @@ namespace net.vieapps.Services.APIGateway
 
 		~LoggingService()
 		{
+			this.CancellationTokenSource.Cancel();
 			this.CancellationTokenSource.Dispose();
 		}
 

@@ -45,7 +45,7 @@ namespace net.vieapps.Services.APIGateway
 		public Task SendUpdateMessagesAsync(List<BaseMessage> messages, string deviceID, string excludedDeviceID, CancellationToken cancellationToken = default(CancellationToken))
 			=> UtilityService.ExecuteTask(() =>
 			{
-				var publisher = messages.Select(message => new UpdateMessage()
+				var publisher = messages.Select(message => new UpdateMessage
 				{
 					Type = message.Type,
 					Data = message.Data,

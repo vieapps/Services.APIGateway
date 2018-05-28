@@ -125,7 +125,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 						context.SetResponseHeaders((int)HttpStatusCode.NotModified, eTag, lastModifed, "public", context.GetCorrelationID());
 						if (Global.IsDebugLogEnabled)
-							await context.WriteLogsAsync("StaticFiles", $"Response with status code 304 to reduce traffic ({filePath})").ConfigureAwait(false);
+							await context.WriteLogsAsync("StaticFiles", $"Success response with status code 304 to reduce traffic ({filePath})").ConfigureAwait(false);
 						return;
 					}
 				}

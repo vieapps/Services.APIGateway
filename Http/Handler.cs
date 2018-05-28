@@ -99,10 +99,12 @@ namespace net.vieapps.Services.APIGateway
 				// prepare
 				FileInfo fileInfo = null;
 				var pathSegments = requestUri.GetRequestPathSegments();
-				var filePath = pathSegments[0].IsEquals("statics")
+
+				var filePath = (pathSegments[0].IsEquals("statics")
 					? UtilityService.GetAppSetting("Path:StaticFiles", Global.RootPath + "/data-files/statics")
-					: Global.RootPath;
-				filePath += ("/" + string.Join("/", pathSegments)).Replace("/statics/", "/").Replace("//", "/").Replace(@"\", "/").Replace("/", Path.DirectorySeparatorChar.ToString());
+					: Global.RootPath) + ("/" + string.Join("/", pathSegments)).Replace("//", "/").Replace(@"\", "/").Replace('/', Path.DirectorySeparatorChar);
+				if (pathSegments[0].IsEquals("statics"))
+					filePath = filePath.Replace($"{Path.DirectorySeparatorChar}statics{Path.DirectorySeparatorChar}statics{Path.DirectorySeparatorChar}", $"{Path.DirectorySeparatorChar}statics{Path.DirectorySeparatorChar}");
 
 				// check request headers to reduce traffict
 				var eTag = "Static#" + $"{requestUri}".ToLower().GenerateUUID();

@@ -30,27 +30,28 @@ namespace net.vieapps.Services.APIGateway
 
 			// prepare type name
 			var serviceTypeName = args?.FirstOrDefault(a => a.IsStartsWith("/svc:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/svc:", "");
-			var configFilename = $"VIEApps.Services.APIGateway.{(RuntimeInformation.FrameworkDescription.IsContains(".NET Framework") ? "exe" : "dll")}.config";
-			if (string.IsNullOrWhiteSpace(serviceTypeName) && File.Exists(configFilename) && args?.FirstOrDefault(a => a.IsStartsWith("/svn:")) != null)
-				try
-				{
-					var xpath = $"/configuration/net.vieapps.services/add[@name='{args.First(a => a.IsStartsWith("/svn:")).Replace(StringComparison.OrdinalIgnoreCase, "/svn:", "").ToLower()}']";
-					var xml = new System.Xml.XmlDocument();
-					xml.LoadXml(UtilityService.ReadTextFile(configFilename));
-					serviceTypeName = xml.DocumentElement.SelectSingleNode(xpath)?.Attributes["type"]?.Value.Replace(" ", "");
-					if (serviceTypeName.IsEndsWith("#x86") || serviceTypeName.IsEndsWith("@x86") || serviceTypeName.IsEndsWith(",x86") || serviceTypeName.IsEndsWith(":x86") || serviceTypeName.IsEndsWith("-x86"))
-						serviceTypeName = serviceTypeName.Left(serviceTypeName.Length - 4);
-				}
-				catch { }
+			if (string.IsNullOrWhiteSpace(serviceTypeName) && args?.FirstOrDefault(a => a.IsStartsWith("/svn:")) != null)
+			{
+				var configFilename = $"{UtilityService.GetAppSetting("Path:APIGateway", "")}VIEApps.Services.APIGateway.{(RuntimeInformation.FrameworkDescription.IsContains(".NET Framework") ? "exe" : "dll")}.config";
+				if (File.Exists(configFilename))
+					try
+					{
+						var xpath = $"/configuration/net.vieapps.services/add[@name='{args.First(a => a.IsStartsWith("/svn:")).Replace(StringComparison.OrdinalIgnoreCase, "/svn:", "").ToLower()}']";
+						var xml = new System.Xml.XmlDocument();
+						xml.LoadXml(UtilityService.ReadTextFile(configFilename));
+						serviceTypeName = xml.DocumentElement.SelectSingleNode(xpath)?.Attributes["type"]?.Value.Replace(" ", "");
+					}
+					catch { }
+			}
 
 			// stop if has no type name of a service component
 			if (string.IsNullOrWhiteSpace(serviceTypeName))
 			{
 				if (isUserInteractive)
 				{
-					Console.WriteLine($"VIEApps NGX API Gateway - Service Hosting v{Assembly.GetExecutingAssembly().GetVersion()}" + "\r\n");
-					Console.WriteLine("Syntax: VIEApps.Services.APIGateway /svc:<service-component-namespace,service-assembly>" + "\r\n");
-					Console.WriteLine("Ex.: VIEApps.Services.APIGateway /svc:net.vieapps.Services.Systems.ServiceComponent,VIEApps.Services.Systems" + "\r\n");
+					Console.Error.WriteLine($"VIEApps NGX API Gateway - Service Hosting v{Assembly.GetExecutingAssembly().GetVersion()}" + "\r\n");
+					Console.Error.WriteLine("Syntax: VIEApps.Services.APIGateway /svc:<service-component-namespace,service-assembly>" + "\r\n");
+					Console.Error.WriteLine("Ex.: VIEApps.Services.APIGateway /svc:net.vieapps.Services.Systems.ServiceComponent,VIEApps.Services.Systems" + "\r\n");
 					Console.ReadLine();
 				}
 				else
@@ -171,6 +172,7 @@ namespace net.vieapps.Services.APIGateway
 					if (isUserInteractive)
 						logger.LogWarning($"=====> Enter \"exit\" to terminate ...............");
 
+					stopwatch.Restart();
 					return Task.CompletedTask;
 				}
 			);
@@ -192,7 +194,8 @@ namespace net.vieapps.Services.APIGateway
 			serviceComponent.Stop();
 			serviceComponent.Dispose();
 
-			logger.LogInformation("The service is stopped");
+			stopwatch.Stop();
+			logger.LogInformation($"The service is stopped - Served times: {stopwatch.GetElapsedTimes()}");
 		}
 	}
 }

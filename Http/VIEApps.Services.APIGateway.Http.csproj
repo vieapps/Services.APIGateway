@@ -19,12 +19,10 @@
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
 		<WarningLevel>3</WarningLevel>
-		<DocumentationFile>bin\Debug\netcoreapp2.0\VIEApps.Services.APIGateway.xml</DocumentationFile>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
 		<WarningLevel>3</WarningLevel>
-		<DocumentationFile>bin\Release\netcoreapp2.0\VIEApps.Services.APIGateway.xml</DocumentationFile>
 	</PropertyGroup>
 
 	<ItemGroup>

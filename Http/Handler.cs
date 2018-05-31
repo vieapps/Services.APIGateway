@@ -72,97 +72,23 @@ namespace net.vieapps.Services.APIGateway
 		{
 			// prepare
 			context.Items["PipelineStopwatch"] = Stopwatch.StartNew();
-			var path = context.GetRequestPathSegments(true).First();
+			var requestPath = context.GetRequestPathSegments(true).First();
 
 			// request to favicon.ico file
-			if (path.Equals("favicon.ico"))
+			if (requestPath.Equals("favicon.ico"))
 				context.ShowHttpError((int)HttpStatusCode.NotFound, "Not Found", "FileNotFoundException", context.GetCorrelationID());
 
 			// request to static segments
-			else if (Global.StaticSegments.Contains(path))
-				await this.ProcessStaticRequestAsync(context).ConfigureAwait(false);
+			else if (Global.StaticSegments.Contains(requestPath))
+				await context.ProcessStaticFileRequestAsync().ConfigureAwait(false);
 
 			// request to external APIs
-			else if (APIGateway.ExternalAPIs.APIs.ContainsKey(path))
+			else if (APIGateway.ExternalAPIs.APIs.ContainsKey(requestPath))
 				await APIGateway.ExternalAPIs.ProcessRequestAsync(context).ConfigureAwait(false);
 
 			// request to internal APIs
 			else
 				await APIGateway.InternalAPIs.ProcessRequestAsync(context).ConfigureAwait(false);
-		}
-
-		internal async Task ProcessStaticRequestAsync(HttpContext context)
-		{
-			var requestUri = context.GetRequestUri();
-			try
-			{
-				// prepare
-				FileInfo fileInfo = null;
-				var pathSegments = requestUri.GetRequestPathSegments();
-
-				var filePath = (pathSegments[0].IsEquals("statics")
-					? UtilityService.GetAppSetting("Path:StaticFiles", Global.RootPath + "/data-files/statics")
-					: Global.RootPath) + ("/" + string.Join("/", pathSegments)).Replace("//", "/").Replace(@"\", "/").Replace('/', Path.DirectorySeparatorChar);
-				if (pathSegments[0].IsEquals("statics"))
-					filePath = filePath.Replace($"{Path.DirectorySeparatorChar}statics{Path.DirectorySeparatorChar}statics{Path.DirectorySeparatorChar}", $"{Path.DirectorySeparatorChar}statics{Path.DirectorySeparatorChar}");
-
-				// check request headers to reduce traffict
-				var eTag = "Static#" + $"{requestUri}".ToLower().GenerateUUID();
-				if (eTag.IsEquals(context.GetHeaderParameter("If-None-Match")))
-				{
-					var isNotModified = true;
-					var lastModifed = DateTime.Now.ToUnixTimestamp();
-					if (context.GetHeaderParameter("If-Modified-Since") != null)
-					{
-						fileInfo = new FileInfo(filePath);
-						if (fileInfo.Exists)
-						{
-							lastModifed = fileInfo.LastWriteTime.ToUnixTimestamp();
-							isNotModified = lastModifed <= context.GetHeaderParameter("If-Modified-Since").FromHttpDateTime().ToUnixTimestamp();
-						}
-						else
-							isNotModified = false;
-					}
-					if (isNotModified)
-					{
-						context.SetResponseHeaders((int)HttpStatusCode.NotModified, eTag, lastModifed, "public", context.GetCorrelationID());
-						if (Global.IsDebugLogEnabled)
-							await context.WriteLogsAsync("StaticFiles", $"Success response with status code 304 to reduce traffic ({filePath})").ConfigureAwait(false);
-						return;
-					}
-				}
-
-				// check existed
-				fileInfo = fileInfo ?? new FileInfo(filePath);
-				if (!fileInfo.Exists)
-					throw new FileNotFoundException($"Not Found [{requestUri}]");
-
-				// prepare body
-				var fileMimeType = fileInfo.GetMimeType();
-				var fileContent = fileMimeType.IsEndsWith("json")
-					? JObject.Parse(await UtilityService.ReadTextFileAsync(fileInfo, null, Global.CancellationTokenSource.Token).ConfigureAwait(false)).ToString(Formatting.Indented).ToBytes()
-					: await UtilityService.ReadBinaryFileAsync(fileInfo, Global.CancellationTokenSource.Token).ConfigureAwait(false);
-
-				// response
-				context.SetResponseHeaders((int)HttpStatusCode.OK, new Dictionary<string, string>
-				{
-					{ "Content-Type", $"{fileMimeType}; charset=utf-8" },
-					{ "ETag", eTag },
-					{ "Last-Modified", $"{fileInfo.LastWriteTime.ToHttpString()}" },
-					{ "Cache-Control", "public" },
-					{ "Expires", $"{DateTime.Now.AddDays(7).ToHttpString()}" },
-					{ "X-CorrelationID", context.GetCorrelationID() }
-				});
-				await Task.WhenAll(
-					context.WriteAsync(fileContent, Global.CancellationTokenSource.Token),
-					!Global.IsDebugLogEnabled ? Task.CompletedTask : context.WriteLogsAsync("StaticFiles", $"Success response ({filePath} - {fileInfo.Length:#,##0} bytes)")
-				).ConfigureAwait(false);
-			}
-			catch (Exception ex)
-			{
-				await context.WriteLogsAsync("StaticFiles", $"Failure response [{requestUri}]", ex).ConfigureAwait(false);
-				context.ShowHttpError(ex.GetHttpStatusCode(), ex.Message, ex.GetType().GetTypeName(true), context.GetCorrelationID(), ex, Global.IsDebugLogEnabled);
-			}
 		}
 
 		#region classes for logging

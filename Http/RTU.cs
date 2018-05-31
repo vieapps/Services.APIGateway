@@ -32,7 +32,7 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static void Initialize()
 		{
-			RTU.WebSocket = new Components.WebSockets.WebSocket(Components.Utility.Logger.GetLoggerFactory(), null, Global.CancellationTokenSource.Token)
+			RTU.WebSocket = new Components.WebSockets.WebSocket(Components.Utility.Logger.GetLoggerFactory(), Global.CancellationTokenSource.Token)
 			{
 				OnError = (websocket, exception) => Global.WriteLogs(RTU.Logger, "RTU", $"Got error while processing: {exception.Message} ({websocket?.ID} {websocket?.RemoteEndPoint})", exception),
 				OnConnectionEstablished = (websocket) => Task.Run(() => RTU.WhenConnectionIsEstablishedAsync(websocket)).ConfigureAwait(false),

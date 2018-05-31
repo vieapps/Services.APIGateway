@@ -107,7 +107,7 @@ namespace net.vieapps.Services.APIGateway
 			app.UseMiddleware<Handler>();
 
 			// caching & logging
-			InternalAPIs.Cache = new Cache("VIEApps-API-Gateway", this.Configuration.GetAppSetting("Cache/ExpirationTime", 30), false, this.Configuration.GetAppSetting("Cache/Provider", "Redis"), loggerFactory);
+			InternalAPIs.Cache = app.ApplicationServices.GetService<ICache>();
 			InternalAPIs.Logger = loggerFactory.CreateLogger<Handler.InternalAPIs>();
 			RTU.Logger = loggerFactory.CreateLogger<Handler.RTU>();
 

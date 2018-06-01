@@ -14,7 +14,7 @@
 		<Version>10.2.0.1806</Version>
 		<AssemblyVersion>10.2.0.1806</AssemblyVersion>
 		<FileVersion>10.2.0.1806</FileVersion>
-		<InformationalVersion>v10.2.netcore-2+rev:2018.06.01</InformationalVersion>
+		<InformationalVersion>v10.2.netcore-2.1+rev:2018.06.01</InformationalVersion>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
@@ -40,6 +40,7 @@
 		<ProjectReference Include="..\..\MssReports\VIEApps.Services.MssReports.csproj" />
 		<ProjectReference Include="..\..\OTPs\Authenticator\VIEApps.Services.OTPs.Authenticator.csproj" />
 		<ProjectReference Include="..\..\Systems\VIEApps.Services.Systems.csproj" />
+		<ProjectReference Include="..\..\Users\Service.Windows\VIEApps.Services.Users.WindowsAD.csproj" />
 		<ProjectReference Include="..\..\Users\Service\VIEApps.Services.Users.csproj" />
 	</ItemGroup>
 

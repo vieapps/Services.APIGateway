@@ -145,6 +145,7 @@ namespace net.vieapps.Services.APIGateway
 					(sender, arguments) =>
 					{
 						Global.OnProcess?.Invoke($"The incoming channel is established - Session ID: {arguments.SessionId}");
+						WAMPConnections.IncommingChannel.Update(WAMPConnections.IncommingChannelSessionID, "APIGateway", "Incomming (APIGateway Services Controller)");
 						if (this.State == ServiceState.Initializing)
 							this.State = ServiceState.Ready;
 
@@ -242,6 +243,7 @@ namespace net.vieapps.Services.APIGateway
 					(sender, arguments) =>
 					{
 						Global.OnProcess?.Invoke($"The outgoing channel is established - Session ID: {arguments.SessionId}");
+						WAMPConnections.OutgoingChannel.Update(WAMPConnections.OutgoingChannelSessionID, "APIGateway", "Outgoing (APIGateway Services Controller)");
 					},
 					(sender, arguments) =>
 					{

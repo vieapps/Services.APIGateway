@@ -915,6 +915,7 @@ namespace net.vieapps.Services.APIGateway
 				(sender, args) =>
 				{
 					Global.Logger.LogInformation($"Incomming channel to WAMP router is established - Session ID: {args.SessionId}");
+					WAMPConnections.IncommingChannel.Update(WAMPConnections.IncommingChannelSessionID, Global.ServiceName, $"Incomming ({Global.ServiceName} HTTP service)");
 					Global.InterCommunicateMessageUpdater?.Dispose();
 					Global.InterCommunicateMessageUpdater = WAMPConnections.IncommingChannel.RealmProxy.Services
 						.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
@@ -938,6 +939,7 @@ namespace net.vieapps.Services.APIGateway
 				(sender, args) =>
 				{
 					Global.Logger.LogInformation($"Outgoing channel to WAMP router is established - Session ID: {args.SessionId}");
+					WAMPConnections.OutgoingChannel.Update(WAMPConnections.OutgoingChannelSessionID, Global.ServiceName, $"Outgoing ({Global.ServiceName} HTTP service)");
 					try
 					{
 						Task.WaitAll(new[] { Global.InitializeLoggingServiceAsync(), Global.InitializeRTUServiceAsync() }, waitingTimes > 0 ? waitingTimes : 6789, Global.CancellationTokenSource.Token);

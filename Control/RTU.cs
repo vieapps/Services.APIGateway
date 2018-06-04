@@ -9,6 +9,8 @@ using System.Reactive.Subjects;
 using System.Reactive.Linq;
 
 using Newtonsoft.Json;
+using WampSharp.V2;
+using WampSharp.V2.Client;
 
 using net.vieapps.Components.Utility;
 #endregion
@@ -17,23 +19,23 @@ namespace net.vieapps.Services.APIGateway
 {
 	public class RTUService : IRTUService
 	{
-		readonly ConcurrentDictionary<string, ISubject<CommunicateMessage>> _communicateSubjects = new ConcurrentDictionary<string, ISubject<CommunicateMessage>>();
-		ISubject<UpdateMessage> _updateSubject = null;
+		ISubject<UpdateMessage> Publisher { get; set; } = null;
 
-		ISubject<UpdateMessage> GetUpdateSubject()
-			=> this._updateSubject ?? (this._updateSubject = WAMPConnections.OutgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages"));
+		public ISubject<UpdateMessage> GetPublisher()
+			=> this.Publisher ?? (this.Publisher = WAMPConnections.OutgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages"));
 
 		public Task SendUpdateMessageAsync(UpdateMessage message, CancellationToken cancellationToken = default(CancellationToken))
 			=> UtilityService.ExecuteTask(() =>
 			{
 				try
 				{
-					this.GetUpdateSubject().OnNext(message);
+					this.GetPublisher().OnNext(message);
 					Global.OnSendRTUMessageSuccess?.Invoke(
-						"Publish an update message successful" + "\r\n" +
+						$"Publish an update message successful" + "\r\n" +
 						$"- Device: {message.DeviceID}" + "\r\n" +
 						$"- Excluded: {(string.IsNullOrWhiteSpace(message.ExcludedDeviceID) ? "None" : message.ExcludedDeviceID)}" + "\r\n" +
-						$"- Message: {message.Data.ToString(Formatting.None)}"
+						$"- Type: {message.Type}" + "\r\n" +
+						$"- Data: {message.Data.ToString(Formatting.None)}"
 					);
 				}
 				catch (Exception exception)
@@ -54,12 +56,13 @@ namespace net.vieapps.Services.APIGateway
 				}).ToObservable().Subscribe(
 					message =>
 					{
-						this.GetUpdateSubject().OnNext(message);
+						this.GetPublisher().OnNext(message);
 						Global.OnSendRTUMessageSuccess?.Invoke(
-							"Publish an update message successful" + "\r\n" +
+							$"Publish an update message successful" + "\r\n" +
 							$"- Device: {message.DeviceID}" + "\r\n" +
 							$"- Excluded: {(string.IsNullOrWhiteSpace(message.ExcludedDeviceID) ? "None" : message.ExcludedDeviceID)}" + "\r\n" +
-							$"- Message: {message.Data.ToString(Formatting.None)}"
+							$"- Type: {message.Type}" + "\r\n" +
+							$"- Data: {message.Data.ToString(Formatting.None)}"
 						);
 					},
 					exception => Global.OnSendRTUMessageFailure?.Invoke($"Error occurred while publishing an update message: {exception.Message}", exception)
@@ -67,13 +70,15 @@ namespace net.vieapps.Services.APIGateway
 				using (publisher) { }
 			}, cancellationToken);
 
-		ISubject<CommunicateMessage> GetCommunicateSubject(string serviceName)
+		ConcurrentDictionary<string, ISubject<CommunicateMessage>> InterCommunicatePublishers { get; set; } = new ConcurrentDictionary<string, ISubject<CommunicateMessage>>();
+
+		public ISubject<CommunicateMessage> GetInterCommunicatePublisher(string serviceName)
 		{
 			var uri = "net.vieapps.rtu.communicate.messages." + serviceName.Trim().ToLower();
-			if (!this._communicateSubjects.TryGetValue(uri, out ISubject<CommunicateMessage> subject))
+			if (!this.InterCommunicatePublishers.TryGetValue(uri, out ISubject<CommunicateMessage> subject))
 			{
 				subject = WAMPConnections.OutgoingChannel.RealmProxy.Services.GetSubject<CommunicateMessage>(uri);
-				this._communicateSubjects.TryAdd(uri, subject);
+				this.InterCommunicatePublishers.TryAdd(uri, subject);
 			}
 			return subject;
 		}
@@ -87,8 +92,13 @@ namespace net.vieapps.Services.APIGateway
 				if (message != null && !string.IsNullOrWhiteSpace(message.ServiceName))
 					try
 					{
-						this.GetCommunicateSubject(message.ServiceName).OnNext(message);
-						Global.OnSendRTUMessageSuccess?.Invoke($"Publish an inter-communicate message successful {message.Data.ToString(Formatting.None)}");
+						this.GetInterCommunicatePublisher(message.ServiceName).OnNext(message);
+						Global.OnSendRTUMessageSuccess?.Invoke(
+							$"Publish an inter-communicate message successful" + "\r\n" +
+							$"- Service: {message.ServiceName}" + "\r\n" +
+							$"- Type: {message.Type}" + "\r\n" +
+							$"- Data: {message.Data.ToString(Formatting.None)}"
+						);
 					}
 					catch (Exception exception)
 					{
@@ -119,12 +129,17 @@ namespace net.vieapps.Services.APIGateway
 			{
 				if (messages != null && !string.IsNullOrWhiteSpace(serviceName))
 				{
-					var subject = this.GetCommunicateSubject(serviceName);
+					var subject = this.GetInterCommunicatePublisher(serviceName);
 					var publisher = messages.ToObservable().Subscribe(
 						message =>
 						{
 							subject.OnNext(message);
-							Global.OnSendRTUMessageSuccess?.Invoke($"Publish an inter-communicate message successful {message.Data.ToString(Formatting.None)}");
+							Global.OnSendRTUMessageSuccess?.Invoke(
+								$"Publish an inter-communicate message successful" + "\r\n" +
+								$"- Service: {message.ServiceName}" + "\r\n" +
+								$"- Type: {message.Type}" + "\r\n" +
+								$"- Data: {message.Data.ToString(Formatting.None)}"
+							);
 						},
 						exception => Global.OnSendRTUMessageFailure?.Invoke($"Error occurred while publishing an inter-communicate message: {exception.Message}", exception)
 					);

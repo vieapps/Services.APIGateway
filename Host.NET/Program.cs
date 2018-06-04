@@ -23,6 +23,7 @@ namespace net.vieapps.Services.APIGateway
 		static void Main(string[] args)
 		{
 			// prepare
+			var start = DateTime.Now;
 			var stopwatch = Stopwatch.StartNew();
 
 			var apiCall = args?.FirstOrDefault(a => a.IsStartsWith("/agc:"));
@@ -95,7 +96,8 @@ namespace net.vieapps.Services.APIGateway
 			if (useEventWaitHandle)
 			{
 				// get the flag of the existing instance
-				eventWaitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, $"{serviceComponent.ServiceURI}@{Environment.UserName}", out bool createdNew);
+				var name = $"{serviceComponent.ServiceURI}#{string.Join("#", (args ?? new string[] { }).Where(a => !a.IsStartsWith("/agc:"))).GenerateUUID()}";
+				eventWaitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, name, out bool createdNew);
 
 				// process the call to stop
 				if ("/agc:s".IsEquals(apiCall))
@@ -151,7 +153,7 @@ namespace net.vieapps.Services.APIGateway
 			// start the service component
 			logger.LogInformation($"The service is starting");
 			logger.LogInformation($"Version: {serviceType.Assembly.GetVersion()}");
-			logger.LogInformation($"Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "Other OS")} {RuntimeInformation.OSArchitecture} ({RuntimeInformation.OSDescription.Trim()})");
+			logger.LogInformation($"Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "macOS")} {RuntimeInformation.OSArchitecture} ({(RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "Macintosh; Intel Mac OS X; " : "")}{RuntimeInformation.OSDescription.Trim()})");
 
 			ServiceBase.ServiceComponent = serviceComponent as ServiceBase;
 			serviceComponent.Start(
@@ -172,7 +174,6 @@ namespace net.vieapps.Services.APIGateway
 					if (isUserInteractive)
 						logger.LogWarning($"=====> Enter \"exit\" to terminate ...............");
 
-					stopwatch.Restart();
 					return Task.CompletedTask;
 				}
 			);
@@ -194,8 +195,7 @@ namespace net.vieapps.Services.APIGateway
 			serviceComponent.Stop();
 			serviceComponent.Dispose();
 
-			stopwatch.Stop();
-			logger.LogInformation($"The service is stopped - Served times: {stopwatch.GetElapsedTimes()}");
+			logger.LogInformation($"The service is stopped - Served times: {start.GetElapsedTimes()}");
 		}
 	}
 }

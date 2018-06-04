@@ -6,24 +6,24 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 using net.vieapps.Components.Utility;
 #endregion
 
 namespace net.vieapps.Services.APIGateway
 {
-	static class Program
+	public static class Program
 	{
 
 		#region Properties
 		internal static CancellationTokenSource CancellationTokenSource { get; set; } = null;
-
-		internal static IServiceManager ServiceManager { get; set; } = null;
 
 		internal static ILoggingService LoggingService { get; set; } = null;
 
@@ -35,7 +35,9 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static ManagementForm ManagementForm { get; set; } = null;
 
-		internal static Dictionary<string, bool> Services { get; } = new Dictionary<string, bool>();
+		internal static ConcurrentDictionary<string, IServiceManager> ServiceManagers { get; } = new ConcurrentDictionary<string, IServiceManager>();
+
+		internal static ConcurrentDictionary<string, Dictionary<string, bool>> Services { get; } = new ConcurrentDictionary<string, Dictionary<string, bool>>();
 		#endregion
 
 		[STAThread]
@@ -142,7 +144,7 @@ namespace net.vieapps.Services.APIGateway
 
 			Global.OnServiceStarted = (serviceName, message) =>
 			{
-				Program.SetState(serviceName, true);
+				Program.SetServiceState(Program.Controller.Info.ID, serviceName, true);
 				Program.Logger.LogInformation($"[{serviceName.ToLower()}] => {message}");
 				if (Environment.UserInteractive)
 				{
@@ -153,7 +155,7 @@ namespace net.vieapps.Services.APIGateway
 
 			Global.OnServiceStopped = (serviceName, message) =>
 			{
-				Program.SetState(serviceName, false);
+				Program.SetServiceState(Program.Controller.Info.ID, serviceName, false);
 				Program.Logger.LogInformation($"[{serviceName.ToLower()}] => {message}");
 				if (Environment.UserInteractive)
 				{
@@ -179,7 +181,30 @@ namespace net.vieapps.Services.APIGateway
 		internal static void Start(string[] args, Func<Task> nextAsync = null)
 		{
 			Program.CancellationTokenSource = new CancellationTokenSource();
-			Program.Controller = new Controller(Program.CancellationTokenSource.Token);
+			Program.Controller = new Controller(Program.CancellationTokenSource.Token)
+			{
+				OnInterCommunicateMessageReceived = message =>
+				{
+					if (message.Type.IsEquals("Controller#Disconnect"))
+					{
+						var controllerInfo = message.Data.FromJson<ControllerInfo>();
+						Program.Services.Values.ForEach(svcSate => svcSate.Remove(controllerInfo.ID));
+						Task.Run(() =>
+						{
+							Program.ManagementForm?.SetControlsState(false, false);
+							Program.ManagementForm?.DisplayServices();
+						}).ConfigureAwait(false);
+					}
+					else if (message.Type.IsEquals("Service#Info"))
+					{
+						var uri = message.Data.Value<string>("URI");
+						var controllerID = message.Data.Value<string>("Controller");
+						var state = message.Data.Value<string>("State");
+						Program.SetServiceState(controllerID, uri, state.IsEquals("Running"));
+						Task.Run(() => Program.ManagementForm?.UpdateInfo(controllerID, uri, state)).ConfigureAwait(false);
+					}
+				}
+			};
 			Program.Controller.Start(args, nextAsync);
 		}
 
@@ -193,26 +218,40 @@ namespace net.vieapps.Services.APIGateway
 		internal static ILoggingService GetLoggingService()
 			=> Program.LoggingService ?? (Program.LoggingService = WAMPConnections.OutgoingChannel?.RealmProxy.Services.GetCalleeProxy<ILoggingService>(ProxyInterceptor.Create()));
 
-		internal static IServiceManager GetServiceManager()
-			=> Program.ServiceManager ?? (Program.ServiceManager = WAMPConnections.OutgoingChannel?.RealmProxy.Services.GetCalleeProxy<IServiceManager>(ProxyInterceptor.Create()));
-
-		internal static void Refresh()
+		internal static IServiceManager GetServiceManager(string controllerID)
 		{
-			var serviceManager = Program.GetServiceManager();
+			if (!Program.ServiceManagers.TryGetValue(controllerID, out IServiceManager serviceManager))
+			{
+				serviceManager = WAMPConnections.OutgoingChannel?.RealmProxy.Services.GetCalleeProxy<IServiceManager>(ProxyInterceptor.Create(controllerID));
+				Program.ServiceManagers.TryAdd(controllerID, serviceManager);
+			}
+			return serviceManager;
+		}
+
+		internal static void Refresh(string controllerID)
+		{
+			var serviceManager = Program.GetServiceManager(controllerID);
 			if (serviceManager != null)
 				try
 				{
-					serviceManager.GetAvailableBusinessServices().Keys.ForEach(uri => Program.Services[uri] = serviceManager.IsBusinessServiceRunning(uri.ToArray('.').Last()));
+					serviceManager.GetAvailableBusinessServices().Keys.ForEach(uri => Program.SetServiceState(controllerID, uri, serviceManager.IsBusinessServiceRunning(uri.ToArray('.').Last())));
 				}
 				catch { }
 		}
 
-		internal static void SetState(string name, bool state)
-			=> Program.Services[$"net.vieapps.services.{name}"] = state;
+		internal static void Refresh() => Program.Controller.GetAvailableControllers().ForEach(controller => Program.Refresh(controller.ID));
 
-		internal static bool GetState(string name)
-			=> Program.Services.TryGetValue($"net.vieapps.services.{name}", out bool state)
-				? state
-				: false;
+		internal static void SetServiceState(string controllerID, string name, bool state)
+		{
+			var uri = name.IndexOf(".") < 0 ? $"net.vieapps.services.{name}" : name;
+			if (!Program.Services.TryGetValue(uri, out Dictionary<string, bool> info))
+			{
+				info = new Dictionary<string, bool>();
+				Program.Services.TryAdd(uri, info);
+			}
+			info[controllerID] = state;
+		}
+
+		internal static bool IsRunning(this Dictionary<string, bool> instances) => instances.Where(kvp => kvp.Value).Count() > 0;
 	}
 }

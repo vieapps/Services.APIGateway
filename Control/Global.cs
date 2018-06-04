@@ -21,7 +21,7 @@ namespace net.vieapps.Services.APIGateway
 		/// Gets all available business services
 		/// </summary>
 		/// <returns></returns>
-		[WampProcedure("net.vieapps.apigateway.controller.get.business.services")]
+		[WampProcedure("net.vieapps.apigateway.controller.{0}.get.business.services")]
 		Dictionary<string, string> GetAvailableBusinessServices();
 
 		/// <summary>
@@ -29,7 +29,7 @@ namespace net.vieapps.Services.APIGateway
 		/// </summary>
 		/// <param name="name"></param>
 		/// <returns></returns>
-		[WampProcedure("net.vieapps.apigateway.controller.is.business.service.available")]
+		[WampProcedure("net.vieapps.apigateway.controller.{0}.is.business.service.available")]
 		bool IsBusinessServiceAvailable(string name);
 
 		/// <summary>
@@ -37,7 +37,7 @@ namespace net.vieapps.Services.APIGateway
 		/// </summary>
 		/// <param name="name"></param>
 		/// <returns></returns>
-		[WampProcedure("net.vieapps.apigateway.controller.is.business.service.running")]
+		[WampProcedure("net.vieapps.apigateway.controller.{0}.is.business.service.running")]
 		bool IsBusinessServiceRunning(string name);
 
 		/// <summary>
@@ -45,14 +45,14 @@ namespace net.vieapps.Services.APIGateway
 		/// </summary>
 		/// <param name="name"></param>
 		/// <param name="arguments"></param>
-		[WampProcedure("net.vieapps.apigateway.controller.start.business.service")]
+		[WampProcedure("net.vieapps.apigateway.controller.{0}.start.business.service")]
 		void StartBusinessService(string name, string arguments = null);
 
 		/// <summary>
 		/// Stops a business service
 		/// </summary>
 		/// <param name="name"></param>
-		[WampProcedure("net.vieapps.apigateway.controller.stop.business.service")]
+		[WampProcedure("net.vieapps.apigateway.controller.{0}.stop.business.service")]
 		void StopBusinessService(string name);
 	}
 

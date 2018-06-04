@@ -24,11 +24,13 @@ namespace net.vieapps.Services.APIGateway
 		internal static ILoggingService LoggingService { get; set; } = null;
 		internal static Controller Controller { get; set; } = null;
 		internal static ILogger Logger { get; set; }
+		internal static bool IsUserInteractive { get; set; } = false;
 		#endregion
 
 		static void Main(string[] args)
 		{
 			// initialize
+			Program.IsUserInteractive = Environment.UserInteractive && args?.FirstOrDefault(a => a.StartsWith("/daemon")) == null;
 			Console.OutputEncoding = System.Text.Encoding.UTF8;
 			Directory.SetCurrentDirectory(AppDomain.CurrentDomain.BaseDirectory);
 
@@ -61,20 +63,13 @@ namespace net.vieapps.Services.APIGateway
 				Components.Utility.Logger.GetLoggerFactory().AddFile(path, logLevel);
 			}
 
-			if (Environment.UserInteractive)
+			if (Program.IsUserInteractive)
 				Components.Utility.Logger.GetLoggerFactory().AddConsole(logLevel);
 
 			Program.Logger = Components.Utility.Logger.CreateLogger<Controller>();
 
 			// setup event handlers
 			Program.SetupEventHandlers();
-
-			// start
-			Program.Start(args, () =>
-			{
-				showCommands();
-				return Task.CompletedTask;
-			});
 
 			void showCommands()
 			{
@@ -85,108 +80,157 @@ namespace net.vieapps.Services.APIGateway
 					"restart: restart all business services" + "\r\n\t" +
 					"info: show the information of all business services and others" + "\r\n\t" +
 					"help: show available commands" + "\r\n\t" +
-					"exit: terminate"
+					"exit: shutdown & terminate"
 				);
 			}
 
-			// process commands
-			var command = Console.ReadLine();
-			while (!command.IsEquals("exit"))
+			void processCommands()
 			{
-				var commands = command.ToArray(' ');
-
-				if (commands[0].IsStartsWith("start"))
+				var command = Console.ReadLine();
+				while (command != null)
 				{
-					if (commands.Length > 1)
-						Program.Controller.StartBusinessService(commands[1], Program.Controller.GetServiceArguments(), null);
-					else
-						Program.Logger.LogInformation($"Invalid {command} command");
-				}
+					if (command.ToLower() == "exit")
+						return;
 
-				else if (commands[0].IsStartsWith("stop"))
-				{
-					if (commands.Length > 1)
-						Program.Controller.StopBusinessService(commands[1], null);
-					else
-						Program.Logger.LogInformation($"Invalid {command} command");
-				}
+					var commands = command.ToArray(' ');
 
-				else if (commands[0].IsEquals("restart"))
-				{
-					Program.Logger.LogInformation("Attempting to stop all business services...");
-					Program.Controller.GetAvailableBusinessServices().ForEach(kvp => Program.Controller.StopBusinessService(kvp.Key.ToArray('.').Last(), null));
-					Task.Run(async () =>
+					if (commands[0].IsStartsWith("start"))
 					{
-						Program.Logger.LogInformation("Attempting to re-start all business services...");
-						await Task.Delay(UtilityService.GetRandomNumber(2345, 3456)).ConfigureAwait(false);
-						var arguments = Program.Controller.GetServiceArguments();
-						Program.Controller.GetAvailableBusinessServices().ForEach(kvp => Task.Run(() => Program.Controller.StartBusinessService(kvp.Key.ToArray('.').Last(), arguments, null)));
-					}).ConfigureAwait(false);
-				}
-
-				else if (commands[0].IsEquals("info"))
-				{
-					var info = "";
-
-					info +=
-						$"Services Controller:" + "\r\n\t" +
-						$"- Version: {typeof(Controller).Assembly.GetVersion()}" + "\r\n\t" +
-						$"- Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : $"Other OS")} {RuntimeInformation.OSArchitecture} ({RuntimeInformation.OSDescription.Trim()})" + "\r\n\t" +
-						$"- Working mode: {(Environment.UserInteractive ? "Interactive App" : "Background Service")}" + "\r\n\t" +
-						$"- WAMP router URI: {WAMPConnections.GetRouterStrInfo()}" + "\r\n\t" +
-						$"- Incomming channel session identity: {WAMPConnections.IncommingChannelSessionID}" + "\r\n\t" +
-						$"- Outgoing channel session identity: {WAMPConnections.OutgoingChannelSessionID}" + "\r\n\t" +
-						$"- Number of helper services: {Program.Controller.NumberOfHelperServices:#,##0}" + "\r\n\t" +
-						$"- Number of scheduling timers: {Program.Controller.NumberOfTimers:#,##0}" + "\r\n\t" +
-						$"- Number of scheduling tasks: {Program.Controller.NumberOfTasks:#,##0}" + "\r\n";
-
-					var businessServices = Program.Controller.GetAvailableBusinessServices().ToDictionary(kvp => kvp.Key, kvp => Program.Controller.GetServiceProcess(kvp.Key.ToArray('.').Last()));
-
-					info +=
-						$"Business Services:" + "\r\n\t" +
-						$"- Total of available services: {businessServices.Count:#,##0}" + "\r\n\t" +
-						$"- Total of running services: {businessServices.Where(kvp => kvp.Value != null).Count():#,##0}" + "\r\n\t" +
-						$"Details:";
-					businessServices.ForEach(kvp =>
-					{
-						info += "\r\n\t" + $"- URI: {kvp.Key} - Status: ";
-						if (kvp.Value != null)
-						{
-							info += "Running";
-							if (kvp.Value.ID != null)
-								info += $" - Process ID: {kvp.Value.ID.Value}";
-							if (kvp.Value.StartTime != null)
-								info += $" - Serving times: {kvp.Value.StartTime.Value.GetElapsedTimes()}";
-							info += $" - Starting arguments: {kvp.Value.Arguments}";
-						}
+						if (commands.Length > 1)
+							Program.Controller.StartBusinessService(commands[1], Program.Controller.GetServiceArguments().Replace("/", "/call-"), null);
 						else
-							info += "Stopped";
-					});
+							Program.Logger.LogInformation($"Invalid {command} command");
+					}
 
-					Program.Logger.LogInformation(info);
+					else if (commands[0].IsStartsWith("stop"))
+					{
+						if (commands.Length > 1)
+							Program.Controller.StopBusinessService(commands[1], null);
+						else
+							Program.Logger.LogInformation($"Invalid {command} command");
+					}
+
+					else if (commands[0].IsEquals("restart"))
+					{
+						Program.Logger.LogInformation("Attempting to stop all business services...");
+						Program.Controller.GetAvailableBusinessServices().ForEach(kvp => Program.Controller.StopBusinessService(kvp.Key.ToArray('.').Last(), null));
+						Task.Run(async () =>
+						{
+							Program.Logger.LogInformation("Attempting to re-start all business services...");
+							await Task.Delay(UtilityService.GetRandomNumber(2345, 3456)).ConfigureAwait(false);
+							var arguments = Program.Controller.GetServiceArguments();
+							Program.Controller.GetAvailableBusinessServices().ForEach(kvp => Task.Run(() => Program.Controller.StartBusinessService(kvp.Key.ToArray('.').Last(), arguments, null)));
+						}).ConfigureAwait(false);
+					}
+
+					else if (commands[0].IsEquals("info"))
+					{
+						var info = "";
+
+						info +=
+							$"Controller:" + "\r\n\t" +
+							$"- Version: {typeof(Controller).Assembly.GetVersion()}" + "\r\n\t" +
+							$"- Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : $"Other OS")} {RuntimeInformation.OSArchitecture} ({RuntimeInformation.OSDescription.Trim()})" + "\r\n\t" +
+							$"- Working mode: {(Environment.UserInteractive ? "Interactive App" : "Background Service")}" + "\r\n\t" +
+							$"- WAMP router URI: {WAMPConnections.GetRouterStrInfo()}" + "\r\n\t" +
+							$"- Incomming channel session identity: {WAMPConnections.IncommingChannelSessionID}" + "\r\n\t" +
+							$"- Outgoing channel session identity: {WAMPConnections.OutgoingChannelSessionID}" + "\r\n\t" +
+							$"- Number of helper services: {Program.Controller.NumberOfHelperServices:#,##0}" + "\r\n\t" +
+							$"- Number of scheduling timers: {Program.Controller.NumberOfTimers:#,##0}" + "\r\n\t" +
+							$"- Number of scheduling tasks: {Program.Controller.NumberOfTasks:#,##0}";
+
+						var controllers = Program.Controller.GetAvailableControllers();
+						info += "\r\n" + $"All Controllers: {controllers.Count:#,##0} instance(s)";
+						controllers.ForEach(controller => info += "\r\n\t" + $"- ID: {controller.ID} - Working mode: {controller.Mode} - Platform: {controller.Platform}");
+
+						var businessServices = Program.Controller.GetAvailableBusinessServices().ToDictionary(kvp => kvp.Key, kvp => Program.Controller.GetServiceProcess(kvp.Key.ToArray('.').Last()));
+
+						info += "\r\n" +
+							$"Services:" + "\r\n\t" +
+							$"- Total of available services: {businessServices.Count:#,##0}" + "\r\n\t" +
+							$"- Total of running services: {businessServices.Where(kvp => kvp.Value != null).Count():#,##0}" + "\r\n\t" +
+							$"Details:";
+						businessServices.ForEach(kvp =>
+						{
+							info += "\r\n\t" + $"- URI: {kvp.Key} - Status: ";
+							if (kvp.Value != null)
+							{
+								info += "Running";
+								if (kvp.Value.ID != null)
+									info += $" - Process ID: {kvp.Value.ID.Value}";
+								if (kvp.Value.StartTime != null)
+									info += $" - Serving times: {kvp.Value.StartTime.Value.GetElapsedTimes()}";
+								info += $" - Starting arguments: {kvp.Value.Arguments}";
+							}
+							else
+								info += "Stopped";
+						});
+
+						Program.Logger.LogInformation(info);
+					}
+
+					else
+						showCommands();
+
+					command = Console.ReadLine();
 				}
-
-				else
-					showCommands();
-
-				command = Console.ReadLine();
 			}
 
-			// exit
+			// setup hooks
+			AppDomain.CurrentDomain.ProcessExit += (sender, arguments) => Program.Stop();
+
+			Console.CancelKeyPress += (sender, arguments) =>
+			{
+				Program.Stop();
+				Environment.Exit(0);
+			};
+
+			// start
+			Program.Start(args, () =>
+			{
+				if (Program.IsUserInteractive)
+					showCommands();
+				return Task.CompletedTask;
+			});
+
+			// processing commands util got an exit signal
+			if (Program.IsUserInteractive)
+				processCommands();
+
+			// wait until be killed
+			else
+				while (true)
+					Task.Delay(4321).GetAwaiter().GetResult();
+
+			// stop
 			Program.Stop();
 		}
 
 		static void SetupEventHandlers()
 		{
-			Global.OnProcess = Global.OnSendRTUMessageSuccess = (message) =>
+			Global.OnProcess = (message) =>
 			{
 				if (!string.IsNullOrWhiteSpace(message))
-					Program.Logger.LogInformation(message);
+				{
+					if (!Program.IsUserInteractive)
+						Console.WriteLine(message);
+					else
+						Program.Logger.LogInformation(message);
+				}
 			};
 
 			Global.OnError = Global.OnSendRTUMessageFailure = (message, exception) =>
 			{
-				Program.Logger.LogError(message, exception);
+				if (!Program.IsUserInteractive)
+					Console.Error.WriteLine(message + (exception != null ? "\r\n" + exception.StackTrace : ""));
+				else
+					Program.Logger.LogError(message, exception);
+			};
+
+			Global.OnSendRTUMessageSuccess = (message) =>
+			{
+				if (!string.IsNullOrWhiteSpace(message))
+					Program.Logger.LogInformation(message);
 			};
 
 			Global.OnSendEmailSuccess = (message) =>
@@ -209,20 +253,31 @@ namespace net.vieapps.Services.APIGateway
 
 			Global.OnSendEmailFailure = (message, exception) =>
 			{
-				Program.Logger.LogError(message, exception);
+				if (!Program.IsUserInteractive)
+					Console.Error.WriteLine(message + (exception != null ? "\r\n" + exception.StackTrace : ""));
+				else
+					Program.Logger.LogError(message, exception);
 				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "Emails", message, exception.GetStack())).ConfigureAwait(false);
 			};
 
 			Global.OnSendWebHookFailure = (message, exception) =>
 			{
-				Program.Logger.LogError(message, exception);
+				if (!Program.IsUserInteractive)
+					Console.Error.WriteLine(message + (exception != null ? "\r\n" + exception.StackTrace : ""));
+				else
+					Program.Logger.LogError(message, exception);
 				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "WebHooks", message, exception.GetStack())).ConfigureAwait(false);
 			};
 
 			Global.OnServiceStarted = Global.OnServiceStopped = Global.OnGotServiceMessage = (serviceName, message) =>
 			{
 				if (!string.IsNullOrWhiteSpace(message))
-					Program.Logger.LogInformation($"[{serviceName.ToLower()}] => {message}");
+				{
+					if (!Program.IsUserInteractive)
+						Console.WriteLine($"[{serviceName.ToLower()}] => {message}");
+					else
+						Program.Logger.LogInformation($"[{serviceName.ToLower()}] => {message}");
+				}
 			};
 
 			Global.OnLogsUpdated = (serviceName, message) =>
@@ -243,14 +298,13 @@ namespace net.vieapps.Services.APIGateway
 		{
 			Program.Controller.Dispose();
 			Program.CancellationTokenSource.Cancel();
-			Program.CancellationTokenSource.Dispose();
-			Program.Logger.LogInformation($"The API Gateway Services Controller is stopped");
+			if (!Program.IsUserInteractive)
+				Console.WriteLine($"The API Gateway Services Controller is stopped");
+			else
+				Program.Logger.LogInformation($"The API Gateway Services Controller is stopped");
 		}
 
 		internal static ILoggingService GetLoggingService()
 			=> Program.LoggingService ?? (Program.LoggingService = WAMPConnections.OutgoingChannel?.RealmProxy.Services.GetCalleeProxy<ILoggingService>(ProxyInterceptor.Create()));
-
-		internal static IServiceManager GetServiceManager()
-			=> Program.ServiceManager ?? (Program.ServiceManager = WAMPConnections.OutgoingChannel?.RealmProxy.Services.GetCalleeProxy<IServiceManager>(ProxyInterceptor.Create()));
 	}
 }

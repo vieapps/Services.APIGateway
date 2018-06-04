@@ -3,6 +3,7 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Collections.Generic;
 
 using net.vieapps.Components.Utility;
 #endregion
@@ -26,7 +27,7 @@ namespace net.vieapps.Services.APIGateway
 				await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
 				Program.Start(this._args, async () =>
 				{
-					Program.Controller.GetAvailableBusinessServices().Keys.ForEach(uri => Program.Services[uri] = false);
+					Program.Controller.GetAvailableBusinessServices().Keys.ToList().ForEach(uri => Program.Services.TryAdd(uri, new Dictionary<string, bool>()));
 					await Task.Delay(1234).ConfigureAwait(false);
 					Program.Refresh();
 					this.UpdateServicesInfo();
@@ -41,7 +42,7 @@ namespace net.vieapps.Services.APIGateway
 			if (Program.Controller.State == ServiceState.Ready || Program.Controller.State == ServiceState.Connected)
 			{
 				Program.ManagementForm = Program.ManagementForm ?? new ManagementForm();
-				Program.ManagementForm.Initialize();
+				Program.ManagementForm.DisplayServices();
 				Program.ManagementForm.Show();
 				Program.ManagementForm.Focus();
 			}
@@ -76,7 +77,11 @@ namespace net.vieapps.Services.APIGateway
 				if (base.InvokeRequired)
 					base.Invoke(new UpdateServicesInfoDelegator(this.UpdateServicesInfo), new object[] { });
 				else
-					this.ServicesInfo.Text = $"Available services: {Program.Services.Count} - Running services: {Program.Services.Where(svc => svc.Value).Count()}";
+				{
+					var running = 0;
+					Program.Services.Values.ToList().ForEach(info => running += info.IsRunning() ? 1 : 0);
+					this.ServicesInfo.Text = $"Available services: {Program.Services.Count:#,##0} - Running services: {running:#,##0}";
+				}
 			}
 			catch { }
 		}

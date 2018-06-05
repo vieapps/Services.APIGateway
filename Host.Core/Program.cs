@@ -5,8 +5,8 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Reflection;
+using System.Runtime.InteropServices;
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
@@ -30,14 +30,14 @@ namespace net.vieapps.Services.APIGateway
 			var isUserInteractive = Environment.UserInteractive && apiCall == null;
 
 			// prepare type name
-			var serviceTypeName = args?.FirstOrDefault(a => a.IsStartsWith("/svc:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/svc:", "");
+			var serviceTypeName = args?.FirstOrDefault(a => a.IsStartsWith("/svc:"))?.Replace("/svc:", "", StringComparison.OrdinalIgnoreCase);
 			if (string.IsNullOrWhiteSpace(serviceTypeName) && args?.FirstOrDefault(a => a.IsStartsWith("/svn:")) != null)
 			{
 				var configFilename = $"{UtilityService.GetAppSetting("Path:APIGateway", "")}VIEApps.Services.APIGateway.{(RuntimeInformation.FrameworkDescription.IsContains(".NET Framework") ? "exe" : "dll")}.config";
 				if (File.Exists(configFilename))
 					try
 					{
-						var xpath = $"/configuration/net.vieapps.services/add[@name='{args.First(a => a.IsStartsWith("/svn:")).Replace(StringComparison.OrdinalIgnoreCase, "/svn:", "").ToLower()}']";
+						var xpath = $"/configuration/net.vieapps.services/add[@name='{args.First(a => a.IsStartsWith("/svn:")).Replace("/svn:", "", StringComparison.OrdinalIgnoreCase).ToLower()}']";
 						var xml = new System.Xml.XmlDocument();
 						xml.LoadXml(UtilityService.ReadTextFile(configFilename));
 						serviceTypeName = xml.DocumentElement.SelectSingleNode(xpath)?.Attributes["type"]?.Value.Replace(" ", "");
@@ -56,7 +56,7 @@ namespace net.vieapps.Services.APIGateway
 					Console.ReadLine();
 				}
 				else
-					Console.Error.WriteLine("Service type name is invalid");
+					Console.Error.WriteLine("The service type name is invalid");
 				return;
 			}
 
@@ -75,7 +75,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-				Console.Error.WriteLine($"Error occurred while prepare the type of the service component [{serviceTypeName}] => {ex.Message}");
+				Console.Error.WriteLine($"Error occurred while preparing the type of the service component [{serviceTypeName}] => {ex.Message}");
 				if (isUserInteractive)
 					Console.ReadLine();
 				return;
@@ -96,7 +96,7 @@ namespace net.vieapps.Services.APIGateway
 			if (useEventWaitHandle)
 			{
 				// get the flag of the existing instance
-				var name = $"{serviceComponent.ServiceURI}#{string.Join("#", (args ?? new string[] { }).Where(a => !a.IsStartsWith("/agc:"))).GenerateUUID()}";
+				var name = $"{serviceComponent.ServiceURI}#{string.Join("#", args.Where(a => !a.IsStartsWith("/agc:"))).GenerateUUID()}";
 				eventWaitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, name, out bool createdNew);
 
 				// process the call to stop
@@ -115,7 +115,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// prepare environment
 			Console.OutputEncoding = System.Text.Encoding.UTF8;
-			JsonConvert.DefaultSettings = () => new JsonSerializerSettings()
+			JsonConvert.DefaultSettings = () => new JsonSerializerSettings
 			{
 				Formatting = Formatting.None,
 				ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
@@ -158,7 +158,7 @@ namespace net.vieapps.Services.APIGateway
 			ServiceBase.ServiceComponent = serviceComponent as ServiceBase;
 			serviceComponent.Start(
 				args,
-				"false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", "")) ? false : true,
+				"false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace("/repository:", "", StringComparison.OrdinalIgnoreCase)) ? false : true,
 				service =>
 				{
 					logger.LogInformation($"WAMP router URI: {WAMPConnections.GetRouterStrInfo()}");

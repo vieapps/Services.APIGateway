@@ -47,8 +47,8 @@ namespace net.vieapps.Services.APIGateway
 				Program.Refresh();
 				Program.MainForm.UpdateServicesInfo();
 
+				var controllers = Program.Controller.GetAvailableControllers().ToDictionary(controller => controller.ID);
 				this.Services.Items.Clear();
-				var controllers = Program.Controller.GetAvailableControllers();
 				Program.Services.OrderBy(kvp => kvp.Key).ForEach(kvp =>
 				{
 					var uri = kvp.Key;
@@ -64,8 +64,7 @@ namespace net.vieapps.Services.APIGateway
 						this.Services.Items.Add(itemOfAll);
 						kvp.Value.ForEach(info =>
 						{
-							var controller = controllers.FirstOrDefault(c => c.ID == info.Key);
-							if (controller != null)
+							if (controllers.TryGetValue(info.Key, out ControllerInfo controller))
 							{
 								var itemOfController = new ListViewItem(new[] { $"  {controller.Host} - {controller.Platform}", info.Value ? "Running" : "Stopped", controller.ID, uri })
 								{
@@ -79,8 +78,7 @@ namespace net.vieapps.Services.APIGateway
 					else
 					{
 						var controllerID = kvp.Value.Count > 0 ? kvp.Value.ElementAt(0).Key : null;
-						var controller = controllers.FirstOrDefault(c => c.ID == controllerID);
-						if (controller != null)
+						if (controllers.TryGetValue(controllerID, out ControllerInfo controller))
 						{
 							var isRunning = kvp.Value.IsRunning();
 							var listItem = new ListViewItem(new[] { uri, kvp.Value.IsRunning() ? "Running" : "Stopped", controller.ID, uri })

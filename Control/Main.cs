@@ -146,12 +146,12 @@ namespace net.vieapps.Services.APIGateway
 					(sender, arguments) =>
 					{
 						Global.OnProcess?.Invoke($"The incoming channel is established - Session ID: {arguments.SessionId}");
-						WAMPConnections.IncommingChannel.Update(WAMPConnections.IncommingChannelSessionID, "APIGateway", "Incomming (APIGateway Services Controller)");
+						WAMPConnections.IncomingChannel.Update(WAMPConnections.IncomingChannelSessionID, "APIGateway", "Incoming (APIGateway Services Controller)");
 						if (this.State == ServiceState.Initializing)
 							this.State = ServiceState.Ready;
 
 						this.Communicator?.Dispose();
-						this.Communicator = WAMPConnections.IncommingChannel.RealmProxy.Services
+						this.Communicator = WAMPConnections.IncomingChannel.RealmProxy.Services
 							.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
 							.Subscribe(
 								async (message) => await this.ProcessInterCommunicateMessageAsync(message).ConfigureAwait(false),
@@ -237,7 +237,7 @@ namespace net.vieapps.Services.APIGateway
 						else
 						{
 							Global.OnProcess?.Invoke($"The incoming channel to WAMP router is broken - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
-							WAMPConnections.IncommingChannel.ReOpen(this.CancellationTokenSource.Token, Global.OnError, "Incomming");
+							WAMPConnections.IncomingChannel.ReOpen(this.CancellationTokenSource.Token, Global.OnError, "Incoming");
 						}
 					},
 					(sender, arguments) =>
@@ -470,7 +470,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			try
 			{
-				this.HelperServices.Add(await WAMPConnections.IncommingChannel.RealmProxy.Services.RegisterCallee(this, RegistrationInterceptor.Create(this.Info.ID)).ConfigureAwait(false));
+				this.HelperServices.Add(await WAMPConnections.IncomingChannel.RealmProxy.Services.RegisterCallee(this, RegistrationInterceptor.Create(this.Info.ID)).ConfigureAwait(false));
 				Global.OnProcess?.Invoke($"The managing service is{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
 			}
 			catch (WampSessionNotEstablishedException)
@@ -482,13 +482,13 @@ namespace net.vieapps.Services.APIGateway
 				Global.OnError?.Invoke($"Error occurred while{(this.State == ServiceState.Disconnected ? " re-" : " ")}registering the managing service: {ex.Message}", ex);
 			}
 
-			this.HelperServices.Add(await WAMPConnections.IncommingChannel.RealmProxy.Services.RegisterCallee(this.RTUService, RegistrationInterceptor.Create()).ConfigureAwait(false));
+			this.HelperServices.Add(await WAMPConnections.IncomingChannel.RealmProxy.Services.RegisterCallee(this.RTUService, RegistrationInterceptor.Create()).ConfigureAwait(false));
 			Global.OnProcess?.Invoke($"The real-time update (RTU) service is{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
 
-			this.HelperServices.Add(await WAMPConnections.IncommingChannel.RealmProxy.Services.RegisterCallee(this.LoggingService, RegistrationInterceptor.Create()).ConfigureAwait(false));
+			this.HelperServices.Add(await WAMPConnections.IncomingChannel.RealmProxy.Services.RegisterCallee(this.LoggingService, RegistrationInterceptor.Create()).ConfigureAwait(false));
 			Global.OnProcess?.Invoke($"The logging service is{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
 
-			this.HelperServices.Add(await WAMPConnections.IncommingChannel.RealmProxy.Services.RegisterCallee(new MessagingService(), RegistrationInterceptor.Create()).ConfigureAwait(false));
+			this.HelperServices.Add(await WAMPConnections.IncomingChannel.RealmProxy.Services.RegisterCallee(new MessagingService(), RegistrationInterceptor.Create()).ConfigureAwait(false));
 			Global.OnProcess?.Invoke($"The messaging service is{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
 
 			Global.OnProcess?.Invoke($"Number of helper services: {this.NumberOfHelperServices:#,##0}");

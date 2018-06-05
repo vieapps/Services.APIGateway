@@ -123,7 +123,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// subscribe to push messages
 			websocket.Extra["Session"] = session;
-			websocket.Extra["Updater"] = WAMPConnections.IncommingChannel.RealmProxy.Services
+			websocket.Extra["Updater"] = WAMPConnections.IncomingChannel.RealmProxy.Services
 				.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages")
 				.Subscribe(
 					async (message) =>

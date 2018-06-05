@@ -28,7 +28,7 @@ namespace net.vieapps.Services.APIGateway
 		internal static ICache Cache { get; set; }
 		internal static ILogger Logger { get; set; }
 		internal static List<string> ExcludedHeaders { get; } = "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,ms-aspnetcore-token,x-original-proto,x-original-for".ToList();
-		internal static HashSet<string> NoTokenRequiredServices { get; } = (UtilityService.GetAppSetting("NoTokenRequiredServices", "") + "|indexes").ToLower().ToHashSet('|', true);
+		internal static HashSet<string> NoTokenRequiredServices { get; } = (UtilityService.GetAppSetting("NoTokenRequiredServices", "") + "|indexes|iplocations").ToLower().ToHashSet('|', true);
 		#endregion
 
 		internal static async Task ProcessRequestAsync(HttpContext context)
@@ -914,10 +914,10 @@ namespace net.vieapps.Services.APIGateway
 			Global.OpenWAMPChannels(
 				(sender, args) =>
 				{
-					Global.Logger.LogInformation($"Incomming channel to WAMP router is established - Session ID: {args.SessionId}");
-					WAMPConnections.IncommingChannel.Update(WAMPConnections.IncommingChannelSessionID, Global.ServiceName, $"Incomming ({Global.ServiceName} HTTP service)");
+					Global.Logger.LogInformation($"Incoming channel to WAMP router is established - Session ID: {args.SessionId}");
+					WAMPConnections.IncomingChannel.Update(WAMPConnections.IncomingChannelSessionID, Global.ServiceName, $"Incoming ({Global.ServiceName} HTTP service)");
 					Global.InterCommunicateMessageUpdater?.Dispose();
-					Global.InterCommunicateMessageUpdater = WAMPConnections.IncommingChannel.RealmProxy.Services
+					Global.InterCommunicateMessageUpdater = WAMPConnections.IncomingChannel.RealmProxy.Services
 						.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
 						.Subscribe(
 							async (message) =>

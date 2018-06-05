@@ -35,6 +35,7 @@
 		<ProjectReference Include="..\..\Books\Service\VIEApps.Services.Books.csproj" />
 		<ProjectReference Include="..\..\Files\Service\VIEApps.Services.Files.csproj" />
 		<ProjectReference Include="..\..\Indexes\VIEApps.Services.Indexes.csproj" />
+		<ProjectReference Include="..\..\IPLocations\VIEApps.Services.IPLocations.csproj" />
 		<ProjectReference Include="..\..\Libraries\Service\VIEApps.Services.Libraries.csproj" />
 		<ProjectReference Include="..\..\Marketplaces\VIEApps.Services.Marketplaces.csproj" />
 		<ProjectReference Include="..\..\MssReports\VIEApps.Services.MssReports.csproj" />

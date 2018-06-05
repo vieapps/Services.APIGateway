@@ -133,7 +133,7 @@ namespace net.vieapps.Services.APIGateway
 							$"- Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : $"Other OS")} {RuntimeInformation.OSArchitecture} ({RuntimeInformation.OSDescription.Trim()})" + "\r\n\t" +
 							$"- Working mode: {(Environment.UserInteractive ? "Interactive App" : "Background Service")}" + "\r\n\t" +
 							$"- WAMP router URI: {WAMPConnections.GetRouterStrInfo()}" + "\r\n\t" +
-							$"- Incomming channel session identity: {WAMPConnections.IncommingChannelSessionID}" + "\r\n\t" +
+							$"- Incoming channel session identity: {WAMPConnections.IncomingChannelSessionID}" + "\r\n\t" +
 							$"- Outgoing channel session identity: {WAMPConnections.OutgoingChannelSessionID}" + "\r\n\t" +
 							$"- Number of helper services: {Program.Controller.NumberOfHelperServices:#,##0}" + "\r\n\t" +
 							$"- Number of scheduling timers: {Program.Controller.NumberOfTimers:#,##0}" + "\r\n\t" +

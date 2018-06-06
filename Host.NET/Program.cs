@@ -56,7 +56,7 @@ namespace net.vieapps.Services.APIGateway
 					Console.ReadLine();
 				}
 				else
-					Console.Error.WriteLine("Service type name is invalid");
+					Console.Error.WriteLine("The service type name is invalid");
 				return;
 			}
 
@@ -75,7 +75,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-				Console.Error.WriteLine($"Error occurred while prepare the type of the service component [{serviceTypeName}] => {ex.Message}");
+				Console.Error.WriteLine($"Error occurred while preparing the type of the service component [{serviceTypeName}] => {ex.Message}");
 				if (isUserInteractive)
 					Console.ReadLine();
 				return;
@@ -96,7 +96,7 @@ namespace net.vieapps.Services.APIGateway
 			if (useEventWaitHandle)
 			{
 				// get the flag of the existing instance
-				var name = $"{serviceComponent.ServiceURI}#{string.Join("#", (args ?? new string[] { }).Where(a => !a.IsStartsWith("/agc:"))).GenerateUUID()}";
+				var name = $"{serviceComponent.ServiceURI}#{string.Join("#", args.Where(a => !a.IsStartsWith("/agc:"))).GenerateUUID()}";
 				eventWaitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, name, out bool createdNew);
 
 				// process the call to stop
@@ -115,7 +115,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// prepare environment
 			Console.OutputEncoding = System.Text.Encoding.UTF8;
-			JsonConvert.DefaultSettings = () => new JsonSerializerSettings()
+			JsonConvert.DefaultSettings = () => new JsonSerializerSettings
 			{
 				Formatting = Formatting.None,
 				ReferenceLoopHandling = ReferenceLoopHandling.Ignore,

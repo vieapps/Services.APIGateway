@@ -30,14 +30,14 @@ namespace net.vieapps.Services.APIGateway
 			var isUserInteractive = Environment.UserInteractive && apiCall == null;
 
 			// prepare type name
-			var serviceTypeName = args?.FirstOrDefault(a => a.IsStartsWith("/svc:"))?.Replace("/svc:", "", StringComparison.OrdinalIgnoreCase);
+			var serviceTypeName = args?.FirstOrDefault(a => a.IsStartsWith("/svc:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/svc:", "");
 			if (string.IsNullOrWhiteSpace(serviceTypeName) && args?.FirstOrDefault(a => a.IsStartsWith("/svn:")) != null)
 			{
 				var configFilename = $"{UtilityService.GetAppSetting("Path:APIGateway", "")}VIEApps.Services.APIGateway.{(RuntimeInformation.FrameworkDescription.IsContains(".NET Framework") ? "exe" : "dll")}.config";
 				if (File.Exists(configFilename))
 					try
 					{
-						var xpath = $"/configuration/net.vieapps.services/add[@name='{args.First(a => a.IsStartsWith("/svn:")).Replace("/svn:", "", StringComparison.OrdinalIgnoreCase).ToLower()}']";
+						var xpath = $"/configuration/net.vieapps.services/add[@name='{args.First(a => a.IsStartsWith("/svn:")).Replace(StringComparison.OrdinalIgnoreCase, "/svn:", "").ToLower()}']";
 						var xml = new System.Xml.XmlDocument();
 						xml.LoadXml(UtilityService.ReadTextFile(configFilename));
 						serviceTypeName = xml.DocumentElement.SelectSingleNode(xpath)?.Attributes["type"]?.Value.Replace(" ", "");
@@ -158,7 +158,7 @@ namespace net.vieapps.Services.APIGateway
 			ServiceBase.ServiceComponent = serviceComponent as ServiceBase;
 			serviceComponent.Start(
 				args,
-				"false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace("/repository:", "", StringComparison.OrdinalIgnoreCase)) ? false : true,
+				"false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", "")) ? false : true,
 				service =>
 				{
 					logger.LogInformation($"WAMP router URI: {WAMPConnections.GetRouterStrInfo()}");

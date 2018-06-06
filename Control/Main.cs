@@ -15,7 +15,6 @@ using System.Runtime.InteropServices;
 using WampSharp.V2.Realm;
 using WampSharp.V2.Client;
 
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 using net.vieapps.Components.Utility;
@@ -377,24 +376,12 @@ namespace net.vieapps.Services.APIGateway
 					{
 						this.BusinessServices[name].Instance = null;
 						Global.OnServiceStopped?.Invoke(name, $"The sevice is stopped");
-						Task.Run(() => this.SendInterCommunicateMessageAsync("Service#Info", new JObject
-						{
-							{ "URI", $"net.vieapps.services.{name}" },
-							{ "State", "Stopped" },
-							{ "Controller", this.Info.ID }
-						})).ConfigureAwait(false);
+						Task.Run(() => this.SendServiceInfoAsync(name, false)).ConfigureAwait(false);
 					},
 					(sender, args) => Global.OnGotServiceMessage?.Invoke(name, args.Data)
 				);
 				Global.OnServiceStarted?.Invoke(name, $"The service is started - Process ID: {this.BusinessServices[name].Instance.ID} [{serviceHosting} {serviceArguments}]");
-				Task.Run(() => this.SendInterCommunicateMessageAsync("Service#Info", new JObject
-				{
-					{ "URI", $"net.vieapps.services.{name}" },
-					{ "State", "Running" },
-					{ "Controller", this.Info.ID },
-					{ "Hosting", serviceHosting },
-					{ "Arguments", serviceArguments }
-				})).ConfigureAwait(false);
+				Task.Run(() => this.SendServiceInfoAsync(name, true, serviceHosting, serviceArguments)).ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
@@ -658,7 +645,7 @@ namespace net.vieapps.Services.APIGateway
 			var dbProviderFactories = new Dictionary<string, XmlNode>();
 
 #if DEBUG
-			Global.OnProcess($"Prepare recycle-bin information [{(this._serviceHosting.IndexOf(Path.DirectorySeparatorChar) < 0 ? this._workingDirectory : "")}{this._serviceHosting}]");
+			Global.OnProcess($"Prepare recycle-bin information [{(this.ServiceHosting.IndexOf(Path.DirectorySeparatorChar) < 0 ? this.WorkingDirectory : "")}{this.ServiceHosting}]");
 #endif
 
 			new List<string>
@@ -956,18 +943,21 @@ namespace net.vieapps.Services.APIGateway
 
 			// services
 			if (message.Type.IsEquals("Service#RequestInfo"))
-				await Task.WhenAll(this.BusinessServices.Select(kvp => this.SendInterCommunicateMessageAsync("Service#Info", new JObject
-				{
-					{ "URI", $"net.vieapps.services.{kvp.Key}" },
-					{ "State", kvp.Value.Instance != null ? "Running" : "Stopped" },
-					{ "Controller", this.Info.ID },
-					{ "Hosting", kvp.Value.Instance != null ? kvp.Value.Instance.FilePath : ""  },
-					{ "Arguments", kvp.Value.Instance != null ? kvp.Value.Instance.Arguments : "" }
-				}))).ConfigureAwait(false);
+				await Task.WhenAll(this.BusinessServices.Select(kvp => this.SendServiceInfoAsync(kvp.Key, kvp.Value.Instance != null, kvp.Value.Instance?.FilePath, kvp.Value.Instance?.Arguments))).ConfigureAwait(false);
 
 			// registered handler
 			this.OnInterCommunicateMessageReceived?.Invoke(message);
 		}
+
+		Task SendServiceInfoAsync(string name, bool state, string serviceHosting = null, string serviceArguments = null)
+			=> this.SendInterCommunicateMessageAsync("Service#Info", new JObject
+				{
+					{ "URI", $"net.vieapps.services.{name}" },
+					{ "State", state ? "Running" : "Stopped" },
+					{ "Controller", this.Info.ID },
+					{ "Hosting", serviceHosting },
+					{ "Arguments", serviceArguments }
+				});
 		#endregion
 
 		#region Dispose

@@ -51,6 +51,12 @@ namespace net.vieapps.Services.APIGateway
 				.Where(node => File.Exists(node.Attributes["executable"].Value))
 				.ForEach(node => processes[node.Attributes["executable"].Value] = new ExternalProcess.Info(node.Attributes["executable"].Value, node.Attributes["arguments"]?.Value ?? ""));
 
+			if (processes.Count < 1)
+			{
+				Console.Error.WriteLine("No process to run...");
+				return;
+			}
+
 			void start()
 			{
 				Console.WriteLine($"VIEApps NGX API Gateway - Service Bundles v{Assembly.GetExecutingAssembly().GetVersion()}");

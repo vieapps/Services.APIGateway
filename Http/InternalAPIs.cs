@@ -28,7 +28,7 @@ namespace net.vieapps.Services.APIGateway
 		internal static ICache Cache { get; set; }
 		internal static ILogger Logger { get; set; }
 		internal static List<string> ExcludedHeaders { get; } = "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,ms-aspnetcore-token,x-original-proto,x-original-for".ToList();
-		internal static HashSet<string> NoTokenRequiredServices { get; } = (UtilityService.GetAppSetting("NoTokenRequiredServices", "") + "|indexes|iplocations").ToLower().ToHashSet('|', true);
+		internal static HashSet<string> NoTokenRequiredServices { get; } = (UtilityService.GetAppSetting("NoTokenRequiredServices", "") + "|indexes").ToLower().ToHashSet('|', true);
 		#endregion
 
 		internal static async Task ProcessRequestAsync(HttpContext context)
@@ -529,7 +529,7 @@ namespace net.vieapps.Services.APIGateway
 					},
 					CorrelationID = requestInfo.CorrelationID
 				}, Global.CancellationTokenSource.Token, InternalAPIs.Logger),
-				requestInfo.Session.SendOnlineStatusAsync(true)
+				requestInfo.Session.SendOnlineStatusAsync(true, context.GetCorrelationID())
 			).ConfigureAwait(false);
 		}
 		#endregion
@@ -754,7 +754,7 @@ namespace net.vieapps.Services.APIGateway
 				}, Global.CancellationTokenSource.Token, InternalAPIs.Logger).ConfigureAwait(false);
 
 				// send update message
-				await requestInfo.Session.SendOnlineStatusAsync(false).ConfigureAwait(false);
+				await requestInfo.Session.SendOnlineStatusAsync(false, requestInfo.CorrelationID).ConfigureAwait(false);
 
 				// create & register the new session of visitor
 				var oldSessionID = requestInfo.Session.SessionID;
@@ -886,11 +886,10 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static void UpdateSessionJson(this HttpContext context, Session session, JObject json) => session.UpdateSessionJson(json, context.Items);
 
-		internal static Task SendOnlineStatusAsync(this Session session, bool isOnline)
+		internal static async Task SendOnlineStatusAsync(this Session session, bool isOnline, string correlationID = null)
 		{
-			return session.User == null || session.User.ID.Equals("") || session.User.IsSystemAccount
-				? Task.CompletedTask
-				: new CommunicateMessage("Users")
+			if (session.User != null && !session.User.ID.Equals("") && !session.User.IsSystemAccount)
+				await new CommunicateMessage("Users")
 				{
 					Type = "OnlineStatus",
 					Data = new JObject
@@ -900,10 +899,10 @@ namespace net.vieapps.Services.APIGateway
 						{ "DeviceID", session.DeviceID },
 						{ "AppName", session.AppName },
 						{ "AppPlatform", session.AppPlatform },
-						{ "IP", session.IP },
+						{ "Location", await session.GetLocationAsync(correlationID).ConfigureAwait(false) },
 						{ "IsOnline", isOnline },
 					}
-				}.PublishAsync(RTU.Logger);
+				}.PublishAsync(RTU.Logger).ConfigureAwait(false);
 		}
 		#endregion
 

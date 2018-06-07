@@ -47,7 +47,7 @@ namespace net.vieapps.Services.APIGateway
 			Directory.SetCurrentDirectory(AppDomain.CurrentDomain.BaseDirectory);
 
 			// prepare default settings of Json.NET
-			JsonConvert.DefaultSettings = () => new JsonSerializerSettings()
+			JsonConvert.DefaultSettings = () => new JsonSerializerSettings
 			{
 				Formatting = Formatting.Indented,
 				ReferenceLoopHandling = ReferenceLoopHandling.Ignore,

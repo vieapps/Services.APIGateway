@@ -1,6 +1,6 @@
 {
   "profiles": {
-    "VIEApps.Services.APIGateway.Host.Core": {
+    "VIEApps.Services.APIGateway.Bundles": {
       "commandName": "Project"
     }
   }

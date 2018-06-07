@@ -6,6 +6,7 @@ using System.Linq;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting;
@@ -31,7 +32,12 @@ namespace net.vieapps.Services.APIGateway
 		{
 			// request of WebSocket
 			if (context.WebSockets.IsWebSocketRequest)
-				await APIGateway.RTU.WebSocket.WrapAsync(context).ConfigureAwait(false);
+				await Task.WhenAll(
+					APIGateway.RTU.WebSocket.WrapAsync(context),
+					Global.IsDebugLogEnabled
+						? context.WriteLogsAsync("RTU", $"Wrap a WebSocket connection\r\n\t{string.Join("\r\n\t", context.Request.Headers.Select(header => $"{header.Key} => {header.Value}"))}")
+						: Task.CompletedTask
+				).ConfigureAwait(false);
 
 			// request of HTTP
 			else

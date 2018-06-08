@@ -48,15 +48,14 @@ namespace net.vieapps.Services.APIGateway
 			// stop if has no type name of a service component
 			if (string.IsNullOrWhiteSpace(serviceTypeName))
 			{
+				Console.Error.WriteLine($"VIEApps NGX API Gateway - Service Hosting v{Assembly.GetExecutingAssembly().GetVersion()}" + "\r\n");
+				Console.Error.WriteLine("");
+				Console.Error.WriteLine("Error: The service type name is invalid");
+				Console.Error.WriteLine("");
+				Console.Error.WriteLine("Syntax: VIEApps.Services.APIGateway /svc:<service-component-namespace,service-assembly>" + "\r\n");
+				Console.Error.WriteLine("Ex.: VIEApps.Services.APIGateway /svc:net.vieapps.Services.Systems.ServiceComponent,VIEApps.Services.Systems" + "\r\n");
 				if (isUserInteractive)
-				{
-					Console.Error.WriteLine($"VIEApps NGX API Gateway - Service Hosting v{Assembly.GetExecutingAssembly().GetVersion()}" + "\r\n");
-					Console.Error.WriteLine("Syntax: VIEApps.Services.APIGateway /svc:<service-component-namespace,service-assembly>" + "\r\n");
-					Console.Error.WriteLine("Ex.: VIEApps.Services.APIGateway /svc:net.vieapps.Services.Systems.ServiceComponent,VIEApps.Services.Systems" + "\r\n");
 					Console.ReadLine();
-				}
-				else
-					Console.Error.WriteLine("The service type name is invalid");
 				return;
 			}
 
@@ -150,6 +149,34 @@ namespace net.vieapps.Services.APIGateway
 
 			var logger = serviceComponent.Logger = Logger.CreateLogger(serviceType);
 
+			// setup hooks
+			bool stopped = false;
+			void stop()
+			{
+				stopped = true;
+				serviceComponent.Stop();
+				serviceComponent.Dispose();
+			}
+
+			AppDomain.CurrentDomain.ProcessExit += (sender, arguments) =>
+			{
+				if (!stopped)
+				{
+					stop();
+					logger.LogInformation($"The service is stopped (by \"process exit\" signal) - Served times: {start.GetElapsedTimes()}");
+				}
+			};
+
+			Console.CancelKeyPress += (sender, arguments) =>
+			{
+				if (!stopped)
+				{
+					stop();
+					logger.LogInformation($"The service is stopped (by \"cancel key press\" signal) - Served times: {start.GetElapsedTimes()}");
+				}
+				Environment.Exit(0);
+			};
+
 			// start the service component
 			logger.LogInformation($"The service is starting");
 			logger.LogInformation($"Version: {serviceType.Assembly.GetVersion()}");
@@ -169,7 +196,9 @@ namespace net.vieapps.Services.APIGateway
 					logger.LogInformation($"Show debugs: {(service as ServiceBase).IsDebugLogEnabled} - Show results: {(service as ServiceBase).IsDebugResultsEnabled} - Show stacks: {(service as ServiceBase).IsDebugStacksEnabled}");
 
 					stopwatch.Stop();
-					logger.LogInformation($"The service is started - PID: {Process.GetCurrentProcess().Id} - URI: {service.ServiceURI} - Execution times: {stopwatch.GetElapsedTimes()}");
+					logger.LogInformation($"Service URI (round robin): {service.ServiceURI}");
+					logger.LogInformation($"Service URI (unique): {service.ServiceUniqueURI}");
+					logger.LogInformation($"The service is started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");
 
 					if (isUserInteractive)
 						logger.LogWarning($"=====> Enter \"exit\" to terminate ...............");
@@ -192,9 +221,7 @@ namespace net.vieapps.Services.APIGateway
 					logger.LogDebug(">>>>> Got \"exit\" command from API Gateway ...............");
 			}
 
-			serviceComponent.Stop();
-			serviceComponent.Dispose();
-
+			stop();
 			logger.LogInformation($"The service is stopped - Served times: {start.GetElapsedTimes()}");
 		}
 	}

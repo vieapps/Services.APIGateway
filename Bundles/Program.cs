@@ -19,8 +19,6 @@ namespace net.vieapps.Services.APIGateway
 		static void Main(string[] args)
 		{
 			// prepare
-			Console.OutputEncoding = System.Text.Encoding.UTF8;
-
 			var processNodes = new List<XmlNode>();
 			if (args?.FirstOrDefault(a => a.StartsWith("/config:")) != null)
 			{
@@ -85,8 +83,9 @@ namespace net.vieapps.Services.APIGateway
 				});
 			}
 
-			// setup hooks
+			// setup environment
 			AppDomain.CurrentDomain.ProcessExit += (sender, arguments) => stop();
+			Console.OutputEncoding = System.Text.Encoding.UTF8;
 			Console.CancelKeyPress += (sender, arguments) =>
 			{
 				stop();

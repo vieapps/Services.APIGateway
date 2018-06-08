@@ -43,10 +43,8 @@ namespace net.vieapps.Services.APIGateway
 		[STAThread]
 		static void Main(string[] args)
 		{
-			// initialize
+			// setup environment
 			Directory.SetCurrentDirectory(AppDomain.CurrentDomain.BaseDirectory);
-
-			// prepare default settings of Json.NET
 			JsonConvert.DefaultSettings = () => new JsonSerializerSettings
 			{
 				Formatting = Formatting.Indented,
@@ -244,12 +242,13 @@ namespace net.vieapps.Services.APIGateway
 		internal static void SetServiceState(string controllerID, string name, bool state)
 		{
 			var uri = name.IndexOf(".") < 0 ? $"net.vieapps.services.{name}" : name;
-			if (!Program.Services.TryGetValue(uri, out Dictionary<string, bool> info))
-			{
-				info = new Dictionary<string, bool>();
-				Program.Services.TryAdd(uri, info);
-			}
-			info[controllerID] = state;
+			if (Program.Services.TryGetValue(uri, out Dictionary<string, bool> info))
+				info[controllerID] = state;
+			else if (state)
+				Program.Services.TryAdd(uri, new Dictionary<string, bool>
+				{
+					{ controllerID, state }
+				});
 		}
 
 		internal static bool IsRunning(this Dictionary<string, bool> instances) => instances.Where(kvp => kvp.Value).Count() > 0;

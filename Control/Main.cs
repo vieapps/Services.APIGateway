@@ -14,6 +14,7 @@ using System.Runtime.InteropServices;
 
 using WampSharp.V2.Realm;
 using WampSharp.V2.Client;
+using WampSharp.V2.Core.Contracts;
 
 using Newtonsoft.Json.Linq;
 
@@ -86,8 +87,8 @@ namespace net.vieapps.Services.APIGateway
 			this.IsUserInteractive = Environment.UserInteractive && args?.FirstOrDefault(a => a.StartsWith("/daemon")) == null;
 			this.Info = new ControllerInfo
 			{
-				Host = Environment.MachineName.ToLower(),
 				User = Environment.UserName.ToLower(),
+				Host = Environment.MachineName.ToLower(),
 				Platform = $"{RuntimeInformation.FrameworkDescription} @ {this.OSInfo}",
 				Mode = this.IsUserInteractive ? "Interactive app" : "Background service"
 			};
@@ -217,7 +218,7 @@ namespace net.vieapps.Services.APIGateway
 						.ContinueWith(task =>
 						{
 							stopwatch.Stop();
-							Global.OnProcess?.Invoke($"The API Gateway Services Controller is{(this.State == ServiceState.Disconnected ? " re-" : " ")}started successful - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");
+							Global.OnProcess?.Invoke($"The API Gateway Services Controller is{(this.State == ServiceState.Disconnected ? " re-" : " ")}started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");
 							this.State = ServiceState.Connected;
 						}, TaskContinuationOptions.OnlyOnRanToCompletion)
 						.ConfigureAwait(false);
@@ -287,7 +288,7 @@ namespace net.vieapps.Services.APIGateway
 			this.CancellationTokenSource.Cancel();
 
 			WAMPConnections.CloseChannels();
-
+			Global.OnProcess?.Invoke($"The API Gateway Services Controller is stopped");
 			this.State = ServiceState.Disconnected;
 		}
 
@@ -308,7 +309,7 @@ namespace net.vieapps.Services.APIGateway
 		/// <param name="name"></param>
 		/// <returns></returns>
 		public bool IsBusinessServiceAvailable(string name)
-			=> !string.IsNullOrWhiteSpace(name) && this.BusinessServices.ContainsKey(name.Trim().ToLower());
+			=> !string.IsNullOrWhiteSpace(name) && this.BusinessServices.ContainsKey(name.IndexOf(".") > 0 ? name.ToArray('.').Last().ToLower() : name.Trim().ToLower());
 
 		/// <summary>
 		/// Gets the state that determines a business service is running or not
@@ -324,7 +325,7 @@ namespace net.vieapps.Services.APIGateway
 		/// <param name="name"></param>
 		/// <returns></returns>
 		public ExternalProcess.Info GetServiceProcess(string name)
-			=> !string.IsNullOrWhiteSpace(name) && this.BusinessServices.TryGetValue(name.Trim().ToLower(), out ServiceInfo info)
+			=> !string.IsNullOrWhiteSpace(name) && this.BusinessServices.TryGetValue(name.IndexOf(".") > 0 ? name.ToArray('.').Last().ToLower() : name.Trim().ToLower(), out ServiceInfo info)
 				? info.Instance
 				: null;
 
@@ -344,7 +345,10 @@ namespace net.vieapps.Services.APIGateway
 		/// <param name="arguments"></param>
 		public void StartBusinessService(string name, string arguments = null)
 		{
-			name = name?.Trim().ToLower();
+			name = !string.IsNullOrWhiteSpace(name)
+				? name.IndexOf(".") > 0 ? name.ToArray('.').Last().ToLower() : name.Trim().ToLower()
+				: "unknown";
+
 			if (!this.IsBusinessServiceAvailable(name))
 			{
 				var ex = new ServiceNotFoundException($"The service [net.vieapps.services.{name}] is not found");
@@ -390,12 +394,30 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		/// <summary>
+		/// Starts a business service
+		/// </summary>
+		/// <param name="name"></param>
+		/// <param name="arguments"></param>
+		/// <param name="onStarted"></param>
+		public void StartBusinessService(string name, string arguments, Action onStarted)
+		{
+			if (!this.IsBusinessServiceRunning(name))
+			{
+				this.StartBusinessService(name, arguments);
+				onStarted?.Invoke();
+			}
+		}
+
+		/// <summary>
 		/// Stops a business service
 		/// </summary>
 		/// <param name="name"></param>
 		public void StopBusinessService(string name)
 		{
-			name = name?.Trim().ToLower();
+			name = !string.IsNullOrWhiteSpace(name)
+				? name.IndexOf(".") > 0 ? name.ToArray('.').Last().ToLower() : name.Trim().ToLower()
+				: "unknown";
+
 			if (!this.IsBusinessServiceAvailable(name))
 			{
 				var ex = new ServiceNotFoundException($"The service [net.vieapps.services.{name}] is not found");
@@ -423,21 +445,6 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		/// <summary>
-		/// Starts a business service
-		/// </summary>
-		/// <param name="name"></param>
-		/// <param name="arguments"></param>
-		/// <param name="onStarted"></param>
-		public void StartBusinessService(string name, string arguments, Action onStarted)
-		{
-			if (!this.IsBusinessServiceRunning(name))
-			{
-				this.StartBusinessService(name, arguments);
-				onStarted?.Invoke();
-			}
-		}
-
-		/// <summary>
 		/// Stops a business service
 		/// </summary>
 		/// <param name="name"></param>
@@ -457,7 +464,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			try
 			{
-				this.HelperServices.Add(await WAMPConnections.IncomingChannel.RealmProxy.Services.RegisterCallee(this, RegistrationInterceptor.Create(this.Info.ID)).ConfigureAwait(false));
+				this.HelperServices.Add(await WAMPConnections.IncomingChannel.RealmProxy.Services.RegisterCallee(this, RegistrationInterceptor.Create(this.Info.ID, WampInvokePolicy.Single)).ConfigureAwait(false));
 				Global.OnProcess?.Invoke($"The managing service is{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
 			}
 			catch (WampSessionNotEstablishedException)
@@ -953,6 +960,7 @@ namespace net.vieapps.Services.APIGateway
 			=> this.SendInterCommunicateMessageAsync("Service#Info", new JObject
 				{
 					{ "URI", $"net.vieapps.services.{name}" },
+					{ "UniqueURI", $"net.vieapps.services.{Extensions.GetUniqueName(name, serviceArguments?.ToArray(' '))}" },
 					{ "State", state ? "Running" : "Stopped" },
 					{ "Controller", this.Info.ID },
 					{ "Hosting", serviceHosting },
@@ -967,6 +975,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				this.IsDisposed = true;
 				this.Stop();
+				this.CancellationTokenSource.Dispose();
 				GC.SuppressFinalize(this);
 			}
 		}
@@ -974,7 +983,6 @@ namespace net.vieapps.Services.APIGateway
 		~Controller()
 		{
 			this.Dispose();
-			this.CancellationTokenSource.Dispose();
 		}
 		#endregion
 
@@ -986,8 +994,8 @@ namespace net.vieapps.Services.APIGateway
 	{
 		public ControllerInfo() { }
 		public string ID { get; set; }
-		public string Host { get; set; }
 		public string User { get; set; }
+		public string Host { get; set; }
 		public string Platform { get; set; }
 		public string Mode { get; set; }
 		public Dictionary<string, string> Extra { get; }

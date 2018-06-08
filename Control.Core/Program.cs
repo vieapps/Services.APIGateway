@@ -29,12 +29,10 @@ namespace net.vieapps.Services.APIGateway
 
 		static void Main(string[] args)
 		{
-			// initialize
+			// prepare environment
 			Program.IsUserInteractive = Environment.UserInteractive && args?.FirstOrDefault(a => a.StartsWith("/daemon")) == null;
-			Console.OutputEncoding = System.Text.Encoding.UTF8;
 			Directory.SetCurrentDirectory(AppDomain.CurrentDomain.BaseDirectory);
-
-			// prepare default settings of Json.NET
+			Console.OutputEncoding = System.Text.Encoding.UTF8;
 			JsonConvert.DefaultSettings = () => new JsonSerializerSettings
 			{
 				Formatting = Formatting.Indented,
@@ -152,18 +150,17 @@ namespace net.vieapps.Services.APIGateway
 							$"Details:";
 						businessServices.ForEach(kvp =>
 						{
-							info += "\r\n\t" + $"- URI: {kvp.Key} - Status: ";
+							info += "\r\n\t" + $"- URI: {kvp.Key}";
 							if (kvp.Value != null)
 							{
-								info += "Running";
+								info += $" - Unique URI: net.vieapps.services.{Extensions.GetUniqueName(kvp.Key.ToArray('.').Last(), kvp.Value.Arguments?.ToArray(' '))} - Status: Running";
 								if (kvp.Value.ID != null)
 									info += $" - Process ID: {kvp.Value.ID.Value}";
 								if (kvp.Value.StartTime != null)
 									info += $" - Serving times: {kvp.Value.StartTime.Value.GetElapsedTimes()}";
-								info += $" - Starting arguments: {kvp.Value.Arguments}";
 							}
 							else
-								info += "Stopped";
+								info += " - Status: Stopped";
 						});
 
 						Program.Logger.LogInformation(info);
@@ -207,83 +204,85 @@ namespace net.vieapps.Services.APIGateway
 
 		static void SetupEventHandlers()
 		{
-			Global.OnProcess = (message) =>
+			if (Program.IsUserInteractive)
 			{
-				if (!string.IsNullOrWhiteSpace(message))
+				Global.OnProcess = (message) =>
 				{
-					if (!Program.IsUserInteractive)
+					if (!string.IsNullOrWhiteSpace(message))
 						Console.WriteLine(message);
-					else
-						Program.Logger.LogInformation(message);
-				}
-			};
-
-			Global.OnError = Global.OnSendRTUMessageFailure = (message, exception) =>
-			{
-				if (!Program.IsUserInteractive)
-					Console.Error.WriteLine(message + (exception != null ? "\r\n" + exception.StackTrace : ""));
-				else
-					Program.Logger.LogError(message, exception);
-			};
-
-			Global.OnSendRTUMessageSuccess = (message) =>
-			{
-				if (!string.IsNullOrWhiteSpace(message))
-					Program.Logger.LogInformation(message);
-			};
-
-			Global.OnSendEmailSuccess = (message) =>
-			{
-				if (!string.IsNullOrWhiteSpace(message))
+				};
+				Global.OnError = Global.OnSendRTUMessageFailure = (message, exception) => Console.Error.WriteLine(message + (exception != null ? "\r\n" + exception.StackTrace : ""));
+				Global.OnSendEmailFailure = (message, exception) =>
 				{
-					Program.Logger.LogInformation(message);
-					Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "Emails", message)).ConfigureAwait(false);
-				}
-			};
-
-			Global.OnSendWebHookSuccess = (message) =>
-			{
-				if (!string.IsNullOrWhiteSpace(message))
-				{
-					Program.Logger.LogInformation(message);
-					Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "WebHooks", message)).ConfigureAwait(false);
-				}
-			};
-
-			Global.OnSendEmailFailure = (message, exception) =>
-			{
-				if (!Program.IsUserInteractive)
 					Console.Error.WriteLine(message + (exception != null ? "\r\n" + exception.StackTrace : ""));
-				else
-					Program.Logger.LogError(message, exception);
-				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "Emails", message, exception.GetStack())).ConfigureAwait(false);
-			};
-
-			Global.OnSendWebHookFailure = (message, exception) =>
-			{
-				if (!Program.IsUserInteractive)
-					Console.Error.WriteLine(message + (exception != null ? "\r\n" + exception.StackTrace : ""));
-				else
-					Program.Logger.LogError(message, exception);
-				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "WebHooks", message, exception.GetStack())).ConfigureAwait(false);
-			};
-
-			Global.OnServiceStarted = Global.OnServiceStopped = Global.OnGotServiceMessage = (serviceName, message) =>
-			{
-				if (!string.IsNullOrWhiteSpace(message))
+					Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "Emails", message, exception.GetStack())).ConfigureAwait(false);
+				};
+				Global.OnSendWebHookFailure = (message, exception) =>
 				{
-					if (!Program.IsUserInteractive)
+					Console.Error.WriteLine(message + (exception != null ? "\r\n" + exception.StackTrace : ""));
+					Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "WebHooks", message, exception.GetStack())).ConfigureAwait(false);
+				};
+				Global.OnServiceStarted = Global.OnServiceStopped = Global.OnGotServiceMessage = (serviceName, message) =>
+				{
+					if (!string.IsNullOrWhiteSpace(message))
 						Console.WriteLine($"[{serviceName.ToLower()}] => {message}");
-					else
-						Program.Logger.LogInformation($"[{serviceName.ToLower()}] => {message}");
-				}
-			};
-
-			Global.OnLogsUpdated = (serviceName, message) =>
+				};
+				Global.OnLogsUpdated = (serviceName, message) =>
+				{
+					if (!"APIGateway".IsEquals(serviceName) ? true : !message.IsContains("email message") && !message.IsContains("web-hook message"))
+						Console.WriteLine($"[{serviceName.ToLower()}] => {message}");
+				};
+			}
+			else
 			{
-				if (Environment.UserInteractive && (!"APIGateway".IsEquals(serviceName) ? true : !message.IsContains("email message") && !message.IsContains("web-hook message")))
-					Program.Logger.LogInformation($"[{serviceName.ToLower()}] => {message}");
-			};
+				Global.OnProcess = (message) =>
+				{
+					if (!string.IsNullOrWhiteSpace(message))
+						Program.Logger.LogInformation(message);
+				};
+				Global.OnError = Global.OnSendRTUMessageFailure = (message, exception) => Program.Logger.LogError(message, exception);
+				Global.OnSendRTUMessageSuccess = (message) =>
+				{
+					if (!string.IsNullOrWhiteSpace(message))
+						Program.Logger.LogInformation(message);
+				};
+				Global.OnSendEmailSuccess = (message) =>
+				{
+					if (!string.IsNullOrWhiteSpace(message))
+					{
+						Program.Logger.LogInformation(message);
+						Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "Emails", message)).ConfigureAwait(false);
+					}
+				};
+				Global.OnSendWebHookSuccess = (message) =>
+				{
+					if (!string.IsNullOrWhiteSpace(message))
+					{
+						Program.Logger.LogInformation(message);
+						Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "WebHooks", message)).ConfigureAwait(false);
+					}
+				};
+				Global.OnSendEmailFailure = (message, exception) =>
+				{
+					Program.Logger.LogError(message, exception);
+					Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "Emails", message, exception.GetStack())).ConfigureAwait(false);
+				};
+				Global.OnSendWebHookFailure = (message, exception) =>
+				{
+					Program.Logger.LogError(message, exception);
+					Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "WebHooks", message, exception.GetStack())).ConfigureAwait(false);
+				};
+				Global.OnServiceStarted = Global.OnServiceStopped = Global.OnGotServiceMessage = (serviceName, message) =>
+				{
+					if (!string.IsNullOrWhiteSpace(message))
+						Program.Logger.LogInformation($"[{serviceName.ToLower()}] => {message}");
+				};
+				Global.OnLogsUpdated = (serviceName, message) =>
+				{
+					if (!"APIGateway".IsEquals(serviceName) ? true : !message.IsContains("email message") && !message.IsContains("web-hook message"))
+						Program.Logger.LogInformation($"[{serviceName.ToLower()}] => {message}");
+				};
+			}
 		}
 
 		internal static void Start(string[] args, Func<Task> nextAsync = null)
@@ -297,10 +296,6 @@ namespace net.vieapps.Services.APIGateway
 		{
 			Program.Controller.Dispose();
 			Program.CancellationTokenSource.Cancel();
-			if (!Program.IsUserInteractive)
-				Console.WriteLine($"The API Gateway Services Controller is stopped");
-			else
-				Program.Logger.LogInformation($"The API Gateway Services Controller is stopped");
 		}
 
 		internal static ILoggingService GetLoggingService()

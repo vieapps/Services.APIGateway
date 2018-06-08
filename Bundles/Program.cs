@@ -98,7 +98,7 @@ namespace net.vieapps.Services.APIGateway
 			// start and wait for exit
 			start();
 			while (true)
-				Task.Delay(4321).GetAwaiter().GetResult();
+				Task.Delay(54321).GetAwaiter().GetResult();
 		}
 	}
 }

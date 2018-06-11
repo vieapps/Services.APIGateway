@@ -15,6 +15,9 @@ namespace net.vieapps.Services.APIGateway
 {
 	public class Manager : IDisposable
 	{
+		/// <summary>
+		/// Creates new instance of services manager
+		/// </summary>
 		public Manager()
 		{
 			this.OnIncomingChannelEstablished = (sender, args) =>
@@ -75,11 +78,22 @@ namespace net.vieapps.Services.APIGateway
 			return serviceManager;
 		}
 
+		bool IsBusinessServiceAvailable(string controllerID, string name)
+		{
+			if (this.Services.TryGetValue(name, out List<ServiceInfo> services))
+			{
+				var svcInfo = services.FirstOrDefault(svc => svc.ControllerID.Equals(controllerID) && svc.Name.Equals(name));
+				return svcInfo != null && svcInfo.Available;
+			}
+			return false;
+		}
+
 		public void StartBusinessService(string controllerID, string name, string arguments)
 		{
 			try
 			{
-				this.GetServiceManager(controllerID)?.StartBusinessService(name, arguments);
+				if (this.IsBusinessServiceAvailable(controllerID, name))
+					this.GetServiceManager(controllerID)?.StartBusinessService(name, arguments);
 			}
 			catch (Exception ex)
 			{
@@ -91,7 +105,8 @@ namespace net.vieapps.Services.APIGateway
 		{
 			try
 			{
-				this.GetServiceManager(controllerID)?.StopBusinessService(name);
+				if (this.IsBusinessServiceAvailable(controllerID, name))
+					this.GetServiceManager(controllerID)?.StopBusinessService(name);
 			}
 			catch (Exception ex)
 			{
@@ -163,7 +178,7 @@ namespace net.vieapps.Services.APIGateway
 					this.Services.TryAdd(serviceInfo.Name.ToLower(), services);
 				}
 
-				var svcInfo = services.FirstOrDefault(svc => svc.Name.Equals(serviceInfo.Name) && svc.UniqueURI.Equals(serviceInfo.UniqueURI) && svc.ControllerID.Equals(serviceInfo.ControllerID));
+				var svcInfo = services.FirstOrDefault(svc => svc.Name.Equals(serviceInfo.Name) && svc.UniqueName.Equals(serviceInfo.UniqueName) && svc.ControllerID.Equals(serviceInfo.ControllerID));
 				if (svcInfo == null)
 					services.Add(serviceInfo);
 				else
@@ -208,7 +223,7 @@ namespace net.vieapps.Services.APIGateway
 	{
 		public ServiceInfo() { }
 		public string Name { get; set; }
-		public string UniqueURI { get; set; }
+		public string UniqueName { get; set; }
 		public string ControllerID { get; set; }
 		public string InvokeInfo { get; set; }
 		public DateTime Timestamp { get; set; } = DateTime.Now;

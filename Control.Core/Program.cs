@@ -122,7 +122,7 @@ namespace net.vieapps.Services.APIGateway
 								if (kvp.Value != null)
 								{
 									var svcArgs = kvp.Value.Arguments?.ToArray(' ') ?? new string[] { };
-									info += $" - Unique URI: net.vieapps.services.{Extensions.GetUniqueName(kvp.Key.ToArray('.').Last(), svcArgs)} - Status: Running";
+									info += $" ({Extensions.GetUniqueName(kvp.Key.ToArray('.').Last(), svcArgs)}) - Status: Running";
 									if (kvp.Value.ID != null)
 										info += $" - Process ID: {kvp.Value.ID.Value}";
 									if (kvp.Value.StartTime != null)
@@ -146,7 +146,7 @@ namespace net.vieapps.Services.APIGateway
 						else if (Program.Manager.AvailableControllers.ContainsKey(controllerID))
 						{
 							var controller = Program.Manager.AvailableControllers[controllerID];
-							var services = Program.Manager.AvailableServices.Values.Select(svc => svc.FirstOrDefault(svcInfo => svcInfo.ControllerID.Equals(controller.ID))).Where(svcInfo => svcInfo != null).ToList();
+							var services = Program.Manager.AvailableServices.Values.Select(svc => svc.FirstOrDefault(svcInfo => svcInfo.ControllerID.Equals(controller.ID))).Where(svcInfo => svcInfo != null).OrderBy(svcInfo => svcInfo.Name).ToList();
 							var info =
 								$"Controller:" + "\r\n\t" +
 								$"- ID: {controller.ID})" + "\r\n\t" +
@@ -161,7 +161,7 @@ namespace net.vieapps.Services.APIGateway
 							info += "\r\n" + $"Services - Available: {services.Where(svc => svc.Available).Count():#,##0} - Running: {services.Where(svc => svc.Running).Count():#,##0}";
 							services.ForEach(svc =>
 							{
-								info += "\r\n\t" + $"- URI: net.vieapps.services.{svc.Name} - Unique URI: {svc.UniqueURI} - Status: {(svc.Running ? "Running" : "Stopped")}";
+								info += "\r\n\t" + $"- URI: net.vieapps.services.{svc.Name} ({svc.UniqueName}) - Status: {(svc.Running ? "Running" : "Stopped")}";
 								info += svc.Running
 									? $" - Starting time: {svc.Timestamp.ToDTString()} [Served times: {svc.Timestamp.GetElapsedTimes()}] - Invoked by: {svc.InvokeInfo}"
 									: $" - Last working time: {svc.Timestamp.ToDTString()}";

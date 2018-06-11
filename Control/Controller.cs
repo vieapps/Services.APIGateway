@@ -235,6 +235,15 @@ namespace net.vieapps.Services.APIGateway
 								await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
 							await this.SendInterCommunicateMessageAsync("Controller#Info", this.Info.ToJson(), this.CancellationTokenSource.Token).ConfigureAwait(false);
 						}, TaskContinuationOptions.OnlyOnRanToCompletion)
+						.ContinueWith(task =>
+						{
+							Task.Run(async () =>
+							{
+								await Task.Delay(UtilityService.GetRandomNumber(12345, 23456)).ConfigureAwait(false);
+								await this.SendInterCommunicateMessageAsync("Controller#RequestInfo").ConfigureAwait(false);
+								await this.SendInterCommunicateMessageAsync("Service#RequestInfo").ConfigureAwait(false);
+							}).ConfigureAwait(false);
+						}, TaskContinuationOptions.OnlyOnRanToCompletion)
 						.ConfigureAwait(false);
 					},
 					(sender, arguments) =>
@@ -923,11 +932,12 @@ namespace net.vieapps.Services.APIGateway
 
 				case "Service#RequestInfo":
 					var svcArgs = this.GetServiceArguments().Replace("/", "/call-").ToArray(' ');
+					var osPlatform = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "macOS";
 					await Task.WhenAll(this.BusinessServices.Select(kvp => this.SendServiceInfoAsync(kvp.Key, kvp.Value.Instance != null, kvp.Value.Instance?.Arguments))
 						.Concat(this.BusinessServices.Select(kvp => this.SendInterCommunicateMessageAsync($"Service#UniqueInfo#{kvp.Key}", new JObject
 						{
-							{ "OSPlatform", RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "macOS" },
-							{ "Name", $"{Extensions.GetUniqueName(kvp.Key, svcArgs)}" }
+							{ "OSPlatform", osPlatform },
+							{ "Name", Extensions.GetUniqueName(kvp.Key, svcArgs) }
 						})))).ConfigureAwait(false);
 					break;
 
@@ -937,7 +947,7 @@ namespace net.vieapps.Services.APIGateway
 						await this.SendInterCommunicateMessageAsync($"Service#UniqueInfo#{name}", new JObject
 						{
 							{ "OSPlatform", RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "macOS" },
-							{ "Name", $"{Extensions.GetUniqueName(name, this.GetServiceArguments().Replace("/", "/call-").ToArray(' '))}" }
+							{ "Name", Extensions.GetUniqueName(name, this.GetServiceArguments().Replace("/", "/call-").ToArray(' ')) }
 						}).ConfigureAwait(false);
 					break;
 			}
@@ -976,7 +986,7 @@ namespace net.vieapps.Services.APIGateway
 			await this.SendInterCommunicateMessageAsync("Service#Info", new ServiceInfo
 			{
 				Name = name,
-				UniqueURI = $"net.vieapps.services.{Extensions.GetUniqueName(name, svcArgs)}",
+				UniqueName = Extensions.GetUniqueName(name, svcArgs),
 				ControllerID = this.Info.ID,
 				InvokeInfo = invokeInfo,
 				Available = true,

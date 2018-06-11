@@ -177,7 +177,7 @@ namespace net.vieapps.Services.APIGateway
 				else
 					Task.Run(() => Program.Manager.StartBusinessService(controllerID, name, Program.Controller.GetServiceArguments().Replace("/", "/call-"))).ConfigureAwait(false);
 			}
-			else if (MessageBox.Show($"Are you sure you want to {(Program.Manager.AvailableServices[name].Where(svc => svc.Running).Count() > 0 ? "stop" : "start")} all instances of \"{name}\" services?", "Service", MessageBoxButtons.YesNo) == DialogResult.Yes)
+			else if (MessageBox.Show($"Are you sure you want to {(Program.Manager.AvailableServices[name].Where(svc => svc.Running).Count() > 0 ? "stop" : "start")} all instances of the \"{name}\" service?", "Service", MessageBoxButtons.YesNo) == DialogResult.Yes)
 			{
 				this.SetControlsState(false);
 				if (Program.Manager.AvailableServices[name].Where(svc => svc.Running).Count() > 0)

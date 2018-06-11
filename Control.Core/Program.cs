@@ -101,7 +101,7 @@ namespace net.vieapps.Services.APIGateway
 							Program.Manager.AvailableServices.OrderBy(kvp => kvp.Key).ForEach(kvp => info += "\r\n\t" + $"- URI: net.vieapps.services.{kvp.Key} - Available instance(s): {kvp.Value.Where(svc => svc.Available).Count():#,##0} - Running instance(s): {kvp.Value.Where(svc => svc.Running).Count():#,##0}");
 							Program.Logger.LogInformation(info);
 						}
-						else if (controllerID.IsEquals("local"))
+						else if (controllerID.IsEquals("local") || controllerID.IsEquals(Program.Controller.Info.ID))
 						{
 							var info =
 								$"Controller:" + "\r\n\t" +
@@ -146,10 +146,9 @@ namespace net.vieapps.Services.APIGateway
 						else if (Program.Manager.AvailableControllers.ContainsKey(controllerID))
 						{
 							var controller = Program.Manager.AvailableControllers[controllerID];
-							var services = Program.Manager.AvailableServices.Values.Select(svc => svc.FirstOrDefault(svcInfo => svcInfo.ControllerID.Equals(controller.ID))).Where(svcInfo => svcInfo != null).OrderBy(svcInfo => svcInfo.Name).ToList();
 							var info =
 								$"Controller:" + "\r\n\t" +
-								$"- ID: {controller.ID})" + "\r\n\t" +
+								$"- ID: {controller.ID}" + "\r\n\t" +
 								$"- Platform: {controller.Platform})" + "\r\n\t" +
 								$"- Working mode: {controller.Mode}" + "\r\n\t" +
 								$"- Host: {controller.Host}" + "\r\n\t" +
@@ -158,6 +157,7 @@ namespace net.vieapps.Services.APIGateway
 							info += controller.Available
 								? $"- Starting time: {controller.Timestamp.ToDTString()} [Served times: {controller.Timestamp.GetElapsedTimes()}]"
 								: $"- Last working time: {controller.Timestamp.ToDTString()}";
+							var services = Program.Manager.AvailableServices.Values.Select(svc => svc.FirstOrDefault(svcInfo => svcInfo.ControllerID.Equals(controller.ID))).Where(svcInfo => svcInfo != null).OrderBy(svcInfo => svcInfo.Name).ToList();
 							info += "\r\n" + $"Services - Available: {services.Where(svc => svc.Available).Count():#,##0} - Running: {services.Where(svc => svc.Running).Count():#,##0}";
 							services.ForEach(svc =>
 							{

@@ -22,6 +22,7 @@ namespace net.vieapps.Services.APIGateway
 		internal static CancellationTokenSource CancellationTokenSource { get; set; } = null;
 		internal static IServiceManager ServiceManager { get; set; } = null;
 		internal static ILoggingService LoggingService { get; set; } = null;
+		internal static Manager Manager { get; set; } = null;
 		internal static Controller Controller { get; set; } = null;
 		internal static ILogger Logger { get; set; }
 		internal static bool IsUserInteractive { get; set; } = false;
@@ -66,114 +67,10 @@ namespace net.vieapps.Services.APIGateway
 
 			Program.Logger = Components.Utility.Logger.CreateLogger<Controller>();
 
-			// setup event handlers
+			// prepare event handlers
 			Program.SetupEventHandlers();
 
-			void showCommands()
-			{
-				Program.Logger.LogInformation(
-					"VIEApps NGX Services Controller commands:" + "\r\n\t" +
-					"start <name>: start a business service that specified by name" + "\r\n\t" +
-					"stop <name>: stop a business service that specified by name" + "\r\n\t" +
-					"restart: restart all business services" + "\r\n\t" +
-					"info: show the information of all business services and others" + "\r\n\t" +
-					"help: show available commands" + "\r\n\t" +
-					"exit: shutdown & terminate"
-				);
-			}
-
-			void processCommands()
-			{
-				var command = Console.ReadLine();
-				while (command != null)
-				{
-					if (command.ToLower() == "exit")
-						return;
-
-					var commands = command.ToArray(' ');
-
-					if (commands[0].IsStartsWith("start"))
-					{
-						if (commands.Length > 1)
-							Program.Controller.StartBusinessService(commands[1], Program.Controller.GetServiceArguments().Replace("/", "/call-"), null);
-						else
-							Program.Logger.LogInformation($"Invalid {command} command");
-					}
-
-					else if (commands[0].IsStartsWith("stop"))
-					{
-						if (commands.Length > 1)
-							Program.Controller.StopBusinessService(commands[1], null);
-						else
-							Program.Logger.LogInformation($"Invalid {command} command");
-					}
-
-					else if (commands[0].IsEquals("restart"))
-					{
-						Program.Logger.LogInformation("Attempting to stop all business services...");
-						Program.Controller.GetAvailableBusinessServices().ForEach(kvp => Program.Controller.StopBusinessService(kvp.Key.ToArray('.').Last(), null));
-						Task.Run(async () =>
-						{
-							Program.Logger.LogInformation("Attempting to re-start all business services...");
-							await Task.Delay(UtilityService.GetRandomNumber(2345, 3456)).ConfigureAwait(false);
-							var arguments = Program.Controller.GetServiceArguments();
-							Program.Controller.GetAvailableBusinessServices().ForEach(kvp => Task.Run(() => Program.Controller.StartBusinessService(kvp.Key.ToArray('.').Last(), arguments, null)));
-						}).ConfigureAwait(false);
-					}
-
-					else if (commands[0].IsEquals("info"))
-					{
-						var info = "";
-
-						info +=
-							$"Controller:" + "\r\n\t" +
-							$"- Version: {typeof(Controller).Assembly.GetVersion()}" + "\r\n\t" +
-							$"- Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : $"Other OS")} {RuntimeInformation.OSArchitecture} ({RuntimeInformation.OSDescription.Trim()})" + "\r\n\t" +
-							$"- Working mode: {(Environment.UserInteractive ? "Interactive App" : "Background Service")}" + "\r\n\t" +
-							$"- WAMP router URI: {WAMPConnections.GetRouterStrInfo()}" + "\r\n\t" +
-							$"- Incoming channel session identity: {WAMPConnections.IncomingChannelSessionID}" + "\r\n\t" +
-							$"- Outgoing channel session identity: {WAMPConnections.OutgoingChannelSessionID}" + "\r\n\t" +
-							$"- Number of helper services: {Program.Controller.NumberOfHelperServices:#,##0}" + "\r\n\t" +
-							$"- Number of scheduling timers: {Program.Controller.NumberOfTimers:#,##0}" + "\r\n\t" +
-							$"- Number of scheduling tasks: {Program.Controller.NumberOfTasks:#,##0}";
-
-						var controllers = Program.Controller.GetAvailableControllers();
-						info += "\r\n" + $"All Controllers: {controllers.Count:#,##0} instance(s)";
-						controllers.ForEach(controller => info += "\r\n\t" + $"- ID: {controller.ID} - Working mode: {controller.Mode} - Platform: {controller.Platform}");
-
-						var businessServices = Program.Controller.GetAvailableBusinessServices().ToDictionary(kvp => kvp.Key, kvp => Program.Controller.GetServiceProcess(kvp.Key.ToArray('.').Last()));
-
-						info += "\r\n" +
-							$"Services:" + "\r\n\t" +
-							$"- Total of available services: {businessServices.Count:#,##0}" + "\r\n\t" +
-							$"- Total of running services: {businessServices.Where(kvp => kvp.Value != null).Count():#,##0}" + "\r\n\t" +
-							$"Details:";
-						businessServices.ForEach(kvp =>
-						{
-							info += "\r\n\t" + $"- URI: {kvp.Key}";
-							if (kvp.Value != null)
-							{
-								info += $" - Unique URI: net.vieapps.services.{Extensions.GetUniqueName(kvp.Key.ToArray('.').Last(), kvp.Value.Arguments?.ToArray(' '))} - Status: Running";
-								if (kvp.Value.ID != null)
-									info += $" - Process ID: {kvp.Value.ID.Value}";
-								if (kvp.Value.StartTime != null)
-									info += $" - Serving times: {kvp.Value.StartTime.Value.GetElapsedTimes()}";
-							}
-							else
-								info += " - Status: Stopped";
-						});
-
-						Program.Logger.LogInformation(info);
-					}
-
-					else
-						showCommands();
-
-					command = Console.ReadLine();
-				}
-			}
-
-			// setup hooks
+			// prepare hooks
 			AppDomain.CurrentDomain.ProcessExit += (sender, arguments) => Program.Stop();
 			Console.CancelKeyPress += (sender, arguments) =>
 			{
@@ -182,17 +79,156 @@ namespace net.vieapps.Services.APIGateway
 			};
 
 			// start
-			Program.Start(args, () =>
-			{
-				if (Program.IsUserInteractive)
-					showCommands();
-				return Task.CompletedTask;
-			});
+			Program.Start(args);
 
 			// processing commands util got an exit signal
 			if (Program.IsUserInteractive)
-				processCommands();
+			{
+				var command = Console.ReadLine();
+				while (command != null)
+				{
+					var commands = command.ToArray(' ');
 
+					if (commands[0].IsEquals("info"))
+					{
+						var controllerID = commands.Length > 1 ? commands[1].ToLower().Trim() : "local";
+						if (controllerID.IsEquals("global"))
+						{
+							var controllers = Program.Manager.AvailableControllers;
+							var info = $"Controllers - Total instance(s): {Program.Manager.AvailableControllers.Count:#,##0} - Available instance(s): {Program.Manager.AvailableControllers.Where(kvp => kvp.Value.Available).Count():#,##0}";
+							Program.Manager.AvailableControllers.ForEach(controller => info += "\r\n\t" + $"- ID: {controller.ID} - Status: {(controller.Available ? "Available" : "Unavailable")}  - Working mode: {controller.Mode} - Platform: {controller.Platform}");
+							info += "\r\n" + $"Services - Total: {Program.Manager.AvailableServices.Count:#,##0} - Available: {Program.Manager.AvailableServices.Where(kvp => kvp.Value.FirstOrDefault(svc => svc.Available) != null).Count():#,##0} - Running: {Program.Manager.AvailableServices.Where(kvp => kvp.Value.FirstOrDefault(svc => svc.Running) != null).Count():#,##0}";
+							Program.Manager.AvailableServices.OrderBy(kvp => kvp.Key).ForEach(kvp => info += "\r\n\t" + $"- URI: net.vieapps.services.{kvp.Key} - Available instance(s): {kvp.Value.Where(svc => svc.Available).Count():#,##0} - Running instance(s): {kvp.Value.Where(svc => svc.Running).Count():#,##0}");
+							Program.Logger.LogInformation(info);
+						}
+						else if (controllerID.IsEquals("local"))
+						{
+							var info =
+								$"Controller:" + "\r\n\t" +
+								$"- Version: {typeof(Controller).Assembly.GetVersion()}" + "\r\n\t" +
+								$"- Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "macOS")} {RuntimeInformation.OSArchitecture} ({(RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "Macintosh; Intel Mac OS X; " : "")}{RuntimeInformation.OSDescription.Trim()})" + "\r\n\t" +
+								$"- Working mode: {(Environment.UserInteractive ? "Interactive app" : "Background service")}" + "\r\n\t" +
+								$"- WAMP router URI: {WAMPConnections.GetRouterStrInfo()}" + "\r\n\t" +
+								$"- Incoming channel session identity: {WAMPConnections.IncomingChannelSessionID}" + "\r\n\t" +
+								$"- Outgoing channel session identity: {WAMPConnections.OutgoingChannelSessionID}" + "\r\n\t" +
+								$"- Number of helper services: {Program.Controller.NumberOfHelperServices:#,##0}" + "\r\n\t" +
+								$"- Number of scheduling timers: {Program.Controller.NumberOfTimers:#,##0}" + "\r\n\t" +
+								$"- Number of scheduling tasks: {Program.Controller.NumberOfTasks:#,##0}";
+							var services = Program.Controller.GetAvailableBusinessServices().OrderBy(kvp => kvp.Key).ToDictionary(kvp => kvp.Key, kvp => Program.Controller.GetServiceProcess(kvp.Key.ToArray('.').Last()));
+							info += "\r\n" + $"Services - Available: {services.Count:#,##0} - Running: {services.Where(kvp => kvp.Value != null).Count():#,##0}";
+							services.ForEach(kvp =>
+							{
+								info += "\r\n\t" + $"- URI: {kvp.Key}";
+								if (kvp.Value != null)
+								{
+									var svcArgs = kvp.Value.Arguments?.ToArray(' ') ?? new string[] { };
+									info += $" - Unique URI: net.vieapps.services.{Extensions.GetUniqueName(kvp.Key.ToArray('.').Last(), svcArgs)} - Status: Running";
+									if (kvp.Value.ID != null)
+										info += $" - Process ID: {kvp.Value.ID.Value}";
+									if (kvp.Value.StartTime != null)
+										info += $" - Serving times: {kvp.Value.StartTime.Value.GetElapsedTimes()}";
+									var user = svcArgs.FirstOrDefault(a => a.IsStartsWith("/call-user:"));
+									if (!string.IsNullOrWhiteSpace(user))
+									{
+										info += $" - Invoked by: {user.Replace(StringComparison.OrdinalIgnoreCase, "/call-user:", "").UrlDecode()}";
+										var host = svcArgs.FirstOrDefault(a => a.IsStartsWith("/call-host:"));
+										var platform = svcArgs.FirstOrDefault(a => a.IsStartsWith("/call-platform:"));
+										var os = svcArgs.FirstOrDefault(a => a.IsStartsWith("/call-os:"));
+										if (!string.IsNullOrWhiteSpace(host) && !string.IsNullOrWhiteSpace(platform) && !string.IsNullOrWhiteSpace(os))
+											info += $" [Host: {host.Replace(StringComparison.OrdinalIgnoreCase, "/call-host:", "").UrlDecode()} - Platform: {platform.Replace(StringComparison.OrdinalIgnoreCase, "/call-platform:", "").UrlDecode()} @ {os.Replace(StringComparison.OrdinalIgnoreCase, "/call-os:", "").UrlDecode()}]";
+									}
+								}
+								else
+									info += " - Status: Stopped";
+							});
+							Program.Logger.LogInformation(info);
+						}
+						else if (Program.Manager.AvailableControllers.ContainsKey(controllerID))
+						{
+							var controller = Program.Manager.AvailableControllers[controllerID];
+							var services = Program.Manager.AvailableServices.Values.Select(svc => svc.FirstOrDefault(svcInfo => svcInfo.ControllerID.Equals(controller.ID))).Where(svcInfo => svcInfo != null).ToList();
+							var info =
+								$"Controller:" + "\r\n\t" +
+								$"- ID: {controller.ID})" + "\r\n\t" +
+								$"- Platform: {controller.Platform})" + "\r\n\t" +
+								$"- Working mode: {controller.Mode}" + "\r\n\t" +
+								$"- Host: {controller.Host}" + "\r\n\t" +
+								$"- User: {controller.User}" + "\r\n\t" +
+								$"- Status: {(controller.Available ? "Available" : "Unvailable")}" + "\r\n\t";
+							info += controller.Available
+								? $"- Starting time: {controller.Timestamp.ToDTString()} [Served times: {controller.Timestamp.GetElapsedTimes()}]"
+								: $"- Last working time: {controller.Timestamp.ToDTString()}";
+							info += "\r\n" + $"Services - Available: {services.Where(svc => svc.Available).Count():#,##0} - Running: {services.Where(svc => svc.Running).Count():#,##0}";
+							services.ForEach(svc =>
+							{
+								info += "\r\n\t" + $"- URI: net.vieapps.services.{svc.Name} - Unique URI: {svc.UniqueURI} - Status: {(svc.Running ? "Running" : "Stopped")}";
+								info += svc.Running
+									? $" - Starting time: {svc.Timestamp.ToDTString()} [Served times: {svc.Timestamp.GetElapsedTimes()}] - Invoked by: {svc.InvokeInfo}"
+									: $" - Last working time: {svc.Timestamp.ToDTString()}";
+							});
+							Program.Logger.LogInformation(info);
+						}
+						else
+							Program.Logger.LogWarning($"Controller with identity \"{controllerID}\" is not found");
+					}
+
+					else if (commands[0].IsEquals("start"))
+					{
+						if (commands.Length > 1)
+						{
+							var controllerID = commands.Length > 2
+								? commands[2].ToLower().Trim()
+								: Program.Controller.Info.ID;
+							if (!Program.Manager.AvailableControllers.ContainsKey(controllerID))
+								Program.Logger.LogWarning($"Controller with identity \"{controllerID}\" is not found");
+							else
+								Program.Manager.StartBusinessService(controllerID, commands[1], Program.Controller.GetServiceArguments().Replace("/", "/call-"));
+						}
+						else
+							Program.Logger.LogInformation($"Invalid {command} command");
+					}
+
+					else if (commands[0].IsEquals("stop"))
+					{
+						if (commands.Length > 1)
+						{
+							var controllerID = commands.Length > 2
+								? commands[2].ToLower().Trim()
+								: Program.Controller.Info.ID;
+							if (!Program.Manager.AvailableControllers.ContainsKey(controllerID))
+								Program.Logger.LogWarning($"Controller with identity \"{controllerID}\" is not found");
+							else
+								Program.Manager.StopBusinessService(controllerID, commands[1]);
+						}
+						else
+							Program.Logger.LogInformation($"Invalid {command} command");
+					}
+
+					else if (commands[0].IsEquals("refresh"))
+						Task.Run(async () =>
+						{
+							await Program.Manager.SendInterCommunicateMessageAsync("Controller#RequestInfo").ConfigureAwait(false);
+							await Program.Manager.SendInterCommunicateMessageAsync("Service#RequestInfo").ConfigureAwait(false);
+						}).ConfigureAwait(false);
+
+					else if (commands[0].IsEquals("exit"))
+						return;
+
+					else
+						Program.Logger.LogInformation(
+							"VIEApps NGX Services Controller commands:" + "\r\n\t" +
+							"info [global | controller-id]: show the information of controllers & services" + "\r\n\t" +
+							"start <name> [controller-id]: start a business service" + "\r\n\t" +
+							"stop <name> [controller-id]: stop a business service" + "\r\n\t" +
+							"refresh: the information of controllers & services" + "\r\n\t" +
+							"help: show available commands" + "\r\n\t" +
+							"exit: shutdown & terminate"
+						);
+
+					command = Console.ReadLine();
+				}
+			}
+				
 			// wait until be killed
 			else
 				while (true)
@@ -204,96 +240,74 @@ namespace net.vieapps.Services.APIGateway
 
 		static void SetupEventHandlers()
 		{
-			if (Program.IsUserInteractive)
+			Global.OnProcess = (message) =>
 			{
-				Global.OnProcess = (message) =>
-				{
-					if (!string.IsNullOrWhiteSpace(message))
-						Console.WriteLine(message);
-				};
-				Global.OnError = Global.OnSendRTUMessageFailure = (message, exception) => Console.Error.WriteLine(message + (exception != null ? "\r\n" + exception.StackTrace : ""));
-				Global.OnSendEmailFailure = (message, exception) =>
-				{
-					Console.Error.WriteLine(message + (exception != null ? "\r\n" + exception.StackTrace : ""));
-					Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "Emails", message, exception.GetStack())).ConfigureAwait(false);
-				};
-				Global.OnSendWebHookFailure = (message, exception) =>
-				{
-					Console.Error.WriteLine(message + (exception != null ? "\r\n" + exception.StackTrace : ""));
-					Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "WebHooks", message, exception.GetStack())).ConfigureAwait(false);
-				};
-				Global.OnServiceStarted = Global.OnServiceStopped = Global.OnGotServiceMessage = (serviceName, message) =>
-				{
-					if (!string.IsNullOrWhiteSpace(message))
-						Console.WriteLine($"[{serviceName.ToLower()}] => {message}");
-				};
-				Global.OnLogsUpdated = (serviceName, message) =>
-				{
-					if (!"APIGateway".IsEquals(serviceName) ? true : !message.IsContains("email message") && !message.IsContains("web-hook message"))
-						Console.WriteLine($"[{serviceName.ToLower()}] => {message}");
-				};
-			}
-			else
+				if (!string.IsNullOrWhiteSpace(message))
+					Program.Logger.LogInformation(message);
+			};
+
+			Global.OnError = Global.OnSendRTUMessageFailure = (message, exception) => Program.Logger.LogError(message, exception);
+
+			Global.OnSendRTUMessageSuccess = (message) =>
 			{
-				Global.OnProcess = (message) =>
+				if (!string.IsNullOrWhiteSpace(message))
+					Program.Logger.LogInformation(message);
+			};
+
+			Global.OnSendEmailSuccess = (message) =>
+			{
+				if (!string.IsNullOrWhiteSpace(message))
 				{
-					if (!string.IsNullOrWhiteSpace(message))
-						Program.Logger.LogInformation(message);
-				};
-				Global.OnError = Global.OnSendRTUMessageFailure = (message, exception) => Program.Logger.LogError(message, exception);
-				Global.OnSendRTUMessageSuccess = (message) =>
+					Program.Logger.LogInformation(message);
+					Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "Emails", message)).ConfigureAwait(false);
+				}
+			};
+
+			Global.OnSendWebHookSuccess = (message) =>
+			{
+				if (!string.IsNullOrWhiteSpace(message))
 				{
-					if (!string.IsNullOrWhiteSpace(message))
-						Program.Logger.LogInformation(message);
-				};
-				Global.OnSendEmailSuccess = (message) =>
-				{
-					if (!string.IsNullOrWhiteSpace(message))
-					{
-						Program.Logger.LogInformation(message);
-						Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "Emails", message)).ConfigureAwait(false);
-					}
-				};
-				Global.OnSendWebHookSuccess = (message) =>
-				{
-					if (!string.IsNullOrWhiteSpace(message))
-					{
-						Program.Logger.LogInformation(message);
-						Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "WebHooks", message)).ConfigureAwait(false);
-					}
-				};
-				Global.OnSendEmailFailure = (message, exception) =>
-				{
-					Program.Logger.LogError(message, exception);
-					Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "Emails", message, exception.GetStack())).ConfigureAwait(false);
-				};
-				Global.OnSendWebHookFailure = (message, exception) =>
-				{
-					Program.Logger.LogError(message, exception);
-					Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "WebHooks", message, exception.GetStack())).ConfigureAwait(false);
-				};
-				Global.OnServiceStarted = Global.OnServiceStopped = Global.OnGotServiceMessage = (serviceName, message) =>
-				{
-					if (!string.IsNullOrWhiteSpace(message))
-						Program.Logger.LogInformation($"[{serviceName.ToLower()}] => {message}");
-				};
-				Global.OnLogsUpdated = (serviceName, message) =>
-				{
-					if (!"APIGateway".IsEquals(serviceName) ? true : !message.IsContains("email message") && !message.IsContains("web-hook message"))
-						Program.Logger.LogInformation($"[{serviceName.ToLower()}] => {message}");
-				};
-			}
+					Program.Logger.LogInformation(message);
+					Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "WebHooks", message)).ConfigureAwait(false);
+				}
+			};
+
+			Global.OnSendEmailFailure = (message, exception) =>
+			{
+				Program.Logger.LogError(message, exception);
+				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "Emails", message, exception.GetStack())).ConfigureAwait(false);
+			};
+
+			Global.OnSendWebHookFailure = (message, exception) =>
+			{
+				Program.Logger.LogError(message, exception);
+				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "WebHooks", message, exception.GetStack())).ConfigureAwait(false);
+			};
+
+			Global.OnServiceStarted = Global.OnServiceStopped = Global.OnGotServiceMessage = (serviceName, message) =>
+			{
+				if (!string.IsNullOrWhiteSpace(message))
+					Program.Logger.LogInformation($"[{serviceName.ToLower()}] => {message}");
+			};
+
+			Global.OnLogsUpdated = (serviceName, message) =>
+			{
+				if (!"APIGateway".IsEquals(serviceName) ? true : !message.IsContains("email message") && !message.IsContains("web-hook message"))
+					Program.Logger.LogInformation($"[{serviceName.ToLower()}] => {message}");
+			};
 		}
 
 		internal static void Start(string[] args, Func<Task> nextAsync = null)
 		{
 			Program.CancellationTokenSource = new CancellationTokenSource();
+			Program.Manager = new Manager();
 			Program.Controller = new Controller(Program.CancellationTokenSource.Token);
-			Program.Controller.Start(args, nextAsync);
+			Program.Controller.Start(args, Program.Manager.OnIncomingChannelEstablished, Program.Manager.OnOutgoingChannelEstablished, nextAsync);
 		}
 
 		internal static void Stop()
 		{
+			Program.Manager.Dispose();
 			Program.Controller.Dispose();
 			Program.CancellationTokenSource.Cancel();
 		}

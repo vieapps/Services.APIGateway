@@ -34,7 +34,6 @@ namespace net.vieapps.Services.APIGateway
 		{
 			this.CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 			this.LoggingService = new LoggingService(this.CancellationTokenSource.Token);
-			this.RTUService = new RTUService();
 			this.ServiceHosting = UtilityService.GetAppSetting("ServiceHosting", "VIEApps.Services.APIGateway").Trim();
 			if (this.ServiceHosting.IsEndsWith(".exe") || this.ServiceHosting.IsEndsWith(".dll"))
 				this.ServiceHosting = this.ServiceHosting.Left(this.ServiceHosting.Length - 4).Trim();
@@ -47,26 +46,28 @@ namespace net.vieapps.Services.APIGateway
 		CancellationTokenSource CancellationTokenSource { get; }
 		internal IDisposable Communicator { get; private set; } = null;
 		internal LoggingService LoggingService { get; } = null;
-		internal RTUService RTUService { get; } = null;
+		internal IRTUService RTUService { get; private set; } = null;
 		List<SystemEx.IAsyncDisposable> HelperServices { get; } = new List<SystemEx.IAsyncDisposable>();
 		List<IDisposable> Timers { get; } = new List<IDisposable>();
-		Dictionary<string, ServiceInfo> Tasks { get; } = new Dictionary<string, ServiceInfo>();
+		Dictionary<string, ProcessInfo> Tasks { get; } = new Dictionary<string, ProcessInfo>();
 		string WorkingDirectory { get; } = Directory.GetCurrentDirectory() + Path.DirectorySeparatorChar.ToString();
 		string ServiceHosting { get; }
 		string ServiceHosting_x86 { get; }
-		Dictionary<string, ServiceInfo> BusinessServices { get; } = new Dictionary<string, ServiceInfo>();
-		ConcurrentDictionary<string, ControllerInfo> Controllers { get; } = new ConcurrentDictionary<string, ControllerInfo>();
+		Dictionary<string, ProcessInfo> BusinessServices { get; } = new Dictionary<string, ProcessInfo>();
 		MailSender MailSender { get; set; } = null;
 		WebHookSender WebhookSender { get; set; } = null;
 		bool IsHouseKeeperRunning { get; set; } = false;
 		bool IsTaskSchedulerRunning { get; set; } = false;
 		bool IsDisposed { get; set; } = false;
 		bool IsUserInteractive { get; set; } = false;
+		bool AllowRegisterHelperServices { get; set; } = true;
+		bool AllowRegisterHelperTimers { get; set; } = true;
+		bool AllowRegisterBusinessServices { get; set; } = true;
 
 		/// <summary>
 		/// Gets the number of registered helper serivces
 		/// </summary>
-		public int NumberOfHelperServices => this.HelperServices.Count;
+		public int NumberOfHelperServices => this.HelperServices.Count - 1;
 
 		/// <summary>
 		/// Gets the number of scheduling tasks
@@ -80,7 +81,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Start/Stop controller
-		public void Start(string[] args = null, Func<Task> nextAsync = null)
+		public void Start(string[] args = null, Action<object, WampSessionCreatedEventArgs> onIncomingChannelEstablished = null, Action<object, WampSessionCreatedEventArgs> onOutgoingChannelEstablished = null, Func<Task> nextAsync = null)
 		{
 			// prepare arguments
 			var stopwatch = Stopwatch.StartNew();
@@ -90,9 +91,19 @@ namespace net.vieapps.Services.APIGateway
 				User = Environment.UserName.ToLower(),
 				Host = Environment.MachineName.ToLower(),
 				Platform = $"{RuntimeInformation.FrameworkDescription} @ {this.OSInfo}",
-				Mode = this.IsUserInteractive ? "Interactive app" : "Background service"
+				Mode = this.IsUserInteractive ? "Interactive app" : "Background service",
+				Available = true
 			};
 			this.Info.ID = $"{this.Info.User}-{this.Info.Host}-" + $"{this.Info.Platform}{this.Info.Mode}".ToLower().GenerateUUID();
+
+			if (args?.FirstOrDefault(a => a.StartsWith("/no-helper-services")) != null)
+				this.AllowRegisterHelperServices = false;
+
+			if (args?.FirstOrDefault(a => a.StartsWith("/no-helper-timers")) != null)
+				this.AllowRegisterHelperTimers = false;
+
+			if (args?.FirstOrDefault(a => a.StartsWith("/no-business-services")) != null)
+				this.AllowRegisterBusinessServices = false;
 
 			// prepare folders
 			new List<string>
@@ -111,7 +122,7 @@ namespace net.vieapps.Services.APIGateway
 						var name = service.Attributes["name"]?.Value.Trim().ToLower();
 						var type = service.Attributes["type"]?.Value.Trim().Replace(" ", "");
 						if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(type))
-							this.BusinessServices[name] = new ServiceInfo(name, service.Attributes["executable"]?.Value.Trim(), type, new Dictionary<string, string> { { "Bitness", service.Attributes["bitness"]?.Value } });
+							this.BusinessServices[name] = new ProcessInfo(name, service.Attributes["executable"]?.Value.Trim(), type, new Dictionary<string, string> { { "Bitness", service.Attributes["bitness"]?.Value } });
 					});
 
 			// prepare scheduling tasks
@@ -124,7 +135,7 @@ namespace net.vieapps.Services.APIGateway
 						{
 							var arguments = (task.Attributes["arguments"]?.Value ?? "").Trim();
 							var id = (executable + " " + arguments).ToLower().GenerateUUID();
-							this.Tasks[id] = new ServiceInfo(id, executable, arguments, new Dictionary<string, string> { { "Time", task.Attributes["time"]?.Value ?? "3" } });
+							this.Tasks[id] = new ProcessInfo(id, executable, arguments, new Dictionary<string, string> { { "Time", task.Attributes["time"]?.Value ?? "3" } });
 						}
 					});
 
@@ -145,8 +156,9 @@ namespace net.vieapps.Services.APIGateway
 				WAMPConnections.OpenIncomingChannelAsync(
 					(sender, arguments) =>
 					{
+						onIncomingChannelEstablished?.Invoke(sender, arguments);
 						Global.OnProcess?.Invoke($"The incoming channel is established - Session ID: {arguments.SessionId}");
-						WAMPConnections.IncomingChannel.Update(WAMPConnections.IncomingChannelSessionID, "APIGateway", "Incoming (APIGateway Services Controller)");
+						WAMPConnections.IncomingChannel.Update(WAMPConnections.IncomingChannelSessionID, "APIGateway", "Incoming (APIGateway)");
 						if (this.State == ServiceState.Initializing)
 							this.State = ServiceState.Ready;
 
@@ -178,48 +190,50 @@ namespace net.vieapps.Services.APIGateway
 								}
 							}
 						})
-						.ContinueWith(task =>
+						.ContinueWith(async (task) =>
 						{
 							if (this.State == ServiceState.Ready)
 							{
-								try
+								if (this.AllowRegisterHelperTimers)
+									try
+									{
+										this.RegisterMessagingTimers();
+										this.RegisterSchedulingTimers();
+										Global.OnProcess?.Invoke($"The background workers & schedulers are registered - Number of scheduling timers: {this.NumberOfTimers:#,##0} - Number of scheduling tasks: {this.NumberOfTasks:#,##0}");
+									}
+									catch (Exception ex)
+									{
+										Global.OnError?.Invoke($"Error occurred while registering background workers & schedulers: {ex.Message}", ex);
+									}
+
+								if (this.AllowRegisterBusinessServices)
 								{
-									this.RegisterMessagingTimers();
-									this.RegisterSchedulingTimers();
-									Global.OnProcess?.Invoke($"The background workers & schedulers are registered - Number of scheduling timers: {this.NumberOfTimers:#,##0} - Number of scheduling tasks: {this.NumberOfTasks:#,##0}");
-								}
-								catch (Exception ex)
-								{
-									Global.OnError?.Invoke($"Error occurred while registering background workers & schedulers: {ex.Message}", ex);
+									var svcArgs = this.GetServiceArguments().Replace("/", "/call-");
+									this.BusinessServices.ForEach(kvp => Task.Run(() => this.StartBusinessService(kvp.Key, svcArgs)).ConfigureAwait(false));
 								}
 
-								var svcArgs = this.GetServiceArguments().Replace("/", "/call-");
-								this.BusinessServices.ForEach(kvp => Task.Run(() => this.StartBusinessService(kvp.Key, svcArgs)).ConfigureAwait(false));
+								if (nextAsync != null)
+									try
+									{
+										await nextAsync().ConfigureAwait(false);
+									}
+									catch (Exception ex)
+									{
+										Global.OnError?.Invoke($"Error occurred while invoking the next action: {ex.Message}", ex);
+									}
 							}
-						}, TaskContinuationOptions.OnlyOnRanToCompletion)
-						.ContinueWith(async (task) =>
-						{
-							while (WAMPConnections.OutgoingChannel == null)
-								await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
-							await this.SendInterCommunicateMessageAsync("Controller#RequestInfo").ConfigureAwait(false);
-						}, TaskContinuationOptions.OnlyOnRanToCompletion)
-						.ContinueWith(async (task) =>
-						{
-							if (this.State == ServiceState.Ready && nextAsync != null)
-								try
-								{
-									await nextAsync().ConfigureAwait(false);
-								}
-								catch (Exception ex)
-								{
-									Global.OnError?.Invoke($"Error occurred while invoking the next action: {ex.Message}", ex);
-								}
 						}, TaskContinuationOptions.OnlyOnRanToCompletion)
 						.ContinueWith(task =>
 						{
 							stopwatch.Stop();
 							Global.OnProcess?.Invoke($"The API Gateway Services Controller is{(this.State == ServiceState.Disconnected ? " re-" : " ")}started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");
 							this.State = ServiceState.Connected;
+						}, TaskContinuationOptions.OnlyOnRanToCompletion)
+						.ContinueWith(async (task) =>
+						{
+							while (WAMPConnections.IncomingChannel == null || WAMPConnections.OutgoingChannel == null)
+								await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
+							await this.SendInterCommunicateMessageAsync("Controller#Info", this.Info.ToJson(), this.CancellationTokenSource.Token).ConfigureAwait(false);
 						}, TaskContinuationOptions.OnlyOnRanToCompletion)
 						.ConfigureAwait(false);
 					},
@@ -248,8 +262,9 @@ namespace net.vieapps.Services.APIGateway
 				WAMPConnections.OpenOutgoingChannelAsync(
 					(sender, arguments) =>
 					{
+						onOutgoingChannelEstablished?.Invoke(sender, arguments);
 						Global.OnProcess?.Invoke($"The outgoing channel is established - Session ID: {arguments.SessionId}");
-						WAMPConnections.OutgoingChannel.Update(WAMPConnections.OutgoingChannelSessionID, "APIGateway", "Outgoing (APIGateway Services Controller)");
+						WAMPConnections.OutgoingChannel.Update(WAMPConnections.OutgoingChannelSessionID, "APIGateway", "Outgoing (APIGateway)");
 					},
 					(sender, arguments) =>
 					{
@@ -273,26 +288,24 @@ namespace net.vieapps.Services.APIGateway
 		public void Stop()
 		{
 			Task.Run(() => this.SendInterCommunicateMessageAsync("Controller#Disconnect", this.Info.ToJson())).ConfigureAwait(false);
+			this.HelperServices.ForEach(async (service) => await service.DisposeAsync().ConfigureAwait(false));
+			this.RTUService = null;
 
 			MailSender.SaveMessages();
 			WebHookSender.SaveMessages();
 
 			this.Timers.ForEach(timer => timer.Dispose());
 			this.Tasks.Values.ForEach(serviceInfo => ExternalProcess.Stop(serviceInfo.Instance));
-			this.BusinessServices.Keys.ToList().ForEach(name => this.StopBusinessService(name, () => Global.OnProcess?.Invoke($"[{name.ToLower()}] => The service is stopped")));
+			this.BusinessServices.Keys.ToList().ForEach(name => this.StopBusinessService(name));
 
 			this.Communicator?.Dispose();
 			this.LoggingService?.FlushAllLogs();
-
-			this.HelperServices.ForEach(async (service) => await service.DisposeAsync().ConfigureAwait(false));
 			this.CancellationTokenSource.Cancel();
 
 			WAMPConnections.CloseChannels();
 			Global.OnProcess?.Invoke($"The API Gateway Services Controller is stopped");
 			this.State = ServiceState.Disconnected;
 		}
-
-		public List<ControllerInfo> GetAvailableControllers() => this.Controllers.Values.ToList();
 		#endregion
 
 		#region Start/Stop business service
@@ -325,7 +338,7 @@ namespace net.vieapps.Services.APIGateway
 		/// <param name="name"></param>
 		/// <returns></returns>
 		public ExternalProcess.Info GetServiceProcess(string name)
-			=> !string.IsNullOrWhiteSpace(name) && this.BusinessServices.TryGetValue(name.IndexOf(".") > 0 ? name.ToArray('.').Last().ToLower() : name.Trim().ToLower(), out ServiceInfo info)
+			=> !string.IsNullOrWhiteSpace(name) && this.BusinessServices.TryGetValue(name.IndexOf(".") > 0 ? name.ToArray('.').Last().ToLower() : name.Trim().ToLower(), out ProcessInfo info)
 				? info.Instance
 				: null;
 
@@ -380,31 +393,23 @@ namespace net.vieapps.Services.APIGateway
 					{
 						this.BusinessServices[name].Instance = null;
 						Global.OnServiceStopped?.Invoke(name, $"The sevice is stopped");
-						Task.Run(() => this.SendServiceInfoAsync(name, false)).ConfigureAwait(false);
+						Task.Run(() => this.SendServiceInfoAsync(name, false, serviceArguments)).ConfigureAwait(false);
 					},
 					(sender, args) => Global.OnGotServiceMessage?.Invoke(name, args.Data)
 				);
-				Global.OnServiceStarted?.Invoke(name, $"The service is started - Process ID: {this.BusinessServices[name].Instance.ID} [{serviceHosting} {serviceArguments}]");
-				Task.Run(() => this.SendServiceInfoAsync(name, true, serviceHosting, serviceArguments)).ConfigureAwait(false);
+				Global.OnServiceStarted?.Invoke(name, $"The service is started - Process ID: {this.BusinessServices[name].Instance.ID}");
+				Task.Run(async () => await Task.WhenAll(
+					this.SendServiceInfoAsync(name, true, serviceArguments),
+					this.SendInterCommunicateMessageAsync($"Service#UniqueInfo#{name}", new JObject
+					{
+						{ "OSPlatform", RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "macOS" },
+						{ "Name", $"{Extensions.GetUniqueName(name, serviceArguments.ToArray(' '))}" }
+					})
+				).ConfigureAwait(false)).ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
 				Global.OnError?.Invoke($"[{name}] => Cannot start the service: {ex.Message}", ex is FileNotFoundException ? null : ex);
-			}
-		}
-
-		/// <summary>
-		/// Starts a business service
-		/// </summary>
-		/// <param name="name"></param>
-		/// <param name="arguments"></param>
-		/// <param name="onStarted"></param>
-		public void StartBusinessService(string name, string arguments, Action onStarted)
-		{
-			if (!this.IsBusinessServiceRunning(name))
-			{
-				this.StartBusinessService(name, arguments);
-				onStarted?.Invoke();
 			}
 		}
 
@@ -443,20 +448,6 @@ namespace net.vieapps.Services.APIGateway
 			else
 				ExternalProcess.Stop(this.BusinessServices[name].Instance, info => { }, ex => Global.OnError?.Invoke($"Error occurred while stopping the service [{name}] => {ex.Message}", ex));
 		}
-
-		/// <summary>
-		/// Stops a business service
-		/// </summary>
-		/// <param name="name"></param>
-		/// <param name="onStopped"></param>
-		public void StopBusinessService(string name, Action onStopped)
-		{
-			if (this.IsBusinessServiceRunning(name))
-			{
-				this.StopBusinessService(name);
-				onStopped?.Invoke();
-			}
-		}
 		#endregion
 
 		#region Register helper services
@@ -476,14 +467,21 @@ namespace net.vieapps.Services.APIGateway
 				Global.OnError?.Invoke($"Error occurred while{(this.State == ServiceState.Disconnected ? " re-" : " ")}registering the managing service: {ex.Message}", ex);
 			}
 
-			this.HelperServices.Add(await WAMPConnections.IncomingChannel.RealmProxy.Services.RegisterCallee(this.RTUService, RegistrationInterceptor.Create()).ConfigureAwait(false));
-			Global.OnProcess?.Invoke($"The real-time update (RTU) service is{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
+			if (this.AllowRegisterHelperServices)
+			{
+				this.HelperServices.Add(await WAMPConnections.IncomingChannel.RealmProxy.Services.RegisterCallee(this.LoggingService, RegistrationInterceptor.Create()).ConfigureAwait(false));
+				Global.OnProcess?.Invoke($"The logging service is{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
 
-			this.HelperServices.Add(await WAMPConnections.IncomingChannel.RealmProxy.Services.RegisterCallee(this.LoggingService, RegistrationInterceptor.Create()).ConfigureAwait(false));
-			Global.OnProcess?.Invoke($"The logging service is{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
+				this.HelperServices.Add(await WAMPConnections.IncomingChannel.RealmProxy.Services.RegisterCallee(new RTUService(), RegistrationInterceptor.Create()).ConfigureAwait(false));
+				Global.OnProcess?.Invoke($"The real-time update (RTU) service is{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
 
-			this.HelperServices.Add(await WAMPConnections.IncomingChannel.RealmProxy.Services.RegisterCallee(new MessagingService(), RegistrationInterceptor.Create()).ConfigureAwait(false));
-			Global.OnProcess?.Invoke($"The messaging service is{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
+				this.HelperServices.Add(await WAMPConnections.IncomingChannel.RealmProxy.Services.RegisterCallee(new MessagingService(), RegistrationInterceptor.Create()).ConfigureAwait(false));
+				Global.OnProcess?.Invoke($"The messaging service is{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
+			}
+
+			while (WAMPConnections.OutgoingChannel == null)
+				await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
+			this.RTUService = WAMPConnections.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create());
 
 			Global.OnProcess?.Invoke($"Number of helper services: {this.NumberOfHelperServices:#,##0}");
 		}
@@ -915,57 +913,76 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Process inter-communicate messages
-		public Task SendInterCommunicateMessageAsync(string type, JToken data = null)
-			=> this.RTUService.SendInterCommunicateMessageAsync(new CommunicateMessage
-			{
-				ServiceName = "APIGateway",
-				Type = type,
-				Data = data ?? new JObject()
-			});
-
-		public Action<CommunicateMessage> OnInterCommunicateMessageReceived { get; set; }
-
 		async Task ProcessInterCommunicateMessageAsync(CommunicateMessage message)
 		{
-			// controller
-			ControllerInfo controllerInfo = null;
-			if (message.Type.IsStartsWith("Controller#"))
-				switch (message.Type.ToArray('#').Last().ToLower())
-				{
-					case "requestinfo":
-						await this.SendInterCommunicateMessageAsync("Controller#Info", this.Info.ToJson()).ConfigureAwait(false);
-						break;
+			switch (message.Type)
+			{
+				case "Controller#RequestInfo":
+					await this.SendInterCommunicateMessageAsync("Controller#Info", this.Info.ToJson(), this.CancellationTokenSource.Token).ConfigureAwait(false);
+					break;
 
-					case "info":
-					case "connect":
-						controllerInfo = message.Data.FromJson<ControllerInfo>();
-						this.Controllers.TryAdd(controllerInfo.ID, controllerInfo);
-						break;
+				case "Service#RequestInfo":
+					var svcArgs = this.GetServiceArguments().Replace("/", "/call-").ToArray(' ');
+					await Task.WhenAll(this.BusinessServices.Select(kvp => this.SendServiceInfoAsync(kvp.Key, kvp.Value.Instance != null, kvp.Value.Instance?.Arguments))
+						.Concat(this.BusinessServices.Select(kvp => this.SendInterCommunicateMessageAsync($"Service#UniqueInfo#{kvp.Key}", new JObject
+						{
+							{ "OSPlatform", RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "macOS" },
+							{ "Name", $"{Extensions.GetUniqueName(kvp.Key, svcArgs)}" }
+						})))).ConfigureAwait(false);
+					break;
 
-					case "disconnect":
-						controllerInfo = message.Data.FromJson<ControllerInfo>();
-						this.Controllers.TryRemove(controllerInfo.ID, out ControllerInfo ctrl);
-						break;
-				}
-
-			// services
-			if (message.Type.IsEquals("Service#RequestInfo"))
-				await Task.WhenAll(this.BusinessServices.Select(kvp => this.SendServiceInfoAsync(kvp.Key, kvp.Value.Instance != null, kvp.Value.Instance?.FilePath, kvp.Value.Instance?.Arguments))).ConfigureAwait(false);
-
-			// registered handler
-			this.OnInterCommunicateMessageReceived?.Invoke(message);
+				case "Service#RequestUniqueInfo":
+					var name = (message.Data.Get<string>("Name") ?? "unknown").Trim().ToLower();
+					if (this.BusinessServices.Keys.FirstOrDefault(n => n.Equals(name)) != null)
+						await this.SendInterCommunicateMessageAsync($"Service#UniqueInfo#{name}", new JObject
+						{
+							{ "OSPlatform", RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "macOS" },
+							{ "Name", $"{Extensions.GetUniqueName(name, this.GetServiceArguments().Replace("/", "/call-").ToArray(' '))}" }
+						}).ConfigureAwait(false);
+					break;
+			}
 		}
 
-		Task SendServiceInfoAsync(string name, bool state, string serviceHosting = null, string serviceArguments = null)
-			=> this.SendInterCommunicateMessageAsync("Service#Info", new JObject
+		public async Task SendInterCommunicateMessageAsync(string type, JToken data = null, CancellationToken cancellationToken = default(CancellationToken))
+		{
+			if (this.RTUService != null)
+				try
 				{
-					{ "URI", $"net.vieapps.services.{name}" },
-					{ "UniqueURI", $"net.vieapps.services.{Extensions.GetUniqueName(name, serviceArguments?.ToArray(' '))}" },
-					{ "State", state ? "Running" : "Stopped" },
-					{ "Controller", this.Info.ID },
-					{ "Hosting", serviceHosting },
-					{ "Arguments", serviceArguments }
-				});
+					await this.RTUService.SendInterCommunicateMessageAsync(new CommunicateMessage
+					{
+						ServiceName = "APIGateway",
+						Type = type,
+						Data = data ?? new JObject()
+					}, cancellationToken).ConfigureAwait(false);
+				}
+				catch { }
+		}
+
+		async Task SendServiceInfoAsync(string name, bool state, string arguments)
+		{
+			var svcArgs = arguments?.ToArray(' ') ?? new string[] { };
+
+			var invokeInfo = svcArgs.FirstOrDefault(a => a.IsStartsWith("/call-user:")) ?? "";
+			if (!string.IsNullOrWhiteSpace(invokeInfo))
+			{
+				invokeInfo = invokeInfo.Replace(StringComparison.OrdinalIgnoreCase, "/call-user:", "").UrlDecode();
+				var host = svcArgs.FirstOrDefault(a => a.IsStartsWith("/call-host:"));
+				var platform = svcArgs.FirstOrDefault(a => a.IsStartsWith("/call-platform:"));
+				var os = svcArgs.FirstOrDefault(a => a.IsStartsWith("/call-os:"));
+				if (!string.IsNullOrWhiteSpace(host) && !string.IsNullOrWhiteSpace(platform) && !string.IsNullOrWhiteSpace(os))
+					invokeInfo += $" [Host: {host.Replace(StringComparison.OrdinalIgnoreCase, "/call-host:", "").UrlDecode()} - Platform: {platform.Replace(StringComparison.OrdinalIgnoreCase, "/call-platform:", "").UrlDecode()} @ {os.Replace(StringComparison.OrdinalIgnoreCase, "/call-os:", "").UrlDecode()}]";
+			}
+
+			await this.SendInterCommunicateMessageAsync("Service#Info", new ServiceInfo
+			{
+				Name = name,
+				UniqueURI = $"net.vieapps.services.{Extensions.GetUniqueName(name, svcArgs)}",
+				ControllerID = this.Info.ID,
+				InvokeInfo = invokeInfo,
+				Available = true,
+				Running = state
+			}.ToJson()).ConfigureAwait(false);
+		}
 		#endregion
 
 		#region Dispose
@@ -988,34 +1005,19 @@ namespace net.vieapps.Services.APIGateway
 
 	}
 
-	#region Information of Controller & Services
-	[Serializable]
-	public class ControllerInfo
+	class ProcessInfo
 	{
-		public ControllerInfo() { }
-		public string ID { get; set; }
-		public string User { get; set; }
-		public string Host { get; set; }
-		public string Platform { get; set; }
-		public string Mode { get; set; }
-		public Dictionary<string, string> Extra { get; }
-	}
-
-	internal class ServiceInfo
-	{
-		public ServiceInfo(string id = "", string executable = "", string arguments = "", Dictionary<string, string> extra = null)
+		public ProcessInfo(string id = "", string executable = "", string arguments = "", Dictionary<string, string> extra = null)
 		{
 			this.ID = id;
 			this.Executable = executable;
 			this.Arguments = arguments;
 			this.Extra = new Dictionary<string, string>(extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
 		}
-		public string ID { get; set; }
-		public string Executable { get; set; }
-		public string Arguments { get; set; }
+		public string ID { get; }
+		public string Executable { get; }
+		public string Arguments { get; }
 		public Dictionary<string, string> Extra { get; }
 		public ExternalProcess.Info Instance { get; set; }
 	}
-	#endregion
-
 }

@@ -25,7 +25,6 @@ namespace net.vieapps.Services.APIGateway
 
 		void ServicesForm_FormClosing(object sender, FormClosingEventArgs e)
 		{
-			Program.MainForm.UpdateServicesInfo();
 			this.SetControlsState(false, false);
 			this.Selected = null;
 			this.Hide();
@@ -44,48 +43,53 @@ namespace net.vieapps.Services.APIGateway
 				base.Invoke(new DisplayServicesDelegator(this.DisplayServices), new object[] { });
 			else
 			{
-				Program.Refresh();
-				Program.MainForm.UpdateServicesInfo();
-
-				var controllers = Program.Controller.GetAvailableControllers().ToDictionary(controller => controller.ID);
-				this.Services.Items.Clear();
-				Program.Services.OrderBy(kvp => kvp.Key).ForEach(kvp =>
-				{
-					var uri = kvp.Key;
+				var gotMultipleInstances = false;
+				foreach (var kvp in Program.Manager.AvailableServices)
 					if (kvp.Value.Count > 1)
 					{
-						var isRunning = kvp.Value.IsRunning();
-						var itemOfAll = new ListViewItem(new[] { $"{uri} - {kvp.Value.Count:#,##0} instance(s)", isRunning ? "Running" : "Stopped", "", uri })
+						gotMultipleInstances = true;
+						break;
+					}
+
+				this.Services.Items.Clear();
+				Program.Manager.AvailableServices.OrderBy(kvp => kvp.Key).ForEach(kvp =>
+				{
+					var name = kvp.Key;
+					var info = kvp.Value.Where(serviceInfo => serviceInfo.Available).ToList();
+					if (gotMultipleInstances)
+					{
+						var isRunning = info.FirstOrDefault(serviceInfo => serviceInfo.Running) != null;
+						var itemOfAll = new ListViewItem(new[] { $"net.vieapps.services.{name} - {info.Count:#,##0} instance(s)", isRunning ? "Running" : "Stopped", "", name })
 						{
 							UseItemStyleForSubItems = false
 						};
 						itemOfAll.SubItems[0].Font = new Font(this.Services.Font, FontStyle.Bold);
 						itemOfAll.SubItems[1].ForeColor = isRunning ? SystemColors.WindowText : Color.Red;
 						this.Services.Items.Add(itemOfAll);
-						kvp.Value.ForEach(info =>
+
+						info.ForEach(serviceInfo =>
 						{
-							if (controllers.TryGetValue(info.Key, out ControllerInfo controller))
+							if (Program.Manager.AvailableControllers.TryGetValue(serviceInfo.ControllerID, out ControllerInfo controller))
 							{
-								var itemOfController = new ListViewItem(new[] { $"  {controller.Host} - {controller.Platform}", info.Value ? "Running" : "Stopped", controller.ID, uri })
+								var itemOfController = new ListViewItem(new[] { $"  {controller.Host} - {controller.Platform}", serviceInfo.Running ? "Running" : "Stopped", controller.ID, name })
 								{
 									UseItemStyleForSubItems = false
 								};
-								itemOfController.SubItems[1].ForeColor = info.Value ? SystemColors.WindowText : Color.Red;
+								itemOfController.SubItems[1].ForeColor = serviceInfo.Running ? SystemColors.WindowText : Color.Red;
 								this.Services.Items.Add(itemOfController);
 							}
 						});
 					}
-					else
+					else if (info.Count > 0)
 					{
-						var controllerID = kvp.Value.Count > 0 ? kvp.Value.ElementAt(0).Key : null;
-						if (controllers.TryGetValue(controllerID, out ControllerInfo controller))
+						var serviceInfo = info[0];
+						if (Program.Manager.AvailableControllers.TryGetValue(serviceInfo.ControllerID, out ControllerInfo controller))
 						{
-							var isRunning = kvp.Value.IsRunning();
-							var listItem = new ListViewItem(new[] { uri, kvp.Value.IsRunning() ? "Running" : "Stopped", controller.ID, uri })
+							var listItem = new ListViewItem(new[] { $"net.vieapps.services.{name}", serviceInfo.Running ? "Running" : "Stopped", controller.ID, name })
 							{
 								UseItemStyleForSubItems = false
 							};
-							listItem.SubItems[1].ForeColor = isRunning ? SystemColors.WindowText : Color.Red;
+							listItem.SubItems[1].ForeColor = serviceInfo.Running ? SystemColors.WindowText : Color.Red;
 							this.Services.Items.Add(listItem);
 						}
 					}
@@ -101,48 +105,11 @@ namespace net.vieapps.Services.APIGateway
 				base.Invoke(new SetControlsStateDelegator(this.SetControlsState), new object[] { state, servicesApplied });
 			else
 			{
-				this.ServiceName.Visible = this.Change.Enabled = state;
+				this.ServiceName.Visible = this.Change.Enabled = state && this.Selected != null;
 				if (servicesApplied)
 					this.Services.Enabled = state;
 			}
 		}
-
-		public delegate void DisplaySelectedInfoDelegator();
-
-		void DisplaySelectedInfo()
-		{
-			if (base.InvokeRequired)
-				base.Invoke(new DisplaySelectedInfoDelegator(this.DisplaySelectedInfo), new object[] { });
-			else
-			{
-				var isRunning = this.AreInstancesSelected
-					? Program.Services.TryGetValue(this.Selected.SubItems[3].Text, out Dictionary<string, bool> instances)
-						? instances.IsRunning()
-						: false
-					: this.Selected.SubItems[1].Text.Equals("Running");
-
-				this.ServiceName.Visible = this.Change.Enabled = true;
-				this.Change.Text = isRunning ? "Stop" : "Start";
-				this.ServiceName.Text = $"{this.Selected.SubItems[3].Text}";
-				if (this.AreInstancesSelected)
-					this.ServiceName.Text += " - All instances";
-				else
-				{
-					var controllerID = this.Selected.SubItems[2].Text;
-					var controllers = Program.Controller.GetAvailableControllers();
-					var controller = controllers.FirstOrDefault(c => c.ID == controllerID);
-					if (controller != null)
-						this.ServiceName.Text += $" @ {controller.Host} [{controller.Platform}]";
-				}
-			}
-		}
-
-		internal ListViewItem Selected { get; set; } = null;
-
-		bool AreInstancesSelected
-			=> this.Selected == null
-				? false
-				: this.Selected.SubItems[2].Text.Equals("");
 
 		public delegate void OnSelectedDelegator();
 
@@ -157,102 +124,42 @@ namespace net.vieapps.Services.APIGateway
 				else
 				{
 					this.Selected = this.Services.SelectedItems[0];
-					this.DisplaySelectedInfo();
+					this.DisplaySelectedService();
 				}
 			}
 		}
 
-		public delegate void UpdateSelectedDelegator();
+		internal ListViewItem Selected { get; set; } = null;
 
-		void UpdateSelected()
+		bool IsSelectAllControllers
+			=> this.Selected == null
+				? false
+				: this.Selected.SubItems[2].Text.Equals("");
+
+		public delegate void DisplaySelectedServiceDelegator();
+
+		void DisplaySelectedService()
 		{
 			if (base.InvokeRequired)
-				base.Invoke(new UpdateSelectedDelegator(this.UpdateSelected), new object[] { });
+				base.Invoke(new DisplaySelectedServiceDelegator(this.DisplaySelectedService), new object[] { });
 			else
 			{
-				var controllers = Program.Controller.GetAvailableControllers();
-				var uri = this.Selected.SubItems[3].Text;
-				var name = uri.ToArray('.').Last();
-				if (this.AreInstancesSelected)
-				{
-					var isRunning = false;
-					controllers.ForEach(controller =>
-					{
-						var serviceManager = Program.GetServiceManager(controller.ID);
-						if (serviceManager != null)
-						{
-							isRunning = serviceManager.IsBusinessServiceRunning(name);
-							Program.SetServiceState(controller.ID, name, isRunning);
-							ListViewItem listItem = null;
-							foreach (ListViewItem item in this.Services.Items)
-								if (item.SubItems[2].Text.Equals(controller.ID) && item.SubItems[3].Text.Equals(uri))
-								{
-									listItem = item;
-									break;
-								}
-							if (listItem != null)
-							{
-								listItem.SubItems[1].Text = isRunning ? "Running" : "Stopped";
-								listItem.SubItems[1].ForeColor = isRunning ? SystemColors.WindowText : Color.Red;
-							}
-						}
-					});
+				var name = this.Selected.SubItems[3].Text;
+				var isSelectAllControllers = this.IsSelectAllControllers;
+				var isRunning = isSelectAllControllers
+					? Program.Manager.AvailableServices[name].Where(svc => svc.Running).Count() > 0
+					: this.Selected.SubItems[1].Text.Equals("Running");
 
-					isRunning = Program.Services.TryGetValue(this.Selected.SubItems[3].Text, out Dictionary<string, bool> instances)
-						? instances.IsRunning()
-						: false;
-					this.Selected.SubItems[1].Text = isRunning ? "Running" : "Stopped";
-					this.Selected.SubItems[1].ForeColor = isRunning ? SystemColors.WindowText : Color.Red;
-				}
+				this.SetControlsState(true);
+				this.Change.Text = isRunning ? "Stop" : "Start";
+				if (isSelectAllControllers)
+					this.ServiceName.Text = $"net.vieapps.services.{name} - All instances";
 				else
 				{
-					var controllerID = this.Selected.SubItems[2].Text;
-					var serviceManager = Program.GetServiceManager(controllerID);
-					if (serviceManager != null)
-					{
-						var isRunning = serviceManager.IsBusinessServiceRunning(name);
-						Program.SetServiceState(controllerID, name, isRunning);
-						this.Selected.SubItems[1].Text = isRunning ? "Running" : "Stopped";
-						this.Selected.SubItems[1].ForeColor = isRunning ? SystemColors.WindowText : Color.Red;
-					}
+					var controller = Program.Manager.AvailableControllers[this.Selected.SubItems[2].Text];
+					this.ServiceName.Text = $"{name} @ {controller.Host} [{controller.Platform}]";
 				}
-				this.SetControlsState(true);
-				this.DisplaySelectedInfo();
 			}
-		}
-
-		void Start(string controllerID, string name)
-		{
-			try
-			{
-				Program.GetServiceManager(controllerID).StartBusinessService(name, Program.Controller.GetServiceArguments().Replace("/", "/call-"));
-			}
-			catch (Exception ex)
-			{
-				Global.OnError($"Cannot start the business service: {ex.Message}", ex);
-			}
-		}
-
-		void Start(string name)
-		{
-			Task.WaitAll(Program.Controller.GetAvailableControllers().Select(controller => Task.Run(() => this.Start(controller.ID, name))).ToArray());
-		}
-
-		void Stop(string controllerID, string name)
-		{
-			try
-			{
-				Program.GetServiceManager(controllerID).StopBusinessService(name);
-			}
-			catch (Exception ex)
-			{
-				Global.OnError($"Cannot stop the business service: {ex.Message}", ex);
-			}
-		}
-
-		void Stop(string name)
-		{
-			Task.WaitAll(Program.Controller.GetAvailableControllers().Select(controller => Task.Run(() => this.Stop(controller.ID, name))).ToArray());
 		}
 
 		void OnChange()
@@ -260,51 +167,43 @@ namespace net.vieapps.Services.APIGateway
 			if (this.Selected == null)
 				return;
 
-			var uri = this.Selected.SubItems[3].Text;
-			var isRunning = this.AreInstancesSelected
-				? Program.Services.TryGetValue(uri, out Dictionary<string, bool> instances)
-					? instances.IsRunning()
-					: false
-				: this.Selected.SubItems[1].Text.Equals("Running");
-
-			if (this.AreInstancesSelected)
+			var name = this.Selected.SubItems[3].Text;
+			if (!this.IsSelectAllControllers)
 			{
-				var confirm = MessageBox.Show($"Are you sure you want to {(isRunning ? "stop" : "start")} all instances of \"{uri}\" service?", "Are you sure", MessageBoxButtons.YesNo);
-				if (confirm == DialogResult.No)
-					return;
-			}
-
-			var name = uri.ToArray('.').Last();
-			this.SetControlsState(false);
-			if (this.AreInstancesSelected)
-			{
-				if (isRunning)
-					Task.Run(() => this.Stop(name)).ConfigureAwait(false);
-				else
-					Task.Run(() => this.Start(name)).ConfigureAwait(false);
-			}
-			else
-			{
+				this.SetControlsState(false);
 				var controllerID = this.Selected.SubItems[2].Text;
-				if (isRunning)
-					Task.Run(() => this.Stop(controllerID, name)).ConfigureAwait(false);
+				if (this.Selected.SubItems[1].Text.Equals("Running"))
+					Task.Run(() => Program.Manager.StopBusinessService(controllerID, name)).ConfigureAwait(false);
 				else
-					Task.Run(() => this.Start(controllerID, name)).ConfigureAwait(false);
+					Task.Run(() => Program.Manager.StartBusinessService(controllerID, name, Program.Controller.GetServiceArguments().Replace("/", "/call-"))).ConfigureAwait(false);
 			}
+			else if (MessageBox.Show($"Are you sure you want to {(Program.Manager.AvailableServices[name].Where(svc => svc.Running).Count() > 0 ? "stop" : "start")} all instances of \"{name}\" services?", "Service", MessageBoxButtons.YesNo) == DialogResult.Yes)
+			{
+				this.SetControlsState(false);
+				if (Program.Manager.AvailableServices[name].Where(svc => svc.Running).Count() > 0)
+					Program.Manager.AvailableControllers.Keys.ForEach(controllerID => Task.Run(() => Program.Manager.StopBusinessService(controllerID, name)).ConfigureAwait(false));
+				else
+				{
+					var svcArgs = Program.Controller.GetServiceArguments().Replace("/", "/call-");
+					Program.Manager.AvailableControllers.Keys.ForEach(controllerID => Task.Run(() => Program.Manager.StartBusinessService(controllerID, name, svcArgs)).ConfigureAwait(false));
+				}
+			}
+
 			this.SetControlsState(true);
+			this.Services.Select();
 		}
 
-		public delegate void UpdateInfoDelegator(string controllerID, string uri, string state);
+		public delegate void RedisplayServiceDelegator(string controllerID, string name, string state);
 
-		internal void UpdateInfo(string controllerID, string uri, string state)
+		internal void RedisplayService(string controllerID, string name, string state)
 		{
 			if (base.InvokeRequired)
-				base.Invoke(new UpdateInfoDelegator(this.UpdateInfo), new object[] { controllerID, uri, state });
+				base.Invoke(new RedisplayServiceDelegator(this.RedisplayService), new object[] { controllerID, name, state });
 			else
 			{
 				ListViewItem listItem = null;
 				foreach (ListViewItem item in this.Services.Items)
-					if (item.SubItems[2].Text.Equals(controllerID) && item.SubItems[3].Text.Equals(uri))
+					if (item.SubItems[2].Text.Equals(controllerID) && item.SubItems[3].Text.Equals(name))
 					{
 						listItem = item;
 						break;
@@ -317,21 +216,22 @@ namespace net.vieapps.Services.APIGateway
 				}
 
 				foreach (ListViewItem item in this.Services.Items)
-					if (item.SubItems[2].Text.Equals("") && item.SubItems[3].Text.Equals(uri))
+					if (item.SubItems[2].Text.Equals("") && item.SubItems[3].Text.Equals(name))
 					{
 						listItem = item;
 						break;
 					}
 
-				if (listItem != null && Program.Services.TryGetValue(uri, out Dictionary<string, bool> instances))
+				if (listItem != null)
 				{
-					var isRunning = instances.IsRunning();
+					var isRunning = Program.Manager.AvailableServices[name].FirstOrDefault(svc => svc.Running) != null;
 					listItem.SubItems[1].Text = isRunning ? "Running" : "Stopped";
 					listItem.SubItems[1].ForeColor = isRunning ? SystemColors.WindowText : Color.Red;
 				}
 
+				this.Services.Select();
 				if (this.Selected != null)
-					this.UpdateSelected();
+					this.DisplaySelectedService();
 			}
 		}
 	}

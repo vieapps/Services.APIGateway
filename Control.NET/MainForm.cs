@@ -25,13 +25,10 @@ namespace net.vieapps.Services.APIGateway
 			Task.Run(async () =>
 			{
 				await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
-				Program.Start(this._args, async () =>
-				{
-					Program.Controller.GetAvailableBusinessServices().Keys.ToList().ForEach(uri => Program.Services.TryAdd(uri, new Dictionary<string, bool>()));
-					await Task.Delay(1234).ConfigureAwait(false);
-					Program.Refresh();
-					this.UpdateServicesInfo();
-				});
+				Program.Start(this._args);
+				await Task.Delay(UtilityService.GetRandomNumber(3456, 6789)).ConfigureAwait(false);
+				await Program.Manager.SendInterCommunicateMessageAsync("Controller#RequestInfo").ConfigureAwait(false);
+				await Program.Manager.SendInterCommunicateMessageAsync("Service#RequestInfo").ConfigureAwait(false);
 			}).ConfigureAwait(false);
 		}
 
@@ -54,36 +51,34 @@ namespace net.vieapps.Services.APIGateway
 
 		internal void UpdateLogs(string logs)
 		{
-			try
-			{
-				if (base.InvokeRequired)
-					base.Invoke(new UpdateLogsDelegator(this.UpdateLogs), new object[] { logs });
-				else
+			if (!this.IsDisposed && !string.IsNullOrWhiteSpace(logs))
+				try
 				{
-					this.Logs.AppendText(logs + "\r\n");
-					this.Logs.SelectionStart = this.Logs.TextLength;
-					this.Logs.ScrollToCaret();
+					if (base.InvokeRequired)
+						base.Invoke(new UpdateLogsDelegator(this.UpdateLogs), new object[] { logs });
+					else
+					{
+						this.Logs.AppendText(logs + "\r\n");
+						this.Logs.SelectionStart = this.Logs.TextLength;
+						this.Logs.ScrollToCaret();
+					}
 				}
-			}
-			catch { }
+				catch { }
 		}
 
 		public delegate void UpdateServicesInfoDelegator();
 
 		internal void UpdateServicesInfo()
 		{
-			try
-			{
-				if (base.InvokeRequired)
-					base.Invoke(new UpdateServicesInfoDelegator(this.UpdateServicesInfo), new object[] { });
-				else
+			if (!this.IsDisposed)
+				try
 				{
-					var running = 0;
-					Program.Services.Values.ToList().ForEach(info => running += info.IsRunning() ? 1 : 0);
-					this.ServicesInfo.Text = $"Available services: {Program.Services.Count:#,##0} - Running services: {running:#,##0}";
+					if (base.InvokeRequired)
+						base.Invoke(new UpdateServicesInfoDelegator(this.UpdateServicesInfo), new object[] { });
+					else
+						this.ServicesInfo.Text = $"Available services: {Program.Manager.AvailableServices.Count:#,##0} - Running services: {Program.Manager.AvailableServices.Where(kvp => kvp.Value.FirstOrDefault(svc => svc.Running) != null).Count():#,##0}";
 				}
-			}
-			catch { }
+				catch { }
 		}
 	}
 }

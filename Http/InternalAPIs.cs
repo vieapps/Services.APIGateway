@@ -152,8 +152,8 @@ namespace net.vieapps.Services.APIGateway
 
 					try
 					{
-						var key = context.GetEncryptionKey(requestInfo.Session);
-						var iv = context.GetEncryptionIV(requestInfo.Session);
+						var key = requestInfo.Session.GetEncryptionKey(Global.EncryptionKey, context.Items);
+						var iv = requestInfo.Session.GetEncryptionIV(Global.EncryptionKey, context.Items);
 						registered = registered.Decrypt(key, iv);
 						input = input.Decrypt(key, iv);
 					}
@@ -271,7 +271,7 @@ namespace net.vieapps.Services.APIGateway
 							throw new InvalidSessionException("Captcha code is invalid");
 
 						var requestCreateAccount = requestInfo.GetHeaderParameter("x-create");
-						if (!string.IsNullOrWhiteSpace(requestCreateAccount) && requestCreateAccount.Equals(requestInfo.Session.SessionID.GetEncryptedID()))
+						if (!string.IsNullOrWhiteSpace(requestCreateAccount) && requestCreateAccount.Equals(requestInfo.Session.GetEncryptID(requestInfo.Session.SessionID, Global.EncryptionKey, Global.ValidationKey)))
 							requestInfo.Extra["x-create"] = "";
 					}
 
@@ -395,7 +395,7 @@ namespace net.vieapps.Services.APIGateway
 					else
 					{
 						// validate
-						var register = requestInfo.Query["register"].GetDecryptedID();
+						var register = requestInfo.Session.GetDecryptID(requestInfo.Query["register"], Global.EncryptionKey, Global.ValidationKey);
 						if (!requestInfo.Session.SessionID.IsEquals(register) || !register.Encrypt(Global.EncryptionKey).IsEquals(await InternalAPIs.Cache.GetAsync<string>($"Session#{requestInfo.Session.SessionID}").ConfigureAwait(false)))
 							throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 
@@ -529,7 +529,7 @@ namespace net.vieapps.Services.APIGateway
 					},
 					CorrelationID = requestInfo.CorrelationID
 				}, Global.CancellationTokenSource.Token, InternalAPIs.Logger),
-				requestInfo.Session.SendOnlineStatusAsync(true, context.GetCorrelationID())
+				requestInfo.Session.SendOnlineStatusAsync(true)
 			).ConfigureAwait(false);
 		}
 		#endregion
@@ -754,7 +754,7 @@ namespace net.vieapps.Services.APIGateway
 				}, Global.CancellationTokenSource.Token, InternalAPIs.Logger).ConfigureAwait(false);
 
 				// send update message
-				await requestInfo.Session.SendOnlineStatusAsync(false, requestInfo.CorrelationID).ConfigureAwait(false);
+				await requestInfo.Session.SendOnlineStatusAsync(false).ConfigureAwait(false);
 
 				// create & register the new session of visitor
 				var oldSessionID = requestInfo.Session.SessionID;
@@ -823,41 +823,9 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Heper: keys, session, online status, ...
-		internal static byte[] GetEncryptionKey(this string sessionID)
-			=> sessionID.GetHMACHash(Global.EncryptionKey, "SHA512").GenerateHashKey(256);
-
-		internal static byte[] GetEncryptionIV(this string sessionID)
-			=> sessionID.GetHMACHash(Global.EncryptionKey, "SHA256").GenerateHashKey(128);
-
-		internal static byte[] GetEncryptionKey(this string sessionID, IDictionary<object, object> items)
-			=> items != null
-				? items.ContainsKey("EncryptionKey")
-					? items["EncryptionKey"] as byte[]
-					: (items["EncryptionKey"] = sessionID.GetEncryptionKey()) as byte[]
-				: sessionID.GetEncryptionKey();
-
-		internal static byte[] GetEncryptionIV(this string sessionID, IDictionary<object, object> items)
-			=> items != null
-				? items.ContainsKey("EncryptionIV")
-					? items["EncryptionIV"] as byte[]
-					: (items["EncryptionIV"] = sessionID.GetEncryptionIV()) as byte[]
-				: sessionID.GetEncryptionIV();
-
-		internal static byte[] GetEncryptionKey(this HttpContext context, Session session) => session.SessionID.GetEncryptionKey(context.Items);
-
-		internal static byte[] GetEncryptionIV(this HttpContext context, Session session) => session.SessionID.GetEncryptionIV(context.Items);
-
-		internal static byte[] GetEncryptionKey(this Session session, IDictionary<object, object> items) => session.SessionID.GetEncryptionKey(items);
-
-		internal static byte[] GetEncryptionIV(this Session session, IDictionary<object, object> items) => session.SessionID.GetEncryptionIV(items);
-
-		internal static string GetEncryptedID(this string sessionID) => sessionID.HexToBytes().Encrypt(Global.EncryptionKey.GetEncryptionKey(), Global.ValidationKey.GetEncryptionIV()).ToHex();
-
-		internal static string GetDecryptedID(this string sessionID) => sessionID.HexToBytes().Decrypt(Global.EncryptionKey.GetEncryptionKey(), Global.ValidationKey.GetEncryptionIV()).ToHex();
-
 		internal static void UpdateSessionJson(this Session session, JObject json, IDictionary<object, object> items)
 		{
-			json["ID"] = session.SessionID.GetEncryptedID();
+			json["ID"] = session.GetEncryptID(session.SessionID, Global.EncryptionKey, Global.ValidationKey);
 			json["Keys"] = new JObject
 			{
 				{
@@ -872,8 +840,8 @@ namespace net.vieapps.Services.APIGateway
 					"AES",
 					new JObject
 					{
-						{ "Key", session.GetEncryptionKey(items).ToHex() },
-						{ "IV", session.GetEncryptionIV(items).ToHex() }
+						{ "Key", session.GetEncryptionKey(Global.EncryptionKey, items).ToHex() },
+						{ "IV", session.GetEncryptionIV(Global.EncryptionKey, items).ToHex() }
 					}
 				},
 				{
@@ -886,27 +854,23 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static void UpdateSessionJson(this HttpContext context, Session session, JObject json) => session.UpdateSessionJson(json, context.Items);
 
-		internal static async Task SendOnlineStatusAsync(this Session session, bool isOnline, string correlationID = null)
+		internal static async Task SendOnlineStatusAsync(this Session session, bool isOnline)
 		{
-			if (session.User != null && !session.User.ID.Equals("") && !session.User.IsSystemAccount)
+			if (!string.IsNullOrWhiteSpace(session?.User?.ID) && !session.User.IsSystemAccount)
 				await new CommunicateMessage("Users")
 				{
-					Type = "OnlineStatus",
-					Data = new JObject
+					Type = "Session#Status",
+					Data = session.ToJson(json =>
 					{
-						{ "UserID", session.User.ID },
-						{ "SessionID", session.SessionID },
-						{ "DeviceID", session.DeviceID },
-						{ "AppName", session.AppName },
-						{ "AppPlatform", session.AppPlatform },
-						{ "Location", await session.GetLocationAsync(correlationID).ConfigureAwait(false) },
-						{ "IsOnline", isOnline },
-					}
+						(json as JObject).Remove("User");
+						json["UserID"] = session.User.ID;
+						json["IsOnline"] = isOnline;
+					})
 				}.PublishAsync(RTU.Logger).ConfigureAwait(false);
 		}
 		#endregion
 
-		#region Helper: WAMP connections & real-time updaters
+		#region Helper: WAMP connections
 		internal static void OpenWAMPChannels(int waitingTimes = 6789)
 		{
 			Global.Logger.LogInformation($"Attempting to connect to WAMP router [{WAMPConnections.GetRouterStrInfo()}]");
@@ -952,7 +916,9 @@ namespace net.vieapps.Services.APIGateway
 				waitingTimes
 			);
 		}
+		#endregion
 
+		#region Helper: process inter-communicate messages
 		internal static async Task ProcessInterCommunicateMessageAsync(CommunicateMessage message)
 		{
 			// update users' sessions with new access token

@@ -27,7 +27,7 @@ namespace net.vieapps.Services.APIGateway
 		#region Properties
 		internal static ICache Cache { get; set; }
 		internal static ILogger Logger { get; set; }
-		internal static List<string> ExcludedHeaders { get; } = "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,ms-aspnetcore-token,x-original-proto,x-original-for".ToList();
+		internal static List<string> ExcludedHeaders { get; } = "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,ms-aspnetcore-token,x-original-proto,x-original-for,x-original-remote-endpoint".ToList();
 		internal static HashSet<string> NoTokenRequiredServices { get; } = (UtilityService.GetAppSetting("NoTokenRequiredServices", "") + "|indexes").ToLower().ToHashSet('|', true);
 		#endregion
 
@@ -84,8 +84,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 
 				// re-assign
-				if (!requestInfo.Header.ContainsKey("x-app-token"))
-					requestInfo.Header["x-app-token"] = token;
+				requestInfo.Header.TryAdd("x-app-token", token);
 
 				// parse and update information from token
 				var tokenIsRequired = isActivationProccessed
@@ -271,7 +270,7 @@ namespace net.vieapps.Services.APIGateway
 							throw new InvalidSessionException("Captcha code is invalid");
 
 						var requestCreateAccount = requestInfo.GetHeaderParameter("x-create");
-						if (!string.IsNullOrWhiteSpace(requestCreateAccount) && requestCreateAccount.Equals(requestInfo.Session.GetEncryptID(requestInfo.Session.SessionID, Global.EncryptionKey, Global.ValidationKey)))
+						if (!string.IsNullOrWhiteSpace(requestCreateAccount) && requestCreateAccount.Equals(requestInfo.Session.GetEncryptedID()))
 							requestInfo.Extra["x-create"] = "";
 					}
 
@@ -365,11 +364,16 @@ namespace net.vieapps.Services.APIGateway
 			if (string.IsNullOrWhiteSpace(session?.SessionID))
 				return false;
 
-			else if (await context.IsSessionExistAsync(session).ConfigureAwait(false))
+			else if (await InternalAPIs.Cache.ExistsAsync($"Session#{session.SessionID}").ConfigureAwait(false))
 				return true;
 
 			else
-				return await InternalAPIs.Cache.ExistsAsync($"Session#{session.SessionID}").ConfigureAwait(false);
+			{
+				var existed = await context.IsSessionExistAsync(session).ConfigureAwait(false);
+				if (existed)
+					await InternalAPIs.Cache.AddAsync($"Session#{session.SessionID}", session.GetEncryptedID(), 180).ConfigureAwait(false);
+				return existed;
+			}
 		}
 		#endregion
 
@@ -388,21 +392,36 @@ namespace net.vieapps.Services.APIGateway
 							requestInfo.Session.DeviceID = (requestInfo.Session.AppName + "/" + requestInfo.Session.AppPlatform + "@" + (requestInfo.Session.AppAgent ?? "N/A")).GetHMACBLAKE128(requestInfo.Session.SessionID, true) + "@pwa";
 
 						// store identity into cache for further use
-						await InternalAPIs.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.SessionID.Encrypt(Global.EncryptionKey), 7).ConfigureAwait(false);
+						await InternalAPIs.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.GetEncryptedID(), 7).ConfigureAwait(false);
 					}
 
 					// register session
 					else
 					{
 						// validate
-						var register = requestInfo.Session.GetDecryptID(requestInfo.Query["register"], Global.EncryptionKey, Global.ValidationKey);
-						if (!requestInfo.Session.SessionID.IsEquals(register) || !register.Encrypt(Global.EncryptionKey).IsEquals(await InternalAPIs.Cache.GetAsync<string>($"Session#{requestInfo.Session.SessionID}").ConfigureAwait(false)))
-							throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
+						var registered = await InternalAPIs.Cache.GetAsync<string>($"Session#{requestInfo.Session.SessionID}").ConfigureAwait(false);
+						if (!requestInfo.Query["register"].IsEquals(registered))
+						{
+							var ex = new InvalidSessionException("Session is invalid (The session is not issued by the system)");
+							if (Global.IsDebugResultsEnabled)
+								Global.Logger.LogError($"{ex.Message} => Registered: {registered} - Requested (encrypted): {requestInfo.Query["register"]}", ex);
+							throw ex;
+						}
+
+						var requested = requestInfo.Session.GetDecryptedID(requestInfo.Query["register"], Global.EncryptionKey, Global.ValidationKey);
+						if (!requestInfo.Session.SessionID.IsEquals(requested))
+						{
+							var ex = new InvalidSessionException("Session is invalid (The session is not issued by the system)");
+							if (Global.IsDebugResultsEnabled)
+								Global.Logger.LogError($"{ex.Message} => Current: {requestInfo.Session.SessionID} - Requested (decrypted): {requested}", ex);
+							throw ex;
+						}
 
 						// register with user service
 						await Task.WhenAll(
 							context.CreateSessionAsync(requestInfo),
-							InternalAPIs.Cache.RemoveAsync($"Session#{requestInfo.Session.SessionID}")
+							requestInfo.Session.SendOnlineStatusAsync(true),
+							InternalAPIs.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.GetEncryptedID(), 180)
 						).ConfigureAwait(false);
 					}
 
@@ -419,9 +438,9 @@ namespace net.vieapps.Services.APIGateway
 						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "InternalAPIs", new List<string>
 						{
 							$"Successfully process request of session (registration of anonymous user)",
-							$"Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-							$"Response: {json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-							$"Execution times: {context.GetExecutionTimes()}"
+							$"- Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+							$"- Response: {json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+							$"- Execution times: {context.GetExecutionTimes()}"
 						})
 					).ConfigureAwait(false);
 				}
@@ -482,12 +501,13 @@ namespace net.vieapps.Services.APIGateway
 
 					await Task.WhenAll(
 						context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
+						requestInfo.Session.SendOnlineStatusAsync(true),
 						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "InternalAPIs", new List<string>
 						{
 							$"Successfully process request of session (registration of authenticated user)",
-							$"Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-							$"Response: {json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-							$"Execution times: {context.GetExecutionTimes()}"
+							$"- Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+							$"- Response: {json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+							$"- Execution times: {context.GetExecutionTimes()}"
 						})
 					).ConfigureAwait(false);
 				}
@@ -499,8 +519,9 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Create a session
-		internal static JObject GenerateSessionJson(this RequestInfo requestInfo, bool is2FAVerified = false, bool isOnline = true)
-			=> new JObject
+		static async Task CreateSessionAsync(this HttpContext context, RequestInfo requestInfo, bool is2FAVerified = false, bool isOnline = true)
+		{
+			var body = new JObject
 			{
 				{ "ID", requestInfo.Session.SessionID },
 				{ "IssuedAt", DateTime.Now },
@@ -514,23 +535,16 @@ namespace net.vieapps.Services.APIGateway
 				{ "OSInfo", $"{requestInfo.Session.AppAgent.GetOSInfo()} [{requestInfo.Session.AppAgent}]" },
 				{ "Verification", is2FAVerified },
 				{ "Online", isOnline }
-			};
-
-		static async Task CreateSessionAsync(this HttpContext context, RequestInfo requestInfo, bool is2FAVerified = false, bool isOnline = true)
-		{
-			var body = requestInfo.GenerateSessionJson(is2FAVerified, isOnline).ToString(Formatting.None);
-			await Task.WhenAll(
-				context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Session", "POST")
+			}.ToString(Formatting.None);
+			await context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Session", "POST")
+			{
+				Body = body,
+				Extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
 				{
-					Body = body,
-					Extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-					{
-						{ "Signature", body.GetHMACSHA256(Global.ValidationKey) }
-					},
-					CorrelationID = requestInfo.CorrelationID
-				}, Global.CancellationTokenSource.Token, InternalAPIs.Logger),
-				requestInfo.Session.SendOnlineStatusAsync(true)
-			).ConfigureAwait(false);
+					{ "Signature", body.GetHMACSHA256(Global.ValidationKey) }
+				},
+				CorrelationID = requestInfo.CorrelationID
+			}, Global.CancellationTokenSource.Token, InternalAPIs.Logger).ConfigureAwait(false);
 		}
 		#endregion
 
@@ -598,11 +612,17 @@ namespace net.vieapps.Services.APIGateway
 
 				else
 				{
-					// register new session
+					// update status of old session
 					oldSessionID = requestInfo.Session.SessionID;
+					await requestInfo.Session.SendOnlineStatusAsync(false).ConfigureAwait(false);
+
+					// register new session
 					requestInfo.Session.User = json.FromJson<User>();
 					requestInfo.Session.User.SessionID = requestInfo.Session.SessionID = UtilityService.NewUUID;
-					await context.CreateSessionAsync(requestInfo).ConfigureAwait(false);
+					await Task.WhenAll(
+						context.CreateSessionAsync(requestInfo),
+						requestInfo.Session.SendOnlineStatusAsync(true)
+					).ConfigureAwait(false);
 
 					// response
 					json = new JObject
@@ -621,9 +641,9 @@ namespace net.vieapps.Services.APIGateway
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (sign-in)",
-						$"Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-						$"Response: {json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-						$"Execution times: {context.GetExecutionTimes()}"
+						$"- Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"- Response: {json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"- Execution times: {context.GetExecutionTimes()}"
 					})
 				).ConfigureAwait(false);
 			}
@@ -687,11 +707,17 @@ namespace net.vieapps.Services.APIGateway
 					CorrelationID = requestInfo.CorrelationID
 				}, Global.CancellationTokenSource.Token, InternalAPIs.Logger).ConfigureAwait(false);
 
-				// register new session
+				// update status of old session
 				var oldSessionID = requestInfo.Session.SessionID;
+				await requestInfo.Session.SendOnlineStatusAsync(false).ConfigureAwait(false);
+
+				// register new session
 				requestInfo.Session.User = json.FromJson<User>();
 				requestInfo.Session.User.SessionID = requestInfo.Session.SessionID = UtilityService.NewUUID;
-				await context.CreateSessionAsync(requestInfo, true).ConfigureAwait(false);
+				await Task.WhenAll(
+					context.CreateSessionAsync(requestInfo),
+					requestInfo.Session.SendOnlineStatusAsync(true)
+				).ConfigureAwait(false);
 
 				// response
 				json = new JObject
@@ -709,9 +735,9 @@ namespace net.vieapps.Services.APIGateway
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (OTP validation)",
-						$"Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-						$"Response: {json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-						$"Execution times: {context.GetExecutionTimes()}"
+						$"- Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"- Response: {json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"- Execution times: {context.GetExecutionTimes()}"
 					})
 				).ConfigureAwait(false);
 			}
@@ -753,14 +779,17 @@ namespace net.vieapps.Services.APIGateway
 					CorrelationID = requestInfo.CorrelationID
 				}, Global.CancellationTokenSource.Token, InternalAPIs.Logger).ConfigureAwait(false);
 
-				// send update message
+				// update status of old session
+				var oldSessionID = requestInfo.Session.SessionID;
 				await requestInfo.Session.SendOnlineStatusAsync(false).ConfigureAwait(false);
 
 				// create & register the new session of visitor
-				var oldSessionID = requestInfo.Session.SessionID;
 				requestInfo.Session.SessionID = UtilityService.NewUUID;
 				requestInfo.Session.User = new User("", requestInfo.Session.SessionID, new List<string> { SystemRole.All.ToString() }, new List<Privilege>());
-				await context.CreateSessionAsync(requestInfo).ConfigureAwait(false);
+				await Task.WhenAll(
+					context.CreateSessionAsync(requestInfo),
+					requestInfo.Session.SendOnlineStatusAsync(true)
+				).ConfigureAwait(false);
 
 				// response
 				var json = new JObject
@@ -773,13 +802,13 @@ namespace net.vieapps.Services.APIGateway
 				await Task.WhenAll(
 					context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 					InternalAPIs.Cache.RemoveAsync($"Session#{oldSessionID}"),
-					InternalAPIs.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.SessionID.Encrypt(Global.EncryptionKey), 7),
+					InternalAPIs.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.GetEncryptedID(), 7),
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (sign-out)",
-						$"Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-						$"Response: {json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-						$"Execution times: {context.GetExecutionTimes()}"
+						$"- Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"- Response: {json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"- Execution times: {context.GetExecutionTimes()}"
 					})
 				).ConfigureAwait(false);
 			}
@@ -799,7 +828,10 @@ namespace net.vieapps.Services.APIGateway
 			// get user information & register the session
 			requestInfo.Session.User = json.FromJson<User>();
 			requestInfo.Session.User.SessionID = requestInfo.Session.SessionID = UtilityService.NewUUID;
-			await context.CreateSessionAsync(requestInfo).ConfigureAwait(false);
+			await Task.WhenAll(
+				context.CreateSessionAsync(requestInfo),
+				requestInfo.Session.SendOnlineStatusAsync(true)
+			).ConfigureAwait(false);
 
 			// response
 			json = new JObject
@@ -813,19 +845,21 @@ namespace net.vieapps.Services.APIGateway
 				context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 				!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "InternalAPIs", new List<string>
 				{
-						$"Successfully process request of session (activation)",
-						$"Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-						$"Response: {json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-						$"Execution times: {context.GetExecutionTimes()}"
+					$"Successfully process request of session (activation)",
+					$"- Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+					$"- Response: {json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+					$"- Execution times: {context.GetExecutionTimes()}"
 				})
 			).ConfigureAwait(false);
 		}
 		#endregion
 
 		#region Heper: keys, session, online status, ...
+		internal static string GetEncryptedID(this Session session) => session.GetEncryptedID(session.SessionID, Global.EncryptionKey, Global.ValidationKey);
+
 		internal static void UpdateSessionJson(this Session session, JObject json, IDictionary<object, object> items)
 		{
-			json["ID"] = session.GetEncryptID(session.SessionID, Global.EncryptionKey, Global.ValidationKey);
+			json["ID"] = session.GetEncryptedID();
 			json["Keys"] = new JObject
 			{
 				{
@@ -856,17 +890,11 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static async Task SendOnlineStatusAsync(this Session session, bool isOnline)
 		{
-			if (!string.IsNullOrWhiteSpace(session?.User?.ID) && !session.User.IsSystemAccount)
-				await new CommunicateMessage("Users")
-				{
-					Type = "Session#Status",
-					Data = session.ToJson(json =>
-					{
-						(json as JObject).Remove("User");
-						json["UserID"] = session.User.ID;
-						json["IsOnline"] = isOnline;
-					})
-				}.PublishAsync(RTU.Logger).ConfigureAwait(false);
+			await new CommunicateMessage("Users")
+			{
+				Type = "Session#Status",
+				Data = session.ToJson(json => json["IsOnline"] = isOnline)
+			}.PublishAsync(RTU.Logger).ConfigureAwait(false);
 		}
 		#endregion
 

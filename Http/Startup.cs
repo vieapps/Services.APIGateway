@@ -105,11 +105,10 @@ namespace net.vieapps.Services.APIGateway
 			RTU.Initialize();
 
 			// middleware
-			if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-				app.UseForwardedHeaders(new ForwardedHeadersOptions
-				{
-					ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
-				});
+			app.UseForwardedHeaders(new ForwardedHeadersOptions
+			{
+				ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+			});
 			app.UseCache();
 			app.UseStatusCodeHandler();
 			app.UseResponseCompression();

@@ -40,13 +40,26 @@ namespace net.vieapps.Services.APIGateway
 			this.ServiceHosting_x86 = UtilityService.GetAppSetting("ServiceHosting:x86", $"{this.ServiceHosting}.x86").Trim();
 		}
 
+		public void Dispose()
+		{
+			if (!this.IsDisposed)
+			{
+				this.IsDisposed = true;
+				this.Stop();
+				this.CancellationTokenSource.Dispose();
+				GC.SuppressFinalize(this);
+			}
+		}
+
+		~Controller() => this.Dispose();
+
 		#region Properties
 		public ServiceState State { get; private set; } = ServiceState.Initializing;
 		public ControllerInfo Info { get; private set; } = null;
-		CancellationTokenSource CancellationTokenSource { get; }
-		internal IDisposable Communicator { get; private set; } = null;
-		internal LoggingService LoggingService { get; } = null;
-		internal IRTUService RTUService { get; private set; } = null;
+		public CancellationTokenSource CancellationTokenSource { get; private set; }
+		IDisposable Communicator { get; set; } = null;
+		LoggingService LoggingService { get; } = null;
+		IRTUService RTUService { get; set; } = null;
 		List<SystemEx.IAsyncDisposable> HelperServices { get; } = new List<SystemEx.IAsyncDisposable>();
 		List<IDisposable> Timers { get; } = new List<IDisposable>();
 		Dictionary<string, ProcessInfo> Tasks { get; } = new Dictionary<string, ProcessInfo>();
@@ -308,6 +321,8 @@ namespace net.vieapps.Services.APIGateway
 			this.BusinessServices.Keys.ToList().ForEach(name => this.StopBusinessService(name));
 
 			this.Communicator?.Dispose();
+			this.MailSender?.Dispose();
+			this.WebhookSender?.Dispose();
 			this.LoggingService?.FlushAllLogs();
 			this.CancellationTokenSource.Cancel();
 
@@ -995,27 +1010,9 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
-		#region Dispose
-		public void Dispose()
-		{
-			if (!this.IsDisposed)
-			{
-				this.IsDisposed = true;
-				this.Stop();
-				this.CancellationTokenSource.Dispose();
-				GC.SuppressFinalize(this);
-			}
-		}
-
-		~Controller()
-		{
-			this.Dispose();
-		}
-		#endregion
-
 	}
 
-	class ProcessInfo
+	public class ProcessInfo
 	{
 		public ProcessInfo(string id = "", string executable = "", string arguments = "", Dictionary<string, string> extra = null)
 		{
@@ -1028,6 +1025,6 @@ namespace net.vieapps.Services.APIGateway
 		public string Executable { get; }
 		public string Arguments { get; }
 		public Dictionary<string, string> Extra { get; }
-		public ExternalProcess.Info Instance { get; set; }
+		public ExternalProcess.Info Instance { get; internal set; }
 	}
 }

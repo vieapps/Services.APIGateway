@@ -1,8 +1,6 @@
 ﻿#region Related components
 using System;
 using System.IO;
-using System.Threading;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 
 using WampSharp.V2.Rpc;
@@ -21,7 +19,7 @@ namespace net.vieapps.Services.APIGateway
 		/// Gets all available business services
 		/// </summary>
 		/// <returns></returns>
-		[WampProcedure("net.vieapps.apigateway.controller.{0}.get.business.services")]
+		[WampProcedure("net.vieapps.apigateway.controller.{0}.get.available.business.services")]
 		Dictionary<string, string> GetAvailableBusinessServices();
 
 		/// <summary>

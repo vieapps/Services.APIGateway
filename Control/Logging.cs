@@ -12,7 +12,7 @@ using net.vieapps.Components.Utility;
 
 namespace net.vieapps.Services.APIGateway
 {
-	public class LoggingService : ILoggingService
+	public class LoggingService : ILoggingService, IDisposable
 	{
 
 		#region Properties
@@ -42,9 +42,11 @@ namespace net.vieapps.Services.APIGateway
 #endif
 		}
 
+		public void Dispose() => this.CancellationTokenSource.Cancel();
+
 		~LoggingService()
 		{
-			this.CancellationTokenSource.Cancel();
+			this.Dispose();
 			this.CancellationTokenSource.Dispose();
 		}
 

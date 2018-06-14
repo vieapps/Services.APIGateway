@@ -9,9 +9,6 @@ using System.Reactive.Subjects;
 using System.Reactive.Linq;
 
 using Newtonsoft.Json;
-using WampSharp.V2;
-using WampSharp.V2.Client;
-
 using net.vieapps.Components.Utility;
 #endregion
 
@@ -53,7 +50,9 @@ namespace net.vieapps.Services.APIGateway
 					Data = message.Data,
 					DeviceID = deviceID,
 					ExcludedDeviceID = excludedDeviceID
-				}).ToObservable().Subscribe(
+				})
+				.ToObservable()
+				.Subscribe(
 					message =>
 					{
 						this.GetPublisher().OnNext(message);

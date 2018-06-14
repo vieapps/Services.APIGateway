@@ -913,15 +913,20 @@ namespace net.vieapps.Services.APIGateway
 						.Subscribe(
 							async (message) =>
 							{
+								var correlationID = UtilityService.NewUUID;
 								try
 								{
 									await InternalAPIs.ProcessInterCommunicateMessageAsync(message).ConfigureAwait(false);
-									if (Global.IsDebugLogEnabled)
-										await Global.WriteLogsAsync(RTU.Logger, "RTU", $"Process an inter-communicate message successful {message?.ToJson().ToString(Formatting.Indented)}").ConfigureAwait(false);
+									if (Global.IsDebugResultsEnabled)
+										await Global.WriteLogsAsync(RTU.Logger, "RTU",
+											$"Successfully process an inter-communicate message" + "\r\n" +
+											$"- Type: {message?.Type}" + "\r\n" +
+											$"- Message: {message?.Data?.ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}"
+										, null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
 								}
 								catch (Exception ex)
 								{
-									await Global.WriteLogsAsync(RTU.Logger, "RTU", $"{ex.Message} => {message?.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex).ConfigureAwait(false);
+									await Global.WriteLogsAsync(RTU.Logger, "RTU", $"{ex.Message} => {message?.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex, Global.ServiceName, LogLevel.Error, correlationID).ConfigureAwait(false);
 								}
 							},
 							exception => Global.WriteLogs(RTU.Logger, "RTU", $"{exception.Message}", exception)
@@ -964,7 +969,6 @@ namespace net.vieapps.Services.APIGateway
 					{ "UserID", user.ID },
 					{ "DeviceID", deviceID }
 				};
-
 				new Session
 				{
 					SessionID = sessionID,

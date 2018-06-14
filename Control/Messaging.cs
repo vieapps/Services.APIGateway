@@ -5,7 +5,6 @@ using System.Text;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 
 using Newtonsoft.Json;
@@ -20,9 +19,7 @@ namespace net.vieapps.Services.APIGateway
 	{
 		public async Task SendEmailAsync(EmailMessage message, CancellationToken cancellationToken = default(CancellationToken))
 		{
-			message.From = string.IsNullOrWhiteSpace(message.From)
-				? MailSender.EmailDefaultSender
-				: message.From;
+			message.From = string.IsNullOrWhiteSpace(message.From) ? MailSender.EmailDefaultSender : message.From;
 			if (string.IsNullOrWhiteSpace(message.SmtpServer))
 			{
 				message.SmtpServer = MailSender.EmailSmtpServer;
@@ -40,18 +37,19 @@ namespace net.vieapps.Services.APIGateway
 
 	// -----------------------------------------------------------
 
-	internal class MailSender
+	internal class MailSender : IDisposable
 	{
-		readonly CancellationTokenSource _cancellationTokenSource;
+		CancellationTokenSource CancellationTokenSource { get; }
 
 		public MailSender(CancellationToken cancellationToken = default(CancellationToken))
-		{
-			this._cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-		}
+			=> this.CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+		public void Dispose() => this.CancellationTokenSource.Cancel();
 
 		~MailSender()
 		{
-			this._cancellationTokenSource.Dispose();
+			this.Dispose();
+			this.CancellationTokenSource.Dispose();
 		}
 
 		#region Information
@@ -151,8 +149,8 @@ namespace net.vieapps.Services.APIGateway
 		{
 			try
 			{
-				await Task.Delay(100 + (counter * 10), this._cancellationTokenSource.Token);
-				await MessageService.SendMailAsync(msg.From, msg.ReplyTo, msg.To, msg.Cc, msg.Bcc, msg.Subject, msg.Body, msg.Attachment, msg.Priority, msg.IsHtmlFormat, Encoding.GetEncoding(msg.Encoding), msg.SmtpServer, msg.SmtpServerPort.ToString(), msg.SmtpUsername, msg.SmtpPassword, msg.SmtpServerEnableSsl, this._cancellationTokenSource.Token);
+				await Task.Delay(100 + (counter * 10), this.CancellationTokenSource.Token);
+				await MessageService.SendMailAsync(msg.From, msg.ReplyTo, msg.To, msg.Cc, msg.Bcc, msg.Subject, msg.Body, msg.Attachment, msg.Priority, msg.IsHtmlFormat, Encoding.GetEncoding(msg.Encoding), msg.SmtpServer, msg.SmtpServerPort.ToString(), msg.SmtpUsername, msg.SmtpPassword, msg.SmtpServerEnableSsl, this.CancellationTokenSource.Token);
 				MailSender.Messages.Remove(msg.ID);
 
 				Global.OnSendEmailSuccess?.Invoke(
@@ -217,18 +215,19 @@ namespace net.vieapps.Services.APIGateway
 
 	// -----------------------------------------------------------
 
-	internal class WebHookSender
+	internal class WebHookSender : IDisposable
 	{
-		readonly CancellationTokenSource _cancellationTokenSource;
+		CancellationTokenSource CancellationTokenSource { get; }
 
 		public WebHookSender(CancellationToken cancellationToken = default(CancellationToken))
-		{
-			this._cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-		}
+			=> this.CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+		public void Dispose() => this.CancellationTokenSource.Cancel();
 
 		~WebHookSender()
 		{
-			this._cancellationTokenSource.Dispose();
+			this.Dispose();
+			this.CancellationTokenSource.Dispose();
 		}
 
 		#region Information
@@ -314,7 +313,7 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				var query = string.Join("&", msg.Query.Select(info => info.Key + "=" + info.Value.UrlEncode()));
-				await UtilityService.GetWebResponseAsync("POST", msg.EndpointURL + (!query.Equals("") ? "?" + query : ""), msg.Header, null, msg.Body, "application/json", 45, UtilityService.DesktopUserAgent + " VIEApps NGX WebHook Sender", null, null, null, this._cancellationTokenSource.Token);
+				await UtilityService.GetWebResponseAsync("POST", msg.EndpointURL + (!query.Equals("") ? "?" + query : ""), msg.Header, null, msg.Body, "application/json", 45, UtilityService.DesktopUserAgent + " VIEApps NGX WebHook Sender", null, null, null, this.CancellationTokenSource.Token);
 				WebHookSender.Messages.Remove(msg.ID);
 
 				Global.OnSendWebHookSuccess?.Invoke(

@@ -20,7 +20,7 @@ namespace net.vieapps.Services.APIGateway
 
 		#region Properties
 		internal static CancellationTokenSource CancellationTokenSource { get; set; } = null;
-		internal static IServiceManager ServiceManager { get; set; } = null;
+		internal static IController ServiceManager { get; set; } = null;
 		internal static ILoggingService LoggingService { get; set; } = null;
 		internal static Manager Manager { get; set; } = null;
 		internal static Controller Controller { get; set; } = null;
@@ -36,7 +36,7 @@ namespace net.vieapps.Services.APIGateway
 			Console.OutputEncoding = System.Text.Encoding.UTF8;
 			JsonConvert.DefaultSettings = () => new JsonSerializerSettings
 			{
-				Formatting = Formatting.Indented,
+				Formatting = Formatting.None,
 				ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
 				DateTimeZoneHandling = DateTimeZoneHandling.Local
 			};

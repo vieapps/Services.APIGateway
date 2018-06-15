@@ -4,6 +4,7 @@ using System.IO;
 using System.Collections.Generic;
 
 using WampSharp.V2.Rpc;
+using Newtonsoft.Json.Linq;
 
 using net.vieapps.Components.Utility;
 #endregion
@@ -11,9 +12,9 @@ using net.vieapps.Components.Utility;
 namespace net.vieapps.Services.APIGateway
 {
 	/// <summary>
-	/// Presents a service manager on a node (controller)
+	/// Presents a service controller
 	/// </summary>
-	public interface IServiceManager
+	public interface IController
 	{
 		/// <summary>
 		/// Gets all available business services
@@ -52,6 +53,28 @@ namespace net.vieapps.Services.APIGateway
 		/// <param name="name"></param>
 		[WampProcedure("net.vieapps.apigateway.controller.{0}.stop.business.service")]
 		void StopBusinessService(string name);
+	}
+
+	//  --------------------------------------------------------
+
+	/// <summary>
+	/// Presents a service manager
+	/// </summary>
+	public interface IManager
+	{
+		/// <summary>
+		/// Gets all available service controllers
+		/// </summary>
+		/// <returns></returns>
+		[WampProcedure("net.vieapps.apigateway.manager.get.available.controllers")]
+		JArray GetAvailableControllers();
+
+		/// <summary>
+		/// Gets all available business services
+		/// </summary>
+		/// <returns></returns>
+		[WampProcedure("net.vieapps.apigateway.manager.get.available.services")]
+		JArray GetAvailableServices();
 	}
 
 	//  --------------------------------------------------------

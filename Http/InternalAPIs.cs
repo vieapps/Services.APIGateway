@@ -1,8 +1,10 @@
 ﻿#region Related components
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Reactive.Subjects;
 
 using Microsoft.AspNetCore.Http;
@@ -28,7 +30,9 @@ namespace net.vieapps.Services.APIGateway
 		internal static ICache Cache { get; set; }
 		internal static ILogger Logger { get; set; }
 		internal static List<string> ExcludedHeaders { get; } = "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,ms-aspnetcore-token,x-original-proto,x-original-for,x-original-remote-endpoint".ToList();
-		internal static HashSet<string> NoTokenRequiredServices { get; } = (UtilityService.GetAppSetting("NoTokenRequiredServices", "") + "|indexes").ToLower().ToHashSet('|', true);
+		internal static HashSet<string> NoTokenRequiredServices { get; } = (UtilityService.GetAppSetting("NoTokenRequiredServices", "") + "|indexes|discovery").ToLower().ToHashSet('|', true);
+		internal static ConcurrentDictionary<string, JObject> Controllers { get; } = new ConcurrentDictionary<string, JObject>();
+		internal static ConcurrentDictionary<string, List<JObject>> Services { get; } = new ConcurrentDictionary<string, List<JObject>>();
 		#endregion
 
 		internal static async Task ProcessRequestAsync(HttpContext context)
@@ -343,6 +347,27 @@ namespace net.vieapps.Services.APIGateway
 				{
 					context.WriteError(ex, requestInfo);
 				}
+			}
+
+			// process request of discovery (controllers & services)
+			else if (requestInfo.ServiceName.IsEquals("discovery"))
+			{
+				var response = new JArray();
+				if (requestInfo.ObjectName.IsEquals("controllers"))
+					InternalAPIs.Controllers.Values.ToList().ForEach(controller => response.Add(new JObject
+					{
+						{ "ID", controller.Get<string>("ID").GenerateUUID() },
+						{ "Platform", controller.Get<string>("Platform") },
+						{ "Available" , controller.Get<bool>("Available") }
+					}));
+				else
+					InternalAPIs.Services.Values.ToList().ForEach(svcInfo => response.Add(new JObject
+					{
+						{ "URI", $"net.vieapps.services.{svcInfo[0].Get<string>("Name")}" },
+						{ "Available", svcInfo.FirstOrDefault(svc => svc.Get<bool>("Available") == true) != null },
+						{ "Running", svcInfo.FirstOrDefault(svc => svc.Get<bool>("Running") == true) != null }
+					}));
+				await context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 			}
 
 			// process request of services
@@ -936,15 +961,40 @@ namespace net.vieapps.Services.APIGateway
 				{
 					Global.Logger.LogInformation($"Outgoing channel to WAMP router is established - Session ID: {args.SessionId}");
 					WAMPConnections.OutgoingChannel.Update(WAMPConnections.OutgoingChannelSessionID, Global.ServiceName, $"Outgoing ({Global.ServiceName} HTTP service)");
-					try
+					Task.Run(async () =>
 					{
-						Task.WaitAll(new[] { Global.InitializeLoggingServiceAsync(), Global.InitializeRTUServiceAsync() }, waitingTimes > 0 ? waitingTimes : 6789, Global.CancellationTokenSource.Token);
-						Global.Logger.LogInformation("Helper services are succesfully initialized");
-					}
-					catch (Exception ex)
+						try
+						{
+							await Task.WhenAll(Global.InitializeLoggingServiceAsync(), Global.InitializeRTUServiceAsync()).ConfigureAwait(false);
+							Global.Logger.LogInformation("Helper services are succesfully initialized");
+						}
+						catch (Exception ex)
+						{
+							Global.Logger.LogError($"Error occurred while initializing helper services: {ex.Message}", ex);
+						}
+					})
+					.ContinueWith(async (task) =>
 					{
-						Global.Logger.LogError($"Error occurred while initializing helper services: {ex.Message}", ex);
-					}
+						while (WAMPConnections.IncomingChannel == null || WAMPConnections.OutgoingChannel == null)
+							await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
+					}, TaskContinuationOptions.OnlyOnRanToCompletion)
+					.ContinueWith(async (task) =>
+					{
+						await Global.RTUService.SendInterCommunicateMessageAsync(new CommunicateMessage
+						{
+							ServiceName = "APIGateway",
+							Type = "Controller#RequestInfo"
+						}).ConfigureAwait(false);
+					}, TaskContinuationOptions.OnlyOnRanToCompletion)
+					.ContinueWith(async (task) =>
+					{
+						await Global.RTUService.SendInterCommunicateMessageAsync(new CommunicateMessage
+						{
+							ServiceName = "APIGateway",
+							Type = "Service#RequestInfo"
+						}).ConfigureAwait(false);
+					}, TaskContinuationOptions.OnlyOnRanToCompletion)
+					.ConfigureAwait(false);
 				},
 				waitingTimes
 			);
@@ -955,7 +1005,7 @@ namespace net.vieapps.Services.APIGateway
 		internal static async Task ProcessInterCommunicateMessageAsync(CommunicateMessage message)
 		{
 			// update users' sessions with new access token
-			if (message.Type.Equals("Session#Update"))
+			if (message.Type.IsEquals("Session#Update"))
 			{
 				// prepare
 				var sessionID = message.Data.Get<string>("Session");
@@ -987,7 +1037,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// revoke users' sessions
-			else if (message.Type.Equals("Session#Revoke"))
+			else if (message.Type.IsEquals("Session#Revoke"))
 			{
 				// prepare
 				var sessionID = message.Data.Get<string>("Session");
@@ -1015,6 +1065,50 @@ namespace net.vieapps.Services.APIGateway
 					DeviceID = deviceID,
 					Data = json
 				}.PublishAsync(RTU.Logger).ConfigureAwait(false);
+			}
+
+			// service info
+			else if (message.Type.IsEquals("Service#Info"))
+			{
+				var name = message.Data.Get<string>("Name");
+				if (!InternalAPIs.Services.TryGetValue(name, out List<JObject> services))
+					InternalAPIs.Services.TryAdd(name, new List<JObject> { message.Data as JObject });
+				else
+				{
+					var controllerID = message.Data.Get<string>("ControllerID");
+					var service = services.FirstOrDefault(svc => name.IsEquals(svc.Get<string>("Name")) && controllerID.IsEquals(svc.Get<string>("ControllerID")));
+					if (service == null)
+						services.Add(message.Data as JObject);
+					else
+					{
+						service["InvokeInfo"] = message.Data["InvokeInfo"];
+						service["Available"] = message.Data["Available"];
+						service["Running"] = message.Data["Running"];
+					}
+				}
+			}
+
+			// controller info
+			else if (message.Type.IsEquals("Controller#Disconnect"))
+			{
+				var id = message.Data.Get<string>("ID");
+				if (InternalAPIs.Controllers.TryGetValue(id, out JObject controller))
+				{
+					controller["Available"] = new JValue(false);
+					var controllerID = controller.Get<string>("ID");
+					InternalAPIs.Services.ForEach(kvp =>
+					{
+						var service = kvp.Value.FirstOrDefault(svc => kvp.Key.IsEquals(svc.Get<string>("Name")) && controllerID.IsEquals(svc.Get<string>("ControllerID")));
+						if (service != null)
+							service["Available"] = service["Running"] = new JValue(false);
+					});
+				}
+			}
+			else if (message.Type.IsEquals("Controller#Info") || message.Type.IsEquals("Controller#Connect"))
+			{
+				var id = message.Data.Get<string>("ID");
+				if (!InternalAPIs.Controllers.ContainsKey(id))
+					InternalAPIs.Controllers.TryAdd(id, message.Data as JObject);
 			}
 		}
 		#endregion

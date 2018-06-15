@@ -33,10 +33,8 @@ namespace net.vieapps.Services.APIGateway
 			// request of WebSocket
 			if (context.WebSockets.IsWebSocketRequest)
 				await Task.WhenAll(
-					APIGateway.RTU.WebSocket.WrapAsync(context),
-					Global.IsDebugLogEnabled
-						? context.WriteLogsAsync("RTU", $"Wrap a WebSocket connection\r\n\t{string.Join("\r\n\t", context.Request.Headers.Select(header => $"{header.Key} => {header.Value}"))}")
-						: Task.CompletedTask
+					Global.IsDebugLogEnabled ? context.WriteLogsAsync("RTU", $"Wrap a WebSocket connection\r\n\t{string.Join("\r\n\t", context.Request.Headers.Select(header => $"{header.Key}: {header.Value}"))}") : Task.CompletedTask,
+					APIGateway.RTU.WebSocket.WrapAsync(context)
 				).ConfigureAwait(false);
 
 			// request of HTTP

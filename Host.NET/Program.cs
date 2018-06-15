@@ -5,14 +5,11 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Reflection;
-
+using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
-
 using Newtonsoft.Json;
-
 using net.vieapps.Components.Utility;
 #endregion
 
@@ -197,7 +194,7 @@ namespace net.vieapps.Services.APIGateway
 
 					stopwatch.Stop();
 					logger.LogInformation($"Service URI (round robin): {service.ServiceURI}");
-					logger.LogInformation($"Service URI (unique): {service.ServiceUniqueURI}");
+					logger.LogInformation($"Service URI (single): {service.ServiceUniqueURI}");
 					logger.LogInformation($"The service is started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");
 
 					if (isUserInteractive)

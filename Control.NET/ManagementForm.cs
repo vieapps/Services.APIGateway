@@ -131,10 +131,7 @@ namespace net.vieapps.Services.APIGateway
 
 		internal ListViewItem Selected { get; set; } = null;
 
-		bool IsSelectAllControllers
-			=> this.Selected == null
-				? false
-				: this.Selected.SubItems[2].Text.Equals("");
+		bool IsSelectAllControllers => this.Selected != null ? this.Selected.SubItems[2].Text.Equals("") : false;
 
 		public delegate void DisplaySelectedServiceDelegator();
 
@@ -208,7 +205,6 @@ namespace net.vieapps.Services.APIGateway
 						listItem = item;
 						break;
 					}
-
 				if (listItem != null)
 				{
 					listItem.SubItems[1].Text = state;
@@ -221,7 +217,6 @@ namespace net.vieapps.Services.APIGateway
 						listItem = item;
 						break;
 					}
-
 				if (listItem != null)
 				{
 					var isRunning = Program.Manager.AvailableServices[name].FirstOrDefault(svc => svc.Running) != null;

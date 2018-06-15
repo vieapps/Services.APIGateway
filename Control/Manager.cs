@@ -13,7 +13,7 @@ using net.vieapps.Components.Utility;
 
 namespace net.vieapps.Services.APIGateway
 {
-	public class Manager : IDisposable
+	public class Manager : IManager, IDisposable
 	{
 		/// <summary>
 		/// Creates new instance of services manager
@@ -22,13 +22,23 @@ namespace net.vieapps.Services.APIGateway
 		{
 			this.OnIncomingChannelEstablished = (sender, args) =>
 			{
-				this.Communicator?.Dispose();
-				this.Communicator = WAMPConnections.IncomingChannel.RealmProxy.Services
-					.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
-					.Subscribe(
-						message => this.ProcessInterCommunicateMessageAsync(message),
-						exception => Global.OnError?.Invoke($"Error occurred while fetching inter-communicate message: {exception.Message}", exception)
-					);
+				Task.Run(async () =>
+				{
+					if (this.Instance != null)
+						await this.Instance.DisposeAsync().ConfigureAwait(false);
+					this.Instance = await WAMPConnections.IncomingChannel.RealmProxy.Services.RegisterCallee(this, RegistrationInterceptor.Create()).ConfigureAwait(false);
+				})
+				.ContinueWith(task =>
+				{
+					this.Communicator?.Dispose();
+					this.Communicator = WAMPConnections.IncomingChannel.RealmProxy.Services
+						.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
+						.Subscribe(
+							message => this.ProcessInterCommunicateMessageAsync(message),
+							exception => Global.OnError?.Invoke($"Error occurred while fetching inter-communicate message: {exception.Message}", exception)
+						);
+				}, TaskContinuationOptions.OnlyOnRanToCompletion)
+				.ConfigureAwait(false);
 			};
 			this.OnOutgoingChannelEstablished = (sender, args) => Task.Run(async () =>
 			{
@@ -41,16 +51,32 @@ namespace net.vieapps.Services.APIGateway
 			}).ConfigureAwait(false);
 		}
 
-		public void Dispose() => this.Communicator?.Dispose();
+		public void Dispose()
+		{
+			if (!this.Disposed)
+				Task.Run(async () =>
+				{
+					this.Disposed = true;
+					if (this.Instance != null)
+						await this.Instance.DisposeAsync().ConfigureAwait(false);
+				})
+				.ContinueWith(task =>
+				{
+					this.Communicator?.Dispose();
+				}, TaskContinuationOptions.OnlyOnRanToCompletion)
+				.ConfigureAwait(false);
+		}
 
 		~Manager() => this.Dispose();
 
 		#region Properties
 		ConcurrentDictionary<string, ControllerInfo> Controllers { get; } = new ConcurrentDictionary<string, ControllerInfo>();
-		ConcurrentDictionary<string, IServiceManager> ServiceManagers { get; } = new ConcurrentDictionary<string, IServiceManager>();
+		ConcurrentDictionary<string, IController> ServiceManagers { get; } = new ConcurrentDictionary<string, IController>();
 		ConcurrentDictionary<string, List<ServiceInfo>> Services { get; } = new ConcurrentDictionary<string, List<ServiceInfo>>();
+		SystemEx.IAsyncDisposable Instance { get; set; } = null;
 		IDisposable Communicator { get; set; } = null;
 		IRTUService RTUService { get; set; } = null;
+		bool Disposed { get; set; } = false;
 		public IDictionary<string, ControllerInfo> AvailableControllers => this.Controllers as IDictionary<string, ControllerInfo>;
 		public IDictionary<string, List<ServiceInfo>> AvailableServices => this.Services as IDictionary<string, List<ServiceInfo>>;
 		#endregion
@@ -68,11 +94,11 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Process business services
-		internal IServiceManager GetServiceManager(string controllerID)
+		internal IController GetServiceManager(string controllerID)
 		{
-			if (!this.ServiceManagers.TryGetValue(controllerID, out IServiceManager serviceManager))
+			if (!this.ServiceManagers.TryGetValue(controllerID, out IController serviceManager))
 			{
-				serviceManager = WAMPConnections.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IServiceManager>(ProxyInterceptor.Create(controllerID));
+				serviceManager = WAMPConnections.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IController>(ProxyInterceptor.Create(controllerID));
 				this.ServiceManagers.TryAdd(controllerID, serviceManager);
 			}
 			return serviceManager;
@@ -202,7 +228,32 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
+		public JArray GetAvailableControllers()
+		{
+			var controllers = new JArray();
+			this.Controllers.Values.ToList().ForEach(controller => controllers.Add(new JObject
+			{
+				{ "ID", controller.ID.GenerateUUID() },
+				{ "Platform", controller.Platform },
+				{ "Available" , controller.Available }
+			}));
+			return controllers;
+		}
+
+		public JArray GetAvailableServices()
+		{
+			var services = new JArray();
+			this.Services.Values.ToList().ForEach(service => services.Add(new JObject
+			{
+				{ "URI", $"net.vieapps.services.{service[0].Name}" },
+				{ "Available", service.FirstOrDefault(svc => svc.Available) != null },
+				{ "Running", service.FirstOrDefault(svc => svc.Running) != null }
+			}));
+			return services;
+		}
 	}
+
+	// ------------------------------------------------------------
 
 	[Serializable]
 	public class ControllerInfo
@@ -217,6 +268,8 @@ namespace net.vieapps.Services.APIGateway
 		public DateTime Timestamp { get; set; } = DateTime.Now;
 		public Dictionary<string, string> Extra { get; set; }
 	}
+
+	// ------------------------------------------------------------
 
 	[Serializable]
 	public class ServiceInfo

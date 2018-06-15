@@ -24,7 +24,7 @@ using net.vieapps.Components.Repository;
 
 namespace net.vieapps.Services.APIGateway
 {
-	public class Controller : IServiceManager, IDisposable
+	public class Controller : IController, IDisposable
 	{
 		/// <summary>
 		/// Creates new instance of services controller

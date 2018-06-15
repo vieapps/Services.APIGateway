@@ -209,8 +209,8 @@ namespace net.vieapps.Services.APIGateway
 			{
 				await Global.WriteLogsAsync(RTU.Logger, "RTU", new List<string>
 				{
-					$"No session is attached to this WebSocket ({websocket.ID} {websocket.RemoteEndPoint})",
-					$"Extra information: {wsession?.ToJson().ToString(Global.IsDebugResultsEnabled ? Formatting.Indented : Formatting.None)}"
+					$"No session is attached to this WebSocket ({websocket.ID} @ {websocket.RemoteEndPoint})",
+					$"Extra information: {wsession?.ToJson().ToString(Global.IsDebugResultsEnabled ? Formatting.Indented : Formatting.None) ?? "N/A"}"
 				}, null, Global.ServiceName, LogLevel.Critical, correlationID).ConfigureAwait(false);
 				RTU.WebSocket.CloseWebSocket(websocket, WebSocketCloseStatus.InternalServerError, "No session is attached, need to restart.");
 				return;
@@ -221,11 +221,12 @@ namespace net.vieapps.Services.APIGateway
 			var serviceName = requestObj.Get<string>("ServiceName");
 			var objectName = requestObj.Get<string>("ObjectName");
 			var verb = (requestObj.Get<string>("Verb") ?? "GET").ToUpper();
+			var query = new Dictionary<string, string>(requestObj.Get<Dictionary<string, string>>("Query") ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
 			var header = new Dictionary<string, string>(requestObj.Get<Dictionary<string, string>>("Header") ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
 			var extra = new Dictionary<string, string>(requestObj.Get<Dictionary<string, string>>("Extra") ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
 
 			if (Global.IsDebugLogEnabled)
-				await Global.WriteLogsAsync(RTU.Logger, "RTU", $"Begin process => {verb} /{serviceName}/{objectName}", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
+				await Global.WriteLogsAsync(RTU.Logger, "RTU", $"Begin process ({verb} /{serviceName}/{objectName}/{(query.ContainsKey("object-identity") ? query["object-identity"] : "")} - WebSocket: {websocket.ID} @ {websocket.RemoteEndPoint})", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
 
 			// refresh the session
 			if ("PING".IsEquals(verb))
@@ -254,7 +255,12 @@ namespace net.vieapps.Services.APIGateway
 					// patch
 					await websocket.PrepareConnectionInfoAsync().ConfigureAwait(false);
 					if (Global.IsDebugResultsEnabled)
-						await Global.WriteLogsAsync(RTU.Logger, "RTU", $"End process => Successfully patch the session" + "\r\n" + $"{websocket.Extra["Connection"]}" + "\r\n" + $"- Response: {session.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
+						await Global.WriteLogsAsync(RTU.Logger, "RTU",
+							$"End process => Successfully patch the session" + "\r\n" +
+							$"{websocket.Extra["Connection"]}" + "\r\n" +
+							$"- Request: {requestObj?.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}" + "\r\n" +
+							$"- Response: {session.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}"
+						, null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -282,7 +288,7 @@ namespace net.vieapps.Services.APIGateway
 						ServiceName = serviceName,
 						ObjectName = objectName,
 						Verb = verb,
-						Query = new Dictionary<string, string>(requestObj.Get<Dictionary<string, string>>("Query") ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase),
+						Query = query,
 						Header = header,
 						Body = requestObj.Get<string>("Body") ?? "",
 						Extra = extra,
@@ -349,11 +355,11 @@ namespace net.vieapps.Services.APIGateway
 			if (!string.IsNullOrWhiteSpace(session.User?.ID))
 			{
 				var profile = await WAMPConnections.CallServiceAsync(new RequestInfo(session, "Users", "Profile"), Global.CancellationTokenSource.Token).ConfigureAwait(false);
-				account = (profile?.Get<string>("Name") ?? "Unknown") + $" (ID: {session.User.ID})";
+				account = (profile?.Get<string>("Name") ?? "Unknown") + $" ({session.User.ID})";
 			}
 			websocket.Extra["Connection"] =
-				$"- Session: {account} => {session.SessionID} @ {session.DeviceID}" + "\r\n" +
-				$"- App: {session.AppName} @ {session.AppPlatform} [Origin: {session.AppOrigin} - Agent: {session.AppAgent}]" + "\r\n" +
+				$"- Account: {account} - Session ID: {session.SessionID} - DeviceID: {session.DeviceID} - Origin: {session.AppOrigin}" + "\r\n" +
+				$"- App: {session.AppName} @ {session.AppPlatform} [{session.AppAgent}]" + "\r\n" +
 				$"- Connection: {session.IP} - Location: {await session.GetLocationAsync().ConfigureAwait(false)} - WebSocket: {websocket.ID} @ {websocket.RemoteEndPoint}";
 		}
 

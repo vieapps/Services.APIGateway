@@ -71,6 +71,8 @@ namespace net.vieapps.Services.APIGateway
 
 			Logger.AssignLoggerFactory(loggerFactory);
 			Global.Logger = loggerFactory.CreateLogger<Startup>();
+			InternalAPIs.Logger = loggerFactory.CreateLogger<Handler.InternalAPIs>();
+			RTU.Logger = loggerFactory.CreateLogger<Handler.RTU>();
 
 			Global.Logger.LogInformation($"The {Global.ServiceName} HTTP service is starting");
 			Global.Logger.LogInformation($"Version: {typeof(Startup).Assembly.GetVersion()}");
@@ -92,8 +94,10 @@ namespace net.vieapps.Services.APIGateway
 				DateTimeZoneHandling = DateTimeZoneHandling.Local
 			};
 
-			// WAMP & RTU
+			// WAMP
 			InternalAPIs.OpenWAMPChannels();
+
+			// RTU
 			RTU.Initialize();
 
 			// middleware
@@ -108,10 +112,8 @@ namespace net.vieapps.Services.APIGateway
 			});
 			app.UseMiddleware<Handler>();
 
-			// caching & logging
+			// caching
 			InternalAPIs.Cache = app.ApplicationServices.GetService<ICache>();
-			InternalAPIs.Logger = loggerFactory.CreateLogger<Handler.InternalAPIs>();
-			RTU.Logger = loggerFactory.CreateLogger<Handler.RTU>();
 
 			// on started
 			appLifetime.ApplicationStarted.Register(() =>

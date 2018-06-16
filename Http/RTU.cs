@@ -358,7 +358,7 @@ namespace net.vieapps.Services.APIGateway
 				account = (profile?.Get<string>("Name") ?? "Unknown") + $" ({session.User.ID})";
 			}
 			websocket.Extra["Connection"] =
-				$"- Account: {account} - Session ID: {session.SessionID} - DeviceID: {session.DeviceID} - Origin: {session.AppOrigin}" + "\r\n" +
+				$"- Account: {account} - Session ID: {session.SessionID} - Device ID: {session.DeviceID} - Origin: {session.AppOrigin}" + "\r\n" +
 				$"- App: {session.AppName} @ {session.AppPlatform} [{session.AppAgent}]" + "\r\n" +
 				$"- Connection: {session.IP} - Location: {await session.GetLocationAsync().ConfigureAwait(false)} - WebSocket: {websocket.ID} @ {websocket.RemoteEndPoint}";
 		}

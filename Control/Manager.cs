@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.Reactive.Linq;
 
 using WampSharp.V2.Realm;
 using Newtonsoft.Json.Linq;
@@ -40,15 +41,18 @@ namespace net.vieapps.Services.APIGateway
 				}, TaskContinuationOptions.OnlyOnRanToCompletion)
 				.ConfigureAwait(false);
 			};
+
 			this.OnOutgoingChannelEstablished = (sender, args) => Task.Run(async () =>
 			{
 				while (WAMPConnections.IncomingChannel == null || WAMPConnections.OutgoingChannel == null)
 					await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
 				this.RTUService = WAMPConnections.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create());
-				await this.SendInterCommunicateMessageAsync("Controller#RequestInfo").ConfigureAwait(false);
-				await this.SendInterCommunicateMessageAsync("Service#RequestInfo").ConfigureAwait(false);
+				await this.SendRequestInfoAsync().ConfigureAwait(false);
 				Global.OnProcess?.Invoke($"Successfully subscribe the manager's communicator");
 			}).ConfigureAwait(false);
+
+			var interval = UtilityService.GetAppSetting("RequestTimer:Interval", "15").CastAs<int>();
+			this.RequestTimer = Observable.Timer(TimeSpan.FromMinutes(interval), TimeSpan.FromMinutes(interval)).Subscribe(_ => Task.Run(() => this.SendRequestInfoAsync()).ConfigureAwait(false));
 		}
 
 		public void Dispose()
@@ -63,6 +67,7 @@ namespace net.vieapps.Services.APIGateway
 				.ContinueWith(task =>
 				{
 					this.Communicator?.Dispose();
+					this.RequestTimer?.Dispose();
 				}, TaskContinuationOptions.OnlyOnRanToCompletion)
 				.ConfigureAwait(false);
 		}
@@ -76,6 +81,7 @@ namespace net.vieapps.Services.APIGateway
 		SystemEx.IAsyncDisposable Instance { get; set; } = null;
 		IDisposable Communicator { get; set; } = null;
 		IRTUService RTUService { get; set; } = null;
+		IDisposable RequestTimer { get; set; } = null;
 		bool Disposed { get; set; } = false;
 		public IDictionary<string, ControllerInfo> AvailableControllers => this.Controllers as IDictionary<string, ControllerInfo>;
 		public IDictionary<string, List<ServiceInfo>> AvailableServices => this.Services as IDictionary<string, List<ServiceInfo>>;
@@ -228,6 +234,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
+		#region Get available controllers & services
 		public JArray GetAvailableControllers()
 		{
 			var controllers = new JArray();
@@ -251,6 +258,10 @@ namespace net.vieapps.Services.APIGateway
 			}));
 			return services;
 		}
+		#endregion
+
+		Task SendRequestInfoAsync()
+			=> Task.WhenAll(this.SendInterCommunicateMessageAsync("Controller#RequestInfo"), this.SendInterCommunicateMessageAsync("Service#RequestInfo"));
 	}
 
 	// ------------------------------------------------------------

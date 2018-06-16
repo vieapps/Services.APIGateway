@@ -66,6 +66,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					isSessionProccessed = true;
 					isSessionInitialized = requestInfo.Verb.IsEquals("GET");
+					isAccountProccessed = requestInfo.Verb.IsEquals("POST");
 				}
 				else if ("account".IsEquals(requestInfo.ObjectName))
 					isAccountProccessed = requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT");
@@ -144,7 +145,7 @@ namespace net.vieapps.Services.APIGateway
 
 			#region [extra] verify captcha
 			// verfy captcha
-			var captchaIsValid = false;
+			var captchaIsValid = true;
 			if (requestInfo.Header.ContainsKey("x-captcha"))
 				try
 				{
@@ -579,36 +580,15 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				// check
-				if (!await context.CheckSessionExistAsync(requestInfo.Session).ConfigureAwait(false))
-					throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
-
-				// validate
-				var request = requestInfo.GetBodyExpando();
-				if (request == null)
-					throw new InvalidTokenException("Sign-in JSON is invalid (empty)");
-
-				var email = request.Get<string>("Email");
-				var password = request.Get<string>("Password");
-
-				if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
-					throw new InvalidTokenException("Sign-in JSON is invalid (email/password is null or empty)");
-
-				try
-				{
-					email = Global.RSA.Decrypt(email);
-					password = Global.RSA.Decrypt(password);
-				}
-				catch (Exception ex)
-				{
-					throw new InvalidTokenException("Sign-in JSON is invalid (account/password must be encrypted by RSA before sending)", ex);
-				}
+				if (!requestInfo.Extra.ContainsKey("Email") || !requestInfo.Extra.ContainsKey("Password"))
+					throw new InvalidDataException("Request JSON is invalid (email/password must be encrypted by RSA before sending)");
 
 				// call service to perform sign in
 				var body = new JObject
 				{
-					{ "Type", request.Get("Type", "BuiltIn") },
-					{ "Email", email.Encrypt(Global.EncryptionKey) },
-					{ "Password", password.Encrypt(Global.EncryptionKey) },
+					{ "Type", requestInfo.GetBodyExpando().Get("Type", "BuiltIn") },
+					{ "Email", requestInfo.Extra["Email"] },
+					{ "Password", requestInfo.Extra["Password"] },
 				}.ToString(Formatting.None);
 
 				var json = await context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Session", "PUT")

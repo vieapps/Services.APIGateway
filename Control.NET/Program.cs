@@ -86,7 +86,7 @@ namespace net.vieapps.Services.APIGateway
 
 		static void SetupEventHandlers()
 		{
-			Global.OnProcess = Global.OnSendRTUMessageSuccess = (message) =>
+			Global.OnProcess = (message) =>
 			{
 				Program.Logger.LogInformation(message);
 				if (Environment.UserInteractive)
@@ -96,6 +96,14 @@ namespace net.vieapps.Services.APIGateway
 			Global.OnError = Global.OnSendRTUMessageFailure = (message, exception) =>
 			{
 				Program.Logger.LogError(message, exception);
+				if (Environment.UserInteractive)
+					Program.MainForm.UpdateLogs(message);
+			};
+
+			Global.OnSendRTUMessageSuccess = (message) =>
+			{
+				if (Program.Logger.IsEnabled(LogLevel.Debug))
+					Program.Logger.LogInformation(message);
 				if (Environment.UserInteractive)
 					Program.MainForm.UpdateLogs(message);
 			};

@@ -250,7 +250,7 @@ namespace net.vieapps.Services.APIGateway
 
 			Global.OnSendRTUMessageSuccess = (message) =>
 			{
-				if (!string.IsNullOrWhiteSpace(message))
+				if (Program.Logger.IsEnabled(LogLevel.Debug) && !string.IsNullOrWhiteSpace(message))
 					Program.Logger.LogInformation(message);
 			};
 

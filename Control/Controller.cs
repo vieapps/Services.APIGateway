@@ -1012,6 +1012,8 @@ namespace net.vieapps.Services.APIGateway
 
 	}
 
+	// ------------------------------------------------------------
+
 	public class ProcessInfo
 	{
 		public ProcessInfo(string id = "", string executable = "", string arguments = "", Dictionary<string, string> extra = null)

@@ -29,7 +29,7 @@ namespace net.vieapps.Services.APIGateway
 		#region Properties
 		internal static ICache Cache { get; set; }
 		internal static ILogger Logger { get; set; }
-		internal static List<string> ExcludedHeaders { get; } = "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,ms-aspnetcore-token,x-original-proto,x-original-for,x-original-remote-endpoint".ToList();
+		internal static List<string> ExcludedHeaders { get; } = "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,ms-aspnetcore-token,x-forwarded-for,x-forwarded-proto,x-forwarded-port,x-original-for,x-original-proto,x-original-remote-endpoint".ToList();
 		internal static HashSet<string> NoTokenRequiredServices { get; } = (UtilityService.GetAppSetting("NoTokenRequiredServices", "") + "|indexes|discovery").ToLower().ToHashSet('|', true);
 		internal static ConcurrentDictionary<string, JObject> Controllers { get; } = new ConcurrentDictionary<string, JObject>();
 		internal static ConcurrentDictionary<string, List<JObject>> Services { get; } = new ConcurrentDictionary<string, List<JObject>>();

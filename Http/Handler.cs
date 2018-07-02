@@ -40,10 +40,10 @@ namespace net.vieapps.Services.APIGateway
 			// request of HTTP
 			else
 			{
-				// allow origin
+				// CORS: allow origin
 				context.Response.Headers["Access-Control-Allow-Origin"] = "*";
 
-				// request with OPTIONS verb
+				// CORS: options
 				if (context.Request.Method.IsEquals("OPTIONS"))
 				{
 					var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -55,20 +55,27 @@ namespace net.vieapps.Services.APIGateway
 					context.SetResponseHeaders((int)HttpStatusCode.OK, headers, true);
 				}
 
-				// request with other verbs
-				else
-					await this.ProcessRequestAsync(context).ConfigureAwait(false);
-			}
+				// load balancing health check
+				else if (context.Request.Path.Value.IsEquals("/load-balancing-health-check"))
+					await context.WriteAsync("OK", "text/plain", null, 0, null, TimeSpan.Zero, null, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 
-			// invoke next middleware
-			try
-			{
-				await this.Next.Invoke(context).ConfigureAwait(false);
-			}
-			catch (InvalidOperationException) { }
-			catch (Exception ex)
-			{
-				Global.Logger.LogCritical($"Error occurred while invoking the next middleware: {ex.Message}", ex);
+				// request of APIs
+				else
+				{
+					// process
+					await this.ProcessRequestAsync(context).ConfigureAwait(false);
+
+					// invoke next middleware
+					try
+					{
+						await this.Next.Invoke(context).ConfigureAwait(false);
+					}
+					catch (InvalidOperationException) { }
+					catch (Exception ex)
+					{
+						Global.Logger.LogCritical($"Error occurred while invoking the next middleware: {ex.Message}", ex);
+					}
+				}
 			}
 		}
 

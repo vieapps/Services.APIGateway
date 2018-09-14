@@ -29,7 +29,7 @@ namespace net.vieapps.Services.APIGateway
 		#region Properties
 		internal static ICache Cache { get; set; }
 		internal static ILogger Logger { get; set; }
-		internal static List<string> ExcludedHeaders { get; } = "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,ms-aspnetcore-token,x-forwarded-for,x-forwarded-proto,x-forwarded-port,x-original-for,x-original-proto,x-original-remote-endpoint".ToList();
+		internal static List<string> ExcludedHeaders { get; } = "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,ms-aspnetcore-token,x-forwarded-for,x-forwarded-proto,x-forwarded-port,x-original-for,x-original-proto,x-original-remote-endpoint,x-original-port".ToList();
 		internal static HashSet<string> NoTokenRequiredServices { get; } = (UtilityService.GetAppSetting("NoTokenRequiredServices", "") + "|indexes|discovery").ToLower().ToHashSet('|', true);
 		internal static ConcurrentDictionary<string, JObject> Controllers { get; } = new ConcurrentDictionary<string, JObject>();
 		internal static ConcurrentDictionary<string, List<JObject>> Services { get; } = new ConcurrentDictionary<string, List<JObject>>();
@@ -90,6 +90,7 @@ namespace net.vieapps.Services.APIGateway
 
 				// re-assign
 				requestInfo.Header.TryAdd("x-app-token", token);
+				requestInfo.Header.Remove("authorization");
 
 				// parse and update information from token
 				var tokenIsRequired = isActivationProccessed
@@ -350,25 +351,50 @@ namespace net.vieapps.Services.APIGateway
 				}
 			}
 
-			// process request of discovery (controllers & services)
+			// process request of discovery (controllers, services, definitions, resources, ...)
 			else if (requestInfo.ServiceName.IsEquals("discovery"))
 			{
-				var response = new JArray();
 				if (requestInfo.ObjectName.IsEquals("controllers"))
+				{
+					var response = new JArray();
 					InternalAPIs.Controllers.Values.ToList().ForEach(controller => response.Add(new JObject
 					{
 						{ "ID", controller.Get<string>("ID").GenerateUUID() },
 						{ "Platform", controller.Get<string>("Platform") },
 						{ "Available" , controller.Get<bool>("Available") }
 					}));
-				else
+					await context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+				}
+				else if (requestInfo.ObjectName.IsEquals("services"))
+				{
+					var response = new JArray();
 					InternalAPIs.Services.Values.ToList().ForEach(svcInfo => response.Add(new JObject
 					{
 						{ "URI", $"net.vieapps.services.{svcInfo[0].Get<string>("Name")}" },
 						{ "Available", svcInfo.FirstOrDefault(svc => svc.Get<bool>("Available") == true) != null },
 						{ "Running", svcInfo.FirstOrDefault(svc => svc.Get<bool>("Running") == true) != null }
 					}));
-				await context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+					await context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+				}
+				else if (requestInfo.ObjectName.IsEquals("definitions"))
+					try
+					{
+						if (!requestInfo.Query.ContainsKey("x-service-name") && !requestInfo.Query.ContainsKey("x-object-name"))
+							throw new InvalidRequestException("URI format: /discovery/definitions?x-service-name=<Service Name>&x-object-name=<Object Name>&x-object-identity=<Definition Name>");
+						requestInfo.ServiceName = requestInfo.Query["service-name"] = requestInfo.Query["x-service-name"];
+						requestInfo.ObjectName = requestInfo.Query["object-name"] = "definitions";
+						requestInfo.Query["object-identity"] = requestInfo.Query["x-object-name"];
+						requestInfo.Query["mode"] = requestInfo.Query.ContainsKey("x-object-identity") ? requestInfo.Query["x-object-identity"] : "";
+						new[] { "x-service-name", "x-object-name", "x-object-identity" }.ForEach(name => requestInfo.Query.Remove(name));
+						var response = await context.CallServiceAsync(requestInfo, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+						await context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+					}
+					catch (Exception ex)
+					{
+						context.WriteError(InternalAPIs.Logger, ex, requestInfo);
+					}
+				else
+					context.WriteError(InternalAPIs.Logger, new InvalidRequestException("Unknown request"), requestInfo);
 			}
 
 			// process request of services
@@ -635,7 +661,7 @@ namespace net.vieapps.Services.APIGateway
 						{ "ID", requestInfo.Session.SessionID },
 						{ "DeviceID", requestInfo.Session.DeviceID }
 					};
-					context.UpdateSessionJson(requestInfo.Session, json);
+					context.UpdateSessionJson(requestInfo.Session, json as JObject);
 				}
 
 				// response
@@ -730,7 +756,7 @@ namespace net.vieapps.Services.APIGateway
 					{ "ID", requestInfo.Session.SessionID },
 					{ "DeviceID", requestInfo.Session.DeviceID }
 				};
-				context.UpdateSessionJson(requestInfo.Session, json);
+				context.UpdateSessionJson(requestInfo.Session, json as JObject);
 
 				// response
 				await Task.WhenAll(
@@ -844,7 +870,7 @@ namespace net.vieapps.Services.APIGateway
 				{ "ID", requestInfo.Session.SessionID },
 				{ "DeviceID", requestInfo.Session.DeviceID }
 			};
-			context.UpdateSessionJson(requestInfo.Session, json);
+			context.UpdateSessionJson(requestInfo.Session, json as JObject);
 
 			await Task.WhenAll(
 				context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),

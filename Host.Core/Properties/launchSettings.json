@@ -1,7 +1,8 @@
 {
   "profiles": {
     "VIEApps.Services.APIGateway.Host.Core": {
-      "commandName": "Project"
+      "commandName": "Project",
+      "commandLineArgs": "/svc:net.vieapps.Services.Users.ServiceComponent,VIEApps.Services.Users"
     }
   }
 }

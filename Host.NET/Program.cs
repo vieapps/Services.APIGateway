@@ -50,7 +50,7 @@ namespace net.vieapps.Services.APIGateway
 				Console.Error.WriteLine("Error: The service type name is invalid");
 				Console.Error.WriteLine("");
 				Console.Error.WriteLine("Syntax: VIEApps.Services.APIGateway /svc:<service-component-namespace,service-assembly>" + "\r\n");
-				Console.Error.WriteLine("Ex.: VIEApps.Services.APIGateway /svc:net.vieapps.Services.Systems.ServiceComponent,VIEApps.Services.Systems" + "\r\n");
+				Console.Error.WriteLine("Ex.: VIEApps.Services.APIGateway /svc:net.vieapps.Services.Portals.ServiceComponent,VIEApps.Services.Portals" + "\r\n");
 				if (isUserInteractive)
 					Console.ReadLine();
 				return;

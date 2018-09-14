@@ -11,10 +11,10 @@
 		<Company>VIEApps.net</Company>
 		<Product>VIEApps NGX</Product>
 		<Copyright>© 2018 VIEApps.net</Copyright>
-		<Version>10.2.0.1806</Version>
-		<AssemblyVersion>10.2.0.1806</AssemblyVersion>
-		<FileVersion>10.2.0.1806</FileVersion>
-		<InformationalVersion>v10.2.netcore-2.1+rev:2018.06.01</InformationalVersion>
+		<Version>10.2.2.1809</Version>
+		<AssemblyVersion>10.2.2.1809</AssemblyVersion>
+		<FileVersion>10.2.2.1809</FileVersion>
+		<InformationalVersion>v10.2.netcore-2.1+rev:2018.09.13</InformationalVersion>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
@@ -32,7 +32,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Microsoft.AspNetCore.All" Version="2.1.0" />
+		<PackageReference Include="Microsoft.AspNetCore.All" Version="2.1.4" />
 		<PackageReference Include="Serilog.Extensions.Logging.File" Version="1.1.0" />
 	</ItemGroup>
 

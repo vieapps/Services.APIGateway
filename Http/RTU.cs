@@ -220,7 +220,7 @@ namespace net.vieapps.Services.APIGateway
 			var requestObj = requestMsg.ToExpandoObject();
 			var serviceName = requestObj.Get<string>("ServiceName");
 			var objectName = requestObj.Get<string>("ObjectName");
-			var verb = (requestObj.Get<string>("Verb") ?? "GET").ToUpper();
+			var verb = requestObj.Get("Verb", "GET").ToUpper();
 			var query = new Dictionary<string, string>(requestObj.Get<Dictionary<string, string>>("Query") ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
 			var header = new Dictionary<string, string>(requestObj.Get<Dictionary<string, string>>("Header") ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
 			var extra = new Dictionary<string, string>(requestObj.Get<Dictionary<string, string>>("Extra") ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);

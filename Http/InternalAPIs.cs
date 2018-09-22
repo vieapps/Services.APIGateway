@@ -227,12 +227,17 @@ namespace net.vieapps.Services.APIGateway
 							throw new InvalidDataException("Request JSON is invalid (password must be encrypted by RSA before sending)", ex);
 						}
 
+					// key & iv
+					var encryptionKey = requestInfo.Session.GetEncryptionKey(Global.EncryptionKey, context.Items);
+					var encryptionIV = requestInfo.Session.GetEncryptionIV(Global.EncryptionKey, context.Items);
+
 					// prepare roles
 					var roles = requestBody.Get<string>("Roles");
 					if (!string.IsNullOrWhiteSpace(roles))
 						try
 						{
-							requestInfo.Extra["Roles"] = Global.RSA.Decrypt(roles).Encrypt(Global.EncryptionKey);
+							roles = roles.Decrypt(encryptionKey, encryptionIV);
+							requestInfo.Extra["Roles"] = roles.Encrypt(Global.EncryptionKey);
 						}
 						catch (Exception ex)
 						{
@@ -244,7 +249,8 @@ namespace net.vieapps.Services.APIGateway
 					if (!string.IsNullOrWhiteSpace(privileges))
 						try
 						{
-							requestInfo.Extra["Privileges"] = Global.RSA.Decrypt(privileges).Encrypt(Global.EncryptionKey);
+							privileges = privileges.Decrypt(encryptionKey, encryptionIV);
+							requestInfo.Extra["Privileges"] = privileges.Encrypt(Global.EncryptionKey);
 						}
 						catch (Exception ex)
 						{
@@ -258,7 +264,7 @@ namespace net.vieapps.Services.APIGateway
 					if (!string.IsNullOrWhiteSpace(relatedInfo))
 						try
 						{
-							relatedInfo = Global.RSA.Decrypt(relatedInfo);
+							relatedInfo = relatedInfo.Decrypt(encryptionKey, encryptionIV);
 							requestInfo.Extra["RelatedInfo"] = relatedInfo.Encrypt(Global.EncryptionKey);
 						}
 						catch (Exception ex)
@@ -1100,13 +1106,13 @@ namespace net.vieapps.Services.APIGateway
 				var id = message.Data.Get<string>("ID");
 				if (InternalAPIs.Controllers.TryGetValue(id, out JObject controller))
 				{
-					controller["Available"] = new JValue(false);
+					controller["Available"] = false;
 					var controllerID = controller.Get<string>("ID");
 					InternalAPIs.Services.ForEach(kvp =>
 					{
 						var service = kvp.Value.FirstOrDefault(svc => kvp.Key.IsEquals(svc.Get<string>("Name")) && controllerID.IsEquals(svc.Get<string>("ControllerID")));
 						if (service != null)
-							service["Available"] = service["Running"] = new JValue(false);
+							service["Available"] = service["Running"] = false;
 					});
 				}
 			}

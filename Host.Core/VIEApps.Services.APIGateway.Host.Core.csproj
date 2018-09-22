@@ -14,11 +14,7 @@
 		<Version>10.2.2.1809</Version>
 		<AssemblyVersion>10.2.2.1809</AssemblyVersion>
 		<FileVersion>10.2.2.1809</FileVersion>
-		<InformationalVersion>v10.2.netcore-2.1+rev:2018.09.30</InformationalVersion>
-	</PropertyGroup>
-
-	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
-		<PlatformTarget>AnyCPU</PlatformTarget>
+		<InformationalVersion>v10.2.netcore-2.1+rev:2018.09.21</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>

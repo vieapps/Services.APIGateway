@@ -22,25 +22,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="2.1.1" />
-		<PackageReference Include="Microsoft.Extensions.Logging.Console" Version="2.1.1" />
-		<PackageReference Include="MySqlConnector" Version="0.45.1" />
-		<PackageReference Include="Npgsql" Version="4.0.3" />
-		<PackageReference Include="Serilog.Extensions.Logging.File" Version="1.1.0" />
-		<PackageReference Include="System.Data.SqlClient" Version="4.5.1" />
-	</ItemGroup>
-
-	<ItemGroup>
-		<ProjectReference Include="..\..\Base\VIEApps.Services.Base.csproj" />
-		<ProjectReference Include="..\..\Books\Service\VIEApps.Services.Books.csproj" />
-		<ProjectReference Include="..\..\Files\Service\VIEApps.Services.Files.csproj" />
-		<ProjectReference Include="..\..\Indexes\VIEApps.Services.Indexes.csproj" />
-		<ProjectReference Include="..\..\IPLocations\VIEApps.Services.IPLocations.csproj" />
-		<ProjectReference Include="..\..\MssReports\VIEApps.Services.MssReports.csproj" />
-		<ProjectReference Include="..\..\OTPs\Authenticator\VIEApps.Services.OTPs.Authenticator.csproj" />
-		<ProjectReference Include="..\..\Portals\Service\VIEApps.Services.Portals.csproj" />
-		<ProjectReference Include="..\..\Users\Service.Windows\VIEApps.Services.Users.WindowsAD.csproj" />
-		<ProjectReference Include="..\..\Users\Service\VIEApps.Services.Users.csproj" />
+		<ProjectReference Include="..\Host\VIEApps.Services.APIGateway.Host.csproj" />
 	</ItemGroup>
 
 </Project>

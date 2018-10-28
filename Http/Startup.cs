@@ -100,8 +100,21 @@ namespace net.vieapps.Services.APIGateway
 			// RTU
 			RTU.Initialize();
 
+			// reverse proxies
+			var forwardedHeadersOptions = new ForwardedHeadersOptions
+			{
+				ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+			};
+			var knownProxies = UtilityService.GetAppSetting("ProxyIPs")?.ToList().Select(ip => IPAddress.Parse(ip)).ToList();
+			if (knownProxies != null)
+			{
+				forwardedHeadersOptions.RequireHeaderSymmetry = false;
+				forwardedHeadersOptions.ForwardLimit = null;
+				knownProxies.ForEach(ip => forwardedHeadersOptions.KnownProxies.Add(ip));
+			}
+
 			// middleware
-			app.UseForwardedHeaders(new ForwardedHeadersOptions { ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto });
+			app.UseForwardedHeaders(forwardedHeadersOptions);
 			app.UseCache();
 			app.UseStatusCodeHandler();
 			app.UseResponseCompression();

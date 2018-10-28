@@ -17,7 +17,6 @@
 		},
 		"VIEApps.Services.APIGateway.Http": {
 			"commandName": "Project",
-			"launchBrowser": false,
 			"environmentVariables": {
 				"ASPNETCORE_ENVIRONMENT": "Development"
 			},

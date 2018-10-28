@@ -270,7 +270,7 @@ namespace net.vieapps.Services.APIGateway
 						if (WAMPConnections.ChannelsAreClosedBySystem || arguments.CloseType.Equals(SessionCloseType.Goodbye))
 							Global.OnProcess?.Invoke($"The incoming channel is closed - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
 
-						else
+						else if (WAMPConnections.IncomingChannel != null)
 						{
 							Global.OnProcess?.Invoke($"The incoming channel to WAMP router is broken - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
 							WAMPConnections.IncomingChannel.ReOpen(this.CancellationTokenSource.Token, Global.OnError, "Incoming");
@@ -293,7 +293,7 @@ namespace net.vieapps.Services.APIGateway
 						if (WAMPConnections.ChannelsAreClosedBySystem || arguments.CloseType.Equals(SessionCloseType.Goodbye))
 							Global.OnProcess?.Invoke($"The outgoing channel is closed - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
 
-						else
+						else if (WAMPConnections.OutgoingChannel != null)
 						{
 							Global.OnProcess?.Invoke($"The outgoing channel to WAMP router is broken - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
 							WAMPConnections.OutgoingChannel.ReOpen(this.CancellationTokenSource.Token, Global.OnError, "Outgoing");

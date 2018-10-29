@@ -5,10 +5,11 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Diagnostics;
+using System.Reflection;
 using System.Runtime.InteropServices;
+using Newtonsoft.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
-using Newtonsoft.Json;
 using net.vieapps.Components.Utility;
 #endregion
 
@@ -16,8 +17,8 @@ namespace net.vieapps.Services.APIGateway
 {
 	public abstract class ServiceHost
 	{
-		protected string ServiceTypeName { get; set; }
-		protected string ServiceAssemblyName { get; set; }
+		protected string ServiceTypeName { get; private set; }
+		protected string ServiceAssemblyName { get; private set; }
 		protected Type ServiceType { get; set; }
 
 		public void Run(string[] args)
@@ -67,7 +68,7 @@ namespace net.vieapps.Services.APIGateway
 			// prepare the type of the service component
 			try
 			{
-				this.GetServiceType();
+				this.PrepareServiceType();
 				if (this.ServiceType == null)
 				{
 					Console.Error.WriteLine($"The type of the service component is not found [{this.ServiceTypeName},{this.ServiceAssemblyName}]");
@@ -78,20 +79,46 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-				Console.Error.WriteLine($"Error occurred while preparing the type of the service component [{this.ServiceTypeName},{this.ServiceAssemblyName}] => {ex.Message}");
+				if (ex is ReflectionTypeLoadException)
+				{
+					Console.Error.WriteLine($"Error occurred while preparing the type of the service component [{this.ServiceTypeName},{this.ServiceAssemblyName}]");
+					(ex as ReflectionTypeLoadException).LoaderExceptions.ForEach(exception =>
+					{
+						Console.Error.WriteLine($"{exception.Message}");
+						var inner = exception.InnerException;
+						while (inner != null)
+						{
+							Console.Error.WriteLine($"{inner.Message} [{inner.GetType()}]\r\nStack: {inner.StackTrace}");
+							inner = inner.InnerException;
+						}
+					});
+				}
+				else
+				{
+					Console.Error.WriteLine($"Error occurred while preparing the type of the service component [{this.ServiceTypeName},{this.ServiceAssemblyName}] => {ex.Message}");
+					var inner = ex.InnerException;
+					while (inner != null)
+					{
+						Console.Error.WriteLine($"{inner.Message}\r\nStack: {inner.StackTrace}");
+						inner = inner.InnerException;
+					}
+				}
 				if (isUserInteractive)
 					Console.ReadLine();
 				return;
 			}
 
-			// initialize the instance of service component
-			if (!(this.ServiceType.CreateInstance() is IServiceComponent serviceComponent) || !(serviceComponent is ServiceBase))
+			// check the type of the service component
+			if (!typeof(IServiceComponent).IsAssignableFrom(this.ServiceType) || !typeof(ServiceBase).IsAssignableFrom(this.ServiceType))
 			{
 				Console.Error.WriteLine($"The type of the service component is invalid [{this.ServiceTypeName},{this.ServiceAssemblyName}]");
 				if (isUserInteractive)
 					Console.ReadLine();
 				return;
 			}
+
+			// initialize the instance of service component
+			var serviceComponent = this.ServiceType.CreateInstance() as IServiceComponent;
 
 			// prepare the signal to start/stop when the service was called from API Gateway
 			EventWaitHandle eventWaitHandle = null;
@@ -183,9 +210,9 @@ namespace net.vieapps.Services.APIGateway
 
 			// start the service component
 			logger.LogInformation($"The service is starting");
+			logger.LogInformation($"Mode: {(isUserInteractive ? "Interactive app" : "Background service")}");
 			logger.LogInformation($"Version: {this.ServiceType.Assembly.GetVersion()}");
 			logger.LogInformation($"Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "macOS")} {RuntimeInformation.OSArchitecture} ({(RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "Macintosh; Intel Mac OS X; " : "")}{RuntimeInformation.OSDescription.Trim()})");
-			logger.LogInformation($"Mode: {(isUserInteractive ? "Interactive app" : "Background service")}");
 
 			ServiceBase.ServiceComponent = serviceComponent as ServiceBase;
 			serviceComponent.Start(
@@ -194,6 +221,7 @@ namespace net.vieapps.Services.APIGateway
 				service =>
 				{
 					logger.LogInformation($"WAMP router URI: {WAMPConnections.GetRouterStrInfo()}");
+					logger.LogInformation($"Base path: {AppContext.BaseDirectory}");
 					logger.LogInformation($"Logs path: {UtilityService.GetAppSetting("Path:Logs")}");
 					logger.LogInformation($"Default logging level: {logLevel}");
 					if (!string.IsNullOrWhiteSpace(path))
@@ -230,7 +258,7 @@ namespace net.vieapps.Services.APIGateway
 			logger.LogInformation($"The service is stopped - Served times: {start.GetElapsedTimes()}");
 		}
 
-		protected virtual void GetServiceType() => this.ServiceType = Type.GetType($"{this.ServiceTypeName},{this.ServiceAssemblyName}");
+		protected virtual void PrepareServiceType() => this.ServiceType = Type.GetType($"{this.ServiceTypeName},{this.ServiceAssemblyName}");
 
 	}
 }

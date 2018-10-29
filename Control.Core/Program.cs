@@ -220,7 +220,7 @@ namespace net.vieapps.Services.APIGateway
 							"info [global | controller-id]: show the information of controllers & services" + "\r\n\t" +
 							"start <name> [controller-id]: start a business service" + "\r\n\t" +
 							"stop <name> [controller-id]: stop a business service" + "\r\n\t" +
-							"refresh: the information of controllers & services" + "\r\n\t" +
+							"refresh: refresh the information of controllers & services" + "\r\n\t" +
 							"help: show available commands" + "\r\n\t" +
 							"exit: shutdown & terminate"
 						);

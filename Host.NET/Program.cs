@@ -7,6 +7,6 @@
 
 	class ServiceHosting : ServiceHost
 	{
-		protected override void GetServiceType() => base.GetServiceType();
+		protected override void PrepareServiceType() => base.PrepareServiceType();
 	}
 }

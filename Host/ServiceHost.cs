@@ -259,6 +259,5 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		protected virtual void PrepareServiceType() => this.ServiceType = Type.GetType($"{this.ServiceTypeName},{this.ServiceAssemblyName}");
-
 	}
 }

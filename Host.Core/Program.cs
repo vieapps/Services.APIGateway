@@ -38,7 +38,7 @@ namespace net.vieapps.Services.APIGateway
 			var path = Path.GetDirectoryName(assemblyPath);
 			this.Assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(assemblyPath);
 			this.LoadContext = AssemblyLoadContext.GetLoadContext(this.Assembly);
-			if (File.Exists(Path.Combine(path, Path.GetFileNameWithoutExtension(assemblyPath) + ".deps.json")))
+			if (File.Exists(Path.Combine(path, $"{Path.GetFileNameWithoutExtension(assemblyPath)}.deps.json")))
 			{
 				this.DependencyContext = DependencyContext.Load(this.Assembly);
 				this.AssemblyResolver = new CompositeCompilationAssemblyResolver(new ICompilationAssemblyResolver[]

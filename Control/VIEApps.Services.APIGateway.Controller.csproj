@@ -9,10 +9,10 @@
 		<Company>VIEApps.net</Company>
 		<Product>VIEApps NGX</Product>
 		<Copyright>© 2018 VIEApps.net</Copyright>
-		<Version>10.2.1810.1</Version>
-		<AssemblyVersion>10.2.1810.1</AssemblyVersion>
-		<FileVersion>10.2.1810.1</FileVersion>
-		<InformationalVersion>v10.2.netstandard-2+rev:2018.10.08</InformationalVersion>
+		<Version>10.2.1812.1</Version>
+		<AssemblyVersion>10.2.1812.1</AssemblyVersion>
+		<FileVersion>10.2.1812.1</FileVersion>
+		<InformationalVersion>v10.2.netstandard-2+rev:2018.12.01</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -20,7 +20,8 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="MySqlConnector" Version="0.46.2" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="2.1.1" />
+		<PackageReference Include="MySqlConnector" Version="0.47.1" />
 		<PackageReference Include="Npgsql" Version="4.0.3" />
 		<PackageReference Include="System.Data.SqlClient" Version="4.5.1" />
 	</ItemGroup>

@@ -230,7 +230,7 @@ namespace net.vieapps.Services.APIGateway
 
 					stopwatch.Stop();
 					logger.LogInformation($"Service URI (round robin): {service.ServiceURI}");
-					logger.LogInformation($"Service URI (single): {service.ServiceUniqueURI}");
+					logger.LogInformation($"Service URI (single): {(service as IUniqueService).ServiceUniqueURI}");
 					logger.LogInformation($"The service is started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");
 
 					if (isUserInteractive)

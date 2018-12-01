@@ -124,9 +124,6 @@
     <Content Include="app.ico" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection">
-      <Version>2.1.1</Version>
-    </PackageReference>
     <PackageReference Include="Microsoft.Extensions.Logging">
       <Version>2.1.1</Version>
     </PackageReference>

@@ -38,7 +38,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\..\Base\VIEApps.Services.Base.csproj" />
 		<ProjectReference Include="..\..\Base.Http\VIEApps.Services.Base.Http.csproj" />
 	</ItemGroup>
 

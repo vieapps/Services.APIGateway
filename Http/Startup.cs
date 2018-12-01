@@ -137,11 +137,10 @@ namespace net.vieapps.Services.APIGateway
 				Global.Logger.LogInformation($"Files HTTP service URI: {UtilityService.GetAppSetting("HttpUri:Files")}");
 				Global.Logger.LogInformation($"Portals HTTP service URI: {UtilityService.GetAppSetting("HttpUri:Portals")}");
 				Global.Logger.LogInformation($"Root path: {Global.RootPath}");
-				Global.Logger.LogInformation($"Logs path: {UtilityService.GetAppSetting("Path:Logs")}");
+				Global.Logger.LogInformation($"Logs path: {UtilityService.GetAppSetting("Path:Logs", "NONE")}");
 				Global.Logger.LogInformation($"Default logging level: {logLevel} [ASP.NET Core always set logging level by value of appsettings.json]");
-				if (!string.IsNullOrWhiteSpace(path))
-					Global.Logger.LogInformation($"Rolling log files is enabled - Path format: {path}");
-				Global.Logger.LogInformation($"Static files path: {UtilityService.GetAppSetting("Path:StaticFiles")}");
+				Global.Logger.LogInformation($"Rolling log files is {(string.IsNullOrWhiteSpace(path) ? "disabled" : $"enabled - Path format: {path}")}");
+				Global.Logger.LogInformation($"Static files path: {UtilityService.GetAppSetting("Path:StaticFiles", "NONE")}");
 				Global.Logger.LogInformation($"Static segments: {Global.StaticSegments.ToString(", ")}");
 				Global.Logger.LogInformation($"Show debugs: {Global.IsDebugLogEnabled} - Show results: {Global.IsDebugResultsEnabled} - Show stacks: {Global.IsDebugStacksEnabled}");
 

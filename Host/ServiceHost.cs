@@ -221,7 +221,7 @@ namespace net.vieapps.Services.APIGateway
 				service =>
 				{
 					logger.LogInformation($"WAMP router URI: {WAMPConnections.GetRouterStrInfo()}");
-					logger.LogInformation($"Base path: {AppContext.BaseDirectory}");
+					logger.LogInformation($"Base path: {AppDomain.CurrentDomain.BaseDirectory}");
 					logger.LogInformation($"Logs path: {UtilityService.GetAppSetting("Path:Logs")}");
 					logger.LogInformation($"Default logging level: {logLevel}");
 					if (!string.IsNullOrWhiteSpace(path))

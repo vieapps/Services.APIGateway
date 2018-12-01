@@ -362,24 +362,22 @@ namespace net.vieapps.Services.APIGateway
 			{
 				if (requestInfo.ObjectName.IsEquals("controllers"))
 				{
-					var response = new JArray();
-					InternalAPIs.Controllers.Values.ToList().ForEach(controller => response.Add(new JObject
+					var response = InternalAPIs.Controllers.Values.Select(controller => new JObject
 					{
 						{ "ID", controller.Get<string>("ID").GenerateUUID() },
 						{ "Platform", controller.Get<string>("Platform") },
 						{ "Available" , controller.Get<bool>("Available") }
-					}));
+					}).ToJArray();
 					await context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				}
 				else if (requestInfo.ObjectName.IsEquals("services"))
 				{
-					var response = new JArray();
-					InternalAPIs.Services.Values.ToList().ForEach(svcInfo => response.Add(new JObject
+					var response = InternalAPIs.Services.Values.Select(svcInfo => new JObject
 					{
 						{ "URI", $"net.vieapps.services.{svcInfo[0].Get<string>("Name")}" },
 						{ "Available", svcInfo.FirstOrDefault(svc => svc.Get<bool>("Available") == true) != null },
 						{ "Running", svcInfo.FirstOrDefault(svc => svc.Get<bool>("Running") == true) != null }
-					}));
+					}).ToJArray();
 					await context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				}
 				else if (requestInfo.ObjectName.IsEquals("definitions"))
@@ -730,8 +728,9 @@ namespace net.vieapps.Services.APIGateway
 				}
 
 				// call service to validate
-				var json = await context.CallServiceAsync(new RequestInfo(requestInfo.Session)
+				var json = await context.CallServiceAsync(new RequestInfo
 				{
+					Session = requestInfo.Session,
 					ServiceName = "Users",
 					ObjectName = "OTP",
 					Verb = "POST",

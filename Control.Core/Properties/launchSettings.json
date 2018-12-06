@@ -1,7 +1,7 @@
 {
-  "profiles": {
-    "VIEApps.Services.APIGateway.Controller.Core": {
-      "commandName": "Project"
-    }
-  }
+	"profiles": {
+		"APIGateway.Controller": {
+			"commandName": "Project"
+		}
+	}
 }

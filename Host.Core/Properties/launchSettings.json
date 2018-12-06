@@ -1,6 +1,6 @@
 {
 	"profiles": {
-		"VIEApps.Services.APIGateway.Host.Core": {
+		"APIGateway.ServiceHosting": {
 			"commandName": "Project"
 		}
 	}

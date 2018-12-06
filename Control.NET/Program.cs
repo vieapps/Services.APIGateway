@@ -58,12 +58,14 @@ namespace net.vieapps.Services.APIGateway
 
 			Components.Utility.Logger.AssignLoggerFactory(new ServiceCollection().AddLogging(builder => builder.SetMinimumLevel(logLevel)).BuildServiceProvider().GetService<ILoggerFactory>());
 
-			var path = UtilityService.GetAppSetting("Path:Logs");
-			if (path != null && Directory.Exists(path))
+			var logPath = UtilityService.GetAppSetting("Path:Logs");
+			if (logPath != null && Directory.Exists(logPath))
 			{
-				path = Path.Combine(path, "{Date}_apigateway.controller.txt");
-				Components.Utility.Logger.GetLoggerFactory().AddFile(path, logLevel);
+				logPath = Path.Combine(logPath, "{Date}_apigateway.controller.txt");
+				Components.Utility.Logger.GetLoggerFactory().AddFile(logPath, logLevel);
 			}
+			else
+				logPath = null;
 
 			Program.Logger = Components.Utility.Logger.CreateLogger<Controller>();
 

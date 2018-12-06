@@ -1,7 +1,7 @@
 {
-  "profiles": {
-    "VIEApps.Services.APIGateway.Bundles": {
-      "commandName": "Project"
-    }
-  }
+	"profiles": {
+		"APIGateway.ServiceBundles": {
+			"commandName": "Project"
+		}
+	}
 }

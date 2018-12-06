@@ -42,14 +42,12 @@ namespace net.vieapps.Services.APIGateway
 				.ConfigureAwait(false);
 			};
 
-			this.OnOutgoingChannelEstablished = (sender, args) => Task.Run(async () =>
+			this.OnOutgoingChannelEstablished = (sender, args) =>
 			{
-				while (WAMPConnections.IncomingChannel == null || WAMPConnections.OutgoingChannel == null)
-					await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
 				this.RTUService = WAMPConnections.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create());
-				await this.SendRequestInfoAsync().ConfigureAwait(false);
+				Task.Run(() => this.SendRequestInfoAsync()).ConfigureAwait(false);
 				Global.OnProcess?.Invoke($"Successfully subscribe the manager's communicator");
-			}).ConfigureAwait(false);
+			};
 
 			var interval = UtilityService.GetAppSetting("RequestTimer:Interval", "15").CastAs<int>();
 			this.RequestTimer = Observable.Timer(TimeSpan.FromMinutes(interval), TimeSpan.FromMinutes(interval)).Subscribe(_ => Task.Run(() => this.SendRequestInfoAsync()).ConfigureAwait(false));
@@ -58,9 +56,10 @@ namespace net.vieapps.Services.APIGateway
 		public void Dispose()
 		{
 			if (!this.Disposed)
+			{
+				this.Disposed = true;
 				Task.Run(async () =>
 				{
-					this.Disposed = true;
 					if (this.Instance != null)
 						await this.Instance.DisposeAsync().ConfigureAwait(false);
 				})
@@ -70,6 +69,7 @@ namespace net.vieapps.Services.APIGateway
 					this.RequestTimer?.Dispose();
 				}, TaskContinuationOptions.OnlyOnRanToCompletion)
 				.ConfigureAwait(false);
+			}
 		}
 
 		~Manager() => this.Dispose();

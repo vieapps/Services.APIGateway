@@ -859,7 +859,12 @@ namespace net.vieapps.Services.APIGateway
 		static async Task ActivateAsync(this HttpContext context, RequestInfo requestInfo)
 		{
 			// call service to activate
-			var json = await context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Activate", "GET", requestInfo.Query, requestInfo.Header, "", requestInfo.Extra, requestInfo.CorrelationID), Global.CancellationTokenSource.Token, InternalAPIs.Logger).ConfigureAwait(false);
+			var json = await context.CallServiceAsync(new RequestInfo(requestInfo)
+			{
+				ServiceName = "Users",
+				ObjectName = "Activate",
+				Verb = "GET"
+			}, Global.CancellationTokenSource.Token, InternalAPIs.Logger).ConfigureAwait(false);
 
 			// get user information & register the session
 			requestInfo.Session.User = json.FromJson<User>();
@@ -937,17 +942,17 @@ namespace net.vieapps.Services.APIGateway
 		#region Helper: WAMP connections
 		internal static void OpenWAMPChannels(int waitingTimes = 6789)
 		{
-			Global.Logger.LogInformation($"Attempting to connect to WAMP router [{WAMPConnections.GetRouterStrInfo()}]");
+			Global.Logger.LogDebug($"Attempting to connect to WAMP router [{new Uri(WAMPConnections.GetRouterStrInfo()).GetResolvedURI()}]");
 			Global.OpenWAMPChannels(
 				(sender, args) =>
 				{
-					Global.Logger.LogInformation($"Incoming channel to WAMP router is established - Session ID: {args.SessionId}");
+					Global.Logger.LogDebug($"Incoming channel to WAMP router is established - Session ID: {args.SessionId}");
 					WAMPConnections.IncomingChannel.Update(WAMPConnections.IncomingChannelSessionID, Global.ServiceName, $"Incoming ({Global.ServiceName} HTTP service)");
 					Global.InterCommunicateMessageUpdater?.Dispose();
 					Global.InterCommunicateMessageUpdater = WAMPConnections.IncomingChannel.RealmProxy.Services
 						.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
 						.Subscribe(
-							async (message) =>
+							async message =>
 							{
 								var correlationID = UtilityService.NewUUID;
 								try
@@ -970,13 +975,16 @@ namespace net.vieapps.Services.APIGateway
 				},
 				(sender, args) =>
 				{
-					Global.Logger.LogInformation($"Outgoing channel to WAMP router is established - Session ID: {args.SessionId}");
+					Global.Logger.LogDebug($"Outgoing channel to WAMP router is established - Session ID: {args.SessionId}");
 					WAMPConnections.OutgoingChannel.Update(WAMPConnections.OutgoingChannelSessionID, Global.ServiceName, $"Outgoing ({Global.ServiceName} HTTP service)");
 					Task.Run(async () =>
 					{
 						try
 						{
-							await Task.WhenAll(Global.InitializeLoggingServiceAsync(), Global.InitializeRTUServiceAsync()).ConfigureAwait(false);
+							await Task.WhenAll(
+								Global.InitializeLoggingServiceAsync(),
+								Global.InitializeRTUServiceAsync()
+							).ConfigureAwait(false);
 							Global.Logger.LogInformation("Helper services are succesfully initialized");
 						}
 						catch (Exception ex)
@@ -984,31 +992,28 @@ namespace net.vieapps.Services.APIGateway
 							Global.Logger.LogError($"Error occurred while initializing helper services: {ex.Message}", ex);
 						}
 					})
-					.ContinueWith(async (task) =>
+					.ContinueWith(async task => await Global.RegisterServiceAsync().ConfigureAwait(false), TaskContinuationOptions.OnlyOnRanToCompletion)
+					.ContinueWith(async task => await new CommunicateMessage
 					{
-						while (WAMPConnections.IncomingChannel == null || WAMPConnections.OutgoingChannel == null)
-							await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
-					}, TaskContinuationOptions.OnlyOnRanToCompletion)
-					.ContinueWith(async (task) =>
+						ServiceName = "APIGateway",
+						Type = "Controller#RequestInfo"
+					}.PublishAsync(Global.Logger).ConfigureAwait(false), TaskContinuationOptions.OnlyOnRanToCompletion)
+					.ContinueWith(async task => await new CommunicateMessage
 					{
-						await Global.RTUService.SendInterCommunicateMessageAsync(new CommunicateMessage
-						{
-							ServiceName = "APIGateway",
-							Type = "Controller#RequestInfo"
-						}).ConfigureAwait(false);
-					}, TaskContinuationOptions.OnlyOnRanToCompletion)
-					.ContinueWith(async (task) =>
-					{
-						await Global.RTUService.SendInterCommunicateMessageAsync(new CommunicateMessage
-						{
-							ServiceName = "APIGateway",
-							Type = "Service#RequestInfo"
-						}).ConfigureAwait(false);
-					}, TaskContinuationOptions.OnlyOnRanToCompletion)
+						ServiceName = "APIGateway",
+						Type = "Service#RequestInfo"
+					}.PublishAsync(Global.Logger).ConfigureAwait(false), TaskContinuationOptions.OnlyOnRanToCompletion)
 					.ConfigureAwait(false);
 				},
 				waitingTimes
 			);
+		}
+
+		internal static void CloseWAMPChannels(int waitingTimes = 1234)
+		{
+			Global.UnregisterService();
+			Global.InterCommunicateMessageUpdater?.Dispose();
+			WAMPConnections.CloseChannels();
 		}
 		#endregion
 

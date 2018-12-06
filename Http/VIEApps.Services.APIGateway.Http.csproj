@@ -1,9 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
 	<PropertyGroup>
-		<TargetFramework>netcoreapp2.1</TargetFramework>
+		<TargetFramework>netcoreapp2.2</TargetFramework>
 		<OutputType>Exe</OutputType>
-		<RootNamespace>VIEApps.Services.APIGateway</RootNamespace>
+		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
 		<StartupObject>net.vieapps.Services.APIGateway.Startup</StartupObject>
 		<AssemblyName>VIEApps.Services.APIGateway</AssemblyName>
 		<AssemblyTitle>VIEApps NGX API Gateway</AssemblyTitle>
@@ -11,10 +11,9 @@
 		<Company>VIEApps.net</Company>
 		<Product>VIEApps NGX</Product>
 		<Copyright>© 2018 VIEApps.net</Copyright>
-		<Version>10.2.1812.1</Version>
-		<AssemblyVersion>10.2.1812.1</AssemblyVersion>
-		<FileVersion>10.2.1812.1</FileVersion>
-		<InformationalVersion>v10.2.netcore-2.1+rev:2018.12.01</InformationalVersion>
+		<AssemblyVersion>10.2.1812.3</AssemblyVersion>
+		<FileVersion>10.2.1812.3</FileVersion>
+		<InformationalVersion>v10.2.netcore-2.2+rev:2018.12.06-latest.components-docker.ready</InformationalVersion>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
@@ -32,9 +31,9 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Microsoft.AspNetCore" Version="2.1.6" />
-		<PackageReference Include="Microsoft.AspNetCore.ResponseCompression" Version="2.1.1" />
-		<PackageReference Include="Microsoft.AspNetCore.WebSockets" Version="2.1.1" />
+		<PackageReference Include="Microsoft.AspNetCore" Version="2.2.0" />
+		<PackageReference Include="Microsoft.AspNetCore.ResponseCompression" Version="2.2.0" />
+		<PackageReference Include="Microsoft.AspNetCore.WebSockets" Version="2.2.0" />
 	</ItemGroup>
 
 	<ItemGroup>

@@ -164,19 +164,21 @@ namespace net.vieapps.Services.APIGateway
 			catch { }
 #endif
 
-			Logger.AssignLoggerFactory(new ServiceCollection().AddLogging(builder => builder.SetMinimumLevel(logLevel)).BuildServiceProvider().GetService<ILoggerFactory>());
-
-			var path = UtilityService.GetAppSetting("Path:Logs");
-			if (Directory.Exists(path))
+			Logger.AssignLoggerFactory(new ServiceCollection().AddLogging(builder =>
 			{
-				path = Path.Combine(path, "{Date}_" + serviceComponent.ServiceName.ToLower() + ".txt");
-				Logger.GetLoggerFactory().AddFile(path, logLevel);
+				builder.SetMinimumLevel(logLevel);
+				if (isUserInteractive)
+					builder.AddConsole();
+			}).BuildServiceProvider().GetService<ILoggerFactory>());
+
+			var logPath = UtilityService.GetAppSetting("Path:Logs");
+			if (Directory.Exists(logPath))
+			{
+				logPath = Path.Combine(logPath, "{Date}_" + $"{serviceComponent.ServiceName.ToLower()}.txt");
+				Logger.GetLoggerFactory().AddFile(logPath, logLevel);
 			}
 			else
-				path = null;
-
-			if (isUserInteractive)
-				Logger.GetLoggerFactory().AddConsole(logLevel);
+				logPath = null;
 
 			var logger = serviceComponent.Logger = Logger.CreateLogger(this.ServiceType);
 
@@ -210,8 +212,8 @@ namespace net.vieapps.Services.APIGateway
 
 			// start the service component
 			logger.LogInformation($"The service is starting");
-			logger.LogInformation($"Mode: {(isUserInteractive ? "Interactive app" : "Background service")}");
 			logger.LogInformation($"Version: {this.ServiceType.Assembly.GetVersion()}");
+			logger.LogInformation($"Mode: {(isUserInteractive ? "Interactive app" : "Background service")}");
 			logger.LogInformation($"Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "macOS")} {RuntimeInformation.OSArchitecture} ({(RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "Macintosh; Intel Mac OS X; " : "")}{RuntimeInformation.OSDescription.Trim()})");
 
 			ServiceBase.ServiceComponent = serviceComponent as ServiceBase;
@@ -220,17 +222,13 @@ namespace net.vieapps.Services.APIGateway
 				"false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", "")) ? false : true,
 				service =>
 				{
-					logger.LogInformation($"WAMP router URI: {WAMPConnections.GetRouterStrInfo()}");
-					logger.LogInformation($"Base path: {AppDomain.CurrentDomain.BaseDirectory}");
-					logger.LogInformation($"Logs path: {UtilityService.GetAppSetting("Path:Logs")}");
-					logger.LogInformation($"Default logging level: {logLevel}");
-					if (!string.IsNullOrWhiteSpace(path))
-						logger.LogInformation($"Rolling log files is enabled - Path format: {path}");
+					logger.LogInformation($"WAMP router: {new Uri(WAMPConnections.GetRouterStrInfo()).GetResolvedURI()}");
+					logger.LogInformation($"Root path (base directory): {AppDomain.CurrentDomain.BaseDirectory}");
+					logger.LogInformation($"Logging level: {logLevel} - Rolling log files is {(string.IsNullOrWhiteSpace(logPath) ? "disabled" : $"enabled => {logPath}")}");
 					logger.LogInformation($"Show debugs: {(service as ServiceBase).IsDebugLogEnabled} - Show results: {(service as ServiceBase).IsDebugResultsEnabled} - Show stacks: {(service as ServiceBase).IsDebugStacksEnabled}");
 
 					stopwatch.Stop();
-					logger.LogInformation($"Service URI (round robin): {service.ServiceURI}");
-					logger.LogInformation($"Service URI (single): {(service as IUniqueService).ServiceUniqueURI}");
+					logger.LogInformation($"Service URIs:\r\n\t- Round robin: {service.ServiceURI}\r\n\t- Single (unique): {(service as IUniqueService).ServiceUniqueURI}");
 					logger.LogInformation($"The service is started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");
 
 					if (isUserInteractive)

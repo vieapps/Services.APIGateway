@@ -9,10 +9,9 @@
 		<Company>VIEApps.net</Company>
 		<Product>VIEApps NGX</Product>
 		<Copyright>© 2018 VIEApps.net</Copyright>
-		<Version>10.2.1812.1</Version>
-		<AssemblyVersion>10.2.1812.1</AssemblyVersion>
-		<FileVersion>10.2.1812.1</FileVersion>
-		<InformationalVersion>v10.2.netstandard-2+rev:2018.12.01</InformationalVersion>
+		<AssemblyVersion>10.2.1812.3</AssemblyVersion>
+		<FileVersion>10.2.1812.3</FileVersion>
+		<InformationalVersion>v10.2.netstandard-2+rev:2018.12.06-latest.components</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -20,7 +19,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Microsoft.Extensions.Logging.Console" Version="2.1.1" />
+		<PackageReference Include="Microsoft.Extensions.Logging.Console" Version="2.2.0" />
 	</ItemGroup>
 
 	<ItemGroup>

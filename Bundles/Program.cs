@@ -45,9 +45,14 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			var processes = new Dictionary<string, ExternalProcess.Info>();
-			processNodes.Where(node => !string.IsNullOrWhiteSpace(node.Attributes["executable"]?.Value))
-				.Where(node => File.Exists(node.Attributes["executable"].Value))
-				.ForEach(node => processes[node.Attributes["executable"].Value] = new ExternalProcess.Info(node.Attributes["executable"].Value, node.Attributes["arguments"]?.Value ?? ""));
+			processNodes
+				.Where(node => !string.IsNullOrWhiteSpace(node.Attributes["executable"]?.Value) && File.Exists(node.Attributes["executable"].Value + (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && !node.Attributes["executable"].Value.IsEndsWith(".exe") ? ".exe" : "")))
+				.ForEach(node =>
+				{
+					var processInfo = new ExternalProcess.Info(node.Attributes["executable"].Value, node.Attributes["arguments"]?.Value ?? "");
+					processInfo.Extra["waitingTimes"] = Int32.TryParse(node.Attributes["waitingTimes"]?.Value, out int waitingTimes) ? waitingTimes : 0;
+					processes[node.Attributes["executable"].Value] = processInfo;
+				});
 
 			if (processes.Count < 1)
 			{
@@ -61,10 +66,12 @@ namespace net.vieapps.Services.APIGateway
 				Console.WriteLine($"Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "macOS")} {RuntimeInformation.OSArchitecture} ({(RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "Macintosh; Intel Mac OS X; " : "")}{RuntimeInformation.OSDescription.Trim()})");
 				Console.WriteLine($"Mode: {(Environment.UserInteractive && args?.FirstOrDefault(a => a.StartsWith("/daemon")) == null ? "Interactive app" : "Background service")}");
 				Console.WriteLine($"Processes: {processes.Count:#,##0}");
-				processes.Values.ToList().ForEach(info =>
+				processes.Values.ToList().ForEach(processInfo =>
 				{
-					processes[info.FilePath] = ExternalProcess.Start(info.FilePath, info.Arguments, (s, a) => { }, (s, a) => { });
-					Console.WriteLine($"- PID: {processes[info.FilePath].ID} => {info.FilePath} {info.Arguments}");
+					if (processInfo.Extra.TryGetValue("waitingTimes", out object waitingTimes) && (int)waitingTimes > 0)
+						Task.Delay((int)waitingTimes).GetAwaiter().GetResult();
+					processes[processInfo.FilePath] = ExternalProcess.Start(processInfo.FilePath, processInfo.Arguments, (s, a) => { }, (s, a) => { });
+					Console.WriteLine($"- PID: {processes[processInfo.FilePath].ID} => {processInfo.FilePath} {processInfo.Arguments}");
 				});
 				Console.WriteLine("");
 				Console.WriteLine($">>>>> Press Ctrl+C to stop all processes and terminate the bundles....");

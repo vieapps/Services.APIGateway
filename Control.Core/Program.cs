@@ -53,17 +53,21 @@ namespace net.vieapps.Services.APIGateway
 			catch { }
 #endif
 
-			Components.Utility.Logger.AssignLoggerFactory(new ServiceCollection().AddLogging(builder => builder.SetMinimumLevel(logLevel)).BuildServiceProvider().GetService<ILoggerFactory>());
-
-			var path = UtilityService.GetAppSetting("Path:Logs");
-			if (path != null && Directory.Exists(path))
+			Components.Utility.Logger.AssignLoggerFactory(new ServiceCollection().AddLogging(builder =>
 			{
-				path = Path.Combine(path, "{Date}_apigateway.controller.txt");
-				Components.Utility.Logger.GetLoggerFactory().AddFile(path, logLevel);
-			}
+				builder.SetMinimumLevel(logLevel);
+				if (Program.IsUserInteractive)
+					builder.AddConsole();
+			}).BuildServiceProvider().GetService<ILoggerFactory>());
 
-			if (Program.IsUserInteractive)
-				Components.Utility.Logger.GetLoggerFactory().AddConsole(logLevel);
+			var logPath = UtilityService.GetAppSetting("Path:Logs");
+			if (logPath != null && Directory.Exists(logPath))
+			{
+				logPath = Path.Combine(logPath, "{Date}_apigateway.controller.txt");
+				Components.Utility.Logger.GetLoggerFactory().AddFile(logPath, logLevel);
+			}
+			else
+				logPath = null;
 
 			Program.Logger = Components.Utility.Logger.CreateLogger<Controller>();
 
@@ -108,7 +112,7 @@ namespace net.vieapps.Services.APIGateway
 								$"- Version: {typeof(Controller).Assembly.GetVersion()}" + "\r\n\t" +
 								$"- Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "macOS")} {RuntimeInformation.OSArchitecture} ({(RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "Macintosh; Intel Mac OS X; " : "")}{RuntimeInformation.OSDescription.Trim()})" + "\r\n\t" +
 								$"- Working mode: {(Environment.UserInteractive ? "Interactive app" : "Background service")}" + "\r\n\t" +
-								$"- WAMP router URI: {WAMPConnections.GetRouterStrInfo()}" + "\r\n\t" +
+								$"- WAMP router: {new Uri(WAMPConnections.GetRouterStrInfo()).GetResolvedURI()}" + "\r\n\t" +
 								$"- Incoming channel session identity: {WAMPConnections.IncomingChannelSessionID}" + "\r\n\t" +
 								$"- Outgoing channel session identity: {WAMPConnections.OutgoingChannelSessionID}" + "\r\n\t" +
 								$"- Number of helper services: {Program.Controller.NumberOfHelperServices:#,##0}" + "\r\n\t" +

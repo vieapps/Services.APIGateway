@@ -163,7 +163,7 @@ namespace net.vieapps.Services.APIGateway
 #endif
 			Global.OnProcess?.Invoke($"Working directory: {this.WorkingDirectory}");
 
-			Global.OnProcess?.Invoke($"Attempting to connect to WAMP router [{WAMPConnections.GetRouterStrInfo()}]");
+			Global.OnProcess?.Invoke($"Attempting to connect to WAMP router [{new Uri(WAMPConnections.GetRouterStrInfo()).GetResolvedURI()}]");
 			Task.WaitAll(new[]
 			{
 				WAMPConnections.OpenIncomingChannelAsync(
@@ -179,7 +179,7 @@ namespace net.vieapps.Services.APIGateway
 						this.Communicator = WAMPConnections.IncomingChannel.RealmProxy.Services
 							.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
 							.Subscribe(
-								async (message) => await this.ProcessInterCommunicateMessageAsync(message).ConfigureAwait(false),
+								async message => await this.ProcessInterCommunicateMessageAsync(message).ConfigureAwait(false),
 								exception => Global.OnError?.Invoke($"Error occurred while fetching inter-communicate message: {exception.Message}", this.State == ServiceState.Connected ? exception : null)
 							);
 						Global.OnProcess?.Invoke($"The inter-communicate message updater is{(this.State == ServiceState.Disconnected ? " re-" : " ")}subscribed successful");
@@ -203,7 +203,7 @@ namespace net.vieapps.Services.APIGateway
 								}
 							}
 						})
-						.ContinueWith(async (task) =>
+						.ContinueWith(async task =>
 						{
 							if (this.State == ServiceState.Ready)
 							{
@@ -242,20 +242,14 @@ namespace net.vieapps.Services.APIGateway
 							Global.OnProcess?.Invoke($"The API Gateway Services Controller is{(this.State == ServiceState.Disconnected ? " re-" : " ")}started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");
 							this.State = ServiceState.Connected;
 						}, TaskContinuationOptions.OnlyOnRanToCompletion)
-						.ContinueWith(async (task) =>
+						.ContinueWith(async task =>
 						{
 							while (WAMPConnections.IncomingChannel == null || WAMPConnections.OutgoingChannel == null)
 								await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
 							await this.SendInterCommunicateMessageAsync("Controller#Info", this.Info.ToJson(), this.CancellationTokenSource.Token).ConfigureAwait(false);
-						}, TaskContinuationOptions.OnlyOnRanToCompletion)
-						.ContinueWith(task =>
-						{
-							Task.Run(async () =>
-							{
-								await Task.Delay(UtilityService.GetRandomNumber(12345, 23456)).ConfigureAwait(false);
-								await this.SendInterCommunicateMessageAsync("Controller#RequestInfo").ConfigureAwait(false);
-								await this.SendInterCommunicateMessageAsync("Service#RequestInfo").ConfigureAwait(false);
-							}).ConfigureAwait(false);
+							await Task.Delay(UtilityService.GetRandomNumber(12345, 23456)).ConfigureAwait(false);
+							await this.SendInterCommunicateMessageAsync("Controller#RequestInfo").ConfigureAwait(false);
+							await this.SendInterCommunicateMessageAsync("Service#RequestInfo").ConfigureAwait(false);
 						}, TaskContinuationOptions.OnlyOnRanToCompletion)
 						.ConfigureAwait(false);
 					},

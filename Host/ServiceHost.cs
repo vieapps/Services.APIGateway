@@ -34,27 +34,34 @@ namespace net.vieapps.Services.APIGateway
 			this.ServiceTypeName = args?.FirstOrDefault(a => a.IsStartsWith("/svc:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/svc:", "");
 			if (string.IsNullOrWhiteSpace(this.ServiceTypeName) && args?.FirstOrDefault(a => a.IsStartsWith("/svn:")) != null)
 			{
-				var configFilename = $"{UtilityService.GetAppSetting("Path:APIGateway", "")}VIEApps.Services.APIGateway.{(RuntimeInformation.FrameworkDescription.IsContains(".NET Framework") ? "exe" : "dll")}.config";
+				var configFilename = Path.Combine($"{UtilityService.GetAppSetting("Path:APIGateway:Controller")}", $"VIEApps.Services.APIGateway.{(RuntimeInformation.FrameworkDescription.IsContains(".NET Framework") ? "exe" : "dll")}.config");
 				if (File.Exists(configFilename))
 					try
 					{
-						var xpath = $"/configuration/net.vieapps.services/add[@name='{args.First(a => a.IsStartsWith("/svn:")).Replace(StringComparison.OrdinalIgnoreCase, "/svn:", "").ToLower()}']";
 						var xml = new System.Xml.XmlDocument();
 						xml.LoadXml(UtilityService.ReadTextFile(configFilename));
-						this.ServiceTypeName = xml.DocumentElement.SelectSingleNode(xpath)?.Attributes["type"]?.Value.Replace(" ", "");
+						this.ServiceTypeName = args.First(a => a.IsStartsWith("/svn:")).Replace(StringComparison.OrdinalIgnoreCase, "/svn:", "").Trim();
+						var typeNode = xml.SelectSingleNode("/configuration/net.vieapps.services")?.ChildNodes.ToList().FirstOrDefault(node => this.ServiceTypeName.IsEquals(node.Attributes["name"]?.Value));
+						this.ServiceTypeName = typeNode?.Attributes["type"]?.Value;
 					}
-					catch { }
+					catch
+					{
+						this.ServiceTypeName = null;
+					}
 			}
 
 			// stop if has no type name of a service component
+			var hostingInfo = $"VIEApps NGX API Gateway - Service Hosting {RuntimeInformation.ProcessArchitecture} {typeof(ServiceHost).Assembly.GetVersion()} [{this.GetType().Assembly.GetVersion()}]";
 			if (string.IsNullOrWhiteSpace(this.ServiceTypeName))
 			{
-				Console.Error.WriteLine($"VIEApps NGX API Gateway - Service Hosting v{typeof(ServiceHost).Assembly.GetVersion()}" + "\r\n");
+				Console.Error.WriteLine(hostingInfo);
 				Console.Error.WriteLine("");
 				Console.Error.WriteLine("Error: The service type name is invalid");
 				Console.Error.WriteLine("");
-				Console.Error.WriteLine("Syntax: VIEApps.Services.APIGateway /svc:<service-component-namespace,service-assembly>" + "\r\n");
-				Console.Error.WriteLine("Ex.: VIEApps.Services.APIGateway /svc:net.vieapps.Services.Portals.ServiceComponent,VIEApps.Services.Portals" + "\r\n");
+				Console.Error.WriteLine("Syntax: VIEApps.Services.APIGateway /svc:<service-component-namespace,service-assembly>");
+				Console.Error.WriteLine("");
+				Console.Error.WriteLine("Ex.: VIEApps.Services.APIGateway /svc:net.vieapps.Services.Portals.ServiceComponent,VIEApps.Services.Portals");
+				Console.Error.WriteLine("");
 				if (isUserInteractive)
 					Console.ReadLine();
 				return;
@@ -71,6 +78,8 @@ namespace net.vieapps.Services.APIGateway
 				this.PrepareServiceType();
 				if (this.ServiceType == null)
 				{
+					Console.Error.WriteLine(hostingInfo);
+					Console.Error.WriteLine("");
 					Console.Error.WriteLine($"The type of the service component is not found [{this.ServiceTypeName},{this.ServiceAssemblyName}]");
 					if (isUserInteractive)
 						Console.ReadLine();
@@ -81,6 +90,8 @@ namespace net.vieapps.Services.APIGateway
 			{
 				if (ex is ReflectionTypeLoadException)
 				{
+					Console.Error.WriteLine(hostingInfo);
+					Console.Error.WriteLine("");
 					Console.Error.WriteLine($"Error occurred while preparing the type of the service component [{this.ServiceTypeName},{this.ServiceAssemblyName}]");
 					(ex as ReflectionTypeLoadException).LoaderExceptions.ForEach(exception =>
 					{
@@ -95,6 +106,8 @@ namespace net.vieapps.Services.APIGateway
 				}
 				else
 				{
+					Console.Error.WriteLine(hostingInfo);
+					Console.Error.WriteLine("");
 					Console.Error.WriteLine($"Error occurred while preparing the type of the service component [{this.ServiceTypeName},{this.ServiceAssemblyName}] => {ex.Message}");
 					var inner = ex.InnerException;
 					while (inner != null)
@@ -111,6 +124,8 @@ namespace net.vieapps.Services.APIGateway
 			// check the type of the service component
 			if (!typeof(IServiceComponent).IsAssignableFrom(this.ServiceType) || !typeof(ServiceBase).IsAssignableFrom(this.ServiceType))
 			{
+				Console.Error.WriteLine(hostingInfo);
+				Console.Error.WriteLine("");
 				Console.Error.WriteLine($"The type of the service component is invalid [{this.ServiceTypeName},{this.ServiceAssemblyName}]");
 				if (isUserInteractive)
 					Console.ReadLine();
@@ -228,6 +243,7 @@ namespace net.vieapps.Services.APIGateway
 					logger.LogInformation($"Show debugs: {(service as ServiceBase).IsDebugLogEnabled} - Show results: {(service as ServiceBase).IsDebugResultsEnabled} - Show stacks: {(service as ServiceBase).IsDebugStacksEnabled}");
 
 					stopwatch.Stop();
+					logger.LogInformation($"Service Hosting Version: {RuntimeInformation.ProcessArchitecture} {typeof(ServiceHost).Assembly.GetVersion()} [{this.GetType().Assembly.GetVersion()}]");
 					logger.LogInformation($"Service URIs:\r\n\t- Round robin: {service.ServiceURI}\r\n\t- Single (unique): {(service as IUniqueService).ServiceUniqueURI}");
 					logger.LogInformation($"The service is started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");
 

@@ -34,10 +34,6 @@ namespace net.vieapps.Services.APIGateway
 		{
 			this.CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 			this.LoggingService = new LoggingService(this.CancellationTokenSource.Token);
-			this.ServiceHosting = UtilityService.GetAppSetting("ServiceHosting", "VIEApps.Services.APIGateway").Trim();
-			if (this.ServiceHosting.IsEndsWith(".exe") || this.ServiceHosting.IsEndsWith(".dll"))
-				this.ServiceHosting = this.ServiceHosting.Left(this.ServiceHosting.Length - 4).Trim();
-			this.ServiceHosting_x86 = UtilityService.GetAppSetting("ServiceHosting:x86", $"{this.ServiceHosting}.x86").Trim();
 		}
 
 		public void Dispose()
@@ -64,8 +60,7 @@ namespace net.vieapps.Services.APIGateway
 		List<IDisposable> Timers { get; } = new List<IDisposable>();
 		Dictionary<string, ProcessInfo> Tasks { get; } = new Dictionary<string, ProcessInfo>();
 		string WorkingDirectory { get; } = Directory.GetCurrentDirectory() + Path.DirectorySeparatorChar.ToString();
-		string ServiceHosting { get; }
-		string ServiceHosting_x86 { get; }
+		string ServiceHosting { get; set; } = "VIEApps.Services.APIGateway";
 		Dictionary<string, ProcessInfo> BusinessServices { get; } = new Dictionary<string, ProcessInfo>();
 		MailSender MailSender { get; set; } = null;
 		WebHookSender WebhookSender { get; set; } = null;
@@ -129,14 +124,19 @@ namespace net.vieapps.Services.APIGateway
 
 			// prepare business services
 			if (ConfigurationManager.GetSection("net.vieapps.services") is AppConfigurationSectionHandler servicesConfiguration)
+			{
+				this.ServiceHosting = servicesConfiguration.Section.Attributes["executable"]?.Value.Trim() ?? this.ServiceHosting;
+				if (this.ServiceHosting.IsEndsWith(".exe") || this.ServiceHosting.IsEndsWith(".dll"))
+					this.ServiceHosting = this.ServiceHosting.Left(this.ServiceHosting.Length - 4).Trim();
 				if (servicesConfiguration.Section.SelectNodes("./add") is XmlNodeList services)
 					services.ToList().ForEach(service =>
 					{
 						var name = service.Attributes["name"]?.Value.Trim().ToLower();
 						var type = service.Attributes["type"]?.Value.Trim().Replace(" ", "");
 						if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(type))
-							this.BusinessServices[name] = new ProcessInfo(name, service.Attributes["executable"]?.Value.Trim(), type, new Dictionary<string, string> { { "Bitness", service.Attributes["bitness"]?.Value } });
+							this.BusinessServices[name] = new ProcessInfo(name, service.Attributes["executable"]?.Value.Trim(), type);
 					});
+			}
 
 			// prepare scheduling tasks
 			if (ConfigurationManager.GetSection("net.vieapps.task.scheduler") is AppConfigurationSectionHandler tasksConfiguration)
@@ -394,11 +394,7 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				var serviceInfo = this.BusinessServices[name];
-				serviceInfo.Extra.TryGetValue("Bitness", out string bitness);
-
-				var serviceHosting = !string.IsNullOrWhiteSpace(serviceInfo.Executable)
-						? serviceInfo.Executable
-						: "x86".IsEquals(bitness) || "32bits".IsEquals(bitness) ? this.ServiceHosting_x86 : this.ServiceHosting;
+				var serviceHosting = !string.IsNullOrWhiteSpace(serviceInfo.Executable) ? serviceInfo.Executable : this.ServiceHosting;
 
 				if (!File.Exists(serviceHosting + (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "")))
 					throw new FileNotFoundException($"The service hosting is not found [{serviceHosting + (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "")}]");

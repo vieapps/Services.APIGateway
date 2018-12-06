@@ -11,7 +11,7 @@
 		<Copyright>© 2018 VIEApps.net</Copyright>
 		<AssemblyVersion>10.2.1812.3</AssemblyVersion>
 		<FileVersion>10.2.1812.3</FileVersion>
-		<InformationalVersion>v10.2.netstandard-2+rev:2018.12.06-latest.components</InformationalVersion>
+		<InformationalVersion>v10.2.netstandard-2+rev:2018.12.07-service.hosting.executable</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>

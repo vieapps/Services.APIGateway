@@ -241,10 +241,8 @@ namespace net.vieapps.Services.APIGateway
 					logger.LogInformation($"Root path (base directory): {AppDomain.CurrentDomain.BaseDirectory}");
 					logger.LogInformation($"Logging level: {logLevel} - Rolling log files is {(string.IsNullOrWhiteSpace(logPath) ? "disabled" : $"enabled => {logPath}")}");
 					logger.LogInformation($"Show debugs: {(service as ServiceBase).IsDebugLogEnabled} - Show results: {(service as ServiceBase).IsDebugResultsEnabled} - Show stacks: {(service as ServiceBase).IsDebugStacksEnabled}");
-
-					stopwatch.Stop();
-					logger.LogInformation($"Service Hosting Version: {RuntimeInformation.ProcessArchitecture} {typeof(ServiceHost).Assembly.GetVersion()} [{this.GetType().Assembly.GetVersion()}]");
 					logger.LogInformation($"Service URIs:\r\n\t- Round robin: {service.ServiceURI}\r\n\t- Single (unique): {(service as IUniqueService).ServiceUniqueURI}");
+					stopwatch.Stop();
 					logger.LogInformation($"The service is started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");
 
 					if (isUserInteractive)

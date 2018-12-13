@@ -14,7 +14,7 @@
 		<Copyright>© 2018 VIEApps.net</Copyright>
 		<AssemblyVersion>10.2.1812.3</AssemblyVersion>
 		<FileVersion>10.2.1812.3</FileVersion>
-		<InformationalVersion>v10.2.netcore-2.2+rev:2018.12.06-latest.components</InformationalVersion>
+		<InformationalVersion>v10.2.netcore-2.2+rev:2018.12.13</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -31,11 +31,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.2.1812.1" />
-	</ItemGroup>
-
-	<ItemGroup>
-		<ProjectReference Include="..\Host\VIEApps.Services.APIGateway.Host.csproj" />
+		<ProjectReference Include="..\Watcher\VIEApps.Services.APIGateway.Watcher.csproj" />
 	</ItemGroup>
 
 </Project>

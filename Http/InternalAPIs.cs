@@ -30,7 +30,7 @@ namespace net.vieapps.Services.APIGateway
 		internal static ICache Cache { get; set; }
 		internal static ILogger Logger { get; set; }
 		internal static List<string> ExcludedHeaders { get; } = "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,ms-aspnetcore-token,x-forwarded-for,x-forwarded-proto,x-forwarded-port,x-original-for,x-original-proto,x-original-remote-endpoint,x-original-port".ToList();
-		internal static HashSet<string> NoTokenRequiredServices { get; } = (UtilityService.GetAppSetting("NoTokenRequiredServices", "") + "|indexes|discovery").ToLower().ToHashSet('|', true);
+		internal static HashSet<string> NoTokenRequiredServices { get; } = $"{UtilityService.GetAppSetting("NoTokenRequiredServices", "")}|indexes|discovery".ToLower().ToHashSet('|', true);
 		internal static ConcurrentDictionary<string, JObject> Controllers { get; } = new ConcurrentDictionary<string, JObject>();
 		internal static ConcurrentDictionary<string, List<JObject>> Services { get; } = new ConcurrentDictionary<string, List<JObject>>();
 		#endregion
@@ -372,11 +372,15 @@ namespace net.vieapps.Services.APIGateway
 				}
 				else if (requestInfo.ObjectName.IsEquals("services"))
 				{
-					var response = InternalAPIs.Services.Values.Select(svcInfo => new JObject
+					var response = InternalAPIs.Services.Values.Select(svcInfo => new {
+						URI = $"net.vieapps.services.{svcInfo[0].Get<string>("Name")}",
+						Available = svcInfo.FirstOrDefault(svc => svc.Get<bool>("Available") == true) != null,
+						Running = svcInfo.FirstOrDefault(svc => svc.Get<bool>("Running") == true) != null
+					}).OrderBy(info => info.URI).Select(info => new JObject
 					{
-						{ "URI", $"net.vieapps.services.{svcInfo[0].Get<string>("Name")}" },
-						{ "Available", svcInfo.FirstOrDefault(svc => svc.Get<bool>("Available") == true) != null },
-						{ "Running", svcInfo.FirstOrDefault(svc => svc.Get<bool>("Running") == true) != null }
+						{ "URI", info.URI },
+						{ "Available", info.Available },
+						{ "Running", info.Running }
 					}).ToJArray();
 					await context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				}
@@ -929,14 +933,14 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static void UpdateSessionJson(this HttpContext context, Session session, JObject json) => session.UpdateSessionJson(json, context.Items);
 
-		internal static async Task SendOnlineStatusAsync(this Session session, bool isOnline)
-		{
-			await new CommunicateMessage("Users")
-			{
-				Type = "Session#Status",
-				Data = session.ToJson(json => json["IsOnline"] = isOnline)
-			}.PublishAsync(RTU.Logger).ConfigureAwait(false);
-		}
+		internal static Task SendOnlineStatusAsync(this Session session, bool isOnline)
+			=> WAMPConnections.OutgoingChannel != null
+				? new CommunicateMessage("Users")
+				{
+					Type = "Session#Status",
+					Data = session.ToJson(json => json["IsOnline"] = isOnline)
+				}.PublishAsync(RTU.Logger)
+				: Task.CompletedTask;
 		#endregion
 
 		#region Helper: WAMP connections
@@ -986,6 +990,8 @@ namespace net.vieapps.Services.APIGateway
 								Global.InitializeRTUServiceAsync()
 							).ConfigureAwait(false);
 							Global.Logger.LogInformation("Helper services are succesfully initialized");
+							while (WAMPConnections.IncomingChannel == null || WAMPConnections.OutgoingChannel == null)
+								await Task.Delay(UtilityService.GetRandomNumber(234, 567), Global.CancellationTokenSource.Token).ConfigureAwait(false);
 						}
 						catch (Exception ex)
 						{

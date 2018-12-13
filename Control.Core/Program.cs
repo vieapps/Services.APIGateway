@@ -31,7 +31,7 @@ namespace net.vieapps.Services.APIGateway
 		static void Main(string[] args)
 		{
 			// prepare environment
-			Program.IsUserInteractive = Environment.UserInteractive && args?.FirstOrDefault(a => a.StartsWith("/daemon")) == null;
+			Program.IsUserInteractive = Environment.UserInteractive && args?.FirstOrDefault(a => a.IsStartsWith("/daemon")) == null;
 			Directory.SetCurrentDirectory(AppDomain.CurrentDomain.BaseDirectory);
 			Console.OutputEncoding = System.Text.Encoding.UTF8;
 			JsonConvert.DefaultSettings = () => new JsonSerializerSettings
@@ -86,7 +86,7 @@ namespace net.vieapps.Services.APIGateway
 			Program.Start(args);
 
 			// processing commands util got an exit signal (not available when running in Docker)
-			if (Program.IsUserInteractive && args?.FirstOrDefault(a => a.StartsWith("/docker")) == null)
+			if (Program.IsUserInteractive && args?.FirstOrDefault(a => a.IsStartsWith("/docker")) == null)
 			{
 				var command = Console.ReadLine();
 				while (command != null)
@@ -235,12 +235,8 @@ namespace net.vieapps.Services.APIGateway
 				
 			// wait until be killed
 			else
-			{
-				if (Program.IsUserInteractive)
-					Program.Logger.LogInformation("\r\n>>>>> Press Ctrl+C to stop the controller and all services....\r\n");
 				while (true)
 					Task.Delay(54321).GetAwaiter().GetResult();
-			}
 
 			// stop
 			Program.Stop();

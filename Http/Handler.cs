@@ -83,14 +83,21 @@ namespace net.vieapps.Services.APIGateway
 		{
 			// prepare
 			context.Items["PipelineStopwatch"] = Stopwatch.StartNew();
-			var requestPath = context.GetRequestPathSegments(true).First();
+			var requestUri = context.GetRequestUri();
+			var requestPath = requestUri.GetRequestPathSegments(true).First();
 
 			// request to favicon.ico file
 			if (requestPath.Equals("favicon.ico"))
+			{
 				context.ShowHttpError((int)HttpStatusCode.NotFound, "Not Found", "FileNotFoundException", context.GetCorrelationID());
+				return;
+			}
+
+			if (Global.IsVisitLogEnabled)
+				await context.WriteLogsAsync(Global.Logger, "Visits", $"Request starting {context.Request.Method} => {requestUri} (IP: {context.Connection.RemoteIpAddress} - Agent: {context.Request.Headers["User-Agent"]}{(string.IsNullOrWhiteSpace(context.Request.Headers["Referrer"]) ? "" : $" - Origin: {context.Request.Headers["Origin"]}")}{(string.IsNullOrWhiteSpace(context.Request.Headers["Referrer"]) ? "" : $" - Refer: {context.Request.Headers["Referrer"]}")})").ConfigureAwait(false);
 
 			// request to static segments
-			else if (Global.StaticSegments.Contains(requestPath))
+			if (Global.StaticSegments.Contains(requestPath))
 				await context.ProcessStaticFileRequestAsync().ConfigureAwait(false);
 
 			// request to external APIs
@@ -100,6 +107,9 @@ namespace net.vieapps.Services.APIGateway
 			// request to internal APIs
 			else
 				await APIGateway.InternalAPIs.ProcessRequestAsync(context).ConfigureAwait(false);
+
+			if (Global.IsVisitLogEnabled)
+				await context.WriteLogsAsync(Global.Logger, "Visits", $"Request finished in {context.GetExecutionTimes()}").ConfigureAwait(false);
 		}
 
 		#region classes for logging

@@ -21,33 +21,34 @@ namespace net.vieapps.Services.APIGateway
 		/// </summary>
 		public Manager()
 		{
-			this.OnIncomingChannelEstablished = (sender, args) =>
+			this.OnIncomingChannelEstablished = (sender, args) => Task.Run(async () =>
 			{
-				Task.Run(async () =>
-				{
-					if (this.Instance != null)
-						await this.Instance.DisposeAsync().ConfigureAwait(false);
-					this.Instance = await WAMPConnections.IncomingChannel.RealmProxy.Services.RegisterCallee(this, RegistrationInterceptor.Create()).ConfigureAwait(false);
-				})
-				.ContinueWith(task =>
-				{
-					this.Communicator?.Dispose();
-					this.Communicator = WAMPConnections.IncomingChannel.RealmProxy.Services
-						.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
-						.Subscribe(
-							message => this.ProcessInterCommunicateMessageAsync(message),
-							exception => Global.OnError?.Invoke($"Error occurred while fetching inter-communicate message: {exception.Message}", exception)
-						);
-				}, TaskContinuationOptions.OnlyOnRanToCompletion)
-				.ConfigureAwait(false);
-			};
+				if (this.Instance != null)
+					await this.Instance.DisposeAsync().ConfigureAwait(false);
+				this.Instance = await WAMPConnections.IncomingChannel.RealmProxy.Services.RegisterCallee(this, RegistrationInterceptor.Create()).ConfigureAwait(false);
+			})
+			.ContinueWith(task =>
+			{
+				this.Communicator?.Dispose();
+				this.Communicator = WAMPConnections.IncomingChannel.RealmProxy.Services
+					.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
+					.Subscribe(
+						message => this.ProcessInterCommunicateMessage(message),
+						exception => Global.OnError?.Invoke($"Error occurred while fetching inter-communicate message: {exception.Message}", exception)
+					);
+			}, TaskContinuationOptions.OnlyOnRanToCompletion)
+			.ConfigureAwait(false);
 
-			this.OnOutgoingChannelEstablished = (sender, args) =>
+			this.OnOutgoingChannelEstablished = (sender, args) =>Task.Run(() =>
 			{
 				this.RTUService = WAMPConnections.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create());
-				Task.Run(() => this.SendRequestInfoAsync()).ConfigureAwait(false);
+			})
+			.ContinueWith(async task =>
+			{
+				await this.SendRequestInfoAsync().ConfigureAwait(false);
 				Global.OnProcess?.Invoke($"Successfully subscribe the manager's communicator");
-			};
+			}, TaskContinuationOptions.OnlyOnRanToCompletion)
+			.ConfigureAwait(false);
 
 			var interval = UtilityService.GetAppSetting("RequestTimer:Interval", "15").CastAs<int>();
 			this.RequestTimer = Observable.Timer(TimeSpan.FromMinutes(interval), TimeSpan.FromMinutes(interval)).Subscribe(_ => Task.Run(() => this.SendRequestInfoAsync()).ConfigureAwait(false));
@@ -163,7 +164,7 @@ namespace net.vieapps.Services.APIGateway
 				catch { }
 		}
 
-		void ProcessInterCommunicateMessageAsync(CommunicateMessage message)
+		void ProcessInterCommunicateMessage(CommunicateMessage message)
 		{
 			// controller info
 			if (message.Type.IsStartsWith("Controller#"))

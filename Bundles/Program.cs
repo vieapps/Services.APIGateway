@@ -19,7 +19,9 @@ namespace net.vieapps.Services.APIGateway
 		static void Main(string[] args)
 		{
 			// prepare
-			var processNodes = new List<XmlNode>();
+			var services = new Dictionary<string, ExternalProcess.Info>();
+			var svcNodes = new List<XmlNode>();
+
 			if (args?.FirstOrDefault(a => a.StartsWith("/config:")) != null)
 			{
 				var configFilePath = args.FirstOrDefault(a => a.StartsWith("/config:")).Replace(StringComparison.OrdinalIgnoreCase, "/config:", "").Trim();
@@ -28,50 +30,42 @@ namespace net.vieapps.Services.APIGateway
 					{
 						var xml = new XmlDocument();
 						xml.LoadXml(UtilityService.ReadTextFile(configFilePath));
-						processNodes = xml.DocumentElement.SelectNodes("net.vieapps.bundles/process")?.ToList();
+						svcNodes = xml.DocumentElement.SelectNodes("net.vieapps.services.bundles/service")?.ToList();
 					}
 					catch { }
 			}
 
-			if (processNodes == null || processNodes.Count < 1)
-				if (ConfigurationManager.GetSection("net.vieapps.bundles") is AppConfigurationSectionHandler config)
-					if (config.Section.SelectNodes("./process") is XmlNodeList nodes)
-						processNodes = nodes.ToList();
+			if (svcNodes == null || svcNodes.Count < 1)
+				if (ConfigurationManager.GetSection("net.vieapps.services.bundles") is AppConfigurationSectionHandler config)
+					if (config.Section.SelectNodes("./service") is XmlNodeList nodes)
+						svcNodes = nodes.ToList();
 
-			if (processNodes == null || processNodes.Count < 1)
+			svcNodes?.Where(svcNode => !string.IsNullOrWhiteSpace(svcNode.Attributes["executable"]?.Value) && File.Exists(svcNode.Attributes["executable"].Value + (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && !svcNode.Attributes["executable"].Value.IsEndsWith(".exe") ? ".exe" : ""))).ForEach(svcNode =>
 			{
-				Console.Error.WriteLine("No process to run...");
-				return;
-			}
+				var svcInfo = new ExternalProcess.Info(svcNode.Attributes["executable"].Value, svcNode.Attributes["arguments"]?.Value ?? "");
+				svcInfo.Extra["waitingTimes"] = Int32.TryParse(svcNode.Attributes["waitingTimes"]?.Value, out int waitingTimes) ? waitingTimes : 0;
+				services[svcNode.Attributes["executable"].Value] = svcInfo;
+			});
 
-			var processes = new Dictionary<string, ExternalProcess.Info>();
-			processNodes
-				.Where(node => !string.IsNullOrWhiteSpace(node.Attributes["executable"]?.Value) && File.Exists(node.Attributes["executable"].Value + (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && !node.Attributes["executable"].Value.IsEndsWith(".exe") ? ".exe" : "")))
-				.ForEach(node =>
-				{
-					var processInfo = new ExternalProcess.Info(node.Attributes["executable"].Value, node.Attributes["arguments"]?.Value ?? "");
-					processInfo.Extra["waitingTimes"] = Int32.TryParse(node.Attributes["waitingTimes"]?.Value, out int waitingTimes) ? waitingTimes : 0;
-					processes[node.Attributes["executable"].Value] = processInfo;
-				});
-
-			if (processes.Count < 1)
+			if (services.Count < 1)
 			{
-				Console.Error.WriteLine("No process to run...");
+				Console.Error.WriteLine("No service to run...");
 				return;
 			}
 
 			void start()
 			{
-				Console.WriteLine($"VIEApps NGX API Gateway - Service Bundles v{Assembly.GetExecutingAssembly().GetVersion()}");
+				Console.WriteLine($"VIEApps NGX API Gateway - Service Bundles {Assembly.GetExecutingAssembly().GetVersion()}");
 				Console.WriteLine($"Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "macOS")} {RuntimeInformation.OSArchitecture} ({(RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "Macintosh; Intel Mac OS X; " : "")}{RuntimeInformation.OSDescription.Trim()})");
 				Console.WriteLine($"Mode: {(Environment.UserInteractive && args?.FirstOrDefault(a => a.StartsWith("/daemon")) == null ? "Interactive app" : "Background service")}");
-				Console.WriteLine($"Processes: {processes.Count:#,##0}");
-				processes.Values.ToList().ForEach(processInfo =>
+				Console.WriteLine($"Services: {services.Count:#,##0}");
+				services.Keys.ToList().ForEach(executable =>
 				{
-					if (processInfo.Extra.TryGetValue("waitingTimes", out object waitingTimes) && (int)waitingTimes > 0)
+					var svcInfo = services[executable];
+					if (svcInfo.Extra.TryGetValue("waitingTimes", out object waitingTimes) && (int)waitingTimes > 0)
 						Task.Delay((int)waitingTimes).GetAwaiter().GetResult();
-					processes[processInfo.FilePath] = ExternalProcess.Start(processInfo.FilePath, processInfo.Arguments, (s, a) => { }, (s, a) => { });
-					Console.WriteLine($"- PID: {processes[processInfo.FilePath].ID} => {processInfo.FilePath} {processInfo.Arguments}");
+					svcInfo = services[executable] = ExternalProcess.Start(svcInfo.FilePath, svcInfo.Arguments, (s, a) => { }, (s, a) => { });
+					Console.WriteLine($"- PID: {svcInfo.ID} => {svcInfo.FilePath} {svcInfo.Arguments}");
 				});
 				Console.WriteLine("");
 				Console.WriteLine($">>>>> Press Ctrl+C to stop all processes and terminate the bundles....");
@@ -80,7 +74,7 @@ namespace net.vieapps.Services.APIGateway
 
 			void stop()
 			{
-				processes.Values.ToList().ForEach(info =>
+				services.Values.ToList().ForEach(info =>
 				{
 					try
 					{

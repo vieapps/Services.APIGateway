@@ -1,4 +1,4 @@
-﻿namespace net.vieapps.Services.APIGateway
+namespace net.vieapps.Services.APIGateway
 {
 	partial class ServiceRunner
 	{
@@ -14,7 +14,7 @@
 		void InitializeComponent()
 		{
 			this.components = new System.ComponentModel.Container();
-			this.ServiceName = "VIEApps-API-Gateway";
+			this.ServiceName = "VIEApps-API-Watcher";
 		}
 	}
 }

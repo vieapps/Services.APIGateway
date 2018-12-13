@@ -6,6 +6,7 @@
 		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
 		<StartupObject>net.vieapps.Services.APIGateway.Program</StartupObject>
 		<AssemblyName>VIEApps.Services.APIGateway</AssemblyName>
+		<WarningLevel>3</WarningLevel>
 		<AssemblyTitle>VIEApps NGX API Gateway</AssemblyTitle>
 		<Authors>VIEApps.net</Authors>
 		<Company>VIEApps.net</Company>
@@ -18,6 +19,15 @@
 
 	<ItemGroup>
 		<None Remove=".DS_Store" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Content Include="app.linux-x64.config">
+			<DependentUpon>app.config</DependentUpon>
+		</Content>
+		<Content Include="app.osx-x64.config">
+			<DependentUpon>app.config</DependentUpon>
+		</Content>
 	</ItemGroup>
 
 	<ItemGroup>

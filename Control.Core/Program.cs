@@ -48,7 +48,7 @@ namespace net.vieapps.Services.APIGateway
 			var logLevel = LogLevel.Information;
 			try
 			{
-				logLevel = UtilityService.GetAppSetting("Logs:Level", "Information").ToEnum<LogLevel>();
+				logLevel = (args?.FirstOrDefault(a => a.IsStartsWith("/loglevel:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/loglevel:", "") ?? UtilityService.GetAppSetting("Logs:Level", "Information")).ToEnum<LogLevel>();
 			}
 			catch { }
 #endif

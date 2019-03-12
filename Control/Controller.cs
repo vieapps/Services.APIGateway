@@ -64,7 +64,7 @@ namespace net.vieapps.Services.APIGateway
 		Dictionary<string, ProcessInfo> BusinessServices { get; } = new Dictionary<string, ProcessInfo>(StringComparer.OrdinalIgnoreCase);
 		List<string> MonitoringBusinessServices { get; } = new List<string>();
 		MailSender MailSender { get; set; } = null;
-		WebHookSender WebhookSender { get; set; } = null;
+		WebHookSender WebHookSender { get; set; } = null;
 		bool IsHouseKeeperRunning { get; set; } = false;
 		bool IsTaskSchedulerRunning { get; set; } = false;
 		bool IsDisposed { get; set; } = false;
@@ -145,7 +145,7 @@ namespace net.vieapps.Services.APIGateway
 							var id = (executable + " " + arguments).ToLower().GenerateUUID();
 							this.Tasks[id] = new ProcessInfo(id, executable, arguments, new Dictionary<string, string>
 							{
-								{ "Time", task.Attributes["time"]?.Value ?? "3" }
+								{ "Time", Int32.TryParse(task.Attributes["time"]?.Value ?? "3", out int time) ? time.ToString() : "3" }
 							});
 						}
 					});
@@ -160,6 +160,8 @@ namespace net.vieapps.Services.APIGateway
 			Global.OnProcess?.Invoke($"Working mode: {(this.IsUserInteractive ? "Interactive app" : "Background service")} (RELEASE)");
 #endif
 			Global.OnProcess?.Invoke($"Working directory: {this.WorkingDirectory}");
+			Global.OnProcess?.Invoke($"Number of business services: {this.BusinessServices.Count}");
+			Global.OnProcess?.Invoke($"Number of scheduling tasks: {this.Tasks.Count}");
 
 			var attemptingCounter = 0;
 			async Task connectWAMPRouterAsync()
@@ -249,7 +251,8 @@ namespace net.vieapps.Services.APIGateway
 								{
 									while (WAMPConnections.IncomingChannel == null || WAMPConnections.OutgoingChannel == null)
 										await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
-									await this.SendInterCommunicateMessageAsync("Controller#Info", this.Info.ToJson(), this.CancellationTokenSource.Token).ConfigureAwait(false);
+									if (this.AllowRegisterBusinessServices || this.AllowRegisterHelperServices || this.AllowRegisterHelperTimers)
+										await this.SendInterCommunicateMessageAsync("Controller#Info", this.Info.ToJson(), this.CancellationTokenSource.Token).ConfigureAwait(false);
 								}, TaskContinuationOptions.OnlyOnRanToCompletion)
 								.ContinueWith(async task =>
 								{
@@ -308,21 +311,37 @@ namespace net.vieapps.Services.APIGateway
 					if (attemptingCounter < 13)
 					{
 						await Task.Delay(UtilityService.GetRandomNumber(456, 789)).ConfigureAwait(false);
-						var task = Task.Run(() => connectWAMPRouterAsync()).ConfigureAwait(false);
+						var task = Task.Run(async () => await connectWAMPRouterAsync().ConfigureAwait(false)).ConfigureAwait(false);
 					}
 					else
 						Global.OnError?.Invoke($"Don't attempt to connect to WAMP router after {attemptingCounter} tried times => need to check WAMP router", null);
 				}
 			}
-			Task.Run(() => connectWAMPRouterAsync()).ConfigureAwait(false);
+			Task.Run(async () => await connectWAMPRouterAsync().ConfigureAwait(false)).ConfigureAwait(false);
 		}
 
 		public void Stop()
 		{
-			Task.Run(async () => await this.SendInterCommunicateMessageAsync("Controller#Disconnect", this.Info.ToJson()).ConfigureAwait(false)).ConfigureAwait(false);
-			this.HelperServices.ForEach(async service => await service.DisposeAsync().ConfigureAwait(false));
-			this.RTUService = null;
+			if (this.AllowRegisterBusinessServices || this.AllowRegisterHelperServices || this.AllowRegisterHelperTimers)
+				Task.Run(async () =>
+				{
+					try
+					{
+						await this.SendInterCommunicateMessageAsync("Controller#Disconnect", this.Info.ToJson()).ConfigureAwait(false);
+					}
+					catch { }
+				}).ConfigureAwait(false);
 
+			this.HelperServices.ForEach(async service =>
+			{
+				try
+				{
+					await service.DisposeAsync().ConfigureAwait(false);
+				}
+				catch { }
+			});
+
+			this.RTUService = null;
 			MailSender.SaveMessages();
 			WebHookSender.SaveMessages();
 
@@ -332,7 +351,7 @@ namespace net.vieapps.Services.APIGateway
 
 			this.Communicator?.Dispose();
 			this.MailSender?.Dispose();
-			this.WebhookSender?.Dispose();
+			this.WebHookSender?.Dispose();
 			this.LoggingService?.FlushAllLogs();
 			this.CancellationTokenSource.Cancel();
 
@@ -558,11 +577,11 @@ namespace net.vieapps.Services.APIGateway
 			// send web hook messages (35 seconds)
 			this.StartTimer(async () =>
 			{
-				if (this.WebhookSender == null)
+				if (this.WebHookSender == null)
 					try
 					{
-						this.WebhookSender = new WebHookSender(this.CancellationTokenSource.Token);
-						await this.WebhookSender.ProcessAsync().ConfigureAwait(false);
+						this.WebHookSender = new WebHookSender(this.CancellationTokenSource.Token);
+						await this.WebHookSender.ProcessAsync().ConfigureAwait(false);
 					}
 					catch (Exception ex)
 					{
@@ -570,7 +589,7 @@ namespace net.vieapps.Services.APIGateway
 					}
 					finally
 					{
-						this.WebhookSender = null;
+						this.WebHookSender = null;
 					}
 			}, 35);
 		}
@@ -897,22 +916,18 @@ namespace net.vieapps.Services.APIGateway
 						task.Arguments,
 						(sender, args) =>
 						{
-							var command = task.Executable + " " + task.Arguments;
-							var pos = command.PositionOf("/password:");
-							while (pos > -1)
+							var arguments = task.Arguments.ToArray(" ", true);
+							for (var pos = 0; pos < arguments.Length; pos++)
 							{
-								var next = command.IndexOf(" ", pos);
-								command = command.Remove(pos + 10, next - pos - 11);
-								command = command.Insert(pos + 10, "*****");
-								pos = command.PositionOf("/password:", pos + 1);
+								if (arguments[pos].IsEquals("--password") && pos < arguments.Length - 1)
+									arguments[pos + 1] = "***";
+								else if (arguments[pos].IsStartsWith("/password:"))
+									arguments[pos] = "/password:***";
 							}
-							var startTime = (sender as Process).StartTime;
-							var exitTime = (sender as Process).ExitTime;
-							var elapsedTimes = (exitTime - startTime).TotalMilliseconds.CastAs<long>().GetElapsedTimes();
 							Global.OnProcess?.Invoke(
 								"The task is completed" + "\r\n" +
-								$"- Execution times: {elapsedTimes}" + "\r\n" +
-								$"- Command: [{command.Trim()}]" + "\r\n" +
+								$"- Execution times: {((sender as Process).ExitTime - (sender as Process).StartTime).TotalMilliseconds.CastAs<long>().GetElapsedTimes()}" + "\r\n" +
+								$"- Command: [{task.Executable + " " + string.Join(" ", arguments)}]" + "\r\n" +
 								$"- Results: {results}"
 							);
 							this.Tasks[task.ID].Instance = null;

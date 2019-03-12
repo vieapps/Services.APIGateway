@@ -51,6 +51,7 @@ namespace net.vieapps.Services.APIGateway
 			var stopwatch = Stopwatch.StartNew();
 			Console.OutputEncoding = Encoding.UTF8;
 			Global.ServiceName = "APIGateway";
+			AspNetCoreUtilityService.ServerName = UtilityService.GetAppSetting("HttpServerName", "VIEApps NGX");
 
 			var loggerFactory = appBuilder.ApplicationServices.GetService<ILoggerFactory>();
 			var logPath = UtilityService.GetAppSetting("Path:Logs");
@@ -95,20 +96,8 @@ namespace net.vieapps.Services.APIGateway
 			RTU.Initialize();
 
 			// setup middlewares
-			var forwardedHeadersOptions = new ForwardedHeadersOptions
-			{
-				ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
-			};
-			var knownProxies = UtilityService.GetAppSetting("ProxyIPs")?.ToList().Where(ip => IPAddress.TryParse(ip, out IPAddress address)).Select(ip => IPAddress.Parse(ip)).ToList();
-			if (knownProxies != null)
-			{
-				forwardedHeadersOptions.RequireHeaderSymmetry = false;
-				forwardedHeadersOptions.ForwardLimit = null;
-				knownProxies.ForEach(ip => forwardedHeadersOptions.KnownProxies.Add(ip));
-			}
-
 			appBuilder
-				.UseForwardedHeaders(forwardedHeadersOptions)
+				.UseForwardedHeaders(Global.GetForwardedHeadersOptions())
 				.UseCache()
 				.UseStatusCodeHandler()
 				.UseResponseCompression()

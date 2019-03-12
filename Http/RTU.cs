@@ -11,10 +11,8 @@ using System.Dynamic;
 
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
-
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-
 using WampSharp.V2.Core.Contracts;
 
 using net.vieapps.Components.Utility;
@@ -35,9 +33,9 @@ namespace net.vieapps.Services.APIGateway
 			RTU.WebSocket = new Components.WebSockets.WebSocket(Components.Utility.Logger.GetLoggerFactory(), Global.CancellationTokenSource.Token)
 			{
 				OnError = (websocket, exception) => Global.WriteLogs(RTU.Logger, "RTU", $"Got error while processing: {exception.Message} ({websocket?.ID} {websocket?.RemoteEndPoint})", exception),
-				OnConnectionEstablished = (websocket) => Task.Run(() => RTU.WhenConnectionIsEstablishedAsync(websocket)).ConfigureAwait(false),
-				OnConnectionBroken = (websocket) => Task.Run(() => RTU.WhenConnectionIsBrokenAsync(websocket)).ConfigureAwait(false),
-				OnMessageReceived = (websocket, result, data) => Task.Run(() => RTU.WhenMessageIsReceivedAsync(websocket, result, data)).ConfigureAwait(false)
+				OnConnectionEstablished = (websocket) => Task.Run(() => websocket.WhenConnectionIsEstablishedAsync()).ConfigureAwait(false),
+				OnConnectionBroken = (websocket) => Task.Run(() => websocket.WhenConnectionIsBrokenAsync()).ConfigureAwait(false),
+				OnMessageReceived = (websocket, result, data) => Task.Run(() => websocket.WhenMessageIsReceivedAsync(result, data)).ConfigureAwait(false)
 			};
 			Global.Logger.LogInformation($"WebSocket ({Global.ServiceName} RTU) is initialized - Buffer size: {Components.WebSockets.WebSocket.ReceiveBufferSize:#,##0} bytes - Keep-Alive interval: {RTU.WebSocket.KeepAliveInterval.TotalSeconds} second(s)");
 		}
@@ -48,7 +46,7 @@ namespace net.vieapps.Services.APIGateway
 			Global.Logger.LogInformation($"WebSocket ({Global.ServiceName} RTU) is stopped");
 		}
 
-		static async Task WhenConnectionIsEstablishedAsync(ManagedWebSocket websocket)
+		static async Task WhenConnectionIsEstablishedAsync(this ManagedWebSocket websocket)
 		{
 			// prepare
 			Session session = null;
@@ -75,10 +73,10 @@ namespace net.vieapps.Services.APIGateway
 					throw new TokenNotFoundException("Token is not found");
 
 				websocket.Extra.TryGetValue("User-Agent", out object userAgent);
-				websocket.Extra.TryGetValue("Referrer", out object urlReferrer);
+				websocket.Extra.TryGetValue("Referer", out object urlReferer);
 				var ipAddress = $"{(websocket.RemoteEndPoint as IPEndPoint).Address}";
 
-				session = Global.GetSession(queryString.ToNameValueCollection(), userAgent as string, ipAddress, new Uri(urlReferrer as string));
+				session = Global.GetSession(queryString.ToNameValueCollection(), userAgent as string, ipAddress, string.IsNullOrWhiteSpace(urlReferer as string) ? null : new Uri(urlReferer as string));
 				session.DeviceID = request.Get("x-device-id", session.DeviceID);
 				session.AppName = request.Get("x-app-name", session.AppName);
 				session.AppPlatform = request.Get("x-app-platform", session.AppPlatform);
@@ -153,13 +151,13 @@ namespace net.vieapps.Services.APIGateway
 				await Global.WriteLogsAsync(RTU.Logger, "RTU", $"The real-time updater of a client's device is started" + "\r\n" + $"{websocket.GetConnectionInfo()}").ConfigureAwait(false);
 		}
 
-		static async Task WhenConnectionIsBrokenAsync(ManagedWebSocket websocket)
+		static async Task WhenConnectionIsBrokenAsync(this ManagedWebSocket websocket)
 		{
 			// prepare
-			websocket.Extra.TryGetValue("Session", out object wsession);
+			websocket.Extra.TryGetValue("Session", out object socketsession);
 			websocket.Extra.TryGetValue("Updater", out object updater);
 
-			if (wsession == null || updater == null)
+			if (socketsession == null || updater == null)
 			{
 				await Global.WriteLogsAsync(RTU.Logger, "RTU", $"Connection is closed without attached information (Close status: {websocket?.CloseStatus} - Description: {websocket?.CloseStatusDescription})");
 				if (updater != null)
@@ -171,7 +169,7 @@ namespace net.vieapps.Services.APIGateway
 				return;
 			}
 
-			var session = wsession as Session;
+			var session = socketsession as Session;
 			if (updater != null)
 				try
 				{
@@ -193,7 +191,7 @@ namespace net.vieapps.Services.APIGateway
 				).ConfigureAwait(false);
 		}
 
-		static async Task WhenMessageIsReceivedAsync(ManagedWebSocket websocket, WebSocketReceiveResult result, byte[] data)
+		static async Task WhenMessageIsReceivedAsync(this ManagedWebSocket websocket, WebSocketReceiveResult result, byte[] data)
 		{
 			// prepare
 			var correlationID = UtilityService.NewUUID;
@@ -360,7 +358,7 @@ namespace net.vieapps.Services.APIGateway
 			websocket.Extra["Connection"] =
 				$"- Account: {account} - Session ID: {session.SessionID} - Device ID: {session.DeviceID} - Origin: {session.AppOrigin}" + "\r\n" +
 				$"- App: {session.AppName} @ {session.AppPlatform} [{session.AppAgent}]" + "\r\n" +
-				$"- Connection: {session.IP} - Location: {await session.GetLocationAsync().ConfigureAwait(false)} - WebSocket: {websocket.ID} @ {websocket.RemoteEndPoint}";
+				$"- Connection IP: {session.IP} - Location: {await session.GetLocationAsync().ConfigureAwait(false)} - WebSocket: {websocket.ID} @ {websocket.RemoteEndPoint}";
 		}
 
 		static string GetConnectionInfo(this ManagedWebSocket websocket)

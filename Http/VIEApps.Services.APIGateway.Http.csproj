@@ -11,10 +11,10 @@
 		<Authors>VIEApps.net</Authors>
 		<Company>VIEApps.net</Company>
 		<Product>VIEApps NGX</Product>
-		<Copyright>© 2018 VIEApps.net</Copyright>
-		<AssemblyVersion>10.2.1812.3</AssemblyVersion>
-		<FileVersion>10.2.1812.3</FileVersion>
-		<InformationalVersion>v10.2.netcore-2.2+rev:2018.12.06-latest.components-docker.ready</InformationalVersion>
+		<Copyright>© 2019 VIEApps.net</Copyright>
+		<AssemblyVersion>10.2.1903.1</AssemblyVersion>
+		<FileVersion>10.2.1903.1</FileVersion>
+		<InformationalVersion>v10.2.netcore-2.2+rev:2019.03.05-server.name</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -26,7 +26,7 @@
 	<ItemGroup>
 		<PackageReference Include="Microsoft.AspNetCore" Version="2.2.0" />
 		<PackageReference Include="Microsoft.AspNetCore.ResponseCompression" Version="2.2.0" />
-		<PackageReference Include="Microsoft.AspNetCore.WebSockets" Version="2.2.0" />
+		<PackageReference Include="Microsoft.AspNetCore.WebSockets" Version="2.2.1" />
 	</ItemGroup>
 
 	<ItemGroup>

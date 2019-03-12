@@ -1,18 +1,15 @@
-﻿#region Related components
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Diagnostics;
-using System.Reflection;
 using System.Runtime.InteropServices;
-using Newtonsoft.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
+using Newtonsoft.Json;
 using net.vieapps.Components.Utility;
-#endregion
-
 namespace net.vieapps.Services.APIGateway
 {
 	public abstract class ServiceHost
@@ -29,6 +26,7 @@ namespace net.vieapps.Services.APIGateway
 
 			var apiCall = args?.FirstOrDefault(a => a.IsStartsWith("/agc:"));
 			var isUserInteractive = Environment.UserInteractive && apiCall == null;
+			var hostingInfo = $"VIEApps NGX API Gateway - Service Hosting {RuntimeInformation.ProcessArchitecture} {typeof(ServiceHost).Assembly.GetVersion()} [{this.GetType().Assembly.GetVersion()}]";
 
 			// prepare type name
 			this.ServiceTypeName = args?.FirstOrDefault(a => a.IsStartsWith("/svc:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/svc:", "");
@@ -51,7 +49,6 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// stop if has no type name of a service component
-			var hostingInfo = $"VIEApps NGX API Gateway - Service Hosting {RuntimeInformation.ProcessArchitecture} {typeof(ServiceHost).Assembly.GetVersion()} [{this.GetType().Assembly.GetVersion()}]";
 			if (string.IsNullOrWhiteSpace(this.ServiceTypeName))
 			{
 				Console.Error.WriteLine(hostingInfo);
@@ -68,9 +65,9 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// prepare type name & assembly name of the service component
-			var serviceInfo = this.ServiceTypeName.ToArray();
-			this.ServiceTypeName = serviceInfo[0];
-			this.ServiceAssemblyName = serviceInfo.Length > 1 ? serviceInfo[1] : "Unknown";
+			var serviceTypeInfo = this.ServiceTypeName.ToArray();
+			this.ServiceTypeName = serviceTypeInfo[0];
+			this.ServiceAssemblyName = serviceTypeInfo.Length > 1 ? serviceTypeInfo[1] : "Unknown";
 
 			// prepare the type of the service component
 			try
@@ -174,7 +171,7 @@ namespace net.vieapps.Services.APIGateway
 			var logLevel = LogLevel.Information;
 			try
 			{
-				logLevel = UtilityService.GetAppSetting("Logs:Level", "Information").ToEnum<LogLevel>();
+				logLevel = (args?.FirstOrDefault(a => a.IsStartsWith("/loglevel:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/loglevel:", "") ?? UtilityService.GetAppSetting("Logs:Level", "Information")).ToEnum<LogLevel>();
 			}
 			catch { }
 #endif
@@ -187,7 +184,7 @@ namespace net.vieapps.Services.APIGateway
 			}).BuildServiceProvider().GetService<ILoggerFactory>());
 
 			var logPath = UtilityService.GetAppSetting("Path:Logs");
-			if (Directory.Exists(logPath))
+			if (!string.IsNullOrWhiteSpace(logPath) && Directory.Exists(logPath))
 			{
 				logPath = Path.Combine(logPath, "{Date}_" + $"{serviceComponent.ServiceName.ToLower()}.txt");
 				Logger.GetLoggerFactory().AddFile(logPath, logLevel);
@@ -226,31 +223,45 @@ namespace net.vieapps.Services.APIGateway
 			};
 
 			// start the service component
-			logger.LogInformation($"The service is starting");
+			logger.LogInformation($"The {serviceComponent.ServiceName} service is starting");
 			logger.LogInformation($"Version: {this.ServiceType.Assembly.GetVersion()}");
 			logger.LogInformation($"Mode: {(isUserInteractive ? "Interactive app" : "Background service")}");
 			logger.LogInformation($"Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "macOS")} {RuntimeInformation.OSArchitecture} ({(RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "Macintosh; Intel Mac OS X; " : "")}{RuntimeInformation.OSDescription.Trim()})");
 
 			ServiceBase.ServiceComponent = serviceComponent as ServiceBase;
-			serviceComponent.Start(
-				args,
-				"false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", "")) ? false : true,
-				service =>
-				{
-					logger.LogInformation($"WAMP router: {new Uri(WAMPConnections.GetRouterStrInfo()).GetResolvedURI()}");
-					logger.LogInformation($"Root path (base directory): {AppDomain.CurrentDomain.BaseDirectory}");
-					logger.LogInformation($"Logging level: {logLevel} - Rolling log files is {(string.IsNullOrWhiteSpace(logPath) ? "disabled" : $"enabled => {logPath}")}");
-					logger.LogInformation($"Show debugs: {(service as ServiceBase).IsDebugLogEnabled} - Show results: {(service as ServiceBase).IsDebugResultsEnabled} - Show stacks: {(service as ServiceBase).IsDebugStacksEnabled}");
-					logger.LogInformation($"Service URIs:\r\n\t- Round robin: {service.ServiceURI}\r\n\t- Single (unique): {(service as IUniqueService).ServiceUniqueURI}");
-					stopwatch.Stop();
-					logger.LogInformation($"The service is started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");
+			try
+			{
+				serviceComponent.Start(
+					args,
+					"false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", "")) ? false : true,
+					service =>
+					{
+						logger.LogInformation($"Root path (base directory): {AppDomain.CurrentDomain.BaseDirectory}");
+						logger.LogInformation($"WAMP router: {new Uri(WAMPConnections.GetRouterStrInfo()).GetResolvedURI()}");
+						logger.LogInformation($"API Gateway HTTP service: {UtilityService.GetAppSetting("HttpUri:APIs", "None")}");
+						logger.LogInformation($"Files HTTP service: {UtilityService.GetAppSetting("HttpUri:Files", "None")}");
+						logger.LogInformation($"Portals HTTP service: {UtilityService.GetAppSetting("HttpUri:Portals", "None")}");
+						logger.LogInformation($"Logging level: {logLevel} - Rolling log files is {(string.IsNullOrWhiteSpace(logPath) ? "disabled" : $"enabled => {logPath}")}");
+						logger.LogInformation($"Show debugs: {(service as ServiceBase).IsDebugLogEnabled} - Show results: {(service as ServiceBase).IsDebugResultsEnabled} - Show stacks: {(service as ServiceBase).IsDebugStacksEnabled}");
+						logger.LogInformation($"Service URIs:\r\n\t- Round robin: {service.ServiceURI}\r\n\t- Single (unique): {(service as IUniqueService).ServiceUniqueURI}");
 
-					if (isUserInteractive)
-						logger.LogWarning($"=====> Enter \"exit\" to terminate ...............");
+						stopwatch.Stop();
+						logger.LogInformation($"The service is started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");
 
-					return Task.CompletedTask;
-				}
-			);
+						if (isUserInteractive)
+							logger.LogWarning($"=====> Enter \"exit\" to terminate ...............");
+
+						return Task.CompletedTask;
+					}
+				);
+			}
+			catch (Exception ex)
+			{
+				logger.LogError($">>>>> Error occurred while starting the service: {ex.Message}", ex);
+				eventWaitHandle?.Dispose();
+				stop();
+				return;
+			}
 
 			// wait for exit signal
 			if (useEventWaitHandle)

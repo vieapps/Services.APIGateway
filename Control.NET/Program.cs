@@ -45,15 +45,18 @@ namespace net.vieapps.Services.APIGateway
 			};
 
 			// prepare logging
+			var loglevel = args?.FirstOrDefault(a => a.IsStartsWith("/loglevel:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/loglevel:", "");
+			if (string.IsNullOrWhiteSpace(loglevel))
 #if DEBUG
-			var logLevel = LogLevel.Debug;
+				loglevel = UtilityService.GetAppSetting("Logs:Level", "Debug");
 #else
-			var logLevel = LogLevel.Information;
-			try
-			{
-				logLevel = UtilityService.GetAppSetting("Logs:Level", "Information").ToEnum<LogLevel>();
-			}
-			catch { }
+				loglevel = UtilityService.GetAppSetting("Logs:Level", "Information");
+#endif
+			if (!loglevel.TryToEnum(out LogLevel logLevel))
+#if DEBUG
+				logLevel = LogLevel.Debug;
+#else
+				logLevel = LogLevel.Information;
 #endif
 
 			Components.Utility.Logger.AssignLoggerFactory(new ServiceCollection().AddLogging(builder => builder.SetMinimumLevel(logLevel)).BuildServiceProvider().GetService<ILoggerFactory>());

@@ -31,7 +31,7 @@ namespace net.vieapps.Services.APIGateway
 			// request of WebSocket
 			if (context.WebSockets.IsWebSocketRequest)
 				await Task.WhenAll(
-					Global.IsDebugLogEnabled ? context.WriteLogsAsync("RTU", $"Wrap a WebSocket connection => {context.GetRequestUri()}\r\n- IP: {context.Connection.RemoteIpAddress}:{context.Connection.RemotePort}\r\n- Headers:\r\n\t{string.Join("\r\n\t", context.Request.Headers.Select(header => $"{header.Key}: {header.Value}"))}") : Task.CompletedTask,
+					Global.IsDebugLogEnabled ? context.WriteLogsAsync("RTU", $"Wrap a WebSocket connection\r\n- Endpoint: {context.Connection.RemoteIpAddress}:{context.Connection.RemotePort}\r\n- URI: {context.GetRequestUri()}\r\n- Headers:\r\n\t{string.Join("\r\n\t", context.Request.Headers.Select(header => $"{header.Key}: {header.Value}"))}") : Task.CompletedTask,
 					APIGateway.RTU.WebSocket.WrapAsync(context)
 				).ConfigureAwait(false);
 
@@ -57,7 +57,7 @@ namespace net.vieapps.Services.APIGateway
 				else if (context.Request.Path.Value.IsEquals("/load-balancing-health-check"))
 					await context.WriteAsync("OK", "text/plain", null, 0, null, TimeSpan.Zero, null, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 
-				// request of APIs
+				// APIs
 				else
 				{
 					// process
@@ -86,7 +86,7 @@ namespace net.vieapps.Services.APIGateway
 			// request to favicon.ico file
 			if (requestPath.Equals("favicon.ico"))
 			{
-				context.ShowHttpError((int)HttpStatusCode.NotFound, "Not Found", "FileNotFoundException", context.GetCorrelationID());
+				await context.ProcessFavouritesIconFileRequestAsync().ConfigureAwait(false);
 				return;
 			}
 

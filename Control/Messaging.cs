@@ -233,7 +233,7 @@ namespace net.vieapps.Services.APIGateway
 		#region Information
 		static Dictionary<string, WebHookInfo> Messages = null;
 		static string _WebHooksPath = null;
-		internal static string WebHooksPath => WebHookSender._WebHooksPath ?? (WebHookSender._WebHooksPath = Global.GetPath("Path:WebHooks", "webhooks"));
+		internal static string WebHooksPath => WebHookSender._WebHooksPath ?? (WebHookSender._WebHooksPath = Global.GetPath("Path:WebHooks", "web-hooks"));
 
 		public class WebHookInfo
 		{

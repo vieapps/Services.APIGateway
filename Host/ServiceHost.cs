@@ -57,7 +57,7 @@ namespace net.vieapps.Services.APIGateway
 				Console.Error.WriteLine("");
 				Console.Error.WriteLine("Syntax: VIEApps.Services.APIGateway /svc:<service-component-namespace,service-assembly>");
 				Console.Error.WriteLine("");
-				Console.Error.WriteLine("Ex.: VIEApps.Services.APIGateway /svc:net.vieapps.Services.Portals.ServiceComponent,VIEApps.Services.Portals");
+				Console.Error.WriteLine("Ex.: VIEApps.Services.APIGateway /svc:net.vieapps.Services.Users.ServiceComponent,VIEApps.Services.Users");
 				Console.Error.WriteLine("");
 				if (isUserInteractive)
 					Console.ReadLine();
@@ -77,7 +77,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					Console.Error.WriteLine(hostingInfo);
 					Console.Error.WriteLine("");
-					Console.Error.WriteLine($"The type of the service component is not found [{this.ServiceTypeName},{this.ServiceAssemblyName}]");
+					Console.Error.WriteLine($"Error: The type of the service component is not found [{this.ServiceTypeName},{this.ServiceAssemblyName}]");
 					if (isUserInteractive)
 						Console.ReadLine();
 					return;
@@ -89,7 +89,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					Console.Error.WriteLine(hostingInfo);
 					Console.Error.WriteLine("");
-					Console.Error.WriteLine($"Error occurred while preparing the type of the service component [{this.ServiceTypeName},{this.ServiceAssemblyName}]");
+					Console.Error.WriteLine($"Error: The service component [{this.ServiceTypeName},{this.ServiceAssemblyName}] got an unexpected error while preparing");
 					(ex as ReflectionTypeLoadException).LoaderExceptions.ForEach(exception =>
 					{
 						Console.Error.WriteLine($"{exception.Message}");
@@ -105,7 +105,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					Console.Error.WriteLine(hostingInfo);
 					Console.Error.WriteLine("");
-					Console.Error.WriteLine($"Error occurred while preparing the type of the service component [{this.ServiceTypeName},{this.ServiceAssemblyName}] => {ex.Message}");
+					Console.Error.WriteLine($"Error: The service component [{this.ServiceTypeName},{this.ServiceAssemblyName}] got an unexpected error while preparing => {ex.Message}");
 					var inner = ex.InnerException;
 					while (inner != null)
 					{
@@ -123,7 +123,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				Console.Error.WriteLine(hostingInfo);
 				Console.Error.WriteLine("");
-				Console.Error.WriteLine($"The type of the service component is invalid [{this.ServiceTypeName},{this.ServiceAssemblyName}]");
+				Console.Error.WriteLine($"Error: The type of the service component is invalid [{this.ServiceTypeName},{this.ServiceAssemblyName}]");
 				if (isUserInteractive)
 					Console.ReadLine();
 				return;
@@ -165,15 +165,18 @@ namespace net.vieapps.Services.APIGateway
 			};
 
 			// prepare logging
+			var loglevel = args?.FirstOrDefault(a => a.IsStartsWith("/loglevel:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/loglevel:", "");
+			if (string.IsNullOrWhiteSpace(loglevel))
 #if DEBUG
-			var logLevel = LogLevel.Debug;
+				loglevel = UtilityService.GetAppSetting("Logs:Level", "Debug");
 #else
-			var logLevel = LogLevel.Information;
-			try
-			{
-				logLevel = (args?.FirstOrDefault(a => a.IsStartsWith("/loglevel:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/loglevel:", "") ?? UtilityService.GetAppSetting("Logs:Level", "Information")).ToEnum<LogLevel>();
-			}
-			catch { }
+				loglevel = UtilityService.GetAppSetting("Logs:Level", "Information");
+#endif
+			if (!loglevel.TryToEnum(out LogLevel logLevel))
+#if DEBUG
+				logLevel = LogLevel.Debug;
+#else
+				logLevel = LogLevel.Information;
 #endif
 
 			Logger.AssignLoggerFactory(new ServiceCollection().AddLogging(builder =>
@@ -182,6 +185,7 @@ namespace net.vieapps.Services.APIGateway
 				if (isUserInteractive)
 					builder.AddConsole();
 			}).BuildServiceProvider().GetService<ILoggerFactory>());
+			Components.Caching.Cache.AssignLoggerFactory(Logger.GetLoggerFactory());
 
 			var logPath = UtilityService.GetAppSetting("Path:Logs");
 			if (!string.IsNullOrWhiteSpace(logPath) && Directory.Exists(logPath))
@@ -236,11 +240,14 @@ namespace net.vieapps.Services.APIGateway
 					"false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", "")) ? false : true,
 					service =>
 					{
-						logger.LogInformation($"Root path (base directory): {AppDomain.CurrentDomain.BaseDirectory}");
 						logger.LogInformation($"WAMP router: {new Uri(WAMPConnections.GetRouterStrInfo()).GetResolvedURI()}");
 						logger.LogInformation($"API Gateway HTTP service: {UtilityService.GetAppSetting("HttpUri:APIs", "None")}");
 						logger.LogInformation($"Files HTTP service: {UtilityService.GetAppSetting("HttpUri:Files", "None")}");
 						logger.LogInformation($"Portals HTTP service: {UtilityService.GetAppSetting("HttpUri:Portals", "None")}");
+						logger.LogInformation($"Passport HTTP service: {UtilityService.GetAppSetting("HttpUri:Passports", "None")}");
+						logger.LogInformation($"Root (base) directory: {AppDomain.CurrentDomain.BaseDirectory}");
+						logger.LogInformation($"Temporary directory: {UtilityService.GetAppSetting("Path:Temp", "None")}");
+						logger.LogInformation($"Static files directory: {UtilityService.GetAppSetting("Path:StaticFiles", "None")}");
 						logger.LogInformation($"Logging level: {logLevel} - Rolling log files is {(string.IsNullOrWhiteSpace(logPath) ? "disabled" : $"enabled => {logPath}")}");
 						logger.LogInformation($"Show debugs: {(service as ServiceBase).IsDebugLogEnabled} - Show results: {(service as ServiceBase).IsDebugResultsEnabled} - Show stacks: {(service as ServiceBase).IsDebugStacksEnabled}");
 						logger.LogInformation($"Service URIs:\r\n\t- Round robin: {service.ServiceURI}\r\n\t- Single (unique): {(service as IUniqueService).ServiceUniqueURI}");
@@ -281,6 +288,7 @@ namespace net.vieapps.Services.APIGateway
 			logger.LogInformation($"The service is stopped - Served times: {start.GetElapsedTimes()}");
 		}
 
-		protected virtual void PrepareServiceType() => this.ServiceType = Type.GetType($"{this.ServiceTypeName},{this.ServiceAssemblyName}");
+		protected virtual void PrepareServiceType()
+			=> this.ServiceType = Type.GetType($"{this.ServiceTypeName},{this.ServiceAssemblyName}");
 	}
 }

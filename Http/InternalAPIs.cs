@@ -422,14 +422,14 @@ namespace net.vieapps.Services.APIGateway
 			if (string.IsNullOrWhiteSpace(session?.SessionID))
 				return false;
 
-			else if (await InternalAPIs.Cache.ExistsAsync($"Session#{session.SessionID}").ConfigureAwait(false))
-				return true;
-
 			else
 			{
+				var sessionID = await InternalAPIs.Cache.GetAsync<string>($"Session#{session.SessionID}", Global.CancellationTokenSource.Token).ConfigureAwait(false);
+				if (!string.IsNullOrWhiteSpace(sessionID) && sessionID.Equals(session.GetEncryptedID()))
+					return true;
 				var existed = await context.IsSessionExistAsync(session).ConfigureAwait(false);
 				if (existed)
-					await InternalAPIs.Cache.AddAsync($"Session#{session.SessionID}", session.GetEncryptedID(), 180).ConfigureAwait(false);
+					await InternalAPIs.Cache.SetAsync($"Session#{session.SessionID}", session.GetEncryptedID(), 180, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				return existed;
 			}
 		}
@@ -450,7 +450,7 @@ namespace net.vieapps.Services.APIGateway
 							requestInfo.Session.DeviceID = (requestInfo.Session.AppName + "/" + requestInfo.Session.AppPlatform + "@" + (requestInfo.Session.AppAgent ?? "N/A")).GetHMACBLAKE128(requestInfo.Session.SessionID, true) + "@pwa";
 
 						// store identity into cache for further use
-						await InternalAPIs.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.GetEncryptedID(), 7).ConfigureAwait(false);
+						await InternalAPIs.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.GetEncryptedID(), 13, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 					}
 
 					// register session
@@ -479,7 +479,7 @@ namespace net.vieapps.Services.APIGateway
 						await Task.WhenAll(
 							context.CreateSessionAsync(requestInfo),
 							requestInfo.Session.SendOnlineStatusAsync(true),
-							InternalAPIs.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.GetEncryptedID(), 180)
+							InternalAPIs.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.GetEncryptedID(), 180, Global.CancellationTokenSource.Token)
 						).ConfigureAwait(false);
 					}
 
@@ -673,8 +673,9 @@ namespace net.vieapps.Services.APIGateway
 				// response
 				await Task.WhenAll(
 					context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
-					InternalAPIs.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP),
-					string.IsNullOrWhiteSpace(oldSessionID) ? Task.CompletedTask : InternalAPIs.Cache.RemoveAsync($"Session#{oldSessionID}"),
+					InternalAPIs.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token),
+					string.IsNullOrWhiteSpace(oldSessionID) ? Task.CompletedTask : InternalAPIs.Cache.RemoveAsync($"Session#{oldSessionID}", Global.CancellationTokenSource.Token),
+					InternalAPIs.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.GetEncryptedID(), 180, Global.CancellationTokenSource.Token),
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (sign-in)",
@@ -687,14 +688,12 @@ namespace net.vieapps.Services.APIGateway
 			catch (Exception ex)
 			{
 				// wait
-				var attempt = await InternalAPIs.Cache.ExistsAsync("Attempt#" + requestInfo.Session.IP).ConfigureAwait(false)
-					? await InternalAPIs.Cache.GetAsync<int>("Attempt#" + requestInfo.Session.IP).ConfigureAwait(false)
-					: 0;
-				attempt++;
-
+				var attempt = await InternalAPIs.Cache.ExistsAsync("Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token).ConfigureAwait(false)
+					? await InternalAPIs.Cache.GetAsync<int>("Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token).ConfigureAwait(false) + 1
+					: 1;
 				await Task.WhenAll(
 					Task.Delay(567 + ((attempt - 1) * 5678)),
-					InternalAPIs.Cache.SetAsync("Attempt#" + requestInfo.Session.IP, attempt)
+					InternalAPIs.Cache.SetAsync("Attempt#" + requestInfo.Session.IP, attempt, 13, Global.CancellationTokenSource.Token)
 				).ConfigureAwait(false);
 
 				// show error
@@ -768,8 +767,9 @@ namespace net.vieapps.Services.APIGateway
 				// response
 				await Task.WhenAll(
 					context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
-					InternalAPIs.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP),
-					InternalAPIs.Cache.RemoveAsync($"Session#{oldSessionID}"),
+					InternalAPIs.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token),
+					InternalAPIs.Cache.RemoveAsync($"Session#{oldSessionID}", Global.CancellationTokenSource.Token),
+					InternalAPIs.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.GetEncryptedID(), 180, Global.CancellationTokenSource.Token),
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (OTP validation)",
@@ -782,14 +782,12 @@ namespace net.vieapps.Services.APIGateway
 			catch (Exception ex)
 			{
 				// wait
-				var attempt = await InternalAPIs.Cache.ExistsAsync("Attempt#" + requestInfo.Session.IP).ConfigureAwait(false)
-					? await InternalAPIs.Cache.GetAsync<int>("Attempt#" + requestInfo.Session.IP).ConfigureAwait(false)
-					: 0;
-				attempt++;
-
+				var attempt = await InternalAPIs.Cache.ExistsAsync("Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token).ConfigureAwait(false)
+					? await InternalAPIs.Cache.GetAsync<int>("Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token).ConfigureAwait(false) + 1
+					: 1;
 				await Task.WhenAll(
 					Task.Delay(567 + ((attempt - 1) * 5678)),
-					InternalAPIs.Cache.SetAsync("Attempt#" + requestInfo.Session.IP, attempt)
+					InternalAPIs.Cache.SetAsync("Attempt#" + requestInfo.Session.IP, attempt, 13, Global.CancellationTokenSource.Token)
 				).ConfigureAwait(false);
 
 				// show error
@@ -839,8 +837,8 @@ namespace net.vieapps.Services.APIGateway
 
 				await Task.WhenAll(
 					context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
-					InternalAPIs.Cache.RemoveAsync($"Session#{oldSessionID}"),
-					InternalAPIs.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.GetEncryptedID(), 7),
+					InternalAPIs.Cache.RemoveAsync($"Session#{oldSessionID}", Global.CancellationTokenSource.Token),
+					InternalAPIs.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.GetEncryptedID(), 180, Global.CancellationTokenSource.Token),
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (sign-out)",
@@ -898,7 +896,8 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Heper: keys, session, online status, ...
-		internal static string GetEncryptedID(this Session session) => session.GetEncryptedID(session.SessionID, Global.EncryptionKey, Global.ValidationKey);
+		internal static string GetEncryptedID(this Session session)
+			=> session.GetEncryptedID(session.SessionID, Global.EncryptionKey, Global.ValidationKey);
 
 		internal static void UpdateSessionJson(this Session session, JObject json, IDictionary<object, object> items)
 		{
@@ -929,7 +928,8 @@ namespace net.vieapps.Services.APIGateway
 			json["Token"] = session.GetAuthenticateToken();
 		}
 
-		internal static void UpdateSessionJson(this HttpContext context, Session session, JObject json) => session.UpdateSessionJson(json, context.Items);
+		internal static void UpdateSessionJson(this HttpContext context, Session session, JObject json)
+			=> session.UpdateSessionJson(json, context.Items);
 
 		internal static Task SendOnlineStatusAsync(this Session session, bool isOnline)
 			=> WAMPConnections.OutgoingChannel != null
@@ -946,12 +946,12 @@ namespace net.vieapps.Services.APIGateway
 		{
 			Global.Logger.LogDebug($"Attempting to connect to WAMP router [{new Uri(WAMPConnections.GetRouterStrInfo()).GetResolvedURI()}]");
 			Global.OpenWAMPChannels(
-				(sender, args) =>
+				(sender, arguments) =>
 				{
-					Global.Logger.LogDebug($"Incoming channel to WAMP router is established - Session ID: {args.SessionId}");
+					Global.Logger.LogDebug($"Incoming channel to WAMP router is established - Session ID: {arguments.SessionId}");
 					WAMPConnections.IncomingChannel.Update(WAMPConnections.IncomingChannelSessionID, Global.ServiceName, $"Incoming ({Global.ServiceName} HTTP service)");
-					Global.InterCommunicateMessageUpdater?.Dispose();
-					Global.InterCommunicateMessageUpdater = WAMPConnections.IncomingChannel.RealmProxy.Services
+					Global.PrimaryInterCommunicateMessageUpdater?.Dispose();
+					Global.PrimaryInterCommunicateMessageUpdater = WAMPConnections.IncomingChannel.RealmProxy.Services
 						.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
 						.Subscribe(
 							async message =>
@@ -972,12 +972,12 @@ namespace net.vieapps.Services.APIGateway
 									await Global.WriteLogsAsync(RTU.Logger, "RTU", $"{ex.Message} => {message?.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex, Global.ServiceName, LogLevel.Error, correlationID).ConfigureAwait(false);
 								}
 							},
-							exception => Global.WriteLogs(RTU.Logger, "RTU", $"{exception.Message}", exception)
+							async exception => await Global.WriteLogsAsync(RTU.Logger, "RTU", $"{exception.Message}", exception).ConfigureAwait(false)
 						);
 				},
-				(sender, args) =>
+				(sender, arguments) =>
 				{
-					Global.Logger.LogDebug($"Outgoing channel to WAMP router is established - Session ID: {args.SessionId}");
+					Global.Logger.LogDebug($"Outgoing channel to WAMP router is established - Session ID: {arguments.SessionId}");
 					WAMPConnections.OutgoingChannel.Update(WAMPConnections.OutgoingChannelSessionID, Global.ServiceName, $"Outgoing ({Global.ServiceName} HTTP service)");
 					Task.Run(async () =>
 					{
@@ -996,13 +996,13 @@ namespace net.vieapps.Services.APIGateway
 							Global.Logger.LogError($"Error occurred while initializing helper services: {ex.Message}", ex);
 						}
 					})
-					.ContinueWith(async task => await Global.RegisterServiceAsync().ConfigureAwait(false), TaskContinuationOptions.OnlyOnRanToCompletion)
-					.ContinueWith(async task => await new CommunicateMessage
+					.ContinueWith(async _ => await Global.RegisterServiceAsync().ConfigureAwait(false), TaskContinuationOptions.OnlyOnRanToCompletion)
+					.ContinueWith(async _ => await new CommunicateMessage
 					{
 						ServiceName = "APIGateway",
 						Type = "Controller#RequestInfo"
 					}.PublishAsync(Global.Logger).ConfigureAwait(false), TaskContinuationOptions.OnlyOnRanToCompletion)
-					.ContinueWith(async task => await new CommunicateMessage
+					.ContinueWith(async _ => await new CommunicateMessage
 					{
 						ServiceName = "APIGateway",
 						Type = "Service#RequestInfo"
@@ -1016,7 +1016,8 @@ namespace net.vieapps.Services.APIGateway
 		internal static void CloseWAMPChannels(int waitingTimes = 1234)
 		{
 			Global.UnregisterService();
-			Global.InterCommunicateMessageUpdater?.Dispose();
+			Global.PrimaryInterCommunicateMessageUpdater?.Dispose();
+			Global.SecondaryInterCommunicateMessageUpdater?.Dispose();
 			WAMPConnections.CloseChannels();
 		}
 		#endregion
@@ -1087,7 +1088,11 @@ namespace net.vieapps.Services.APIGateway
 				}.PublishAsync(RTU.Logger).ConfigureAwait(false);
 			}
 
-			// service info
+			// send information of this service
+			else if (message.Type.IsEquals("Service#RequestInfo"))
+				await Global.UpdateServiceInfoAsync().ConfigureAwait(false);
+
+			// update information of a service
 			else if (message.Type.IsEquals("Service#Info"))
 			{
 				var name = message.Data.Get<string>("Name");
@@ -1108,7 +1113,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 			}
 
-			// controller info
+			// update information of a controller
 			else if (message.Type.IsEquals("Controller#Disconnect"))
 			{
 				var id = message.Data.Get<string>("ID");

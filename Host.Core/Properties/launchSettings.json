@@ -1,7 +1,8 @@
 {
-  "profiles": {
-    "APIGateway.ServiceHosting": {
-      "commandName": "Project"
-    }
-  }
+	"profiles": {
+		"APIGateway.ServiceHosting": {
+			"commandName": "Project",
+			"commandLineArgs": "/svc:net.vieapps.Services.OMedias.ServiceComponent,VIEApps.Services.OMedias"
+		}
+	}
 }

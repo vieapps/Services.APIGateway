@@ -27,7 +27,7 @@ namespace net.vieapps.Services.APIGateway
 					await this.Instance.DisposeAsync().ConfigureAwait(false);
 				this.Instance = await WAMPConnections.IncomingChannel.RealmProxy.Services.RegisterCallee(this, RegistrationInterceptor.Create()).ConfigureAwait(false);
 			})
-			.ContinueWith(task =>
+			.ContinueWith(_ =>
 			{
 				this.Communicator?.Dispose();
 				this.Communicator = WAMPConnections.IncomingChannel.RealmProxy.Services
@@ -39,11 +39,8 @@ namespace net.vieapps.Services.APIGateway
 			}, TaskContinuationOptions.OnlyOnRanToCompletion)
 			.ConfigureAwait(false);
 
-			this.OnOutgoingChannelEstablished = (sender, args) =>Task.Run(() =>
-			{
-				this.RTUService = WAMPConnections.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create());
-			})
-			.ContinueWith(async task =>
+			this.OnOutgoingChannelEstablished = (sender, args) =>Task.Run(() => this.RTUService = WAMPConnections.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create()))
+			.ContinueWith(async _ =>
 			{
 				await this.SendRequestInfoAsync().ConfigureAwait(false);
 				Global.OnProcess?.Invoke($"Successfully subscribe the manager's communicator");
@@ -64,7 +61,7 @@ namespace net.vieapps.Services.APIGateway
 					if (this.Instance != null)
 						await this.Instance.DisposeAsync().ConfigureAwait(false);
 				})
-				.ContinueWith(task =>
+				.ContinueWith(_ =>
 				{
 					this.Communicator?.Dispose();
 					this.RequestTimer?.Dispose();
@@ -181,6 +178,9 @@ namespace net.vieapps.Services.APIGateway
 							controller = message.Data.FromJson<ControllerInfo>();
 							this.Controllers.TryAdd(controller.ID, controller);
 						}
+#if DEBUG
+						Global.OnProcess?.Invoke($"{(message.Type.ToArray('#').Last().IsEquals("info") ? "Got information of a controller" : "A controller was connected")} => {message.ToJson()}");
+#endif
 						break;
 
 					case "disconnect":
@@ -191,11 +191,14 @@ namespace net.vieapps.Services.APIGateway
 							controller.Timestamp = DateTime.Now;
 							this.Services.ForEach(kvp =>
 							{
-								var svcInfo = kvp.Value.FirstOrDefault(svc => svc.Name.Equals(kvp.Key) && svc.ControllerID.Equals(controller.ID));
+								var svcInfo = kvp.Value.FirstOrDefault(svc => svc.Name.IsEquals(kvp.Key) && svc.ControllerID.IsEquals(controller.ID));
 								if (svcInfo != null)
 									svcInfo.Available = svcInfo.Running = false;
 							});
 						}
+#if DEBUG
+						Global.OnProcess?.Invoke($"A controller was disconnected => {message.ToJson()}");
+#endif
 						break;
 				}
 			}
@@ -237,28 +240,21 @@ namespace net.vieapps.Services.APIGateway
 
 		#region Get available controllers & services
 		public JArray GetAvailableControllers()
-		{
-			var controllers = new JArray();
-			this.Controllers.Values.ToList().ForEach(controller => controllers.Add(new JObject
+			=> this.Controllers.Values.Select(controller => new JObject
 			{
 				{ "ID", controller.ID.GenerateUUID() },
 				{ "Platform", controller.Platform },
 				{ "Available" , controller.Available }
-			}));
-			return controllers;
-		}
+			}).ToJArray();
 
 		public JArray GetAvailableServices()
-		{
-			var services = new JArray();
-			this.Services.Values.ToList().ForEach(service => services.Add(new JObject
+			=> this.Services.Values.Select(services => new JObject
 			{
-				{ "URI", $"net.vieapps.services.{service[0].Name}" },
-				{ "Available", service.FirstOrDefault(svc => svc.Available) != null },
-				{ "Running", service.FirstOrDefault(svc => svc.Running) != null }
-			}));
-			return services;
-		}
+				{ "URI", $"net.vieapps.services.{services.First().Name}" },
+				{ "Available", services.FirstOrDefault(service => service.Available) != null },
+				{ "Running", services.FirstOrDefault(service => service.Running) != null }
+			})
+			.ToJArray();
 		#endregion
 
 		Task SendRequestInfoAsync()

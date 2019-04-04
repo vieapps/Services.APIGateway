@@ -1,7 +1,7 @@
 {
-	"profiles": {
-		"APIGateway.Controller": {
-			"commandName": "Project"
-		}
-	}
+  "profiles": {
+    "APIGateway.Controller": {
+      "commandName": "Project"
+    }
+  }
 }

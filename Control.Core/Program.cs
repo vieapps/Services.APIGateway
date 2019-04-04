@@ -42,15 +42,18 @@ namespace net.vieapps.Services.APIGateway
 			};
 
 			// prepare logging
+			var loglevel = args?.FirstOrDefault(a => a.IsStartsWith("/loglevel:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/loglevel:", "");
+			if (string.IsNullOrWhiteSpace(loglevel))
 #if DEBUG
-			var logLevel = LogLevel.Debug;
+				loglevel = UtilityService.GetAppSetting("Logs:Level", "Debug");
 #else
-			var logLevel = LogLevel.Information;
-			try
-			{
-				logLevel = (args?.FirstOrDefault(a => a.IsStartsWith("/loglevel:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/loglevel:", "") ?? UtilityService.GetAppSetting("Logs:Level", "Information")).ToEnum<LogLevel>();
-			}
-			catch { }
+				loglevel = UtilityService.GetAppSetting("Logs:Level", "Information");
+#endif
+			if (!loglevel.TryToEnum(out LogLevel logLevel))
+#if DEBUG
+				logLevel = LogLevel.Debug;
+#else
+				logLevel = LogLevel.Information;
 #endif
 
 			Components.Utility.Logger.AssignLoggerFactory(new ServiceCollection().AddLogging(builder =>
@@ -95,7 +98,7 @@ namespace net.vieapps.Services.APIGateway
 
 					if (commands[0].IsEquals("info"))
 					{
-						var controllerID = commands.Length > 1 ? commands[1].ToLower().Trim() : "local";
+						var controllerID = commands.Length > 1 ? commands[1].ToLower() : "local";
 						if (controllerID.IsEquals("global"))
 						{
 							var controllers = Program.Manager.AvailableControllers;
@@ -118,15 +121,15 @@ namespace net.vieapps.Services.APIGateway
 								$"- Number of helper services: {Program.Controller.NumberOfHelperServices:#,##0}" + "\r\n\t" +
 								$"- Number of scheduling timers: {Program.Controller.NumberOfTimers:#,##0}" + "\r\n\t" +
 								$"- Number of scheduling tasks: {Program.Controller.NumberOfTasks:#,##0}";
-							var services = Program.Controller.GetAvailableBusinessServices().OrderBy(kvp => kvp.Key).ToDictionary(kvp => kvp.Key, kvp => Program.Controller.GetServiceProcess(kvp.Key.ToArray('.').Last()));
+							var services = Program.Controller.AvailableBusinessServices.OrderBy(kvp => kvp.Key).ToDictionary(kvp => kvp.Key, kvp => kvp.Value.Instance);
 							info += "\r\n" + $"Services - Available: {services.Count:#,##0} - Running: {services.Where(kvp => kvp.Value != null).Count():#,##0}";
 							services.ForEach(kvp =>
 							{
-								info += "\r\n\t" + $"- URI: {kvp.Key}";
+								info += "\r\n\t" + $"- URI: net.vieapps.services.{kvp.Key}";
 								if (kvp.Value != null)
 								{
 									var svcArgs = kvp.Value.Arguments?.ToArray(' ') ?? new string[] { };
-									info += $" ({Extensions.GetUniqueName(kvp.Key.ToArray('.').Last(), svcArgs)}) - Status: Running";
+									info += $" (net.vieapps.services.{Extensions.GetUniqueName(kvp.Key.ToArray('.').Last(), svcArgs)}) - Status: Running";
 									if (kvp.Value.ID != null)
 										info += $" - Process ID: {kvp.Value.ID.Value}";
 									if (kvp.Value.StartTime != null)
@@ -181,12 +184,12 @@ namespace net.vieapps.Services.APIGateway
 						if (commands.Length > 1)
 						{
 							var controllerID = commands.Length > 2
-								? commands[2].ToLower().Trim()
+								? commands[2].ToLower()
 								: Program.Controller.Info.ID;
 							if (!Program.Manager.AvailableControllers.ContainsKey(controllerID))
 								Program.Logger.LogWarning($"Controller with identity \"{controllerID}\" is not found");
 							else
-								Program.Manager.StartBusinessService(controllerID, commands[1], Program.Controller.GetServiceArguments().Replace("/", "/call-"));
+								Program.Manager.StartBusinessService(controllerID, commands[1].ToLower(), Program.Controller.GetServiceArguments().Replace("/", "/call-"));
 						}
 						else
 							Program.Logger.LogInformation($"Invalid {command} command");
@@ -197,12 +200,12 @@ namespace net.vieapps.Services.APIGateway
 						if (commands.Length > 1)
 						{
 							var controllerID = commands.Length > 2
-								? commands[2].ToLower().Trim()
+								? commands[2].ToLower()
 								: Program.Controller.Info.ID;
 							if (!Program.Manager.AvailableControllers.ContainsKey(controllerID))
 								Program.Logger.LogWarning($"Controller with identity \"{controllerID}\" is not found");
 							else
-								Program.Manager.StopBusinessService(controllerID, commands[1]);
+								Program.Manager.StopBusinessService(controllerID, commands[1].ToLower());
 						}
 						else
 							Program.Logger.LogInformation($"Invalid {command} command");

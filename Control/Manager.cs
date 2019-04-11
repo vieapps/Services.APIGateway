@@ -47,8 +47,15 @@ namespace net.vieapps.Services.APIGateway
 			}, TaskContinuationOptions.OnlyOnRanToCompletion)
 			.ConfigureAwait(false);
 
-			var interval = UtilityService.GetAppSetting("RequestTimer:Interval", "15").CastAs<int>();
-			this.RequestTimer = Observable.Timer(TimeSpan.FromMinutes(interval), TimeSpan.FromMinutes(interval)).Subscribe(_ => Task.Run(() => this.SendRequestInfoAsync()).ConfigureAwait(false));
+			this.RequestInterval = UtilityService.GetAppSetting("RequestTimer:Interval", "15").CastAs<int>();
+			this.RequestTimer = Observable.Timer(TimeSpan.FromMinutes(this.RequestInterval), TimeSpan.FromMinutes(this.RequestInterval)).Subscribe(_ => Task.Run(async () =>
+			{
+				if ((DateTime.Now - this.RequestTime).TotalMinutes >= this.RequestInterval - 2)
+				{
+					await this.SendRequestInfoAsync().ConfigureAwait(false);
+					this.RequestTime = DateTime.Now;
+				}
+			}).ConfigureAwait(false));
 		}
 
 		public void Dispose()
@@ -74,14 +81,27 @@ namespace net.vieapps.Services.APIGateway
 
 		#region Properties
 		ConcurrentDictionary<string, ControllerInfo> Controllers { get; } = new ConcurrentDictionary<string, ControllerInfo>();
+
 		ConcurrentDictionary<string, IController> ServiceManagers { get; } = new ConcurrentDictionary<string, IController>();
+
 		ConcurrentDictionary<string, List<ServiceInfo>> Services { get; } = new ConcurrentDictionary<string, List<ServiceInfo>>();
-		SystemEx.IAsyncDisposable Instance { get; set; } = null;
-		IDisposable Communicator { get; set; } = null;
-		IRTUService RTUService { get; set; } = null;
-		IDisposable RequestTimer { get; set; } = null;
+
+		SystemEx.IAsyncDisposable Instance { get; set; }
+
+		IDisposable Communicator { get; set; }
+
+		IRTUService RTUService { get; set; }
+
+		IDisposable RequestTimer { get; set; }
+
+		int RequestInterval { get; set; }
+
+		DateTime RequestTime { get; set; } = DateTime.Now;
+
 		bool Disposed { get; set; } = false;
+
 		public IDictionary<string, ControllerInfo> AvailableControllers => this.Controllers as IDictionary<string, ControllerInfo>;
+
 		public IDictionary<string, List<ServiceInfo>> AvailableServices => this.Services as IDictionary<string, List<ServiceInfo>>;
 		#endregion
 
@@ -145,6 +165,25 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
+		#region Get available controllers & services
+		public JArray GetAvailableControllers()
+			=> this.Controllers.Values.Select(controller => new JObject
+			{
+				{ "ID", controller.ID.GenerateUUID() },
+				{ "Platform", controller.Platform },
+				{ "Available" , controller.Available }
+			}).ToJArray();
+
+		public JArray GetAvailableServices()
+			=> this.Services.Values.Select(services => new JObject
+			{
+				{ "URI", $"net.vieapps.services.{services.First().Name}" },
+				{ "Available", services.FirstOrDefault(service => service.Available) != null },
+				{ "Running", services.FirstOrDefault(service => service.Running) != null }
+			})
+			.ToJArray();
+		#endregion
+
 		#region Process inter-communicate messages
 		public async Task SendInterCommunicateMessageAsync(string type, JToken data = null)
 		{
@@ -200,6 +239,13 @@ namespace net.vieapps.Services.APIGateway
 						Global.OnProcess?.Invoke($"A controller was disconnected => {message.ToJson()}");
 #endif
 						break;
+
+					case "requestinfo":
+						this.RequestTime = DateTime.Now;
+#if DEBUG
+						Global.OnProcess?.Invoke($"Got a request to update information of a controller => {message.ToJson()}");
+#endif
+						break;
 				}
 			}
 
@@ -236,25 +282,6 @@ namespace net.vieapps.Services.APIGateway
 			// registered handler
 			this.OnInterCommunicateMessageReceived?.Invoke(message);
 		}
-		#endregion
-
-		#region Get available controllers & services
-		public JArray GetAvailableControllers()
-			=> this.Controllers.Values.Select(controller => new JObject
-			{
-				{ "ID", controller.ID.GenerateUUID() },
-				{ "Platform", controller.Platform },
-				{ "Available" , controller.Available }
-			}).ToJArray();
-
-		public JArray GetAvailableServices()
-			=> this.Services.Values.Select(services => new JObject
-			{
-				{ "URI", $"net.vieapps.services.{services.First().Name}" },
-				{ "Available", services.FirstOrDefault(service => service.Available) != null },
-				{ "Running", services.FirstOrDefault(service => service.Running) != null }
-			})
-			.ToJArray();
 		#endregion
 
 		Task SendRequestInfoAsync()

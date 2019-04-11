@@ -1132,7 +1132,9 @@ namespace net.vieapps.Services.APIGateway
 			else if (message.Type.IsEquals("Controller#Info") || message.Type.IsEquals("Controller#Connect"))
 			{
 				var id = message.Data.Get<string>("ID");
-				if (!InternalAPIs.Controllers.ContainsKey(id))
+				if (InternalAPIs.Controllers.TryGetValue(id, out JObject controller))
+					"User,Host,Platform,Mode,Available,Timestamp".ToArray(',').ForEach(name => controller[name] = message.Data[name]);
+				else
 					InternalAPIs.Controllers.TryAdd(id, message.Data as JObject);
 			}
 		}

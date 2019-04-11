@@ -53,7 +53,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				Console.Error.WriteLine(hostingInfo);
 				Console.Error.WriteLine("");
-				Console.Error.WriteLine("Error: The service type name is invalid");
+				Console.Error.WriteLine("Error: The service component is invalid (no type name)");
 				Console.Error.WriteLine("");
 				Console.Error.WriteLine("Syntax: VIEApps.Services.APIGateway /svc:<service-component-namespace,service-assembly>");
 				Console.Error.WriteLine("");
@@ -77,7 +77,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					Console.Error.WriteLine(hostingInfo);
 					Console.Error.WriteLine("");
-					Console.Error.WriteLine($"Error: The type of the service component is not found [{this.ServiceTypeName},{this.ServiceAssemblyName}]");
+					Console.Error.WriteLine($"Error: The service component is invalid [{this.ServiceTypeName},{this.ServiceAssemblyName}]");
 					if (isUserInteractive)
 						Console.ReadLine();
 					return;
@@ -123,7 +123,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				Console.Error.WriteLine(hostingInfo);
 				Console.Error.WriteLine("");
-				Console.Error.WriteLine($"Error: The type of the service component is invalid [{this.ServiceTypeName},{this.ServiceAssemblyName}]");
+				Console.Error.WriteLine($"Error: The service component is invalid [{this.ServiceTypeName},{this.ServiceAssemblyName}]");
 				if (isUserInteractive)
 					Console.ReadLine();
 				return;
@@ -230,7 +230,7 @@ namespace net.vieapps.Services.APIGateway
 			logger.LogInformation($"The {serviceComponent.ServiceName} service is starting");
 			logger.LogInformation($"Version: {this.ServiceType.Assembly.GetVersion()}");
 			logger.LogInformation($"Mode: {(isUserInteractive ? "Interactive app" : "Background service")}");
-			logger.LogInformation($"Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "macOS")} {RuntimeInformation.OSArchitecture} ({(RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "Macintosh; Intel Mac OS X; " : "")}{RuntimeInformation.OSDescription.Trim()})");
+			logger.LogInformation($"Platform: {Extensions.GetRuntimePlatform()}");
 
 			ServiceBase.ServiceComponent = serviceComponent as ServiceBase;
 			try

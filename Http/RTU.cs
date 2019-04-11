@@ -96,7 +96,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// update the initializing flag
-			websocket.Extra["__IsInitializing"] = "v";
+			websocket.Set("__IsInitializing", "v");
 
 			// wait for few times before connecting to WAMP router because Reactive.NET needs
 			if (query.ContainsKey("x-restart"))
@@ -123,11 +123,11 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// extra information
-			websocket.Extra["Session"] = session;
+			websocket.Set("Session", session);
 			await websocket.PrepareConnectionInfoAsync().ConfigureAwait(false);
 
 			// subscribe to push messages
-			websocket.Extra["Updater"] = WAMPConnections.IncomingChannel.RealmProxy.Services
+			websocket.Set("Updater", WAMPConnections.IncomingChannel.RealmProxy.Services
 				.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages")
 				.Subscribe(
 					async message =>
@@ -141,33 +141,35 @@ namespace net.vieapps.Services.APIGateway
 							}
 							catch (Exception ex)
 							{
-								await Global.WriteLogsAsync(RTU.Logger, "RTU", $"Pushing error: {ex.Message}" + "\r\n" + websocket.GetConnectionInfo() + "\r\n" + $"- Message: {message.ToJson().ToString(Global.IsDebugResultsEnabled ? Formatting.Indented : Formatting.None)}", ex).ConfigureAwait(false);
+								await Global.WriteLogsAsync(RTU.Logger, "RTU", $"Error occurred while pushing => {ex.Message}" + "\r\n" + websocket.GetConnectionInfo() + "\r\n" + $"- Message: {message.ToJson().ToString(Global.IsDebugResultsEnabled ? Formatting.Indented : Formatting.None)}", ex).ConfigureAwait(false);
 							}
 					},
-					async exception => await Global.WriteLogsAsync(RTU.Logger, "RTU", $"Error occurred while fetching messages: {exception.Message}", exception).ConfigureAwait(false)
-				);
+					async exception => await Global.WriteLogsAsync(RTU.Logger, "RTU", $"Error occurred while fetching messages => {exception.Message}", exception).ConfigureAwait(false)
+				)
+			);
 
 			if (Global.IsDebugLogEnabled)
 				await Global.WriteLogsAsync(RTU.Logger, "RTU", $"The real-time updater of a client's device is started" + "\r\n" + websocket.GetConnectionInfo()).ConfigureAwait(false);
 
 			// update the initializing flag
-			websocket.Extra.Remove("__IsInitializing");
+			websocket.Remove("__IsInitializing");
 		}
 
 		static async Task WhenConnectionIsBrokenAsync(this ManagedWebSocket websocket)
 		{
-			// get the attached session
-			var session = websocket.Get<Session>("Session");
+			// remove the attached session
+			websocket.Remove("Session", out Session session);
 
-			// dispose the updater
-			try
-			{
-				websocket.Get<IDisposable>("Updater")?.Dispose();
-			}
-			catch (Exception ex)
-			{
-				await Global.WriteLogsAsync(RTU.Logger, "RTU", $"Error occurred while disposing updater: {session?.ToJson()?.ToString(Global.IsDebugResultsEnabled ? Formatting.Indented : Formatting.None)}", ex).ConfigureAwait(false);
-			}
+			// remove the updater
+			if (websocket.Remove("Updater", out IDisposable updater))
+				try
+				{
+					updater?.Dispose();
+				}
+				catch (Exception ex)
+				{
+					await Global.WriteLogsAsync(RTU.Logger, "RTU", $"Error occurred while disposing updater: {session?.ToJson()?.ToString(Global.IsDebugResultsEnabled ? Formatting.Indented : Formatting.None)}", ex).ConfigureAwait(false);
+				}
 
 			// update online status
 			await Task.WhenAll(
@@ -188,7 +190,7 @@ namespace net.vieapps.Services.APIGateway
 				return;
 
 			// wait for the initializing process is completed
-			while (websocket.Extra.ContainsKey("__IsInitializing"))
+			while (websocket.Get<string>("__IsInitializing") != null)
 				await Task.Delay(UtilityService.GetRandomNumber(123, 456), Global.CancellationTokenSource.Token).ConfigureAwait(false);
 
 			// check session
@@ -212,17 +214,12 @@ namespace net.vieapps.Services.APIGateway
 			if (Global.IsDebugLogEnabled)
 				await Global.WriteLogsAsync(RTU.Logger, "RTU", $"Begin process ({verb} /{serviceName}/{objectName}/{(query.ContainsKey("object-identity") ? query["object-identity"] : "")} - WebSocket: {websocket.ID} @ {websocket.RemoteEndPoint})", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
 
-			// refresh the session
-			if ("PING".IsEquals(verb))
+			// response to a heartbeat => refresh the session
+			if ("PONG".IsEquals(verb) && "session".IsEquals(objectName))
 				await Task.WhenAll(
-					websocket.SendAsync(new UpdateMessage
-					{
-						Type = "Pong",
-						DeviceID = session.DeviceID
-					}),
 					InternalAPIs.Cache.SetAsync($"Session#{session.SessionID}", session.GetEncryptedID(), 180, Global.CancellationTokenSource.Token),
 					Global.IsDebugResultsEnabled
-						? Global.WriteLogsAsync(RTU.Logger, "RTU", $"End process => Successfully refresh" + "\r\n" + websocket.GetConnectionInfo(), null, Global.ServiceName, LogLevel.Information, correlationID)
+						? Global.WriteLogsAsync(RTU.Logger, "RTU", $"End process => Successfully refresh a session when got a response of a heartbeat signal" + "\r\n" + websocket.GetConnectionInfo(), null, Global.ServiceName, LogLevel.Information, correlationID)
 						: Task.CompletedTask
 				).ConfigureAwait(false);
 
@@ -333,11 +330,6 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		static T Get<T>(this ManagedWebSocket websocket, string key)
-			=> websocket.Extra.TryGetValue(key, out object @object) && @object != null && @object is T
-				? (T)@object
-				: default(T);
-
 		static async Task PrepareConnectionInfoAsync(this ManagedWebSocket websocket)
 		{
 			var session = websocket.Get<Session>("Session") ?? Global.CurrentHttpContext.GetSession();
@@ -347,18 +339,20 @@ namespace net.vieapps.Services.APIGateway
 				var profile = await WAMPConnections.CallServiceAsync(new RequestInfo(session, "Users", "Profile"), Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				account = (profile?.Get<string>("Name") ?? "Unknown") + $" ({session.User.ID})";
 			}
-			websocket.Extra["ConnectionInfo"] =
+			websocket.Set("ConnectionInfo",
 				$"- Account: {account} - Session ID: {session.SessionID} - Device ID: {session.DeviceID} - Origin: {session.AppOrigin}" + "\r\n" +
 				$"- App: {session.AppName} @ {session.AppPlatform} [{session.AppAgent}]" + "\r\n" +
-				$"- Connection IP: {session.IP} - Location: {await session.GetLocationAsync(Global.GetCorrelationID(), Global.CancellationTokenSource.Token).ConfigureAwait(false)} - WebSocket: {websocket.ID} @ {websocket.RemoteEndPoint}";
+				$"- Connection IP: {session.IP} - Location: {await session.GetLocationAsync(Global.GetCorrelationID(), Global.CancellationTokenSource.Token).ConfigureAwait(false)} - WebSocket: {websocket.ID} @ {websocket.RemoteEndPoint}"
+			);
 		}
 
 		static string GetConnectionInfo(this ManagedWebSocket websocket)
-			=> websocket.Get<string>("ConnectionInfo") ?? "";
+			=> websocket.Get("ConnectionInfo", "");
 
 		static async Task SendAsync(this ManagedWebSocket websocket, Exception exception, string msg = null, string correlationID = null)
 		{
 			// prepare
+			correlationID = correlationID ?? Global.GetCorrelationID();
 			var wampError = exception is WampException
 				? (exception as WampException).GetDetails()
 				: null;
@@ -372,7 +366,7 @@ namespace net.vieapps.Services.APIGateway
 				{ "Message", msg },
 				{ "Type", type },
 				{ "Code", code },
-				{ "CorrelationID", Global.GetCorrelationID() }
+				{ "CorrelationID", correlationID }
 			};
 
 			if (Global.IsDebugStacksEnabled)

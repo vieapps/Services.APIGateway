@@ -70,10 +70,16 @@ namespace net.vieapps.Services.APIGateway
 
 			public ExternalProcess.Info Instance { get; internal set; }
 
-			public T Get<T>(string name)
+			public void Set<T>(string name, T value)
+				=> this.Extra[name] = value;
+
+			public void Set<T>(IDictionary<string, T> items)
+				=> items?.ForEach(kvp => this.Set(kvp.Key, kvp.Value));
+
+			public T Get<T>(string name, T @default = default(T))
 				=> this.Extra.TryGetValue(name, out object value) && value != null && value is T
 					? (T)value
-					: default(T);
+					: @default;
 		}
 		#endregion
 
@@ -84,7 +90,7 @@ namespace net.vieapps.Services.APIGateway
 
 		public CancellationTokenSource CancellationTokenSource { get; private set; }
 
-		IDisposable Communicator { get; set; } = null;
+		IDisposable InterCommunicator { get; set; } = null;
 
 		LoggingService LoggingService { get; } = null;
 
@@ -120,6 +126,10 @@ namespace net.vieapps.Services.APIGateway
 
 		bool AllowRegisterBusinessServices { get; set; } = true;
 
+		IDisposable PingCommunicator { get; set; } = null;
+
+		DateTime PingTime { get; set; } = DateTime.Now;
+
 		/// <summary>
 		/// Gets the number of registered helper serivces
 		/// </summary>
@@ -146,7 +156,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				User = Environment.UserName.ToLower(),
 				Host = Environment.MachineName.ToLower(),
-				Platform = $"{RuntimeInformation.FrameworkDescription} @ {this.OSInfo}",
+				Platform = $"{Extensions.GetRuntimePlatform()}",
 				Mode = this.IsUserInteractive ? "Interactive app" : "Background service",
 				Available = true
 			};
@@ -182,10 +192,7 @@ namespace net.vieapps.Services.APIGateway
 						var name = service.Attributes["name"]?.Value?.Trim().ToLower();
 						var type = service.Attributes["type"]?.Value?.Trim().Replace(" ", "");
 						if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(type))
-							this.BusinessServices[name] = new ProcessInfo(name, service.Attributes["executable"]?.Value?.Trim(), type, new Dictionary<string, object>
-							{
-								{ "State", "Initializing" }
-							});
+							this.BusinessServices[name] = new ProcessInfo(name, service.Attributes["executable"]?.Value?.Trim(), type);
 					});
 			}
 
@@ -201,7 +208,7 @@ namespace net.vieapps.Services.APIGateway
 							var id = (executable + " " + arguments).ToLower().GenerateUUID();
 							this.Tasks[id] = new ProcessInfo(id, executable, arguments, new Dictionary<string, object>
 							{
-								{ "Time", Int32.TryParse(task.Attributes["time"]?.Value ?? "3", out int time) ? time.ToString() : "3" }
+								{ "Time", Int32.TryParse(task.Attributes["time"]?.Value, out int time) ? time.ToString() : task.Attributes["time"]?.Value ?? "3" }
 							});
 						}
 					});
@@ -209,7 +216,7 @@ namespace net.vieapps.Services.APIGateway
 			// start
 			Global.OnProcess?.Invoke("The API Gateway Services Controller is starting");
 			Global.OnProcess?.Invoke($"Version: {typeof(Controller).Assembly.GetVersion()}");
-			Global.OnProcess?.Invoke($"Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "macOS")} {RuntimeInformation.OSArchitecture} ({(RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "Macintosh; Intel Mac OS X; " : "")}{RuntimeInformation.OSDescription.Trim()})");
+			Global.OnProcess?.Invoke($"Platform: {Extensions.GetRuntimePlatform()}");
 #if DEBUG
 			Global.OnProcess?.Invoke($"Working mode: {(this.IsUserInteractive ? "Interactive app" : "Background service")} (DEBUG)");
 #else
@@ -243,14 +250,27 @@ namespace net.vieapps.Services.APIGateway
 								if (this.State == ServiceState.Initializing)
 									this.State = ServiceState.Ready;
 
-								this.Communicator?.Dispose();
-								this.Communicator = WAMPConnections.IncomingChannel.RealmProxy.Services
+								this.InterCommunicator?.Dispose();
+								this.InterCommunicator = WAMPConnections.IncomingChannel.RealmProxy.Services
 									.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
 									.Subscribe(
 										async message => await this.ProcessInterCommunicateMessageAsync(message).ConfigureAwait(false),
 										exception => Global.OnError?.Invoke($"Error occurred while fetching inter-communicate message: {exception.Message}", this.State == ServiceState.Connected ? exception : null)
 									);
 								Global.OnProcess?.Invoke($"The inter-communicate message updater is{(this.State == ServiceState.Disconnected ? " re-" : " ")}subscribed successful");
+
+								this.PingCommunicator?.Dispose();
+								this.PingCommunicator = WAMPConnections.IncomingChannel.RealmProxy.Services
+									.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages")
+									.Subscribe(
+										message =>
+										{
+											if (message.Type.IsEquals("Ping"))
+												this.PingTime = DateTime.Now;
+										},
+										exception => Global.OnError?.Invoke($"Error occurred while fetching ping-communicate message: {exception.Message}", this.State == ServiceState.Connected ? exception : null)
+									);
+								Global.OnProcess?.Invoke($"The ping-communicate message updater is{(this.State == ServiceState.Disconnected ? " re-" : " ")}subscribed successful");
 
 								Task.Run(async () =>
 								{
@@ -280,6 +300,7 @@ namespace net.vieapps.Services.APIGateway
 											{
 												this.RegisterMessagingTimers();
 												this.RegisterSchedulingTimers();
+												this.RegisterPingTimers();
 												Global.OnProcess?.Invoke($"The background workers & schedulers are registered - Number of scheduling timers: {this.NumberOfTimers:#,##0} - Number of scheduling tasks: {this.NumberOfTasks:#,##0}");
 											}
 											catch (Exception ex)
@@ -426,7 +447,8 @@ namespace net.vieapps.Services.APIGateway
 			this.Tasks.Values.ForEach(serviceInfo => ExternalProcess.Stop(serviceInfo.Instance));
 			this.BusinessServices.Keys.ForEach(name => this.StopBusinessService(name));
 
-			this.Communicator?.Dispose();
+			this.InterCommunicator?.Dispose();
+			this.PingCommunicator?.Dispose();
 			this.MailSender?.Dispose();
 			this.WebHookSender?.Dispose();
 			this.LoggingService?.FlushAllLogs();
@@ -451,7 +473,8 @@ namespace net.vieapps.Services.APIGateway
 		/// <summary>
 		/// Gets the collection of available businness services
 		/// </summary>
-		public Dictionary<string, ProcessInfo> AvailableBusinessServices => this.BusinessServices.Where(kvp => this.IsBusinessServiceAvailable(kvp.Key)).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+		public Dictionary<string, ProcessInfo> AvailableBusinessServices
+			=> this.BusinessServices.Where(kvp => this.IsBusinessServiceAvailable(kvp.Key)).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
 
 		/// <summary>
 		/// Gets the collection of available businness services
@@ -486,14 +509,12 @@ namespace net.vieapps.Services.APIGateway
 				: false;
 		}
 
-		string OSInfo => $"{(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "macOS")} {RuntimeInformation.OSArchitecture} ({(RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "Macintosh; Intel Mac OS X; " : "")}{RuntimeInformation.OSDescription.Trim()})";
-
 		/// <summary>
 		/// Gets the arguments for starting a business service with environment information
 		/// </summary>
 		/// <returns></returns>
 		public string GetServiceArguments()
-			=> $"/user:{Environment.UserName?.ToLower().UrlEncode()} /host:{Environment.MachineName?.ToLower().UrlEncode()} /platform:{RuntimeInformation.FrameworkDescription.UrlEncode()} /os:{this.OSInfo.UrlEncode()}";
+			=> $"/user:{Environment.UserName?.ToLower().UrlEncode()} /host:{Environment.MachineName?.ToLower().UrlEncode()} /platform:{RuntimeInformation.FrameworkDescription.UrlEncode()} /os:{Extensions.GetRuntimePlatform(false).UrlEncode()}";
 
 		/// <summary>
 		/// Starts a business service
@@ -513,7 +534,8 @@ namespace net.vieapps.Services.APIGateway
 			if (this.IsBusinessServiceRunning(name))
 				return;
 
-			Global.OnProcess?.Invoke($"[{name}] => The service is starting");
+			var re = "Running".IsEquals(this.BusinessServices[name].Get<string>("State")) ? "re-" : "";
+			Global.OnProcess?.Invoke($"[{name}] => The service is {re}starting");
 			var serviceArguments = $"/svc:{this.BusinessServices[name].Arguments} /agc:r {this.GetServiceArguments().Replace("/", "/run-")} {arguments ?? ""}".Trim();
 
 			try
@@ -536,25 +558,29 @@ namespace net.vieapps.Services.APIGateway
 						if (!string.IsNullOrWhiteSpace(args.Data))
 						{
 							Global.OnGotServiceMessage?.Invoke(name, args.Data);
-							if (args.Data.IsStartsWith("Error: The") || args.Data.IsContains("Could not load file or assembly"))
-							{
-								this.BusinessServices[name].Extra["State"] = "Error";
-								this.BusinessServices[name].Extra["Error"] = args.Data;
-								this.BusinessServices[name].Extra["NotAvailable"] = "";
-							}
+							if (args.Data.IsStartsWith("Error: The service component") || args.Data.IsContains("Could not load file or assembly"))
+								this.BusinessServices[name].Set(new Dictionary<string, string>
+								{
+									{ "State", "Error" },
+									{ "Error", args.Data },
+									{ "NotAvailable", "" }
+								});
 						}
 					}
 				);
 
-				this.BusinessServices[name].Extra["State"] = "Running";
-				Global.OnServiceStarted?.Invoke(name, $"The service is started - Process ID: {this.BusinessServices[name].Instance.ID}");
+				this.BusinessServices[name].Set("State", "Running");
+				Global.OnServiceStarted?.Invoke(name, $"The service is {re}started - Process ID: {this.BusinessServices[name].Instance.ID}");
 			}
 			catch (Exception ex)
 			{
-				Global.OnError?.Invoke($"[{name}] => Cannot start the service: {ex.Message}", ex is FileNotFoundException ? null : ex);
-				this.BusinessServices[name].Extra["State"] = "Error";
-				this.BusinessServices[name].Extra["Error"] = ex.Message;
-				this.BusinessServices[name].Extra["ErrorStack"] = ex.StackTrace;
+				Global.OnError?.Invoke($"[{name}] => Cannot {re}start the service: {ex.Message}", ex is FileNotFoundException ? null : ex);
+				this.BusinessServices[name].Set(new Dictionary<string, string>
+				{
+					{ "State", "Error" },
+					{ "Error", ex.Message },
+					{ "ErrorStack", ex.StackTrace }
+				});
 			}
 			finally
 			{
@@ -563,10 +589,10 @@ namespace net.vieapps.Services.APIGateway
 					await Task.Delay(UtilityService.GetRandomNumber(1234, 2345)).ConfigureAwait(false);
 					if (this.IsBusinessServiceRunning(name))
 						await Task.WhenAll(
-							this.SendServiceInfoAsync(name, this.IsBusinessServiceAvailable(name), serviceArguments),
+							this.SendServiceInfoAsync(name, true, serviceArguments),
 							this.SendInterCommunicateMessageAsync($"Service#UniqueInfo#{name}", new JObject
 							{
-								{ "OSPlatform", RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "macOS" },
+								{ "OSPlatform", Extensions.GetRuntimeOS() },
 								{ "Name", $"{Extensions.GetUniqueName(name, serviceArguments.ToArray(' '))}" }
 							})
 						).ConfigureAwait(false);
@@ -599,26 +625,32 @@ namespace net.vieapps.Services.APIGateway
 					var info = ExternalProcess.Start(processInfo.Instance.FilePath, processInfo.Instance.Arguments.Replace("/agc:r", "/agc:s"), "");
 					using (info.Process)
 					{
-						this.BusinessServices[name].Extra["State"] = "Stopped";
+						this.BusinessServices[name].Set("State", "Stopped");
 					}
 				}
 				catch (Exception ex)
 				{
 					Global.OnError?.Invoke($"Error occurred while stopping the service [{name}] => {ex.Message}", ex);
-					this.BusinessServices[name].Extra["State"] = "Error";
-					this.BusinessServices[name].Extra["Error"] = ex.Message;
-					this.BusinessServices[name].Extra["ErrorStack"] = ex.StackTrace;
+					this.BusinessServices[name].Set(new Dictionary<string, string>
+					{
+						{ "State", "Error" },
+						{ "Error", ex.Message },
+						{ "ErrorStack", ex.StackTrace }
+					});
 				}
 			else
 				ExternalProcess.Stop(
 					processInfo.Instance,
-					info => this.BusinessServices[name].Extra["State"] = "Stopped",
+					info => this.BusinessServices[name].Set("State", "Stopped"),
 					ex =>
 					{
 						Global.OnError?.Invoke($"Error occurred while stopping the service [{name}] => {ex.Message}", ex);
-						this.BusinessServices[name].Extra["State"] = "Error";
-						this.BusinessServices[name].Extra["Error"] = ex.Message;
-						this.BusinessServices[name].Extra["ErrorStack"] = ex.StackTrace;
+						this.BusinessServices[name].Set(new Dictionary<string, string>
+						{
+							{ "State", "Error" },
+							{ "Error", ex.Message },
+							{ "ErrorStack", ex.StackTrace }
+						});
 					}
 				);
 		}
@@ -739,7 +771,7 @@ namespace net.vieapps.Services.APIGateway
 #if DEBUG
 			}, 5);
 #else
-			}, UtilityService.GetAppSetting("Logs:FlushInterval", "60").CastAs<int>());
+			}, UtilityService.GetAppSetting("Logs:FlushInterval", "45").CastAs<int>());
 #endif
 
 			// house keeper (hourly)
@@ -752,6 +784,19 @@ namespace net.vieapps.Services.APIGateway
 				runTaskSchedulerOnFirstLoad = "true".IsEquals(config.Section.Attributes["runOnFirstLoad"]?.Value);
 			this.StartTimer(async () => await this.RunTaskSchedulerAsync().ConfigureAwait(false), 65 * 60, runTaskSchedulerOnFirstLoad ? 5678 : 0);
 		}
+
+		void RegisterPingTimers()
+			=> this.StartTimer(() =>
+			{
+				if ((DateTime.Now - this.PingTime).TotalSeconds >= 300)
+					Task.Run(async () => await this.RTUService.SendUpdateMessageAsync(new UpdateMessage
+					{
+						Type = "Ping",
+						DeviceID = "*",
+					}, this.CancellationTokenSource.Token).ConfigureAwait(false))
+					.ContinueWith(_ => this.PingTime = DateTime.Now, TaskContinuationOptions.OnlyOnRanToCompletion)
+					.ConfigureAwait(false);
+			}, 7 * 60);
 		#endregion
 
 		#region Run house keeper
@@ -1055,7 +1100,7 @@ namespace net.vieapps.Services.APIGateway
 							Global.OnProcess?.Invoke(
 								"The task is completed" + "\r\n" +
 								$"- Execution times: {((sender as Process).ExitTime - (sender as Process).StartTime).TotalMilliseconds.CastAs<long>().GetElapsedTimes()}" + "\r\n" +
-								$"- Command: [{task.Executable + " " + string.Join(" ", arguments)}]" + "\r\n" +
+								$"- Command: [{task.Executable + " " + arguments.Join(" ")}]" + "\r\n" +
 								$"- Results: {results}"
 							);
 							this.Tasks[task.ID].Instance = null;
@@ -1115,7 +1160,7 @@ namespace net.vieapps.Services.APIGateway
 					if (this.AllowRegisterBusinessServices)
 					{
 						var svcArgs = this.GetServiceArguments().Replace("/", "/call-").ToArray(' ');
-						var osPlatform = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "macOS";
+						var osPlatform = Extensions.GetRuntimeOS();
 						await Task.WhenAll(this.AvailableBusinessServices.Select(kvp => this.SendServiceInfoAsync(kvp.Key, kvp.Value.Instance != null, kvp.Value.Instance?.Arguments))
 							.Concat(this.BusinessServices.Select(kvp => this.SendInterCommunicateMessageAsync($"Service#UniqueInfo#{kvp.Key}", new JObject
 							{
@@ -1132,7 +1177,7 @@ namespace net.vieapps.Services.APIGateway
 						if (this.AvailableBusinessServices.Keys.FirstOrDefault(n => n.Equals(name)) != null)
 							await this.SendInterCommunicateMessageAsync($"Service#UniqueInfo#{name}", new JObject
 							{
-								{ "OSPlatform", RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "macOS" },
+								{ "OSPlatform", Extensions.GetRuntimeOS() },
 								{ "Name", Extensions.GetUniqueName(name, this.GetServiceArguments().Replace("/", "/call-").ToArray(' ')) }
 							}).ConfigureAwait(false);
 					}

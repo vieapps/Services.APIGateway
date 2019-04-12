@@ -210,9 +210,10 @@ namespace net.vieapps.Services.APIGateway
 			var query = new Dictionary<string, string>(requestObj.Get("Query", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase);
 			var header = new Dictionary<string, string>(requestObj.Get("Header", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase);
 			var extra = new Dictionary<string, string>(requestObj.Get("Extra", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase);
+			query.TryGetValue("object-identity", out string objectIdentity);
 
-			if (Global.IsDebugLogEnabled)
-				await Global.WriteLogsAsync(RTU.Logger, "RTU", $"Begin process ({verb} /{serviceName}/{objectName}/{(query.ContainsKey("object-identity") ? query["object-identity"] : "")} - WebSocket: {websocket.ID} @ {websocket.RemoteEndPoint})", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
+			if (Global.IsDebugResultsEnabled)
+				await Global.WriteLogsAsync(RTU.Logger, "RTU", $"Begin process ({verb} /{serviceName?.ToLower()}/{objectName?.ToLower()}/{objectIdentity?.ToLower()} - WebSocket: {websocket.ID} @ {websocket.RemoteEndPoint})", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
 
 			// response to a heartbeat => refresh the session
 			if ("PONG".IsEquals(verb) && "session".IsEquals(objectName))
@@ -263,7 +264,8 @@ namespace net.vieapps.Services.APIGateway
 				var stopwatch = Stopwatch.StartNew();
 				try
 				{
-					// call the requested service
+					// prepare the request
+					var body = requestObj.Get("Body");
 					var requestInfo = new RequestInfo
 					{
 						Session = session,
@@ -272,11 +274,12 @@ namespace net.vieapps.Services.APIGateway
 						Verb = verb,
 						Query = query,
 						Header = header,
-						Body = requestObj.Get("Body", ""),
+						Body = body == null ? "" : body is string ? body as string : body.ToJson().ToString(Formatting.None),
 						Extra = extra,
 						CorrelationID = correlationID
 					};
 
+					// signature to work with service of users
 					if (serviceName.IsEquals("Users"))
 					{
 						if (verb.IsEquals("POST") || verb.IsEquals("PUT"))
@@ -289,20 +292,16 @@ namespace net.vieapps.Services.APIGateway
 						}
 					}
 
+					// call the requested service
 					var json = await Global.CallServiceAsync(requestInfo, Global.CancellationTokenSource.Token, RTU.Logger).ConfigureAwait(false);
 
-					// send the update message
-					var @event = requestInfo.GetObjectIdentity();
-					@event = !string.IsNullOrWhiteSpace(@event) && !@event.IsValidUUID()
-						? @event
-						: verb;
-
+					// send the result as an update message
 					await websocket.SendAsync(new UpdateMessage
 					{
-						Type = serviceName.GetCapitalizedFirstLetter() + (string.IsNullOrWhiteSpace(objectName) ? "" : "#" + objectName.GetCapitalizedFirstLetter() + "#" + @event.GetCapitalizedFirstLetter()),
+						Type = serviceName.GetCapitalizedFirstLetter() + (string.IsNullOrWhiteSpace(objectName) ? "" : "#" + objectName.GetCapitalizedFirstLetter() + "#" + (!string.IsNullOrWhiteSpace(objectIdentity) && !objectIdentity.IsValidUUID() ? objectIdentity : verb).GetCapitalizedFirstLetter()),
 						DeviceID = session.DeviceID,
 						Data = json
-					}).ConfigureAwait(false);
+					}, requestObj.Get<string>("Callback")).ConfigureAwait(false);
 
 					stopwatch.Stop();
 					if (Global.IsDebugResultsEnabled)
@@ -410,7 +409,12 @@ namespace net.vieapps.Services.APIGateway
 			).ConfigureAwait(false);
 		}
 
-		static Task SendAsync(this ManagedWebSocket websocket, UpdateMessage message)
-			=> websocket.SendAsync(message.ToJson().ToString(Formatting.None), true, Global.CancellationTokenSource.Token);
+		static Task SendAsync(this ManagedWebSocket websocket, UpdateMessage message, string callbackIdentity = null)
+		{
+			var json = message.ToJson();
+			if (!string.IsNullOrWhiteSpace(callbackIdentity))
+				json["Callback"] = callbackIdentity;
+			return websocket.SendAsync(json.ToString(Formatting.None), true, Global.CancellationTokenSource.Token);
+		}
 	}
 }

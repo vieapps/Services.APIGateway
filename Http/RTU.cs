@@ -248,7 +248,7 @@ namespace net.vieapps.Services.APIGateway
 				catch (Exception ex)
 				{
 					await Task.WhenAll(
-						websocket.SendAsync(ex),
+						websocket.SendAsync(ex, null, correlationID),
 						Global.WriteLogsAsync(RTU.Logger, "RTU",
 							$"End process => Error occurred: {ex.Message}" + "\r\n" +
 							$"{websocket.GetConnectionInfo()}" + "\r\n" +
@@ -301,7 +301,7 @@ namespace net.vieapps.Services.APIGateway
 						Type = serviceName.GetCapitalizedFirstLetter() + (string.IsNullOrWhiteSpace(objectName) ? "" : "#" + objectName.GetCapitalizedFirstLetter() + "#" + (!string.IsNullOrWhiteSpace(objectIdentity) && !objectIdentity.IsValidUUID() ? objectIdentity : verb).GetCapitalizedFirstLetter()),
 						DeviceID = session.DeviceID,
 						Data = json
-					}, requestObj.Get<string>("Callback")).ConfigureAwait(false);
+					}, requestObj.Get<string>("ID")).ConfigureAwait(false);
 
 					stopwatch.Stop();
 					if (Global.IsDebugResultsEnabled)
@@ -317,7 +317,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					stopwatch.Stop();
 					await Task.WhenAll(
-						websocket.SendAsync(ex),
+						websocket.SendAsync(ex, null, correlationID, requestObj.Get<string>("ID")),
 						Global.WriteLogsAsync(RTU.Logger, "RTU",
 							$"End process => Error occurred: {ex.Message}" + "\r\n" +
 							$"{websocket.GetConnectionInfo()}" + "\r\n" +
@@ -348,7 +348,7 @@ namespace net.vieapps.Services.APIGateway
 		static string GetConnectionInfo(this ManagedWebSocket websocket)
 			=> websocket.Get("ConnectionInfo", "");
 
-		static async Task SendAsync(this ManagedWebSocket websocket, Exception exception, string msg = null, string correlationID = null)
+		static async Task SendAsync(this ManagedWebSocket websocket, Exception exception, string msg = null, string correlationID = null, string identity = null)
 		{
 			// prepare
 			correlationID = correlationID ?? Global.GetCorrelationID();
@@ -398,6 +398,7 @@ namespace net.vieapps.Services.APIGateway
 
 			message = new JObject
 			{
+				{ "ID", identity },
 				{ "Type", "Error" },
 				{ "Data", message }
 			};
@@ -409,12 +410,7 @@ namespace net.vieapps.Services.APIGateway
 			).ConfigureAwait(false);
 		}
 
-		static Task SendAsync(this ManagedWebSocket websocket, UpdateMessage message, string callbackIdentity = null)
-		{
-			var json = message.ToJson();
-			if (!string.IsNullOrWhiteSpace(callbackIdentity))
-				json["Callback"] = callbackIdentity;
-			return websocket.SendAsync(json.ToString(Formatting.None), true, Global.CancellationTokenSource.Token);
-		}
+		static Task SendAsync(this ManagedWebSocket websocket, UpdateMessage message, string identity = null)
+			=> websocket.SendAsync(message.ToJson(json => json["ID"] = identity).ToString(Formatting.None), true, Global.CancellationTokenSource.Token);
 	}
 }

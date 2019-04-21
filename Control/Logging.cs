@@ -55,12 +55,12 @@ namespace net.vieapps.Services.APIGateway
 			// prepare
 			var time = DateTime.Now.ToString("HH:mm:ss.fff");
 			var name = (!string.IsNullOrWhiteSpace(serviceName) ? serviceName : "APIGateway").ToLower();
-			var sufix = !string.IsNullOrWhiteSpace(objectName) && !objectName.IsEquals(serviceName) ? "." + objectName.ToLower() : "";
+			var surfix = !string.IsNullOrWhiteSpace(objectName) && !objectName.IsEquals(serviceName) ? "." + objectName.ToLower() : "";
 
-			if (!this.Logs.TryGetValue(name + sufix, out ConcurrentQueue<string> serviceLogs))
+			if (!this.Logs.TryGetValue(name + surfix, out ConcurrentQueue<string> serviceLogs))
 			{
 				serviceLogs = new ConcurrentQueue<string>();
-				this.Logs.TryAdd(name + sufix, serviceLogs);
+				this.Logs.TryAdd(name + surfix, serviceLogs);
 			}
 
 			if (!this.Logs.TryGetValue(name, out ConcurrentQueue<string> debugLogs))
@@ -91,13 +91,13 @@ namespace net.vieapps.Services.APIGateway
 
 			// write files
 			if (serviceLogs.Count >= this.MaxItems)
-				Task.Run(() => this.FlushLogsAsync(name + sufix, serviceLogs)).ConfigureAwait(false);
+				Task.Run(() => this.FlushLogsAsync(name + surfix, serviceLogs)).ConfigureAwait(false);
 
 			if (debugLogs.Count >= this.MaxItems)
 				Task.Run(() => this.FlushLogsAsync(name + ".debugs", debugLogs)).ConfigureAwait(false);
 
 			if (errorLogs.Count > 0)
-				Task.Run(() => this.FlushLogsAsync(name + sufix + ".errors", errorLogs)).ConfigureAwait(false);
+				Task.Run(() => this.FlushLogsAsync(name + surfix + ".errors", errorLogs)).ConfigureAwait(false);
 
 			// update to controller
 			Global.OnLogsUpdated(serviceName, messages);

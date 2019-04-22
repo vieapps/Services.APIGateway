@@ -31,7 +31,7 @@ namespace net.vieapps.Services.APIGateway
 			// request of WebSocket
 			if (context.WebSockets.IsWebSocketRequest)
 				await Task.WhenAll(
-					Global.IsDebugLogEnabled ? context.WriteLogsAsync("RTU", $"Wrap a WebSocket connection\r\n- Endpoint: {context.Connection.RemoteIpAddress}:{context.Connection.RemotePort}\r\n- URI: {context.GetRequestUri()}\r\n- Headers:\r\n\t{string.Join("\r\n\t", context.Request.Headers.Select(header => $"{header.Key}: {header.Value}"))}") : Task.CompletedTask,
+					Global.IsVisitLogEnabled ? context.WriteLogsAsync(Global.Logger, "Http.WebSockets.Visits", $"Wrap a WebSocket connection successful\r\n- Endpoint: {context.Connection.RemoteIpAddress}:{context.Connection.RemotePort}\r\n- URI: {context.GetRequestUri()}{(Global.IsDebugLogEnabled ? $"\r\n- Headers:\r\n\t{string.Join("\r\n\t", context.Request.Headers.Select(header => $"{header.Key}: {header.Value}"))}" : "")}") : Task.CompletedTask,
 					APIGateway.RTU.WebSocket.WrapAsync(context)
 				).ConfigureAwait(false);
 
@@ -91,7 +91,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			if (Global.IsVisitLogEnabled)
-				await context.WriteVisitStartingLogAsync().ConfigureAwait(false);
+				await context.WriteVisitStartingLogAsync(Global.Logger, "Http.RESTful.Visits").ConfigureAwait(false);
 
 			// request to static segments
 			if (Global.StaticSegments.Contains(requestPath))
@@ -106,7 +106,7 @@ namespace net.vieapps.Services.APIGateway
 				await APIGateway.InternalAPIs.ProcessRequestAsync(context).ConfigureAwait(false);
 
 			if (Global.IsVisitLogEnabled)
-				await context.WriteVisitFinishingLogAsync().ConfigureAwait(false);
+				await context.WriteVisitFinishingLogAsync(Global.Logger, "Http.RESTful.Visits").ConfigureAwait(false);
 		}
 
 		#region classes for logging

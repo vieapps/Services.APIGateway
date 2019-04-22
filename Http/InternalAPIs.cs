@@ -29,7 +29,7 @@ namespace net.vieapps.Services.APIGateway
 		internal static ICache Cache { get; set; }
 		internal static ILogger Logger { get; set; }
 		internal static List<string> ExcludedHeaders { get; } = UtilityService.GetAppSetting("ExcludedHeaders", "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,ms-aspnetcore-token,x-forwarded-for,x-forwarded-proto,x-forwarded-port,x-original-for,x-original-proto,x-original-remote-endpoint,x-original-port,cdn-loop,cf-ipcountry,cf-ray,cf-visitor,cf-connecting-ip").ToList();
-		internal static HashSet<string> NoTokenRequiredServices { get; } = $"{UtilityService.GetAppSetting("NoTokenRequiredServices", "")}|indexes|discovery".ToLower().ToHashSet('|', true);
+		internal static HashSet<string> NoTokenRequiredServices { get; } = $"{UtilityService.GetAppSetting("NoTokenRequiredServices", "")}|indexes|discovery|webhooks".ToLower().ToHashSet('|', true);
 		internal static ConcurrentDictionary<string, JObject> Controllers { get; } = new ConcurrentDictionary<string, JObject>();
 		internal static ConcurrentDictionary<string, List<JObject>> Services { get; } = new ConcurrentDictionary<string, List<JObject>>();
 		#endregion
@@ -44,6 +44,16 @@ namespace net.vieapps.Services.APIGateway
 				query["object-name"] = pathSegments.Length > 1 && !string.IsNullOrWhiteSpace(pathSegments[1]) ? pathSegments[1].GetANSIUri() : "";
 				query["object-identity"] = pathSegments.Length > 2 && !string.IsNullOrWhiteSpace(pathSegments[2]) ? pathSegments[2].GetANSIUri() : "";
 			});
+			var extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+			if (queryString.TryGetValue("x-request-extra", out string extraInfo))
+			{
+				try
+				{
+					extra = extraInfo.Url64Decode().ToExpandoObject().ToDictionary(kvp => kvp.Key, kvp => kvp.Value?.ToString());
+				}
+				catch { }
+				queryString.Remove("x-request-extra");
+			}
 
 			var requestInfo = new RequestInfo
 			{
@@ -53,51 +63,48 @@ namespace net.vieapps.Services.APIGateway
 				ObjectName = queryString["object-name"],
 				Query = queryString,
 				Header = context.Request.Headers.ToDictionary(dictionary => InternalAPIs.ExcludedHeaders.ForEach(name => dictionary.Remove(name))),
+				Extra = extra,
 				CorrelationID = context.GetCorrelationID()
 			};
 
+			#region prepare authenticate token
 			bool isSessionProccessed = false, isSessionInitialized = false, isAccountProccessed = false, isActivationProccessed = false;
 
 			if (requestInfo.ServiceName.IsEquals("users"))
 			{
-				if ("session".IsEquals(requestInfo.ObjectName))
+				if (requestInfo.ObjectName.IsEquals("session"))
 				{
 					isSessionProccessed = true;
 					isSessionInitialized = requestInfo.Verb.IsEquals("GET");
 					isAccountProccessed = requestInfo.Verb.IsEquals("POST");
 				}
-				else if ("account".IsEquals(requestInfo.ObjectName))
+				else if (requestInfo.ObjectName.IsEquals("account"))
 					isAccountProccessed = requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT");
-				else if ("activate".IsEquals(requestInfo.ObjectName))
+				else if (requestInfo.ObjectName.IsEquals("activate"))
 					isActivationProccessed = requestInfo.Verb.IsEquals("GET");
 			}
 
-			#region prepare token
 			try
 			{
 				// get token
-				var token = requestInfo.GetParameter("x-app-token");
+				var authenticateToken = requestInfo.GetParameter("x-app-token");
 
 				// support for Bearer token
-				if (string.IsNullOrWhiteSpace(token))
+				if (string.IsNullOrWhiteSpace(authenticateToken))
 				{
-					token = context.GetHeaderParameter("authorization");
-					token = token != null && token.IsStartsWith("Bearer") ? token.ToArray(" ").Last() : null;
+					authenticateToken = context.GetHeaderParameter("authorization");
+					authenticateToken = authenticateToken != null && authenticateToken.IsStartsWith("Bearer") ? authenticateToken.ToArray(" ").Last() : null;
+					requestInfo.Header.TryAdd("x-app-token", authenticateToken);
+					requestInfo.Header.Remove("authorization");
 				}
 
-				// re-assign
-				requestInfo.Header.TryAdd("x-app-token", token);
-				requestInfo.Header.Remove("authorization");
-
 				// parse and update information from token
-				var tokenIsRequired = isActivationProccessed
+				var tokenIsRequired = isActivationProccessed || (isSessionInitialized && (requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.IsSystemAccount) && !requestInfo.Query.ContainsKey("register"))
 					? false
-					: isSessionInitialized && (requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.IsSystemAccount) && !requestInfo.Query.ContainsKey("register")
-						? false
-						: !InternalAPIs.NoTokenRequiredServices.Contains(requestInfo.ServiceName);
+					: !InternalAPIs.NoTokenRequiredServices.Contains(requestInfo.ServiceName);
 
-				if (!string.IsNullOrWhiteSpace(token))
-					await context.UpdateWithAuthenticateTokenAsync(requestInfo.Session, token).ConfigureAwait(false);
+				if (!string.IsNullOrWhiteSpace(authenticateToken))
+					await context.UpdateWithAuthenticateTokenAsync(requestInfo.Session, authenticateToken).ConfigureAwait(false);
 				else if (tokenIsRequired)
 					throw new InvalidSessionException("Session is invalid (Token is not found)");
 
@@ -127,7 +134,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					await context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs.RESTful", "Error occurred while parsing body of the request", ex).ConfigureAwait(false);
+					await context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", "Error occurred while parsing body of the request", ex).ConfigureAwait(false);
 				}
 
 			else if (requestInfo.Verb.IsEquals("GET") && requestInfo.Query.ContainsKey("x-body"))
@@ -137,7 +144,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					await context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs.RESTful", "Error occurred while parsing body of the 'x-body' parameter", ex).ConfigureAwait(false);
+					await context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", "Error occurred while parsing body of the 'x-body' parameter", ex).ConfigureAwait(false);
 				}
 			#endregion
 
@@ -158,7 +165,7 @@ namespace net.vieapps.Services.APIGateway
 			if (isAccountProccessed || "otp".IsEquals(requestInfo.ObjectName))
 				try
 				{
-					requestInfo.PrepareAccountRelated(context.Items, async (msg, ex) => await context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs.RESTful", msg, ex));
+					requestInfo.PrepareAccountRelated(context.Items, async (msg, ex) => await context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", msg, ex));
 				}
 				catch (Exception ex)
 				{
@@ -168,7 +175,7 @@ namespace net.vieapps.Services.APIGateway
 					return;
 				}
 
-			// set user principal
+			// prepare user principal
 			context.User = new UserPrincipal(requestInfo.Session.User);
 
 			// process request of sessions
@@ -245,14 +252,7 @@ namespace net.vieapps.Services.APIGateway
 				else if (requestInfo.ObjectName.IsEquals("definitions"))
 					try
 					{
-						if (!requestInfo.Query.ContainsKey("x-service-name") && !requestInfo.Query.ContainsKey("x-object-name"))
-							throw new InvalidRequestException("URI format: /discovery/definitions?x-service-name=<Service Name>&x-object-name=<Object Name>&x-object-identity=<Definition Name>");
-						requestInfo.ServiceName = requestInfo.Query["service-name"] = requestInfo.Query["x-service-name"];
-						requestInfo.ObjectName = requestInfo.Query["object-name"] = "definitions";
-						requestInfo.Query["object-identity"] = requestInfo.Query["x-object-name"];
-						requestInfo.Query["mode"] = requestInfo.Query.ContainsKey("x-object-identity") ? requestInfo.Query["x-object-identity"] : "";
-						new[] { "x-service-name", "x-object-name", "x-object-identity" }.ForEach(name => requestInfo.Query.Remove(name));
-						var response = await context.CallServiceAsync(requestInfo, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+						var response = await context.CallServiceAsync(requestInfo.PrepareDefinitionRelated(), Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
 						await context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 					}
 					catch (Exception ex)
@@ -267,7 +267,7 @@ namespace net.vieapps.Services.APIGateway
 			else
 				try
 				{
-					var response = await context.CallServiceAsync(requestInfo, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+					var response = await context.CallServiceAsync(requestInfo, Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
 					await context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				}
 				catch (Exception ex)
@@ -287,7 +287,7 @@ namespace net.vieapps.Services.APIGateway
 				var sessionID = await InternalAPIs.Cache.GetAsync<string>($"Session#{session.SessionID}", Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				if (!string.IsNullOrWhiteSpace(sessionID) && sessionID.Equals(session.GetEncryptedID()))
 					return true;
-				var existed = await context.IsSessionExistAsync(session).ConfigureAwait(false);
+				var existed = await context.IsSessionExistAsync(session, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
 				if (existed)
 					await session.RefreshAsync().ConfigureAwait(false);
 				return existed;
@@ -353,7 +353,7 @@ namespace net.vieapps.Services.APIGateway
 
 					await Task.WhenAll(
 						context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
-						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs.RESTful", new List<string>
+						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
 						{
 							$"Successfully process request of session (registration of anonymous user)",
 							$"- Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
@@ -379,7 +379,7 @@ namespace net.vieapps.Services.APIGateway
 							{ "Signature", requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey) }
 						},
 						CorrelationID = requestInfo.CorrelationID
-					}, Global.CancellationTokenSource.Token, InternalAPIs.Logger).ConfigureAwait(false);
+					}, Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
 
 					// check
 					if (session == null)
@@ -407,7 +407,7 @@ namespace net.vieapps.Services.APIGateway
 							{ "Signature", body.GetHMACSHA256(Global.ValidationKey) }
 						},
 						CorrelationID = requestInfo.CorrelationID
-					}, Global.CancellationTokenSource.Token, InternalAPIs.Logger).ConfigureAwait(false);
+					}, Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
 
 					// response
 					var json = new JObject
@@ -420,7 +420,7 @@ namespace net.vieapps.Services.APIGateway
 					await Task.WhenAll(
 						context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 						requestInfo.Session.SendOnlineStatusAsync(true),
-						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs.RESTful", new List<string>
+						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
 						{
 							$"Successfully process request of session (registration of authenticated user)",
 							$"- Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
@@ -462,7 +462,7 @@ namespace net.vieapps.Services.APIGateway
 					{ "Signature", body.GetHMACSHA256(Global.ValidationKey) }
 				},
 				CorrelationID = requestInfo.CorrelationID
-			}, Global.CancellationTokenSource.Token, InternalAPIs.Logger).ConfigureAwait(false);
+			}, Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
 		}
 		#endregion
 
@@ -491,7 +491,7 @@ namespace net.vieapps.Services.APIGateway
 						{ "Signature", body.GetHMACSHA256(Global.ValidationKey) }
 					},
 					CorrelationID = requestInfo.CorrelationID
-				}, Global.CancellationTokenSource.Token, InternalAPIs.Logger).ConfigureAwait(false);
+				}, Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
 
 				// two-factors authentication
 				var oldSessionID = string.Empty;
@@ -536,7 +536,7 @@ namespace net.vieapps.Services.APIGateway
 					requestInfo.Session.RefreshAsync(),
 					InternalAPIs.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token),
 					string.IsNullOrWhiteSpace(oldSessionID) ? Task.CompletedTask : InternalAPIs.Cache.RemoveAsync($"Session#{oldSessionID}", Global.CancellationTokenSource.Token),
-					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs.RESTful", new List<string>
+					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (sign-in)",
 						$"- Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
@@ -612,7 +612,7 @@ namespace net.vieapps.Services.APIGateway
 						{ "Info", info.Encrypt(Global.EncryptionKey) }
 					}.ToString(Formatting.None),
 					CorrelationID = requestInfo.CorrelationID
-				}, Global.CancellationTokenSource.Token, InternalAPIs.Logger).ConfigureAwait(false);
+				}, Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
 
 				// update status of old session
 				var oldSessionID = requestInfo.Session.SessionID;
@@ -640,7 +640,7 @@ namespace net.vieapps.Services.APIGateway
 					requestInfo.Session.RefreshAsync(),
 					InternalAPIs.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token),
 					InternalAPIs.Cache.RemoveAsync($"Session#{oldSessionID}", Global.CancellationTokenSource.Token),
-					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs.RESTful", new List<string>
+					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (OTP validation)",
 						$"- Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
@@ -696,7 +696,7 @@ namespace net.vieapps.Services.APIGateway
 						{ "Signature", requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey) }
 					},
 					CorrelationID = requestInfo.CorrelationID
-				}, Global.CancellationTokenSource.Token, InternalAPIs.Logger).ConfigureAwait(false);
+				}, Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
 
 				// update status of old session
 				var oldSessionID = requestInfo.Session.SessionID;
@@ -723,7 +723,7 @@ namespace net.vieapps.Services.APIGateway
 					context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 					requestInfo.Session.RefreshAsync(),
 					InternalAPIs.Cache.RemoveAsync($"Session#{oldSessionID}", Global.CancellationTokenSource.Token),
-					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs.RESTful", new List<string>
+					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (sign-out)",
 						$"- Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
@@ -761,7 +761,7 @@ namespace net.vieapps.Services.APIGateway
 				ServiceName = "Users",
 				ObjectName = "Activate",
 				Verb = "GET"
-			}, Global.CancellationTokenSource.Token, InternalAPIs.Logger).ConfigureAwait(false);
+			}, Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
 
 			// get user information & register the session
 			requestInfo.Session.User = json.FromJson<User>();
@@ -782,7 +782,7 @@ namespace net.vieapps.Services.APIGateway
 			await Task.WhenAll(
 				context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 				requestInfo.Session.RefreshAsync(),
-				!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs.RESTful", new List<string>
+				!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
 				{
 					$"Successfully process request of session (activation)",
 					$"- Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
@@ -790,27 +790,14 @@ namespace net.vieapps.Services.APIGateway
 					$"- Execution times: {context.GetExecutionTimes()}"
 				})
 			).ConfigureAwait(false);
-
-			// broadcast updates
-			await new CommunicateMessage
-			{
-				ServiceName = "APIGateway",
-				Type = "Session#Patch",
-				Data = new JObject
-				{
-					{ "SessionID", requestInfo.Session.SessionID },
-					{ "SessionXID", json["ID"] },
-					{ "Token", json["Token"] }
-				}
-			}.PublishAsync(RTU.Logger).ConfigureAwait(false);
 		}
 		#endregion
 
-		#region Helper: verify captcha
-		internal static void CaptchaIsValid(this RequestInfo requestInfo, IDictionary<object, object> items = null)
+		#region Helper: verify captcha, prepare related information of an account or request of a definition
+		internal static RequestInfo CaptchaIsValid(this RequestInfo requestInfo, IDictionary<object, object> items = null)
 		{
 			if (!requestInfo.Header.ContainsKey("x-captcha"))
-				return;
+				return requestInfo;
 
 			requestInfo.Header.TryGetValue("x-captcha-registered", out string registered);
 			requestInfo.Header.TryGetValue("x-captcha-input", out string input);
@@ -831,11 +818,11 @@ namespace net.vieapps.Services.APIGateway
 
 			if (!CaptchaService.IsCodeValid(registered, input))
 				throw new InvalidRequestException("Captcha code is invalid");
-		}
-		#endregion
 
-		#region Helper: prepare related information of an account
-		internal static void PrepareAccountRelated(this RequestInfo requestInfo, IDictionary<object, object> items = null, Action<string, Exception> onParseError = null)
+			return requestInfo;
+		}
+
+		internal static RequestInfo PrepareAccountRelated(this RequestInfo requestInfo, IDictionary<object, object> items = null, Action<string, Exception> onParseError = null)
 		{
 			// prepare body
 			var requestBody = requestInfo.GetBodyExpando();
@@ -971,6 +958,22 @@ namespace net.vieapps.Services.APIGateway
 			// prepare to update email
 			else if ("email".IsEquals(objectIdentity) && (string.IsNullOrWhiteSpace(oldPassword) || string.IsNullOrWhiteSpace(email)))
 				throw new InvalidRequestException("Request is invalid (password/email is null or empty)");
+
+			return requestInfo;
+		}
+
+		internal static RequestInfo PrepareDefinitionRelated(this RequestInfo requestInfo)
+		{
+			if (!requestInfo.Query.ContainsKey("x-service-name") && !requestInfo.Query.ContainsKey("x-object-name"))
+				throw new InvalidRequestException("URI format: /discovery/definitions?x-service-name=<Service Name>&x-object-name=<Object Name>&x-object-identity=<Definition Name>");
+
+			requestInfo.ServiceName = requestInfo.Query["service-name"] = requestInfo.Query["x-service-name"];
+			requestInfo.ObjectName = requestInfo.Query["object-name"] = "definitions";
+			requestInfo.Query["object-identity"] = requestInfo.Query["x-object-name"];
+			requestInfo.Query["mode"] = requestInfo.Query.ContainsKey("x-object-identity") ? requestInfo.Query["x-object-identity"] : "";
+
+			new[] { "x-service-name", "x-object-name", "x-object-identity" }.ForEach(name => requestInfo.Query.Remove(name));
+			return requestInfo;
 		}
 		#endregion
 
@@ -1043,7 +1046,7 @@ namespace net.vieapps.Services.APIGateway
 								{
 									await InternalAPIs.ProcessInterCommunicateMessageAsync(message).ConfigureAwait(false);
 									if (Global.IsDebugResultsEnabled)
-										await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs.RTU",
+										await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs",
 											$"Successfully process an inter-communicate message" + "\r\n" +
 											$"- Type: {message?.Type}" + "\r\n" +
 											$"- Message: {message?.Data?.ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}"
@@ -1051,10 +1054,10 @@ namespace net.vieapps.Services.APIGateway
 								}
 								catch (Exception ex)
 								{
-									await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs.RTU", $"{ex.Message} => {message?.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex, Global.ServiceName, LogLevel.Error, correlationID).ConfigureAwait(false);
+									await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"{ex.Message} => {message?.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex, Global.ServiceName, LogLevel.Error, correlationID).ConfigureAwait(false);
 								}
 							},
-							async exception => await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs.RTU", $"Error occurred while fetching an inter-communicating message => {exception.Message}", exception).ConfigureAwait(false)
+							async exception => await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"Error occurred while fetching an inter-communicating message => {exception.Message}", exception).ConfigureAwait(false)
 						);
 				},
 				(sender, arguments) =>

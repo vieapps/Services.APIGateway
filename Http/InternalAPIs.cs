@@ -165,7 +165,7 @@ namespace net.vieapps.Services.APIGateway
 			if (isAccountProccessed || "otp".IsEquals(requestInfo.ObjectName))
 				try
 				{
-					requestInfo.PrepareAccountRelated(context.Items, async (msg, ex) => await context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", msg, ex));
+					requestInfo.PrepareAccountRelated(context.Items, (msg, ex) => context.WriteLogs(InternalAPIs.Logger, "Http.InternalAPIs", msg, ex));
 				}
 				catch (Exception ex)
 				{
@@ -344,13 +344,7 @@ namespace net.vieapps.Services.APIGateway
 					}
 
 					// response
-					var json = new JObject
-					{
-						{ "ID", requestInfo.Session.SessionID },
-						{ "DeviceID", requestInfo.Session.DeviceID }
-					};
-					context.UpdateSessionJson(requestInfo.Session, json);
-
+					var json = requestInfo.Session.GetSessionJson(context.Items);
 					await Task.WhenAll(
 						context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
@@ -410,13 +404,7 @@ namespace net.vieapps.Services.APIGateway
 					}, Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
 
 					// response
-					var json = new JObject
-					{
-						{ "ID", requestInfo.Session.SessionID },
-						{ "DeviceID", requestInfo.Session.DeviceID }
-					};
-					context.UpdateSessionJson(requestInfo.Session, json);
-
+					var json = requestInfo.Session.GetSessionJson(context.Items);
 					await Task.WhenAll(
 						context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 						requestInfo.Session.SendOnlineStatusAsync(true),
@@ -522,12 +510,20 @@ namespace net.vieapps.Services.APIGateway
 					).ConfigureAwait(false);
 
 					// prepare response
-					json = new JObject
+					json = requestInfo.Session.GetSessionJson(context.Items);
+
+					// broadcast updates
+					await new CommunicateMessage
 					{
-						{ "ID", requestInfo.Session.SessionID },
-						{ "DeviceID", requestInfo.Session.DeviceID }
-					};
-					context.UpdateSessionJson(requestInfo.Session, json as JObject);
+						ServiceName = "APIGateway",
+						Type = "Session#Patch",
+						Data = new JObject
+						{
+							{ "SessionID", oldSessionID },
+							{ "EncryptedID", json["ID"] },
+							{ "AuthenticateToken", json["Token"] }
+						}
+					}.PublishAsync(RTU.Logger).ConfigureAwait(false);
 				}
 
 				// response
@@ -544,20 +540,6 @@ namespace net.vieapps.Services.APIGateway
 						$"- Execution times: {context.GetExecutionTimes()}"
 					})
 				).ConfigureAwait(false);
-
-				// broadcast updates
-				if (!require2FA)
-					await new CommunicateMessage
-					{
-						ServiceName = "APIGateway",
-						Type = "Session#Patch",
-						Data = new JObject
-						{
-							{ "SessionID", oldSessionID },
-							{ "SessionXID", json["ID"] },
-							{ "Token", json["Token"] }
-						}
-					}.PublishAsync(RTU.Logger).ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
@@ -627,14 +609,23 @@ namespace net.vieapps.Services.APIGateway
 					requestInfo.Session.SendOnlineStatusAsync(true)
 				).ConfigureAwait(false);
 
-				// response
-				json = new JObject
-				{
-					{ "ID", requestInfo.Session.SessionID },
-					{ "DeviceID", requestInfo.Session.DeviceID }
-				};
-				context.UpdateSessionJson(requestInfo.Session, json as JObject);
+				// prepare response
+				json = requestInfo.Session.GetSessionJson(context.Items);
 
+				// broadcast updates
+				await new CommunicateMessage
+				{
+					ServiceName = "APIGateway",
+					Type = "Session#Patch",
+					Data = new JObject
+					{
+						{ "SessionID", oldSessionID },
+						{ "EncryptedID", json["ID"] },
+						{ "AuthenticateToken", json["Token"] }
+					}
+				}.PublishAsync(RTU.Logger).ConfigureAwait(false);
+
+				// response
 				await Task.WhenAll(
 					context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 					requestInfo.Session.RefreshAsync(),
@@ -648,19 +639,6 @@ namespace net.vieapps.Services.APIGateway
 						$"- Execution times: {context.GetExecutionTimes()}"
 					})
 				).ConfigureAwait(false);
-
-				// broadcast updates
-				await new CommunicateMessage
-				{
-					ServiceName = "APIGateway",
-					Type = "Session#Patch",
-					Data = new JObject
-					{
-						{ "SessionID", oldSessionID },
-						{ "SessionXID", json["ID"] },
-						{ "Token", json["Token"] }
-					}
-				}.PublishAsync(RTU.Logger).ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
@@ -711,14 +689,23 @@ namespace net.vieapps.Services.APIGateway
 					requestInfo.Session.SendOnlineStatusAsync(true)
 				).ConfigureAwait(false);
 
-				// response
-				var json = new JObject
-				{
-					{ "ID", requestInfo.Session.SessionID },
-					{ "DeviceID", requestInfo.Session.DeviceID }
-				};
-				context.UpdateSessionJson(requestInfo.Session, json);
+				// prepare response
+				var json = requestInfo.Session.GetSessionJson(context.Items);
 
+				// broadcast updates
+				await new CommunicateMessage
+				{
+					ServiceName = "APIGateway",
+					Type = "Session#Patch",
+					Data = new JObject
+					{
+						{ "SessionID", oldSessionID },
+						{ "EncryptedID", json["ID"] },
+						{ "AuthenticateToken", json["Token"] }
+					}
+				}.PublishAsync(RTU.Logger).ConfigureAwait(false);
+
+				// response
 				await Task.WhenAll(
 					context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 					requestInfo.Session.RefreshAsync(),
@@ -731,19 +718,6 @@ namespace net.vieapps.Services.APIGateway
 						$"- Execution times: {context.GetExecutionTimes()}"
 					})
 				).ConfigureAwait(false);
-
-				// broadcast updates
-				await new CommunicateMessage
-				{
-					ServiceName = "APIGateway",
-					Type = "Session#Patch",
-					Data = new JObject
-					{
-						{ "SessionID", oldSessionID },
-						{ "SessionXID", json["ID"] },
-						{ "Token", json["Token"] }
-					}
-				}.PublishAsync(RTU.Logger).ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
@@ -772,13 +746,7 @@ namespace net.vieapps.Services.APIGateway
 			).ConfigureAwait(false);
 
 			// response
-			json = new JObject
-			{
-				{ "ID", requestInfo.Session.SessionID },
-				{ "DeviceID", requestInfo.Session.DeviceID }
-			};
-			context.UpdateSessionJson(requestInfo.Session, json as JObject);
-
+			json = requestInfo.Session.GetSessionJson(context.Items);
 			await Task.WhenAll(
 				context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 				requestInfo.Session.RefreshAsync(),
@@ -931,7 +899,7 @@ namespace net.vieapps.Services.APIGateway
 			// prepare to register/create new account
 			if (string.IsNullOrWhiteSpace(objectIdentity))
 			{
-				if (!requestInfo.Header.ContainsKey("x-captcha"))
+				if (requestInfo.ServiceName.IsEquals("users") && requestInfo.ObjectName.IsEquals("account") && !requestInfo.Header.ContainsKey("x-captcha"))
 					throw new InvalidRequestException("Captcha code is invalid");
 				var requestCreateAccount = requestInfo.GetHeaderParameter("x-create");
 				if (!string.IsNullOrWhiteSpace(requestCreateAccount) && requestCreateAccount.Equals(requestInfo.Session.GetEncryptedID()))
@@ -981,37 +949,37 @@ namespace net.vieapps.Services.APIGateway
 		internal static string GetEncryptedID(this Session session)
 			=> session.GetEncryptedID(session.SessionID, Global.EncryptionKey, Global.ValidationKey);
 
-		internal static void UpdateSessionJson(this Session session, JObject json, IDictionary<object, object> items)
-		{
-			json["ID"] = session.GetEncryptedID();
-			json["Keys"] = new JObject
+		internal static JObject GetSessionJson(this Session session, IDictionary<object, object> items = null)
+			=> new JObject
 			{
-				{
-					"RSA",
-					new JObject
+				{ "ID", session.GetEncryptedID() },
+				{ "DeviceID", session.DeviceID },
+				{  "Keys", new JObject
 					{
-						{ "Exponent", Global.RSAExponent },
-						{ "Modulus", Global.RSAModulus }
+						{
+							"RSA",
+							new JObject
+							{
+								{ "Exponent", Global.RSAExponent },
+								{ "Modulus", Global.RSAModulus }
+							}
+						},
+						{
+							"AES",
+							new JObject
+							{
+								{ "Key", session.GetEncryptionKey(Global.EncryptionKey, items).ToHex() },
+								{ "IV", session.GetEncryptionIV(Global.EncryptionKey, items).ToHex() }
+							}
+						},
+						{
+							"JWT",
+							Global.JWTKey
+						}
 					}
 				},
-				{
-					"AES",
-					new JObject
-					{
-						{ "Key", session.GetEncryptionKey(Global.EncryptionKey, items).ToHex() },
-						{ "IV", session.GetEncryptionIV(Global.EncryptionKey, items).ToHex() }
-					}
-				},
-				{
-					"JWT",
-					Global.JWTKey
-				}
+				{ "Token", session.GetAuthenticateToken() }
 			};
-			json["Token"] = session.GetAuthenticateToken();
-		}
-
-		internal static void UpdateSessionJson(this HttpContext context, Session session, JObject json)
-			=> session.UpdateSessionJson(json, context.Items);
 
 		internal static Task RefreshAsync(this Session session, int time = 0)
 			=> InternalAPIs.Cache.SetAsync($"Session#{session.SessionID}", session.GetEncryptedID(), time > 0 ? time : 180, Global.CancellationTokenSource.Token);
@@ -1019,10 +987,10 @@ namespace net.vieapps.Services.APIGateway
 		internal static Task SendOnlineStatusAsync(this Session session, bool isOnline)
 			=> WAMPConnections.OutgoingChannel != null
 				? new CommunicateMessage("Users")
-				{
-					Type = "Session#Status",
-					Data = session.ToJson(json => json["IsOnline"] = isOnline)
-				}.PublishAsync(RTU.Logger)
+					{
+						Type = "Session#Status",
+						Data = session.ToJson(json => json["IsOnline"] = isOnline)
+					}.PublishAsync(RTU.Logger)
 				: Task.CompletedTask;
 		#endregion
 
@@ -1041,20 +1009,13 @@ namespace net.vieapps.Services.APIGateway
 						.Subscribe(
 							async message =>
 							{
-								var correlationID = UtilityService.NewUUID;
 								try
 								{
 									await InternalAPIs.ProcessInterCommunicateMessageAsync(message).ConfigureAwait(false);
-									if (Global.IsDebugResultsEnabled)
-										await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs",
-											$"Successfully process an inter-communicate message" + "\r\n" +
-											$"- Type: {message?.Type}" + "\r\n" +
-											$"- Message: {message?.Data?.ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}"
-										, null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
 								}
 								catch (Exception ex)
 								{
-									await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"{ex.Message} => {message?.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex, Global.ServiceName, LogLevel.Error, correlationID).ConfigureAwait(false);
+									await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"{ex.Message} => {message?.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex).ConfigureAwait(false);
 								}
 							},
 							async exception => await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"Error occurred while fetching an inter-communicating message => {exception.Message}", exception).ConfigureAwait(false)
@@ -1098,7 +1059,7 @@ namespace net.vieapps.Services.APIGateway
 			);
 		}
 
-		internal static void CloseWAMPChannels(int waitingTimes = 1234)
+		internal static void CloseWAMPChannels()
 		{
 			Global.UnregisterService();
 			Global.PrimaryInterCommunicateMessageUpdater?.Dispose();
@@ -1110,71 +1071,8 @@ namespace net.vieapps.Services.APIGateway
 		#region Helper: process inter-communicate messages
 		internal static async Task ProcessInterCommunicateMessageAsync(CommunicateMessage message)
 		{
-			// update users' sessions with new access token
-			if (message.Type.IsEquals("Session#Update"))
-			{
-				// prepare
-				var sessionID = message.Data.Get<string>("Session");
-				var user = message.Data.Get<JObject>("User").FromJson<User>();
-				var deviceID = message.Data.Get<string>("Device");
-				var verification = message.Data.Get<bool>("Verification");
-
-				var json = new JObject
-				{
-					{ "ID", sessionID },
-					{ "UserID", user.ID },
-					{ "DeviceID", deviceID }
-				};
-				new Session
-				{
-					SessionID = sessionID,
-					DeviceID = deviceID,
-					User = user,
-					Verification = verification
-				}.UpdateSessionJson(json, Global.CurrentHttpContext?.Items);
-
-				// send update message
-				await new UpdateMessage
-				{
-					Type = "Users#Session#Update",
-					DeviceID = deviceID,
-					Data = json
-				}.PublishAsync(RTU.Logger).ConfigureAwait(false);
-			}
-
-			// revoke users' sessions
-			else if (message.Type.IsEquals("Session#Revoke"))
-			{
-				// prepare
-				var sessionID = message.Data.Get<string>("Session");
-				var user = message.Data.Get<JObject>("User").FromJson<User>();
-				var deviceID = message.Data.Get<string>("Device");
-
-				var json = new JObject
-				{
-					{ "ID", sessionID },
-					{ "UserID", user.ID },
-					{ "DeviceID", deviceID },
-				};
-
-				new Session
-				{
-					SessionID = sessionID,
-					DeviceID = deviceID,
-					User = user
-				}.UpdateSessionJson(json, Global.CurrentHttpContext?.Items);
-
-				// send update message
-				await new UpdateMessage
-				{
-					Type = "Users#Session#Revoke",
-					DeviceID = deviceID,
-					Data = json
-				}.PublishAsync(RTU.Logger).ConfigureAwait(false);
-			}
-
 			// send information of this service
-			else if (message.Type.IsEquals("Service#RequestInfo"))
+			if (message.Type.IsEquals("Service#RequestInfo"))
 				await Global.UpdateServiceInfoAsync().ConfigureAwait(false);
 
 			// update information of a service

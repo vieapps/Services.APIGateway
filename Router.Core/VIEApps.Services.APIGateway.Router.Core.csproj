@@ -1,12 +1,11 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
 		<TargetFramework>netcoreapp2.2</TargetFramework>
 		<OutputType>Exe</OutputType>
 		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
-		<StartupObject>net.vieapps.Services.APIGateway.Startup</StartupObject>
+		<StartupObject>net.vieapps.Services.APIGateway.Program</StartupObject>
 		<AssemblyName>VIEApps.Services.APIGateway</AssemblyName>
-		<WarningLevel>3</WarningLevel>
 		<AssemblyTitle>VIEApps NGX API Gateway</AssemblyTitle>
 		<Authors>VIEApps.net</Authors>
 		<Company>VIEApps.net</Company>
@@ -14,23 +13,21 @@
 		<Copyright>© 2019 VIEApps.net</Copyright>
 		<AssemblyVersion>10.2.1904.3</AssemblyVersion>
 		<FileVersion>10.2.1904.3</FileVersion>
-		<InformationalVersion>v10.2.netcore-2.2+rev:2019.04.23-loggings</InformationalVersion>
+		<InformationalVersion>v10.2.netcore-2.2+rev:2019.04.23-latest.components</InformationalVersion>
+		<WarningLevel>3</WarningLevel>
 	</PropertyGroup>
 
 	<ItemGroup>
 		<None Remove=".DS_Store" />
-		<None Remove=".gitattributes" />
-		<None Remove=".gitignore" />
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Microsoft.AspNetCore" Version="2.2.0" />
-		<PackageReference Include="Microsoft.AspNetCore.ResponseCompression" Version="2.2.0" />
-		<PackageReference Include="Microsoft.AspNetCore.WebSockets" Version="2.2.1" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="2.2.0" />
+		<PackageReference Include="Microsoft.Extensions.Logging.Console" Version="2.2.0" />
 	</ItemGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\..\Base.Http\VIEApps.Services.Base.Http.csproj" />
+	  <ProjectReference Include="..\Router\VIEApps.Services.APIGateway.Router.csproj" />
 	</ItemGroup>
 
 </Project>

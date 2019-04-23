@@ -214,7 +214,7 @@ namespace net.vieapps.Services.APIGateway
 					});
 
 			// start
-			Global.OnProcess?.Invoke("The API Gateway Services Controller is starting");
+			Global.OnProcess?.Invoke("The VIEApps NGX API Gateway Controller is starting");
 			Global.OnProcess?.Invoke($"Version: {typeof(Controller).Assembly.GetVersion()}");
 			Global.OnProcess?.Invoke($"Platform: {Extensions.GetRuntimePlatform()}");
 #if DEBUG

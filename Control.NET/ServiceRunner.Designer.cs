@@ -14,7 +14,7 @@
 		void InitializeComponent()
 		{
 			this.components = new System.ComponentModel.Container();
-			this.ServiceName = "VIEApps-API-Gateway";
+			this.ServiceName = "VIEApps-APIGateway-Controller";
 		}
 	}
 }

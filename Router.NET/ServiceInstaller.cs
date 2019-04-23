@@ -1,4 +1,6 @@
-﻿using System.ComponentModel;
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
 using System.Configuration.Install;
 using System.ServiceProcess;
 
@@ -21,16 +23,16 @@ namespace net.vieapps.Services.APIGateway
 			this.Installers.Add(new System.ServiceProcess.ServiceInstaller()
 			{
 				StartType = ServiceStartMode.Automatic,
-				ServiceName = "VIEApps-APIGateway-Controller",
-				DisplayName = "VIEApps API Gateway Controller",
-				Description = "Controller for managing all microservices in the VIEApps NGX"
+				ServiceName = "VIEApps-APIGateway-Router",
+				DisplayName = "VIEApps APIGateway Router",
+				Description = "Router for serving RPC and Pub/Sub messages of all microservices in the VIEApps NGX - using Web Application Messaging Protocol (WAMP)"
 			});
 
 			this.AfterInstall += (sender, args) =>
 			{
 				try
 				{
-					using (var controller = new ServiceController("VIEApps-APIGateway-Controller"))
+					using (var controller = new ServiceController("VIEApps-APIGateway-Router"))
 					{
 						controller.Start();
 					}

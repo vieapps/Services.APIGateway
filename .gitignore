@@ -265,3 +265,4 @@ __pycache__/
 .DS_Store
 .vs/
 .vscode/
+dist/

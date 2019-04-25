@@ -126,9 +126,11 @@ namespace net.vieapps.Services.APIGateway
 
 		bool AllowRegisterBusinessServices { get; set; } = true;
 
-		IDisposable PingCommunicator { get; set; } = null;
+		IDisposable UpdateCommunicator { get; set; } = null;
 
-		DateTime PingTime { get; set; } = DateTime.Now;
+		DateTime ClientPingTime { get; set; } = DateTime.Now;
+
+		DateTime ClientSchedulingTime { get; set; } = DateTime.Now;
 
 		/// <summary>
 		/// Gets the number of registered helper serivces
@@ -255,22 +257,24 @@ namespace net.vieapps.Services.APIGateway
 									.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
 									.Subscribe(
 										async message => await this.ProcessInterCommunicateMessageAsync(message).ConfigureAwait(false),
-										exception => Global.OnError?.Invoke($"Error occurred while fetching inter-communicate message: {exception.Message}", this.State == ServiceState.Connected ? exception : null)
+										exception => Global.OnError?.Invoke($"Error occurred while fetching an inter-communicate message => {exception.Message}", this.State == ServiceState.Connected ? exception : null)
 									);
-								Global.OnProcess?.Invoke($"The inter-communicate message updater is{(this.State == ServiceState.Disconnected ? " re-" : " ")}subscribed successful");
+								Global.OnProcess?.Invoke($"The communicator of API Gateway is{(this.State == ServiceState.Disconnected ? " re-" : " ")}subscribed successful");
 
-								this.PingCommunicator?.Dispose();
-								this.PingCommunicator = WAMPConnections.IncomingChannel.RealmProxy.Services
+								this.UpdateCommunicator?.Dispose();
+								this.UpdateCommunicator = WAMPConnections.IncomingChannel.RealmProxy.Services
 									.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages")
 									.Subscribe(
 										message =>
 										{
 											if (message.Type.IsEquals("Ping"))
-												this.PingTime = DateTime.Now;
+												this.ClientPingTime = DateTime.Now;
+											else if (message.Type.IsEquals("Scheduler"))
+												this.ClientSchedulingTime = DateTime.Now;
 										},
-										exception => Global.OnError?.Invoke($"Error occurred while fetching ping-communicate message: {exception.Message}", this.State == ServiceState.Connected ? exception : null)
+										exception => Global.OnError?.Invoke($"Error occurred while fetching an updating message => {exception.Message}", this.State == ServiceState.Connected ? exception : null)
 									);
-								Global.OnProcess?.Invoke($"The ping-communicate message updater is{(this.State == ServiceState.Disconnected ? " re-" : " ")}subscribed successful");
+								Global.OnProcess?.Invoke($"The updater of service messages is{(this.State == ServiceState.Disconnected ? " re-" : " ")}subscribed successful");
 
 								Task.Run(async () =>
 								{
@@ -299,8 +303,8 @@ namespace net.vieapps.Services.APIGateway
 											try
 											{
 												this.RegisterMessagingTimers();
-												this.RegisterSchedulingTimers();
-												this.RegisterPingTimers();
+												this.RegisterTaskSchedulingTimers();
+												this.RegisterClientIntervalTimers();
 												Global.OnProcess?.Invoke($"The background workers & schedulers are registered - Number of scheduling timers: {this.NumberOfTimers:#,##0} - Number of scheduling tasks: {this.NumberOfTasks:#,##0}");
 											}
 											catch (Exception ex)
@@ -448,7 +452,7 @@ namespace net.vieapps.Services.APIGateway
 			this.BusinessServices.Keys.ForEach(name => this.StopBusinessService(name));
 
 			this.InterCommunicator?.Dispose();
-			this.PingCommunicator?.Dispose();
+			this.UpdateCommunicator?.Dispose();
 			this.MailSender?.Dispose();
 			this.WebHookSender?.Dispose();
 			this.LoggingService?.FlushAllLogs();
@@ -724,6 +728,8 @@ namespace net.vieapps.Services.APIGateway
 		void RegisterMessagingTimers()
 		{
 			// send email messages (15 seconds)
+			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:Mail", "15"), out int interval))
+				interval = 15;
 			this.StartTimer(async () =>
 			{
 				if (this.MailSender == null)
@@ -740,9 +746,11 @@ namespace net.vieapps.Services.APIGateway
 					{
 						this.MailSender = null;
 					}
-			}, 15);
+			}, interval);
 
 			// send web hook messages (35 seconds)
+			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:WebHook", "35"), out interval))
+				interval = 35;
 			this.StartTimer(async () =>
 			{
 				if (this.WebHookSender == null)
@@ -759,20 +767,19 @@ namespace net.vieapps.Services.APIGateway
 					{
 						this.WebHookSender = null;
 					}
-			}, 35);
+			}, interval);
 		}
 
-		void RegisterSchedulingTimers()
+		void RegisterTaskSchedulingTimers()
 		{
-			// flush logs (DEBUG: 5 seconds - Other: 1 minute)
-			this.StartTimer(() =>
-			{
-				this.LoggingService?.FlushAllLogs();
+			// flush logs (DEBUG: 5 seconds - Other: 45 seconds)
 #if DEBUG
-			}, 5);
+			var interval = 5;
 #else
-			}, UtilityService.GetAppSetting("Logs:FlushInterval", "45").CastAs<int>());
+			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:FlushLogs", "45"), out int interval))
+				interval = 45;
 #endif
+			this.StartTimer(() => this.LoggingService?.FlushAllLogs(), interval);
 
 			// house keeper (hourly)
 			this.PrepareRecycleBin();
@@ -785,18 +792,38 @@ namespace net.vieapps.Services.APIGateway
 			this.StartTimer(async () => await this.RunTaskSchedulerAsync().ConfigureAwait(false), 65 * 60, runTaskSchedulerOnFirstLoad ? 5678 : 0);
 		}
 
-		void RegisterPingTimers()
-			=> this.StartTimer(() =>
+		void RegisterClientIntervalTimers()
+		{
+			// ping - default: 2 minutes
+			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:Ping", "120"), out int pingInterval))
+				pingInterval = 120;
+			this.StartTimer(() =>
 			{
-				if ((DateTime.Now - this.PingTime).TotalSeconds >= 300)
+				if ((DateTime.Now - this.ClientPingTime).TotalSeconds >= pingInterval)
 					Task.Run(async () => await this.RTUService.SendUpdateMessageAsync(new UpdateMessage
 					{
 						Type = "Ping",
 						DeviceID = "*",
 					}, this.CancellationTokenSource.Token).ConfigureAwait(false))
-					.ContinueWith(_ => this.PingTime = DateTime.Now, TaskContinuationOptions.OnlyOnRanToCompletion)
+					.ContinueWith(_ => this.ClientPingTime = DateTime.Now, TaskContinuationOptions.OnlyOnRanToCompletion)
 					.ConfigureAwait(false);
-			}, 7 * 60);
+			}, pingInterval + 13);
+
+			// scheduler (update online status, signal to run scheduler at client, ...) - default: 15 minutes
+			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:Scheduler", "900"), out int scheduleInterval))
+				scheduleInterval = 900;
+			this.StartTimer(() =>
+			{
+				if ((DateTime.Now - this.ClientSchedulingTime).TotalSeconds >= scheduleInterval)
+					Task.Run(async () => await this.RTUService.SendUpdateMessageAsync(new UpdateMessage
+					{
+						Type = "Scheduler",
+						DeviceID = "*",
+					}, this.CancellationTokenSource.Token).ConfigureAwait(false))
+					.ContinueWith(_ => this.ClientSchedulingTime = DateTime.Now, TaskContinuationOptions.OnlyOnRanToCompletion)
+					.ConfigureAwait(false);
+			}, scheduleInterval + 13);
+		}
 		#endregion
 
 		#region Run house keeper

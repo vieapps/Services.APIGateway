@@ -31,7 +31,7 @@ namespace net.vieapps.Services.APIGateway
 			// request of WebSocket
 			if (context.WebSockets.IsWebSocketRequest)
 				await Task.WhenAll(
-					Global.IsVisitLogEnabled ? context.WriteLogsAsync(Global.Logger, "Http.WebSockets.Visits", $"Wrap a WebSocket connection successful\r\n- Endpoint: {context.Connection.RemoteIpAddress}:{context.Connection.RemotePort}\r\n- URI: {context.GetRequestUri()}{(Global.IsDebugLogEnabled ? $"\r\n- Headers:\r\n\t{string.Join("\r\n\t", context.Request.Headers.Select(header => $"{header.Key}: {header.Value}"))}" : "")}") : Task.CompletedTask,
+					Global.IsVisitLogEnabled ? context.WriteLogsAsync(Global.Logger, "Http.WebSockets.Visits", $"Wrap a WebSocket connection successful\r\n- Endpoint: {context.Connection.RemoteIpAddress}:{context.Connection.RemotePort}\r\n- URI: {context.GetRequestUri()}{(Global.IsDebugLogEnabled ? $"\r\n- Headers:\r\n\t{context.Request.Headers.Select(kvp => $"{kvp.Key}: {kvp.Value}").Join("\r\n\t")}" : "")}") : Task.CompletedTask,
 					APIGateway.RTU.WebSocket.WrapAsync(context)
 				).ConfigureAwait(false);
 

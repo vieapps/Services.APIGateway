@@ -115,7 +115,7 @@
       <Project>{c496cef5-9ff8-4364-9860-fcdefed4e277}</Project>
       <Name>VIEApps.Services.Base</Name>
     </ProjectReference>
-    <ProjectReference Include="..\Control\VIEApps.Services.APIGateway.Controller.csproj">
+    <ProjectReference Include="..\Controller\VIEApps.Services.APIGateway.Controller.csproj">
       <Project>{4ed245ba-2277-4631-8a27-b3727c98e649}</Project>
       <Name>VIEApps.Services.APIGateway.Controller</Name>
     </ProjectReference>

@@ -36,7 +36,7 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\..\Base\VIEApps.Services.Base.csproj" />
-		<ProjectReference Include="..\Control\VIEApps.Services.APIGateway.Controller.csproj" />
+		<ProjectReference Include="..\Controller\VIEApps.Services.APIGateway.Controller.csproj" />
 	</ItemGroup>
 
 </Project>

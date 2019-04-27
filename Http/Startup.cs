@@ -89,8 +89,8 @@ namespace net.vieapps.Services.APIGateway
 				DateTimeZoneHandling = DateTimeZoneHandling.Local
 			};
 
-			// setup connections to WAMP router
-			InternalAPIs.OpenWAMPChannels();
+			// setup connections to API Gateway Router
+			InternalAPIs.OpenRouterChannels();
 
 			// setup real-time updater
 			RTU.Initialize();
@@ -114,7 +114,7 @@ namespace net.vieapps.Services.APIGateway
 			// on started
 			appLifetime.ApplicationStarted.Register(() =>
 			{
-				Global.Logger.LogInformation($"WAMP router: {new Uri(WAMPConnections.GetRouterStrInfo()).GetResolvedURI()}");
+				Global.Logger.LogInformation($"API Gateway Router: {new Uri(RouterConnections.GetRouterStrInfo()).GetResolvedURI()}");
 				Global.Logger.LogInformation($"API Gateway HTTP service: {UtilityService.GetAppSetting("HttpUri:APIs", "None")}");
 				Global.Logger.LogInformation($"Files HTTP service: {UtilityService.GetAppSetting("HttpUri:Files", "None")}");
 				Global.Logger.LogInformation($"Portals HTTP service: {UtilityService.GetAppSetting("HttpUri:Portals", "None")}");
@@ -135,7 +135,7 @@ namespace net.vieapps.Services.APIGateway
 			appLifetime.ApplicationStopping.Register(() =>
 			{
 				Global.Logger = loggerFactory.CreateLogger<Startup>();
-				InternalAPIs.CloseWAMPChannels();
+				InternalAPIs.CloseRouterChannels();
 				RTU.Dispose();
 				Global.RSA.Dispose();
 				Global.CancellationTokenSource.Cancel();

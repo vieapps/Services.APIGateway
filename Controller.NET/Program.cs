@@ -208,6 +208,6 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		internal static ILoggingService GetLoggingService()
-			=> Program.LoggingService ?? (Program.LoggingService = WAMPConnections.OutgoingChannel?.RealmProxy.Services.GetCalleeProxy<ILoggingService>(ProxyInterceptor.Create()));
+			=> Program.LoggingService ?? (Program.LoggingService = RouterConnections.OutgoingChannel?.RealmProxy.Services.GetCalleeProxy<ILoggingService>(ProxyInterceptor.Create()));
 	}
 }

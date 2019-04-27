@@ -35,7 +35,8 @@ namespace net.vieapps.Services.APIGateway
 				OnError = (websocket, exception) => Global.WriteLogs(RTU.Logger, "Http.InternalAPIs", $"Got an error while processing => {exception.Message} ({websocket?.ID} {websocket?.RemoteEndPoint})", exception),
 				OnConnectionEstablished = (websocket) => Task.Run(() => websocket.WhenConnectionIsEstablishedAsync()).ConfigureAwait(false),
 				OnConnectionBroken = (websocket) => Task.Run(() => websocket.WhenConnectionIsBrokenAsync()).ConfigureAwait(false),
-				OnMessageReceived = (websocket, result, data) => Task.Run(() => websocket.WhenMessageIsReceivedAsync(result, data)).ConfigureAwait(false)
+				OnMessageReceived = (websocket, result, data) => Task.Run(() => websocket.WhenMessageIsReceivedAsync(result, data)).ConfigureAwait(false),
+				KeepAliveInterval = TimeSpan.FromSeconds(45)
 			};
 			Components.WebSockets.WebSocket.AgentName = UtilityService.GetAppSetting("HttpServerName", "VIEApps NGX") + " WebSockets";
 			Global.Logger.LogInformation($"WebSocket ({Global.ServiceName} RTU) is initialized - Buffer size: {Components.WebSockets.WebSocket.ReceiveBufferSize:#,##0} bytes - Keep-Alive interval: {RTU.WebSocket.KeepAliveInterval.TotalSeconds} second(s)");
@@ -78,6 +79,7 @@ namespace net.vieapps.Services.APIGateway
 				session.DeviceID = headers.TryGetValue("x-device-id", out string deviceID) ? deviceID : request.Get("x-device-id", session.DeviceID);
 				session.AppName = headers.TryGetValue("x-app-name", out string appName) ? appName : request.Get("x-app-name", session.AppName);
 				session.AppPlatform = headers.TryGetValue("x-app-platform", out string appPlatform) ? appPlatform : request.Get("x-app-platform", session.AppPlatform);
+				session.IP = (websocket.RemoteEndPoint as IPEndPoint).Address.ToString();
 
 				if (string.IsNullOrWhiteSpace(session.DeviceID))
 					throw new InvalidTokenException("Device identity is not found");
@@ -102,7 +104,7 @@ namespace net.vieapps.Services.APIGateway
 			websocket.Set("Session", session);
 			await websocket.PrepareConnectionInfoAsync().ConfigureAwait(false);
 
-			// wait for few times before connecting to WAMP router because RxNET needs few times
+			// wait for few times before connecting to API Gateway Router because RxNET needs that
 			if (query.ContainsKey("x-restart"))
 			{
 				// send knock message
@@ -119,12 +121,12 @@ namespace net.vieapps.Services.APIGateway
 					return;
 				}
 
-				// re-register online session
-				await session.SendOnlineStatusAsync(true).ConfigureAwait(false);
+				// re-register the session state
+				await session.SendSessionStateAsync(true).ConfigureAwait(false);
 			}
 
 			// subscribe an updater to push messages to client device
-			websocket.Set("Updater", WAMPConnections.IncomingChannel.RealmProxy.Services
+			websocket.Set("Updater", RouterConnections.IncomingChannel.RealmProxy.Services
 				.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages")
 				.Subscribe(
 					async message =>
@@ -157,7 +159,7 @@ namespace net.vieapps.Services.APIGateway
 			);
 
 			// subscribe a communicator to update related information
-			websocket.Set("Communicator", WAMPConnections.IncomingChannel.RealmProxy.Services
+			websocket.Set("Communicator", RouterConnections.IncomingChannel.RealmProxy.Services
 				.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
 				.Subscribe(
 					async message =>
@@ -272,9 +274,9 @@ namespace net.vieapps.Services.APIGateway
 					await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"Error occurred while disposing communicator: {session?.ToJson()?.ToString(Global.IsDebugResultsEnabled ? Formatting.Indented : Formatting.None)}", ex).ConfigureAwait(false);
 				}
 
-			// update states
+			// update the session state
 			await Task.WhenAll(
-				session != null ? session.SendOnlineStatusAsync(false) : Task.CompletedTask,
+				session != null ? session.SendSessionStateAsync(false) : Task.CompletedTask,
 				Global.IsVisitLogEnabled ? Global.WriteLogsAsync(RTU.Logger, "Http.WebSockets.Visits", $"The real-time updater (RTU) of a subscriber's device is stopped" + "\r\n" + websocket.GetConnectionInfo(session) + "\r\n" + $"- Served times: {websocket.Timestamp.GetElapsedTimes()}") : Task.CompletedTask
 			).ConfigureAwait(false);
 		}
@@ -314,20 +316,45 @@ namespace net.vieapps.Services.APIGateway
 			query.TryGetValue("object-identity", out string objectIdentity);
 
 			if (Global.IsVisitLogEnabled)
-				await Global.WriteLogsAsync(RTU.Logger, "Http.WebSockets.Visits", $"Request starting {verb} /{serviceName?.ToLower()}/{objectName?.ToLower()}/{objectIdentity?.ToLower()}\r\n{websocket.GetConnectionInfo()}", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
+				await Global.WriteLogsAsync(RTU.Logger, "Http.WebSockets.Visits", $"Request starting {verb} " + $"/{serviceName}{(string.IsNullOrWhiteSpace(objectName) ? "" : "/" + objectName)}{(string.IsNullOrWhiteSpace(objectIdentity) ? "" : "/" + objectIdentity)}".ToLower() + (query.TryGetValue("x-request",out string xrequest) ? $"?x-request={xrequest}" : "") + $"\r\n{websocket.GetConnectionInfo()}", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
 
 			// response to a heartbeat => refresh the session
-			if ("PONG".IsEquals(verb) && "session".IsEquals(objectName))
-				await Task.WhenAll(
-					session.RefreshAsync(),
-					Global.IsDebugResultsEnabled ? Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"Successfully refresh a session when got a response of a heartbeat signal" + "\r\n" + websocket.GetConnectionInfo(), null, Global.ServiceName, LogLevel.Information, correlationID) : Task.CompletedTask
-				).ConfigureAwait(false);
-
-			// patch the session (when log in/out)
-			else if ("PATCH".IsEquals(verb) && "users".IsEquals(serviceName) && "session".IsEquals(objectName) && extra.ContainsKey("x-session"))
+			if ("PONG".IsEquals(verb) && "session".IsEquals(serviceName))
 				try
 				{
-					await session.PatchAsync(header["x-app-token"], extra["x-session"]).ConfigureAwait(false);
+					await Task.WhenAll(
+						new CommunicateMessage("Users")
+						{
+							Type = "Session#State",
+							Data = new JObject
+							{
+								{ "SessionID", session.SessionID },
+								{ "UserID", session.User.ID },
+								{ "IsOnline", true }
+							}
+						}.PublishAsync(RTU.Logger, "Http.InternalAPIs"),
+						Global.IsDebugResultsEnabled ? Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"Successfully send an inter-communicate message to refresh a session when got a response of a heartbeat signal" + "\r\n" + websocket.GetConnectionInfo(), null, Global.ServiceName, LogLevel.Information, correlationID) : Task.CompletedTask
+					).ConfigureAwait(false);
+				}
+				catch (Exception ex)
+				{
+					await Task.WhenAll(
+						websocket.SendAsync(ex, null, correlationID),
+						Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs",
+							$"Error occurred while sending an inter-communicate message to refresh a session when got a response of a heartbeat signal" + "\r\n" +
+							$"{websocket.GetConnectionInfo()}" + "\r\n" +
+							$"- Request: {requestObj?.ToJson()?.ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}" + "\r\n" +
+							$"- Session: {session.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}" + "\r\n" +
+							$"- Error: {ex.Message}"
+						, ex, Global.ServiceName, LogLevel.Error, correlationID)
+					).ConfigureAwait(false);
+				}
+
+			// patch the session with authenticate ticket that sent from client
+			else if ("PATCH".IsEquals(verb) && "session".IsEquals(serviceName) && extra.ContainsKey("x-session-id"))
+				try
+				{
+					await session.PatchAsync(header["x-app-token"], extra["x-session-id"]).ConfigureAwait(false);
 					await websocket.PrepareConnectionInfoAsync(correlationID).ConfigureAwait(false);
 					if (Global.IsDebugResultsEnabled)
 						await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs",
@@ -396,28 +423,31 @@ namespace net.vieapps.Services.APIGateway
 						}
 					}
 
-					// special: definitions
-					else if (requestInfo.ServiceName.IsEquals("discovery") && requestInfo.ObjectName.IsEquals("definitions"))
-						requestInfo.PrepareDefinitionRelated();
-
-					// call the requested service
+					// call the service to process & get the result
 					var json = Global.StaticSegments.Contains(requestInfo.ServiceName.ToLower())
 						? verb.IsEquals("GET")
 							? (await Global.GetStaticFileContentAsync(Global.GetStaticFilePath(new[] { requestInfo.ServiceName.ToLower(), requestInfo.ObjectName.ToLower(), objectIdentity })).ConfigureAwait(false)).GetString().ToJson()
 							: throw new MethodNotAllowedException(verb)
-						: await Global.CallServiceAsync(requestInfo, Global.CancellationTokenSource.Token, RTU.Logger, "Http.InternalAPIs").ConfigureAwait(false);
+						: requestInfo.ServiceName.IsEquals("discovery")
+							? requestInfo.ObjectName.IsEquals("controllers")
+								? InternalAPIs.GetControllers()
+								: requestInfo.ObjectName.IsEquals("services")
+									? InternalAPIs.GetServices()
+									: requestInfo.ObjectName.IsEquals("definitions")
+										? await Global.CallServiceAsync(requestInfo.PrepareDefinitionRelated(), Global.CancellationTokenSource.Token, RTU.Logger, "Http.InternalAPIs").ConfigureAwait(false)
+										: throw new InvalidRequestException("Unknown request")
+							: await Global.CallServiceAsync(requestInfo, Global.CancellationTokenSource.Token, RTU.Logger, "Http.InternalAPIs").ConfigureAwait(false);
 
 					// send the result as an update message
 					await websocket.SendAsync(new UpdateMessage
 					{
 						Type = serviceName.GetCapitalizedFirstLetter() + (string.IsNullOrWhiteSpace(objectName) ? "" : "#" + objectName.GetCapitalizedFirstLetter() + "#" + (!string.IsNullOrWhiteSpace(objectIdentity) && !objectIdentity.IsValidUUID() ? objectIdentity : verb).GetCapitalizedFirstLetter()),
-						DeviceID = session.DeviceID,
 						Data = json
 					}, requestObj.Get<string>("ID")).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
-					await websocket.SendAsync(ex, null, correlationID, requestObj.Get<string>("ID"), $"\r\n{websocket.GetConnectionInfo()}\r\n- Request: {requestObj?.ToJson()?.ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}").ConfigureAwait(false);
+					await websocket.SendAsync(ex, null, correlationID, requestObj.Get<string>("ID"), $"Request: {requestObj.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}").ConfigureAwait(false);
 				}
 			}
 
@@ -456,7 +486,7 @@ namespace net.vieapps.Services.APIGateway
 		static async Task PatchAsync(this Session session, string authenticateToken, string encryptedSessionID)
 		{
 			await Global.UpdateWithAuthenticateTokenAsync(session, authenticateToken).ConfigureAwait(false);
-			if (!await Global.IsSessionExistAsync(session, RTU.Logger, "Http.InternalAPIs").ConfigureAwait(false))
+			if (!await session.CheckSessionExistAsync(RTU.Logger).ConfigureAwait(false))
 				throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 			else if (!session.SessionID.Equals(session.GetDecryptedID(encryptedSessionID, Global.EncryptionKey, Global.ValidationKey)))
 				throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
@@ -466,13 +496,13 @@ namespace net.vieapps.Services.APIGateway
 		{
 			// prepare
 			correlationID = correlationID ?? Global.GetCorrelationID();
-			var wampError = exception is WampException
+			var wampException = exception is WampException
 				? (exception as WampException).GetDetails()
 				: null;
 
-			msg = msg ?? (wampError != null ? wampError.Item2 : exception.Message);
-			var type = wampError != null ? wampError.Item3 : exception.GetType().GetTypeName(true);
-			var code = wampError != null ? wampError.Item1 : exception.GetHttpStatusCode();
+			msg = msg ?? wampException?.Item2 ?? exception.Message;
+			var type = wampException?.Item3 ?? exception?.GetType().GetTypeName(true);
+			var code = wampException != null ? wampException.Item1 : exception.GetHttpStatusCode();
 
 			var message = new JObject
 			{
@@ -484,8 +514,8 @@ namespace net.vieapps.Services.APIGateway
 
 			if (Global.IsDebugStacksEnabled)
 			{
-				if (wampError != null)
-					message["Stack"] = wampError.Item4;
+				if (wampException != null)
+					message["Stack"] = wampException.Item4;
 
 				else
 				{
@@ -510,17 +540,18 @@ namespace net.vieapps.Services.APIGateway
 				}
 			}
 
+			// send & write logs
 			message = new JObject
 			{
-				{ "ID", identity },
 				{ "Type", "Error" },
 				{ "Data", message }
 			};
+			if (!string.IsNullOrWhiteSpace(identity))
+				message["ID"] = identity;
 
-			// send & write logs
 			await Task.WhenAll(
 				websocket.SendAsync(message.ToString(Formatting.None), true, Global.CancellationTokenSource.Token),
-				Global.WriteLogsAsync(RTU.Logger, objectName ?? "Http.InternalAPIs", $"{msg ?? exception.Message}{additionalMsg}", exception, Global.ServiceName, LogLevel.Error, correlationID)
+				Global.WriteLogsAsync(RTU.Logger, objectName ?? "Http.InternalAPIs", $"{msg ?? exception.Message}", exception, Global.ServiceName, LogLevel.Error, correlationID, string.IsNullOrWhiteSpace(additionalMsg) ? null : $"{additionalMsg}\r\nWebSocket:\r\n{websocket.GetConnectionInfo()}")
 			).ConfigureAwait(false);
 		}
 

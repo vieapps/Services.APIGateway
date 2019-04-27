@@ -25,12 +25,12 @@ namespace net.vieapps.Services.APIGateway
 			{
 				if (this.Instance != null)
 					await this.Instance.DisposeAsync().ConfigureAwait(false);
-				this.Instance = await WAMPConnections.IncomingChannel.RealmProxy.Services.RegisterCallee(this, RegistrationInterceptor.Create()).ConfigureAwait(false);
+				this.Instance = await RouterConnections.IncomingChannel.RealmProxy.Services.RegisterCallee(this, RegistrationInterceptor.Create()).ConfigureAwait(false);
 			})
 			.ContinueWith(_ =>
 			{
 				this.Communicator?.Dispose();
-				this.Communicator = WAMPConnections.IncomingChannel.RealmProxy.Services
+				this.Communicator = RouterConnections.IncomingChannel.RealmProxy.Services
 					.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
 					.Subscribe(
 						message => this.ProcessInterCommunicateMessage(message),
@@ -39,7 +39,7 @@ namespace net.vieapps.Services.APIGateway
 			}, TaskContinuationOptions.OnlyOnRanToCompletion)
 			.ConfigureAwait(false);
 
-			this.OnOutgoingChannelEstablished = (sender, args) =>Task.Run(() => this.RTUService = WAMPConnections.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create()))
+			this.OnOutgoingChannelEstablished = (sender, args) =>Task.Run(() => this.RTUService = RouterConnections.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create()))
 			.ContinueWith(async _ =>
 			{
 				await this.SendRequestInfoAsync().ConfigureAwait(false);
@@ -122,7 +122,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			if (!this.ServiceManagers.TryGetValue(controllerID, out IController serviceManager))
 			{
-				serviceManager = WAMPConnections.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IController>(ProxyInterceptor.Create(controllerID));
+				serviceManager = RouterConnections.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IController>(ProxyInterceptor.Create(controllerID));
 				this.ServiceManagers.TryAdd(controllerID, serviceManager);
 			}
 			return serviceManager;

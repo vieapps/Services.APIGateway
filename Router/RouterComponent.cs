@@ -5,6 +5,7 @@ using System.IO;
 using System.Reflection;
 using System.Configuration;
 using System.Diagnostics;
+using System.Net.Sockets;
 using System.Threading.Tasks;
 using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
@@ -19,7 +20,7 @@ namespace net.vieapps.Services.APIGateway
 {
 	public class RouterComponent
 	{
-		public const string Powered = "WampSharp v19.3.1.netstandard-2.0-castle.core.4.4-rxnet-4.1-msgpack-1.0-json-12.0-fleck-1.1-ssl+rev:2019.04.23-latest.components";
+		public const string Powered = "WampSharp v19.3.1.netstandard-2.0-castle.core.4.4-rxnet-4.1-msgpack-1.0-json-12.0-fleck-1.1-ssl+rev:2019.04.28-exceptions";
 
 		public IWampHost Host { get; private set; } = null;
 
@@ -140,15 +141,19 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					this.OnError?.Invoke(ex);
+					var message = $"Cannot start the router => {ex.Message}";
+					if (ex is SocketException && ex.Message.StartsWith("Address already in use"))
+						message = $"Cannot start the router (because the port is already in use by another app) => Please make sure no app use the port {new Uri(this.Address).Port}";
+					this.OnError?.Invoke(new Exception(message, ex));
 				}
 			}
 
 			void startStatisticServer()
 			{
+				var location = $"{(this.SslCertificate != null ? "wss" : "ws")}://0.0.0.0:{(Int32.TryParse(ConfigurationManager.AppSettings["StatisticsWebSocketServer:Port"] ?? "56429", out int port) ? port : 56429)}/ ";
 				try
 				{
-					this.StatisticsServer = new Fleck.WebSocketServer($"{(this.SslCertificate != null ? "wss" : "ws")}://0.0.0.0:{(Int32.TryParse(ConfigurationManager.AppSettings["StatisticsWebSocketServer:Port"] ?? "56429", out int port) ? port : 56429)}/ ")
+					this.StatisticsServer = new Fleck.WebSocketServer(location)
 					{
 						Certificate = this.SslCertificate,
 						EnabledSslProtocols = this.SslProtocol
@@ -213,7 +218,11 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					this.OnError?.Invoke(ex);
+					var message = $"Cannot start the statistic server => {ex.Message}";
+					if (ex is SocketException && ex.Message.StartsWith("Address already in use"))
+						message = $"Cannot start the statistic server (because the port is already in use by another app) => Please make sure no app use the port {new Uri(this.Address).Port}";
+					this.OnError?.Invoke(new Exception(message, ex));
+					this.StatisticsServer = null;
 				}
 			}
 
@@ -246,7 +255,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			{ "ProcessID", $"{Process.GetCurrentProcess().Id}" },
 			{ "WorkingMode", this.IsUserInteractive ? "Interactive app" : "Background service" },
-			{ "UseSecuredConnections", $"{this.SslCertificate != null}".ToLower() },
+			{ "UseSecuredConnections", $"{this.SslCertificate != null}".ToLower() + (this.SslCertificate != null ? $" (Issued by {this.SslCertificate.GetNameInfo(X509NameType.DnsName, true)})" : "") },
 			{ "ListeningURI", $"{(this.SslCertificate != null ? this.Address.Replace("ws://", "wss://") : this.Address.Replace("wss://", "ws://"))}{this.Realm}" },
 			{ "HostedRealmSessionID", $"{this.HostedRealm.SessionId}" },
 			{ "StatisticsServer", $"{this.StatisticsServer != null}".ToLower() },

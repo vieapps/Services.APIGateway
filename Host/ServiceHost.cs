@@ -190,7 +190,7 @@ namespace net.vieapps.Services.APIGateway
 			var logPath = UtilityService.GetAppSetting("Path:Logs");
 			if (!string.IsNullOrWhiteSpace(logPath) && Directory.Exists(logPath))
 			{
-				logPath = Path.Combine(logPath, "{Date}_" + $"{serviceComponent.ServiceName.ToLower()}.txt");
+				logPath = Path.Combine(logPath, "{Hour}_" + $"{serviceComponent.ServiceName.ToLower()}.txt");
 				Logger.GetLoggerFactory().AddFile(logPath, logLevel);
 			}
 			else

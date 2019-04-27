@@ -121,7 +121,7 @@ namespace net.vieapps.Services.APIGateway
 			if (lines.Count > 0)
 				try
 				{
-					var filename = $"{DateTime.Now.ToString("yyyyMMdd")}_{name}.{DateTime.Now.ToString("HH")}.txt";
+					var filename = $"{DateTime.Now.ToString("yyyyMMddHH")}_{name}.txt";
 					await UtilityService.WriteTextFileAsync(Path.Combine(LoggingService.LogsPath, filename), lines, true, null, this.CancellationTokenSource.Token).ConfigureAwait(false);
 				}
 				catch { }

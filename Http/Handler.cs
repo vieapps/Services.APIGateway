@@ -46,7 +46,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
 					{
-						{ "Access-Control-Allow-Methods", "GET,POST,PUT,DELETE" }
+						{ "Access-Control-Allow-Methods", "HEAD,GET,POST,PUT,DELETE" }
 					};
 					if (context.Request.Headers.ContainsKey("Access-Control-Request-Headers"))
 						headers["Access-Control-Allow-Headers"] = context.Request.Headers["Access-Control-Request-Headers"];
@@ -83,18 +83,15 @@ namespace net.vieapps.Services.APIGateway
 			context.Items["PipelineStopwatch"] = Stopwatch.StartNew();
 			var requestPath = context.GetRequestPathSegments(true).First();
 
-			// request to favicon.ico file
-			if (requestPath.Equals("favicon.ico"))
-			{
-				await context.ProcessFavouritesIconFileRequestAsync().ConfigureAwait(false);
-				return;
-			}
-
 			if (Global.IsVisitLogEnabled)
 				await context.WriteVisitStartingLogAsync(Global.Logger, "Http.RESTful.Visits").ConfigureAwait(false);
 
+			// request to favicon.ico file
+			if (requestPath.Equals("favicon.ico"))
+				await context.ProcessFavouritesIconFileRequestAsync().ConfigureAwait(false);
+
 			// request to static segments
-			if (Global.StaticSegments.Contains(requestPath))
+			else if (Global.StaticSegments.Contains(requestPath))
 				await context.ProcessStaticFileRequestAsync().ConfigureAwait(false);
 
 			// request to external APIs

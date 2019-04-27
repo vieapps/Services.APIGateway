@@ -105,19 +105,19 @@ namespace net.vieapps.Services.APIGateway
 					: !InternalAPIs.NoTokenRequiredServices.Contains(requestInfo.ServiceName);
 
 				if (!string.IsNullOrWhiteSpace(authenticateToken))
-					await context.UpdateWithAuthenticateTokenAsync(requestInfo.Session, authenticateToken).ConfigureAwait(false);
+					await context.UpdateWithAuthenticateTokenAsync(requestInfo.Session, authenticateToken, null, null, null, requestInfo.CorrelationID).ConfigureAwait(false);
 				else if (tokenIsRequired)
 					throw new InvalidSessionException("Session is invalid (Token is not found)");
 
 				// check existed of session
-				if (tokenIsRequired && !await context.CheckSessionExistAsync(requestInfo.Session).ConfigureAwait(false))
+				if (tokenIsRequired && !await context.CheckSessionExistAsync(requestInfo.Session, InternalAPIs.Logger, "Http.InternalAPIs", requestInfo.CorrelationID).ConfigureAwait(false))
 					throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 			}
 			catch (Exception ex)
 			{
 				context.WriteError(InternalAPIs.Logger, ex, requestInfo, null, false);
 				if (Global.IsDebugLogEnabled)
-					Global.Logger.LogError(ex.Message, ex);
+					InternalAPIs.Logger.LogError(ex.Message, ex);
 				return;
 			}
 			#endregion
@@ -158,7 +158,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				context.WriteError(InternalAPIs.Logger, ex, requestInfo, null, false);
 				if (Global.IsDebugLogEnabled)
-					Global.Logger.LogError(ex.Message, ex);
+					InternalAPIs.Logger.LogError(ex.Message, ex);
 				return;
 			}
 
@@ -166,13 +166,13 @@ namespace net.vieapps.Services.APIGateway
 			if (isAccountProccessed || "otp".IsEquals(requestInfo.ObjectName))
 				try
 				{
-					requestInfo.PrepareAccountRelated(context.Items, (msg, ex) => context.WriteLogs(InternalAPIs.Logger, "Http.InternalAPIs", msg, ex));
+					requestInfo.PrepareAccountRelated(context.Items, (msg, ex) => context.WriteLogs(InternalAPIs.Logger, "Http.InternalAPIs", msg, ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID));
 				}
 				catch (Exception ex)
 				{
 					context.WriteError(InternalAPIs.Logger, ex, requestInfo, null, false);
 					if (Global.IsDebugLogEnabled)
-						Global.Logger.LogError(ex.Message, ex);
+						InternalAPIs.Logger.LogError(ex.Message, ex);
 					return;
 				}
 
@@ -192,7 +192,7 @@ namespace net.vieapps.Services.APIGateway
 						break;
 
 					case "PUT":
-						await context.LogOTPSessionAsync(requestInfo).ConfigureAwait(false);
+						await context.LogOTPSessionInAsync(requestInfo).ConfigureAwait(false);
 						break;
 
 					case "DELETE":
@@ -200,27 +200,13 @@ namespace net.vieapps.Services.APIGateway
 						break;
 
 					default:
-						context.WriteError(new MethodNotAllowedException(requestInfo.Verb), requestInfo, null, false);
+						context.WriteError(InternalAPIs.Logger, new MethodNotAllowedException(requestInfo.Verb), requestInfo, null, false);
 						break;
 				}
 
 			// process request of activations
 			else if (isActivationProccessed)
-			{
-				// prepare device identity
-				if (string.IsNullOrWhiteSpace(requestInfo.Session.DeviceID))
-					requestInfo.Session.DeviceID = (requestInfo.Session.AppName + "/" + requestInfo.Session.AppPlatform + "@" + (requestInfo.Session.AppAgent ?? "N/A")).GetHMACSHA384(requestInfo.Session.SessionID, true) + "@pwa";
-
-				// activate
-				try
-				{
-					await context.ActivateAsync(requestInfo).ConfigureAwait(false);
-				}
-				catch (Exception ex)
-				{
-					context.WriteError(ex, requestInfo);
-				}
-			}
+				await context.ActivateAsync(requestInfo).ConfigureAwait(false);
 
 			// process request of discovery (controllers, services, definitions, resources, ...)
 			else if (requestInfo.ServiceName.IsEquals("discovery"))
@@ -254,7 +240,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		#region Check existing of a session
-		internal static async Task<bool> CheckSessionExistAsync(this HttpContext context, Session session, ILogger logger = null, string objectName = null)
+		internal static async Task<bool> CheckSessionExistAsync(this HttpContext context, Session session, ILogger logger = null, string objectName = null, string correlationID = null)
 		{
 			if (string.IsNullOrWhiteSpace(session?.SessionID))
 				return false;
@@ -267,15 +253,15 @@ namespace net.vieapps.Services.APIGateway
 					: null;
 				if (!string.IsNullOrWhiteSpace(sessionID))
 					return sessionID.Equals(session.GetEncryptedID());
-				var existed = await context.IsSessionExistAsync(session, logger ?? InternalAPIs.Logger, objectName ?? "Http.InternalAPIs").ConfigureAwait(false);
+				var existed = await context.IsSessionExistAsync(session, logger ?? InternalAPIs.Logger, objectName ?? "Http.InternalAPIs", correlationID).ConfigureAwait(false);
 				if (existed)
 					InternalAPIs.Sessions.Add(session.SessionID);
 				return existed;
 			}
 		}
 
-		internal static Task<bool> CheckSessionExistAsync(this Session session, ILogger logger = null, string objectName = null)
-			=> InternalAPIs.CheckSessionExistAsync(Global.CurrentHttpContext, session, logger, objectName);
+		internal static Task<bool> CheckSessionExistAsync(this Session session, ILogger logger = null, string objectName = null, string correlationID = null)
+			=> InternalAPIs.CheckSessionExistAsync(Global.CurrentHttpContext, session, logger, objectName, correlationID);
 		#endregion
 
 		#region Send state message of a session
@@ -292,10 +278,10 @@ namespace net.vieapps.Services.APIGateway
 					{ "DeviceID", session.DeviceID },
 					{ "AppName", session.AppName },
 					{ "AppPlatform", session.AppPlatform },
-					{ "Location", await session.GetLocationAsync(correlationID ?? Global.GetCorrelationID(), Global.CancellationTokenSource.Token).ConfigureAwait(false) },
+					{ "Location", await session.GetLocationAsync(correlationID, Global.CancellationTokenSource.Token).ConfigureAwait(false) },
 					{ "IsOnline", isOnline }
 				}
-			}.PublishAsync(RTU.Logger).ConfigureAwait(false);
+			}.PublishAsync(RTU.Logger, "Http.InternalAPIs").ConfigureAwait(false);
 			if (!isOnline)
 				InternalAPIs.Sessions.TryRemove(session.SessionID);
 		}
@@ -347,7 +333,7 @@ namespace net.vieapps.Services.APIGateway
 							{ "UserID", requestInfo.Session.User.ID },
 							{ "IsOnline", true }
 						}
-					}.PublishAsync(InternalAPIs.Logger)
+					}.PublishAsync(InternalAPIs.Logger, "Http.InternalAPIs")
 				).ConfigureAwait(false);
 		}
 		#endregion
@@ -400,14 +386,14 @@ namespace net.vieapps.Services.APIGateway
 					}
 
 					// response
-					var json = requestInfo.Session.GetSessionJson(context.Items);
+					var response = requestInfo.Session.GetSessionJson(context.Items);
 					await Task.WhenAll(
-						context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
+						context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
 						{
 							$"Successfully process request of session (registration of anonymous user)",
 							$"- Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-							$"- Response: {json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+							$"- Response: {response.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
 							$"- Execution times: {context.GetExecutionTimes()}"
 						})
 					).ConfigureAwait(false);
@@ -448,14 +434,14 @@ namespace net.vieapps.Services.APIGateway
 					await context.CreateOrRenewSessionAsync(requestInfo, session).ConfigureAwait(false);
 
 					// response
-					var json = requestInfo.Session.GetSessionJson(context.Items);
+					var response = requestInfo.Session.GetSessionJson(context.Items);
 					await Task.WhenAll(
-						context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
+						context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
 						{
 							$"Successfully process request of session (registration of authenticated user)",
 							$"- Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-							$"- Response: {json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+							$"- Response: {response.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
 							$"- Execution times: {context.GetExecutionTimes()}"
 						})
 					).ConfigureAwait(false);
@@ -484,7 +470,7 @@ namespace net.vieapps.Services.APIGateway
 					{ "Password", requestInfo.Extra["Password"] },
 				}.ToString(Formatting.None);
 
-				var json = await context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Session", "PUT")
+				var response = await context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Session", "PUT")
 				{
 					Body = body,
 					Extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -497,16 +483,16 @@ namespace net.vieapps.Services.APIGateway
 				// two-factors authentication
 				var oldSessionID = string.Empty;
 				var oldUserID = string.Empty;
-				var require2FA = json["Require2FA"] != null
-					? json.Get<bool>("Require2FA")
+				var require2FA = response["Require2FA"] != null
+					? response.Get<bool>("Require2FA")
 					: false;
 
 				if (require2FA)
-					json = new JObject
+					response = new JObject
 					{
-						{ "ID", json.Get<string>("ID") },
+						{ "ID", response.Get<string>("ID") },
 						{ "Require2FA", true },
-						{ "Providers", json["Providers"] as JArray }
+						{ "Providers", response["Providers"] as JArray }
 					};
 
 				else
@@ -517,12 +503,12 @@ namespace net.vieapps.Services.APIGateway
 					// register new session
 					oldSessionID = requestInfo.Session.SessionID;
 					oldUserID = requestInfo.Session.User.ID;
-					requestInfo.Session.User = json.Copy<User>();
+					requestInfo.Session.User = response.Copy<User>();
 					requestInfo.Session.User.SessionID = requestInfo.Session.SessionID = UtilityService.NewUUID;
 					await context.CreateOrRenewSessionAsync(requestInfo).ConfigureAwait(false);
 
 					// prepare response
-					json = requestInfo.Session.GetSessionJson(context.Items);
+					response = requestInfo.Session.GetSessionJson(context.Items);
 
 					// broadcast updates
 					await new CommunicateMessage("APIGateway")
@@ -531,29 +517,27 @@ namespace net.vieapps.Services.APIGateway
 						Data = new JObject
 						{
 							{ "SessionID", oldSessionID },
-							{ "EncryptedID", json["ID"] },
-							{ "AuthenticateToken", json["Token"] }
+							{ "EncryptedID", response["ID"] },
+							{ "AuthenticateToken", response["Token"] }
 						}
 					}.PublishAsync(RTU.Logger, "Http.InternalAPIs").ConfigureAwait(false);
 				}
 
 				// response
 				await Task.WhenAll(
-					context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
+					context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 					InternalAPIs.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token),
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (sign-in)",
 						$"- Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-						$"- Response: {json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"- Response: {response.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
 						$"- Execution times: {context.GetExecutionTimes()}"
 					})
 				).ConfigureAwait(false);
 
 				// update state of old session
 				if (!string.IsNullOrWhiteSpace(oldSessionID))
-				{
-					InternalAPIs.Sessions.TryRemove(oldSessionID);
 					await new CommunicateMessage("Users")
 					{
 						Type = "Session#State",
@@ -564,7 +548,6 @@ namespace net.vieapps.Services.APIGateway
 							{ "IsOnline", false }
 						}
 					}.PublishAsync(InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
-				}
 			}
 			catch (Exception ex)
 			{
@@ -583,8 +566,8 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
-		#region Log an OTP session
-		static async Task LogOTPSessionAsync(this HttpContext context, RequestInfo requestInfo)
+		#region Log an OTP session in
+		static async Task LogOTPSessionInAsync(this HttpContext context, RequestInfo requestInfo)
 		{
 			try
 			{
@@ -610,7 +593,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 
 				// call service to validate
-				var json = await context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "OTP", "POST")
+				var response = await context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "OTP", "POST")
 				{
 					Body = new JObject
 					{
@@ -627,13 +610,13 @@ namespace net.vieapps.Services.APIGateway
 				// register new session
 				var oldSessionID = requestInfo.Session.SessionID;
 				var oldUserID = requestInfo.Session.User.ID;
-				requestInfo.Session.User = json.Copy<User>();
+				requestInfo.Session.User = response.Copy<User>();
 				requestInfo.Session.User.SessionID = requestInfo.Session.SessionID = UtilityService.NewUUID;
 				requestInfo.Session.Verification = true;
 				await context.CreateOrRenewSessionAsync(requestInfo).ConfigureAwait(false);
 
 				// prepare response
-				json = requestInfo.Session.GetSessionJson(context.Items);
+				response = requestInfo.Session.GetSessionJson(context.Items);
 
 				// broadcast updates
 				await new CommunicateMessage("APIGateway")
@@ -642,26 +625,25 @@ namespace net.vieapps.Services.APIGateway
 					Data = new JObject
 					{
 						{ "SessionID", oldSessionID },
-						{ "EncryptedID", json["ID"] },
-						{ "AuthenticateToken", json["Token"] }
+						{ "EncryptedID", response["ID"] },
+						{ "AuthenticateToken", response["Token"] }
 					}
 				}.PublishAsync(RTU.Logger, "Http.InternalAPIs").ConfigureAwait(false);
 
 				// response
 				await Task.WhenAll(
-					context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
+					context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 					InternalAPIs.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token),
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (OTP validation)",
 						$"- Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-						$"- Response: {json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"- Response: {response.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
 						$"- Execution times: {context.GetExecutionTimes()}"
 					})
 				).ConfigureAwait(false);
 
 				// update state of old session
-				InternalAPIs.Sessions.TryRemove(oldSessionID);
 				await new CommunicateMessage("Users")
 				{
 					Type = "Session#State",
@@ -724,7 +706,7 @@ namespace net.vieapps.Services.APIGateway
 				).ConfigureAwait(false);
 
 				// prepare response
-				var json = requestInfo.Session.GetSessionJson(context.Items);
+				var response = requestInfo.Session.GetSessionJson(context.Items);
 
 				// broadcast updates
 				await new CommunicateMessage("APIGateway")
@@ -733,25 +715,24 @@ namespace net.vieapps.Services.APIGateway
 					Data = new JObject
 					{
 						{ "SessionID", oldSessionID },
-						{ "EncryptedID", json["ID"] },
-						{ "AuthenticateToken", json["Token"] }
+						{ "EncryptedID", response["ID"] },
+						{ "AuthenticateToken", response["Token"] }
 					}
 				}.PublishAsync(RTU.Logger, "Http.InternalAPIs").ConfigureAwait(false);
 
 				// response
 				await Task.WhenAll(
-					context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
+					context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (sign-out)",
 						$"- Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-						$"- Response: {json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"- Response: {response.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
 						$"- Execution times: {context.GetExecutionTimes()}"
 					})
 				).ConfigureAwait(false);
 
 				// update state of old session
-				InternalAPIs.Sessions.TryRemove(oldSessionID);
 				await new CommunicateMessage("Users")
 				{
 					Type = "Session#State",
@@ -773,31 +754,42 @@ namespace net.vieapps.Services.APIGateway
 		#region Activation
 		static async Task ActivateAsync(this HttpContext context, RequestInfo requestInfo)
 		{
-			// call service to activate
-			var json = await context.CallServiceAsync(new RequestInfo(requestInfo)
+			try
 			{
-				ServiceName = "Users",
-				ObjectName = "Activate",
-				Verb = "GET"
-			}, Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
+				// prepare device identity
+				if (string.IsNullOrWhiteSpace(requestInfo.Session.DeviceID))
+					requestInfo.Session.DeviceID = (requestInfo.Session.AppName + "/" + requestInfo.Session.AppPlatform + "@" + (requestInfo.Session.AppAgent ?? "N/A")).GetHMACSHA384(requestInfo.Session.SessionID, true) + "@pwa";
 
-			// get user information & register the session
-			requestInfo.Session.User = json.Copy<User>();
-			requestInfo.Session.User.SessionID = requestInfo.Session.SessionID = UtilityService.NewUUID;
-			await context.CreateOrRenewSessionAsync(requestInfo).ConfigureAwait(false);
-
-			// response
-			json = requestInfo.Session.GetSessionJson(context.Items);
-			await Task.WhenAll(
-				context.WriteAsync(json, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
-				!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
+				// call service to activate
+				var response = await context.CallServiceAsync(new RequestInfo(requestInfo)
 				{
-					$"Successfully process request of session (activation)",
-					$"- Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-					$"- Response: {json.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-					$"- Execution times: {context.GetExecutionTimes()}"
-				})
-			).ConfigureAwait(false);
+					ServiceName = "Users",
+					ObjectName = "Activate",
+					Verb = "GET"
+				}, Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
+
+				// get user information & register the session
+				requestInfo.Session.User = response.Copy<User>();
+				requestInfo.Session.User.SessionID = requestInfo.Session.SessionID = UtilityService.NewUUID;
+				await context.CreateOrRenewSessionAsync(requestInfo).ConfigureAwait(false);
+
+				// response
+				response = requestInfo.Session.GetSessionJson(context.Items);
+				await Task.WhenAll(
+					context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
+					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
+					{
+						$"Successfully process request of session (activation)",
+						$"- Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"- Response: {response.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"- Execution times: {context.GetExecutionTimes()}"
+					})
+				).ConfigureAwait(false);
+			}
+			catch (Exception ex)
+			{
+				context.WriteError(InternalAPIs.Logger, ex, requestInfo);
+			}
 		}
 		#endregion
 

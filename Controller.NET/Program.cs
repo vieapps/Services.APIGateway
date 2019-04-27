@@ -64,7 +64,7 @@ namespace net.vieapps.Services.APIGateway
 			var logPath = UtilityService.GetAppSetting("Path:Logs");
 			if (logPath != null && Directory.Exists(logPath))
 			{
-				logPath = Path.Combine(logPath, "{Date}_apigateway.controller.txt");
+				logPath = Path.Combine(logPath, "{Hour}_apigateway.controller.txt");
 				Components.Utility.Logger.GetLoggerFactory().AddFile(logPath, logLevel);
 			}
 			else

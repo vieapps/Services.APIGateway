@@ -105,7 +105,7 @@ namespace net.vieapps.Services.APIGateway
 					: !InternalAPIs.NoTokenRequiredServices.Contains(requestInfo.ServiceName);
 
 				if (!string.IsNullOrWhiteSpace(authenticateToken))
-					await context.UpdateWithAuthenticateTokenAsync(requestInfo.Session, authenticateToken, null, null, null, requestInfo.CorrelationID).ConfigureAwait(false);
+					await context.UpdateWithAuthenticateTokenAsync(requestInfo.Session, authenticateToken, null, null, null, InternalAPIs.Logger, "Http.InternalAPIs", requestInfo.CorrelationID).ConfigureAwait(false);
 				else if (tokenIsRequired)
 					throw new InvalidSessionException("Session is invalid (Token is not found)");
 

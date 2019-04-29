@@ -14,7 +14,7 @@
 		<Copyright>© 2019 VIEApps.net</Copyright>
 		<AssemblyVersion>10.2.1904.3</AssemblyVersion>
 		<FileVersion>10.2.1904.3</FileVersion>
-		<InformationalVersion>v10.2.netcore-2.2+rev:2019.04.11-latest.components</InformationalVersion>
+		<InformationalVersion>v10.2.netcore-2.2+rev:2019.04.28-latest.components</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>

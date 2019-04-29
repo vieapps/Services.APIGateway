@@ -150,10 +150,10 @@ namespace net.vieapps.Services.APIGateway
 
 			void startStatisticServer()
 			{
-				var location = $"{(this.SslCertificate != null ? "wss" : "ws")}://0.0.0.0:{(Int32.TryParse(ConfigurationManager.AppSettings["StatisticsWebSocketServer:Port"] ?? "56429", out int port) ? port : 56429)}/ ";
+				var address = $"{(this.SslCertificate != null ? "wss" : "ws")}://0.0.0.0:{(Int32.TryParse(ConfigurationManager.AppSettings["StatisticsWebSocketServer:Port"] ?? "56429", out int port) ? port : 56429)}/ ";
 				try
 				{
-					this.StatisticsServer = new Fleck.WebSocketServer(location)
+					this.StatisticsServer = new Fleck.WebSocketServer(address)
 					{
 						Certificate = this.SslCertificate,
 						EnabledSslProtocols = this.SslProtocol
@@ -218,9 +218,9 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					var message = $"Cannot start the statistic server => {ex.Message}";
+					var message = $"Cannot start the statistics server => {ex.Message}";
 					if (ex is SocketException && ex.Message.StartsWith("Address already in use"))
-						message = $"Cannot start the statistic server (because the port is already in use by another app) => Please make sure no app use the port {new Uri(this.Address).Port}";
+						message = $"Cannot start the statistics server (because the port is already in use by another app) => Please make sure no app use the port {new Uri(address).Port}";
 					this.OnError?.Invoke(new Exception(message, ex));
 					this.StatisticsServer = null;
 				}

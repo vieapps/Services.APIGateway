@@ -15,7 +15,9 @@ namespace net.vieapps.Services.APIGateway
 	public abstract class ServiceHost
 	{
 		protected string ServiceTypeName { get; private set; }
+
 		protected string ServiceAssemblyName { get; private set; }
+
 		protected Type ServiceType { get; set; }
 
 		public void Run(string[] args)
@@ -190,7 +192,7 @@ namespace net.vieapps.Services.APIGateway
 			var logPath = UtilityService.GetAppSetting("Path:Logs");
 			if (!string.IsNullOrWhiteSpace(logPath) && Directory.Exists(logPath))
 			{
-				logPath = Path.Combine(logPath, "{Hour}_" + $"{serviceComponent.ServiceName.ToLower()}.txt");
+				logPath = Path.Combine(logPath, "{Hour}_" + $"{serviceComponent.ServiceName.ToLower()}.all.txt");
 				Logger.GetLoggerFactory().AddFile(logPath, logLevel);
 			}
 			else

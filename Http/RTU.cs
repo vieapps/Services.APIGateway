@@ -76,7 +76,7 @@ namespace net.vieapps.Services.APIGateway
 				if (string.IsNullOrWhiteSpace(appToken))
 					throw new TokenNotFoundException("Token is not found");
 
-				session = Global.GetSession(query.ToNameValueCollection(), headers.TryGetValue("User-Agent", out string userAgent) ? userAgent : "", $"{(websocket.RemoteEndPoint as IPEndPoint).Address}", headers.TryGetValue("Referer", out string urlReferer) ? new Uri(urlReferer) : null);
+				session = Global.GetSession(headers, null, $"{(websocket.RemoteEndPoint as IPEndPoint).Address}");
 				session.DeviceID = headers.TryGetValue("x-device-id", out string deviceID) ? deviceID : request.Get("x-device-id", session.DeviceID);
 				session.AppName = headers.TryGetValue("x-app-name", out string appName) ? appName : request.Get("x-app-name", session.AppName);
 				session.AppPlatform = headers.TryGetValue("x-app-platform", out string appPlatform) ? appPlatform : request.Get("x-app-platform", session.AppPlatform);
@@ -127,7 +127,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// subscribe an updater to push messages to client device
-			websocket.Set("Updater", RouterConnections.IncomingChannel.RealmProxy.Services
+			websocket.Set("Updater", Services.Router.IncomingChannel.RealmProxy.Services
 				.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages")
 				.Subscribe(
 					async message =>
@@ -161,7 +161,7 @@ namespace net.vieapps.Services.APIGateway
 			);
 
 			// subscribe a communicator to update related information
-			websocket.Set("Communicator", RouterConnections.IncomingChannel.RealmProxy.Services
+			websocket.Set("Communicator", Services.Router.IncomingChannel.RealmProxy.Services
 				.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
 				.Subscribe(
 					async message =>

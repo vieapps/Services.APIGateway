@@ -115,9 +115,9 @@ namespace net.vieapps.Services.APIGateway
 								$"- Version: {typeof(Controller).Assembly.GetVersion()}" + "\r\n\t" +
 								$"- Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "macOS")} {RuntimeInformation.OSArchitecture} ({(RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "Macintosh; Intel Mac OS X; " : "")}{RuntimeInformation.OSDescription.Trim()})" + "\r\n\t" +
 								$"- Working mode: {(Environment.UserInteractive ? "Interactive app" : "Background service")}" + "\r\n\t" +
-								$"- API Gateway Router: {new Uri(RouterConnections.GetRouterStrInfo()).GetResolvedURI()}" + "\r\n\t" +
-								$"- Incoming channel session identity: {RouterConnections.IncomingChannelSessionID}" + "\r\n\t" +
-								$"- Outgoing channel session identity: {RouterConnections.OutgoingChannelSessionID}" + "\r\n\t" +
+								$"- API Gateway Router: {new Uri(Router.GetRouterStrInfo()).GetResolvedURI()}" + "\r\n\t" +
+								$"- Incoming channel session identity: {Router.IncomingChannelSessionID}" + "\r\n\t" +
+								$"- Outgoing channel session identity: {Router.OutgoingChannelSessionID}" + "\r\n\t" +
 								$"- Number of helper services: {Program.Controller.NumberOfHelperServices:#,##0}" + "\r\n\t" +
 								$"- Number of scheduling timers: {Program.Controller.NumberOfTimers:#,##0}" + "\r\n\t" +
 								$"- Number of scheduling tasks: {Program.Controller.NumberOfTasks:#,##0}";
@@ -320,6 +320,6 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		internal static ILoggingService GetLoggingService()
-			=> Program.LoggingService ?? (Program.LoggingService = RouterConnections.OutgoingChannel?.RealmProxy.Services.GetCalleeProxy<ILoggingService>(ProxyInterceptor.Create()));
+			=> Program.LoggingService ?? (Program.LoggingService = Router.OutgoingChannel?.RealmProxy.Services.GetCalleeProxy<ILoggingService>(ProxyInterceptor.Create()));
 	}
 }

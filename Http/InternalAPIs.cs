@@ -7,14 +7,10 @@ using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Reactive.Subjects;
 using System.Dynamic;
-
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using WampSharp.V2;
-using WampSharp.V2.Core.Contracts;
-
 using net.vieapps.Components.Utility;
 using net.vieapps.Components.Security;
 using net.vieapps.Components.Caching;
@@ -1014,80 +1010,6 @@ namespace net.vieapps.Services.APIGateway
 			};
 		#endregion
 
-		#region Helper: API Gateway Router
-		internal static void OpenRouterChannels(int waitingTimes = 6789)
-		{
-			Global.Logger.LogDebug($"Attempting to connect to API Gateway Router [{new Uri(RouterConnections.GetRouterStrInfo()).GetResolvedURI()}]");
-			Global.OpenRouterChannels(
-				(sender, arguments) =>
-				{
-					Global.Logger.LogDebug($"Incoming channel to API Gateway Router is established - Session ID: {arguments.SessionId}");
-					RouterConnections.IncomingChannel.Update(RouterConnections.IncomingChannelSessionID, Global.ServiceName, $"Incoming ({Global.ServiceName} HTTP service)");
-					Global.PrimaryInterCommunicateMessageUpdater?.Dispose();
-					Global.PrimaryInterCommunicateMessageUpdater = RouterConnections.IncomingChannel.RealmProxy.Services
-						.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
-						.Subscribe(
-							async message =>
-							{
-								try
-								{
-									await InternalAPIs.ProcessInterCommunicateMessageAsync(message).ConfigureAwait(false);
-								}
-								catch (Exception ex)
-								{
-									await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"{ex.Message} => {message?.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex).ConfigureAwait(false);
-								}
-							},
-							async exception => await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"Error occurred while fetching an inter-communicating message => {exception.Message}", exception).ConfigureAwait(false)
-						);
-				},
-				(sender, arguments) =>
-				{
-					Global.Logger.LogDebug($"Outgoing channel to API Gateway Router is established - Session ID: {arguments.SessionId}");
-					RouterConnections.OutgoingChannel.Update(RouterConnections.OutgoingChannelSessionID, Global.ServiceName, $"Outgoing ({Global.ServiceName} HTTP service)");
-					Task.Run(async () =>
-					{
-						try
-						{
-							await Task.WhenAll(
-								Global.InitializeLoggingServiceAsync(),
-								Global.InitializeRTUServiceAsync()
-							).ConfigureAwait(false);
-							Global.Logger.LogInformation("Helper services are succesfully initialized");
-							while (RouterConnections.IncomingChannel == null || RouterConnections.OutgoingChannel == null)
-								await Task.Delay(UtilityService.GetRandomNumber(234, 567), Global.CancellationTokenSource.Token).ConfigureAwait(false);
-						}
-						catch (Exception ex)
-						{
-							Global.Logger.LogError($"Error occurred while initializing helper services: {ex.Message}", ex);
-						}
-					})
-					.ContinueWith(async _ => await Global.RegisterServiceAsync().ConfigureAwait(false), TaskContinuationOptions.OnlyOnRanToCompletion)
-					.ContinueWith(async _ => await Global.PublishAsync(new CommunicateMessage
-					{
-						ServiceName = "APIGateway",
-						Type = "Controller#RequestInfo"
-					}, Global.Logger).ConfigureAwait(false), TaskContinuationOptions.OnlyOnRanToCompletion)
-					.ContinueWith(async _ => await Global.PublishAsync(new CommunicateMessage
-					{
-						ServiceName = "APIGateway",
-						Type = "Service#RequestInfo"
-					}, Global.Logger).ConfigureAwait(false), TaskContinuationOptions.OnlyOnRanToCompletion)
-					.ConfigureAwait(false);
-				},
-				waitingTimes
-			);
-		}
-
-		internal static void CloseRouterChannels()
-		{
-			Global.UnregisterService();
-			Global.PrimaryInterCommunicateMessageUpdater?.Dispose();
-			Global.SecondaryInterCommunicateMessageUpdater?.Dispose();
-			RouterConnections.CloseChannels();
-		}
-		#endregion
-
 		#region Helper: controllers & services
 		internal static JToken GetControllers()
 			=> InternalAPIs.Controllers.Values.Select(controller => new JObject
@@ -1120,7 +1042,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			// send information of this service
 			if (message.Type.IsEquals("Service#RequestInfo"))
-				await Global.UpdateServiceInfoAsync().ConfigureAwait(false);
+				await Global.UpdateServiceInfoAsync("Http.InternalAPIs").ConfigureAwait(false);
 
 			// update information of a service
 			else if (message.Type.IsEquals("Service#Info"))

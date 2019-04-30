@@ -89,13 +89,17 @@ namespace net.vieapps.Services.APIGateway
 				DateTimeZoneHandling = DateTimeZoneHandling.Local
 			};
 
-			// setup connections to API Gateway Router
-			InternalAPIs.OpenRouterChannels();
+			// connect to API Gateway Router
+			Router.Connect();
 
-			// setup real-time updater
+			var enableForwarder = "true".IsEquals(UtilityService.GetAppSetting("Router:Forwarder", "false"));
+			if (enableForwarder)
+				Router.InitializeForwarder();
+
+			// setup the real-time updater
 			RTU.Initialize();
 
-			// setup middlewares
+			// setup the middlewares
 			appBuilder
 				.UseForwardedHeaders(Global.GetForwardedHeadersOptions())
 				.UseCache()
@@ -105,16 +109,27 @@ namespace net.vieapps.Services.APIGateway
 				{
 					ReceiveBufferSize = Components.WebSockets.WebSocket.ReceiveBufferSize,
 					KeepAliveInterval = RTU.WebSocket.KeepAliveInterval
-				})
-				.UseMiddleware<Handler>();
+				});
 
-			// assign caching storage
+			// setup the forwarder of API Gateway Router
+			if (enableForwarder)
+			{
+				appBuilder.Map("/router", builder => Router.RegisterForwarderTransport(builder));
+				Router.OpenForwarder();
+			}
+
+			// setup the handler for all requests
+			appBuilder.UseMiddleware<Handler>();
+
+			// setup the caching storage
 			InternalAPIs.Cache = appBuilder.ApplicationServices.GetService<ICache>();
 
-			// on started
+			// assign app event handler => on started
 			appLifetime.ApplicationStarted.Register(() =>
 			{
-				Global.Logger.LogInformation($"API Gateway Router: {new Uri(RouterConnections.GetRouterStrInfo()).GetResolvedURI()}");
+				Global.Logger.LogInformation($"API Gateway Router: {new Uri(Services.Router.GetRouterStrInfo()).GetResolvedURI()}");
+				if (enableForwarder)
+					Global.Logger.LogInformation($"Forwarder of API Gateway Router: {UtilityService.GetAppSetting("HttpUri:APIs")}/router");
 				Global.Logger.LogInformation($"API Gateway HTTP service: {UtilityService.GetAppSetting("HttpUri:APIs", "None")}");
 				Global.Logger.LogInformation($"Files HTTP service: {UtilityService.GetAppSetting("HttpUri:Files", "None")}");
 				Global.Logger.LogInformation($"Portals HTTP service: {UtilityService.GetAppSetting("HttpUri:Portals", "None")}");
@@ -131,17 +146,19 @@ namespace net.vieapps.Services.APIGateway
 				Global.Logger = loggerFactory.CreateLogger<Handler>();
 			});
 
-			// on stopping
+			// assign app event handler => on stopping
 			appLifetime.ApplicationStopping.Register(() =>
 			{
 				Global.Logger = loggerFactory.CreateLogger<Startup>();
-				InternalAPIs.CloseRouterChannels();
+				Router.Disconnect();
+				if (enableForwarder)
+					Router.CloseForwarder();
 				RTU.Dispose();
 				Global.RSA.Dispose();
 				Global.CancellationTokenSource.Cancel();
 			});
 
-			// on stopped
+			// assign app event handler => on stopped
 			appLifetime.ApplicationStopped.Register(() =>
 			{
 				Global.CancellationTokenSource.Dispose();

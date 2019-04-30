@@ -225,7 +225,7 @@ namespace net.vieapps.Services.APIGateway
 			Global.OnProcess?.Invoke($"Working mode: {(this.IsUserInteractive ? "Interactive app" : "Background service")} (RELEASE)");
 #endif
 			Global.OnProcess?.Invoke($"Starting arguments: {args?.Join(" ") ?? "None"}");
-			Global.OnProcess?.Invoke($"API Gateway Router: {new Uri(RouterConnections.GetRouterStrInfo()).GetResolvedURI()}");
+			Global.OnProcess?.Invoke($"API Gateway Router: {new Uri(Router.GetRouterStrInfo()).GetResolvedURI()}");
 			Global.OnProcess?.Invoke($"Working directory: {this.WorkingDirectory}");
 			Global.OnProcess?.Invoke($"Number of business services: {this.BusinessServices.Count}");
 			Global.OnProcess?.Invoke($"Number of scheduling tasks: {this.Tasks.Count}");
@@ -240,21 +240,21 @@ namespace net.vieapps.Services.APIGateway
 			async Task connectRouterAsync()
 			{
 				attemptingCounter++;
-				Global.OnProcess?.Invoke($"Attempting to connect to API Gateway Router [{new Uri(RouterConnections.GetRouterStrInfo()).GetResolvedURI()}] #{attemptingCounter}");
+				Global.OnProcess?.Invoke($"Attempting to connect to API Gateway Router [{new Uri(Router.GetRouterStrInfo()).GetResolvedURI()}] #{attemptingCounter}");
 				try
 				{
 					await Task.WhenAll(
-						RouterConnections.OpenIncomingChannelAsync(
+						Router.OpenIncomingChannelAsync(
 							(sender, arguments) =>
 							{
 								onIncomingChannelEstablished?.Invoke(sender, arguments);
 								Global.OnProcess?.Invoke($"The incoming channel is established - Session ID: {arguments.SessionId}");
-								RouterConnections.IncomingChannel.Update(RouterConnections.IncomingChannelSessionID, "APIGateway", "Incoming (APIGateway Controller)");
+								Router.IncomingChannel.Update(Router.IncomingChannelSessionID, "APIGateway", "Incoming (APIGateway Controller)");
 								if (this.State == ServiceState.Initializing)
 									this.State = ServiceState.Ready;
 
 								this.InterCommunicator?.Dispose();
-								this.InterCommunicator = RouterConnections.IncomingChannel.RealmProxy.Services
+								this.InterCommunicator = Router.IncomingChannel.RealmProxy.Services
 									.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
 									.Subscribe(
 										async message => await this.ProcessInterCommunicateMessageAsync(message).ConfigureAwait(false),
@@ -263,7 +263,7 @@ namespace net.vieapps.Services.APIGateway
 								Global.OnProcess?.Invoke($"The communicator of API Gateway is{(this.State == ServiceState.Disconnected ? " re-" : " ")}subscribed successful");
 
 								this.UpdateCommunicator?.Dispose();
-								this.UpdateCommunicator = RouterConnections.IncomingChannel.RealmProxy.Services
+								this.UpdateCommunicator = Router.IncomingChannel.RealmProxy.Services
 									.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages")
 									.Subscribe(
 										message =>
@@ -343,7 +343,7 @@ namespace net.vieapps.Services.APIGateway
 								{
 									if (this.AllowRegisterBusinessServices || this.AllowRegisterHelperServices || this.AllowRegisterHelperTimers)
 									{
-										while (RouterConnections.IncomingChannel == null || RouterConnections.OutgoingChannel == null)
+										while (Router.IncomingChannel == null || Router.OutgoingChannel == null)
 											await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
 										await this.SendInterCommunicateMessageAsync("Controller#Info", this.Info.ToJson(), this.CancellationTokenSource.Token).ConfigureAwait(false);
 									}
@@ -366,32 +366,32 @@ namespace net.vieapps.Services.APIGateway
 									this.State = ServiceState.Disconnected;
 								}
 
-								if (RouterConnections.ChannelsAreClosedBySystem || arguments.CloseType.Equals(SessionCloseType.Goodbye))
+								if (Router.ChannelsAreClosedBySystem || arguments.CloseType.Equals(SessionCloseType.Goodbye))
 									Global.OnProcess?.Invoke($"The incoming channel is closed - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
-								else if (RouterConnections.IncomingChannel != null)
+								else if (Router.IncomingChannel != null)
 								{
 									Global.OnProcess?.Invoke($"The incoming channel to API Gateway Router is broken - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
-									RouterConnections.IncomingChannel.ReOpen(this.CancellationTokenSource.Token, Global.OnError, "Incoming");
+									Router.IncomingChannel.ReOpen(this.CancellationTokenSource.Token, Global.OnError, "Incoming");
 								}
 							},
 							(sender, arguments) => Global.OnError?.Invoke($"The incoming channel to API Gateway Router got an error: {arguments.Exception?.Message}", arguments.Exception),
 							this.CancellationTokenSource.Token
 						),
-						RouterConnections.OpenOutgoingChannelAsync(
+						Router.OpenOutgoingChannelAsync(
 							(sender, arguments) =>
 							{
 								onOutgoingChannelEstablished?.Invoke(sender, arguments);
 								Global.OnProcess?.Invoke($"The outgoing channel is established - Session ID: {arguments.SessionId}");
-								RouterConnections.OutgoingChannel.Update(RouterConnections.OutgoingChannelSessionID, "APIGateway", "Outgoing (APIGateway Controller)");
+								Router.OutgoingChannel.Update(Router.OutgoingChannelSessionID, "APIGateway", "Outgoing (APIGateway Controller)");
 							},
 							(sender, arguments) =>
 							{
-								if (RouterConnections.ChannelsAreClosedBySystem || arguments.CloseType.Equals(SessionCloseType.Goodbye))
+								if (Router.ChannelsAreClosedBySystem || arguments.CloseType.Equals(SessionCloseType.Goodbye))
 									Global.OnProcess?.Invoke($"The outgoing channel is closed - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
-								else if (RouterConnections.OutgoingChannel != null)
+								else if (Router.OutgoingChannel != null)
 								{
 									Global.OnProcess?.Invoke($"The outgoing channel to API Gateway Router is broken - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
-									RouterConnections.OutgoingChannel.ReOpen(this.CancellationTokenSource.Token, Global.OnError, "Outgoing");
+									Router.OutgoingChannel.ReOpen(this.CancellationTokenSource.Token, Global.OnError, "Outgoing");
 								}
 							},
 							(sender, arguments) => Global.OnError?.Invoke($"The outgoging channel to API Gateway Router got an error: {arguments.Exception?.Message}", arguments.Exception),
@@ -461,7 +461,7 @@ namespace net.vieapps.Services.APIGateway
 
 			this.RTUService = null;
 			this.State = ServiceState.Disconnected;
-			RouterConnections.CloseChannels();
+			Router.CloseChannels();
 			Global.OnProcess?.Invoke($"The API Gateway Controller is stopped");
 		}
 		#endregion
@@ -675,7 +675,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			try
 			{
-				this.HelperServices.Add(await RouterConnections.IncomingChannel.RealmProxy.Services.RegisterCallee(this, RegistrationInterceptor.Create(this.Info.ID, WampInvokePolicy.Single)).ConfigureAwait(false));
+				this.HelperServices.Add(await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(this, RegistrationInterceptor.Create(this.Info.ID, WampInvokePolicy.Single)).ConfigureAwait(false));
 				Global.OnProcess?.Invoke($"The managing service is{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
 			}
 			catch (WampSessionNotEstablishedException)
@@ -689,19 +689,19 @@ namespace net.vieapps.Services.APIGateway
 
 			if (this.AllowRegisterHelperServices)
 			{
-				this.HelperServices.Add(await RouterConnections.IncomingChannel.RealmProxy.Services.RegisterCallee(this.LoggingService, RegistrationInterceptor.Create()).ConfigureAwait(false));
+				this.HelperServices.Add(await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(this.LoggingService, RegistrationInterceptor.Create()).ConfigureAwait(false));
 				Global.OnProcess?.Invoke($"The logging service is{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
 
-				this.HelperServices.Add(await RouterConnections.IncomingChannel.RealmProxy.Services.RegisterCallee(new RTUService(), RegistrationInterceptor.Create()).ConfigureAwait(false));
+				this.HelperServices.Add(await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(new RTUService(), RegistrationInterceptor.Create()).ConfigureAwait(false));
 				Global.OnProcess?.Invoke($"The real-time update (RTU) service is{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
 
-				this.HelperServices.Add(await RouterConnections.IncomingChannel.RealmProxy.Services.RegisterCallee(new MessagingService(), RegistrationInterceptor.Create()).ConfigureAwait(false));
+				this.HelperServices.Add(await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(new MessagingService(), RegistrationInterceptor.Create()).ConfigureAwait(false));
 				Global.OnProcess?.Invoke($"The messaging service is{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
 			}
 
-			while (RouterConnections.OutgoingChannel == null)
+			while (Router.OutgoingChannel == null)
 				await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
-			this.RTUService = RouterConnections.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create());
+			this.RTUService = Router.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create());
 
 			Global.OnProcess?.Invoke($"Number of helper services: {this.NumberOfHelperServices:#,##0}");
 		}
@@ -1215,8 +1215,8 @@ namespace net.vieapps.Services.APIGateway
 
 		public async Task SendInterCommunicateMessageAsync(string type, JToken data = null, CancellationToken cancellationToken = default(CancellationToken))
 		{
-			if (this.RTUService == null && RouterConnections.OutgoingChannel != null)
-				this.RTUService = RouterConnections.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create());
+			if (this.RTUService == null && Router.OutgoingChannel != null)
+				this.RTUService = Router.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create());
 
 			try
 			{

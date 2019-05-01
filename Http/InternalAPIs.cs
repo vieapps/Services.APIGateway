@@ -18,7 +18,7 @@ using net.vieapps.Components.Caching;
 
 namespace net.vieapps.Services.APIGateway
 {
-	internal static  class InternalAPIs
+	internal static class InternalAPIs
 	{
 
 		#region Properties
@@ -42,7 +42,7 @@ namespace net.vieapps.Services.APIGateway
 				query["object-identity"] = pathSegments.Length > 2 && !string.IsNullOrWhiteSpace(pathSegments[2]) ? pathSegments[2].GetANSIUri() : "";
 			});
 			var extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-			if (queryString.TryGetValue("x-request-extra", out string extraInfo))
+			if (queryString.TryGetValue("x-request-extra", out var extraInfo))
 			{
 				try
 				{
@@ -795,8 +795,8 @@ namespace net.vieapps.Services.APIGateway
 			if (!requestInfo.Header.ContainsKey("x-captcha"))
 				return requestInfo;
 
-			requestInfo.Header.TryGetValue("x-captcha-registered", out string registered);
-			requestInfo.Header.TryGetValue("x-captcha-input", out string input);
+			requestInfo.Header.TryGetValue("x-captcha-registered", out var registered);
+			requestInfo.Header.TryGetValue("x-captcha-input", out var input);
 			if (string.IsNullOrWhiteSpace(registered) || string.IsNullOrWhiteSpace(input))
 				throw new InvalidRequestException("Captcha code is invalid");
 
@@ -865,7 +865,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 
 			// prepare x-password
-			if (requestInfo.Header.TryGetValue("x-password", out string xPassword) && !string.IsNullOrWhiteSpace(xPassword))
+			if (requestInfo.Header.TryGetValue("x-password", out var xPassword) && !string.IsNullOrWhiteSpace(xPassword))
 				try
 				{
 					xPassword = Global.RSA.Decrypt(xPassword);
@@ -982,6 +982,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				{ "ID", session.GetEncryptedID() },
 				{ "DeviceID", session.DeviceID },
+				{ "Token", session.GetAuthenticateToken() },
 				{  "Keys", new JObject
 					{
 						{
@@ -1005,8 +1006,7 @@ namespace net.vieapps.Services.APIGateway
 							Global.JWTKey
 						}
 					}
-				},
-				{ "Token", session.GetAuthenticateToken() }
+				}
 			};
 		#endregion
 
@@ -1024,8 +1024,8 @@ namespace net.vieapps.Services.APIGateway
 			=> InternalAPIs.Services.Values.Select(svcInfo => new
 			{
 				URI = $"net.vieapps.services.{svcInfo[0].Get<string>("Name")}",
-				Available = svcInfo.FirstOrDefault(svc => svc.Get<bool>("Available") == true) != null,
-				Running = svcInfo.FirstOrDefault(svc => svc.Get<bool>("Running") == true) != null
+				Available = svcInfo.FirstOrDefault(svc => svc.Get<bool>("Available")) != null,
+				Running = svcInfo.FirstOrDefault(svc => svc.Get<bool>("Running")) != null
 			})
 			.OrderBy(info => info.URI)
 			.Select(info => new JObject
@@ -1048,7 +1048,7 @@ namespace net.vieapps.Services.APIGateway
 			else if (message.Type.IsEquals("Service#Info"))
 			{
 				var name = message.Data.Get<string>("Name");
-				if (!InternalAPIs.Services.TryGetValue(name, out List<JObject> services))
+				if (!InternalAPIs.Services.TryGetValue(name, out var services))
 					InternalAPIs.Services.TryAdd(name, new List<JObject> { message.Data as JObject });
 				else
 				{
@@ -1069,7 +1069,7 @@ namespace net.vieapps.Services.APIGateway
 			else if (message.Type.IsEquals("Controller#Disconnect"))
 			{
 				var id = message.Data.Get<string>("ID");
-				if (InternalAPIs.Controllers.TryGetValue(id, out JObject controller))
+				if (InternalAPIs.Controllers.TryGetValue(id, out var controller))
 				{
 					controller["Available"] = false;
 					var controllerID = controller.Get<string>("ID");
@@ -1084,8 +1084,8 @@ namespace net.vieapps.Services.APIGateway
 			else if (message.Type.IsEquals("Controller#Info") || message.Type.IsEquals("Controller#Connect"))
 			{
 				var id = message.Data.Get<string>("ID");
-				if (InternalAPIs.Controllers.TryGetValue(id, out JObject controller))
-					"User,Host,Platform,Mode,Available,Timestamp".ToArray(',').ForEach(name => controller[name] = message.Data[name]);
+				if (InternalAPIs.Controllers.TryGetValue(id, out var controller))
+					new[] { "User", "Host", "Platform", "Mode", "Available", "Timestamp" }.ForEach(name => controller[name] = message.Data[name]);
 				else
 					InternalAPIs.Controllers.TryAdd(id, message.Data as JObject);
 			}

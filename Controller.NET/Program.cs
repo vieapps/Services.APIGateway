@@ -204,7 +204,6 @@ namespace net.vieapps.Services.APIGateway
 			Program.Manager.Dispose();
 			Program.Controller.Dispose();
 			Program.CancellationTokenSource.Cancel();
-			Program.Logger.LogInformation($"The API Gateway Services Controller is stopped");
 		}
 
 		internal static ILoggingService GetLoggingService()

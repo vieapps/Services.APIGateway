@@ -24,11 +24,11 @@ namespace net.vieapps.Services.APIGateway
 {
 	internal static class RTU
 	{
-		internal static Components.WebSockets.WebSocket WebSocket { get; private set; }
+		public static Components.WebSockets.WebSocket WebSocket { get; private set; }
 
-		internal static ILogger Logger { get; set; }
+		public static ILogger Logger { get; set; }
 
-		internal static void Initialize()
+		public static void Initialize()
 		{
 			RTU.WebSocket = new Components.WebSockets.WebSocket(Components.Utility.Logger.GetLoggerFactory(), Global.CancellationTokenSource.Token)
 			{
@@ -42,7 +42,7 @@ namespace net.vieapps.Services.APIGateway
 			Global.Logger.LogInformation($"WebSocket ({Global.ServiceName} RTU) is initialized - Buffer size: {Components.WebSockets.WebSocket.ReceiveBufferSize:#,##0} bytes - Keep-Alive interval: {RTU.WebSocket.KeepAliveInterval.TotalSeconds} second(s)");
 		}
 
-		internal static void Dispose()
+		public static void Dispose()
 		{
 			RTU.WebSocket.Dispose();
 			Global.Logger.LogInformation($"WebSocket ({Global.ServiceName} RTU) is stopped");

@@ -249,7 +249,7 @@ namespace net.vieapps.Services.APIGateway
 							{
 								onIncomingChannelEstablished?.Invoke(sender, arguments);
 								Global.OnProcess?.Invoke($"The incoming channel is established - Session ID: {arguments.SessionId}");
-								Router.IncomingChannel.Update(Router.IncomingChannelSessionID, "APIGateway", "Incoming (APIGateway Controller)");
+								Task.Run(() => Router.IncomingChannel.UpdateAsync(Router.IncomingChannelSessionID, "APIGateway", "Incoming (APIGateway Controller)")).ConfigureAwait(false);
 								if (this.State == ServiceState.Initializing)
 									this.State = ServiceState.Ready;
 
@@ -382,7 +382,7 @@ namespace net.vieapps.Services.APIGateway
 							{
 								onOutgoingChannelEstablished?.Invoke(sender, arguments);
 								Global.OnProcess?.Invoke($"The outgoing channel is established - Session ID: {arguments.SessionId}");
-								Router.OutgoingChannel.Update(Router.OutgoingChannelSessionID, "APIGateway", "Outgoing (APIGateway Controller)");
+								Task.Run(() => Router.OutgoingChannel.UpdateAsync(Router.OutgoingChannelSessionID, "APIGateway", "Outgoing (APIGateway Controller)")).ConfigureAwait(false);
 							},
 							(sender, arguments) =>
 							{

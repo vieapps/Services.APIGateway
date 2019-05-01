@@ -35,7 +35,7 @@ namespace net.vieapps.Services.APIGateway
 				(sender, arguments) =>
 				{
 					Global.Logger.LogDebug($"Incoming channel to API Gateway Router is established - Session ID: {arguments.SessionId}");
-					Services.Router.IncomingChannel.Update(Services.Router.IncomingChannelSessionID, Global.ServiceName, $"Incoming ({Global.ServiceName} HTTP service)");
+					Task.Run(() => Services.Router.IncomingChannel.UpdateAsync(Services.Router.IncomingChannelSessionID, Global.ServiceName, $"Incoming ({Global.ServiceName} HTTP service)")).ConfigureAwait(false);
 					Global.PrimaryInterCommunicateMessageUpdater?.Dispose();
 					Global.PrimaryInterCommunicateMessageUpdater = Services.Router.IncomingChannel.RealmProxy.Services
 						.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
@@ -57,9 +57,9 @@ namespace net.vieapps.Services.APIGateway
 				(sender, arguments) =>
 				{
 					Global.Logger.LogDebug($"Outgoing channel to API Gateway Router is established - Session ID: {arguments.SessionId}");
-					Services.Router.OutgoingChannel.Update(Services.Router.OutgoingChannelSessionID, Global.ServiceName, $"Outgoing ({Global.ServiceName} HTTP service)");
 					Task.Run(async () =>
 					{
+						await Services.Router.OutgoingChannel.UpdateAsync(Services.Router.OutgoingChannelSessionID, Global.ServiceName, $"Outgoing ({Global.ServiceName} HTTP service)").ConfigureAwait(false);
 						try
 						{
 							await Task.WhenAll(
@@ -100,14 +100,14 @@ namespace net.vieapps.Services.APIGateway
 			Services.Router.CloseChannels();
 		}
 
-		static WampHost Forwarder { get; set; }
+		static IWampHost Forwarder { get; set; }
 
 		public static ConcurrentDictionary<long, SystemEx.IAsyncDisposable> ForwardingTokens { get; } = new ConcurrentDictionary<long, SystemEx.IAsyncDisposable>();
 
 		public static void InitializeForwarder()
 		{
-			Global.Logger.LogInformation("Initialize the forwarder of API Gateway Router");
 			var routerInfo = Services.Router.GetRouterInfo();
+			Global.Logger.LogInformation("Initialize the forwarder of API Gateway Router");
 			Router.Forwarder = new WampHost(new ForwardingRealmContainer($"{routerInfo.Item1}{(routerInfo.Item1.EndsWith("/") ? "" : "/")}{routerInfo.Item2}", routerInfo.Item3));
 		}
 
@@ -126,7 +126,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		public static void CloseForwarder()
-			=> Task.Run(async () => await Router.ForwardingTokens.Values.ForEachAsync((forwardingToken, cancellationToken) => forwardingToken.DisposeAsync()).ConfigureAwait(false))
+			=> Task.Run(async () => await Router.ForwardingTokens.Values.ToList().ForEachAsync((forwardingToken, cancellationToken) => forwardingToken.DisposeAsync()).ConfigureAwait(false))
 				.ContinueWith(_ => Router.Forwarder?.Dispose(), TaskContinuationOptions.OnlyOnRanToCompletion)
 				.ContinueWith(_ => Global.Logger.LogInformation("The forwarder of API Gateway Router is stopped"), TaskContinuationOptions.OnlyOnRanToCompletion)
 				.ConfigureAwait(false)
@@ -144,24 +144,24 @@ namespace net.vieapps.Services.APIGateway
 		public ForwardingToken(IWampRegistrationSubscriptionToken localToken, Task<SystemEx.IAsyncDisposable> remoteToken)
 		{
 			this._localToken = localToken;
-			Task.Run(() => this.ForwardingRegisterAsync(remoteToken)).ConfigureAwait(false);
+			Task.Run(() => this.RegisterForwardingTokenAsync(remoteToken)).ConfigureAwait(false);
 		}
 
-		public async Task ForwardingRegisterAsync(Task<SystemEx.IAsyncDisposable> remoteToken)
+		public async Task RegisterForwardingTokenAsync(Task<SystemEx.IAsyncDisposable> remoteToken)
 		{
 			try
 			{
-				await this.ForwardingUnregisterAsync().ConfigureAwait(false);
+				await this.UnregisterForwardingTokenAsync().ConfigureAwait(false);
 				this._remoteToken = await remoteToken.ConfigureAwait(false);
 				Router.ForwardingTokens.TryAdd(this.TokenId, this._remoteToken);
 			}
 			catch (Exception ex)
 			{
-				Global.Logger.LogError($"Error occurred while registering with API Gateway Router => {ex.Message}", ex);
+				Global.Logger.LogError($"Error occurred while registering/subscribing with API Gateway Router => {ex.Message}", ex);
 			}
 		}
 
-		public async Task ForwardingUnregisterAsync()
+		public async Task UnregisterForwardingTokenAsync()
 		{
 			if (this._remoteToken != null)
 				try
@@ -175,7 +175,7 @@ namespace net.vieapps.Services.APIGateway
 
 		public void Dispose()
 		{
-			Task.Run(() => this.ForwardingUnregisterAsync()).ConfigureAwait(false);
+			Task.Run(() => this.UnregisterForwardingTokenAsync()).ConfigureAwait(false);
 			this._localToken.Dispose();
 		}
 
@@ -243,12 +243,12 @@ namespace net.vieapps.Services.APIGateway
 
 			this._channel.RealmProxy.Monitor.ConnectionBroken += async (sender, args) =>
 			{
-				await forwardingToken.ForwardingUnregisterAsync().ConfigureAwait(false);
+				await forwardingToken.UnregisterForwardingTokenAsync().ConfigureAwait(false);
 				remoteToken = null;
 			};
 			this._channel.RealmProxy.Monitor.ConnectionError += async (sender, args) =>
 			{
-				await forwardingToken.ForwardingUnregisterAsync().ConfigureAwait(false);
+				await forwardingToken.UnregisterForwardingTokenAsync().ConfigureAwait(false);
 				remoteToken = null;
 			};
 			this._channel.RealmProxy.Monitor.ConnectionEstablished += async (sender, args) =>
@@ -256,7 +256,7 @@ namespace net.vieapps.Services.APIGateway
 				if (remoteToken == null)
 				{
 					remoteToken = this._channel.RealmProxy.RpcCatalog.Register(operation, options);
-					await forwardingToken.ForwardingRegisterAsync(remoteToken).ConfigureAwait(false);
+					await forwardingToken.RegisterForwardingTokenAsync(remoteToken).ConfigureAwait(false);
 				}
 			};
 
@@ -354,13 +354,13 @@ namespace net.vieapps.Services.APIGateway
 		{
 			var args = arguments?.Select(arg => (object)arg).ToArray();
 			var argsKeywords = argumentsKeywords?.ToDictionary(kvp => kvp.Key, kvp => (object)kvp.Value);
-			var topicProxy = this._channel.RealmProxy.TopicContainer.GetTopicByUri(topicUri);
+			var topic = this._channel.RealmProxy.TopicContainer.GetTopicByUri(topicUri);
 			if (args != null && argsKeywords != null)
-				Task.Run(() => topicProxy.Publish(options, args, argsKeywords)).ConfigureAwait(false);
+				Task.Run(() => topic.Publish(options, args, argsKeywords)).ConfigureAwait(false);
 			else if (args != null)
-				Task.Run(() => topicProxy.Publish(options, args)).ConfigureAwait(false);
+				Task.Run(() => topic.Publish(options, args)).ConfigureAwait(false);
 			else
-				Task.Run(() => topicProxy.Publish(options)).ConfigureAwait(false);
+				Task.Run(() => topic.Publish(options)).ConfigureAwait(false);
 		}
 
 		public long Publish<TMessage>(IWampFormatter<TMessage> formatter, PublishOptions options, string topicUri)
@@ -389,12 +389,12 @@ namespace net.vieapps.Services.APIGateway
 
 			this._channel.RealmProxy.Monitor.ConnectionBroken += async (sender, args) =>
 			{
-				await forwardingToken.ForwardingUnregisterAsync().ConfigureAwait(false);
+				await forwardingToken.UnregisterForwardingTokenAsync().ConfigureAwait(false);
 				remoteToken = null;
 			};
 			this._channel.RealmProxy.Monitor.ConnectionError += async (sender, args) =>
 			{
-				await forwardingToken.ForwardingUnregisterAsync().ConfigureAwait(false);
+				await forwardingToken.UnregisterForwardingTokenAsync().ConfigureAwait(false);
 				remoteToken = null;
 			};
 			this._channel.RealmProxy.Monitor.ConnectionEstablished += async (sender, args) =>
@@ -402,7 +402,7 @@ namespace net.vieapps.Services.APIGateway
 				if (remoteToken == null)
 				{
 					remoteToken = this._channel.RealmProxy.TopicContainer.GetTopicByUri(topicUri).Subscribe(new ForwardingTopicSubscriber(subscriber, this._topicContainer), options);
-					await forwardingToken.ForwardingRegisterAsync(remoteToken).ConfigureAwait(false);
+					await forwardingToken.RegisterForwardingTokenAsync(remoteToken).ConfigureAwait(false);
 				}
 			};
 
@@ -424,7 +424,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				var topic = this._topicContainer.GetTopicByUri(details.Topic);
 				if (topic != null)
-					topic.Publish(formatter, publicationId, new PublishOptions()
+					topic.Publish(formatter, publicationId, new PublishOptions
 					{
 						//DiscloseMe = true,
 						Acknowledge = true
@@ -435,7 +435,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				var topic = this._topicContainer.GetTopicByUri(details.Topic);
 				if (topic != null)
-					topic.Publish(formatter, publicationId, new PublishOptions()
+					topic.Publish(formatter, publicationId, new PublishOptions
 					{
 						//DiscloseMe = true,
 						Acknowledge = true
@@ -446,7 +446,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				var topic = this._topicContainer.GetTopicByUri(details.Topic);
 				if (topic != null)
-					topic.Publish(formatter, publicationId, new PublishOptions()
+					topic.Publish(formatter, publicationId, new PublishOptions
 					{
 						//DiscloseMe = true,
 						Acknowledge = true
@@ -461,35 +461,6 @@ namespace net.vieapps.Services.APIGateway
 
 			public void Event<TMessage>(IWampFormatter<TMessage> formatter, long publicationId, PublishOptions options, TMessage[] arguments, IDictionary<string, TMessage> argumentsKeywords)
 				=> this._subscriber.Event(formatter, publicationId, options, arguments, argumentsKeywords);
-		}
-	}
-
-	class ForwardingRealm : IWampRealm
-	{
-		public string Name { get; private set; }
-
-		public IWampRpcOperationCatalog RpcCatalog { get; private set; }
-
-		public IWampTopicContainer TopicContainer { get; private set; }
-
-		public ForwardingRealm(IWampChannel channel, IWampRealm realm)
-		{
-			try
-			{
-				channel.RealmProxy.Monitor.ConnectionBroken += (sender, args) =>
-				{
-					if (!Services.Router.ChannelsAreClosedBySystem)
-						channel.ReOpen();
-				};
-				channel.Open().Wait(1234);
-				this.Name = realm.Name;
-				this.RpcCatalog = new ForwardingRpcCatalog(realm.RpcCatalog, channel);
-				this.TopicContainer = new ForwardingTopicContainer(realm.TopicContainer, channel);
-			}
-			catch (Exception ex)
-			{
-				Global.Logger.LogError($"Error occurred while initializing a realm of forwarder of API Gateway Router => {ex.Message}", ex);
-			}
 		}
 	}
 
@@ -512,6 +483,35 @@ namespace net.vieapps.Services.APIGateway
 				? new DefaultWampChannelFactory().CreateJsonChannel(this._routerURI, name, this._authenticator)
 				: new DefaultWampChannelFactory().CreateMsgpackChannel(this._routerURI, name, this._authenticator);
 			return new ForwardingRealm(channel, new WampRealmContainer().GetRealmByName(name));
+		}
+
+		class ForwardingRealm : IWampRealm
+		{
+			public string Name { get; private set; }
+
+			public IWampRpcOperationCatalog RpcCatalog { get; private set; }
+
+			public IWampTopicContainer TopicContainer { get; private set; }
+
+			public ForwardingRealm(IWampChannel channel, IWampRealm realm)
+			{
+				try
+				{
+					channel.RealmProxy.Monitor.ConnectionBroken += (sender, args) =>
+					{
+						if (!Services.Router.ChannelsAreClosedBySystem)
+							channel.ReOpen();
+					};
+					channel.Open().Wait(1234);
+					this.Name = realm.Name;
+					this.RpcCatalog = new ForwardingRpcCatalog(realm.RpcCatalog, channel);
+					this.TopicContainer = new ForwardingTopicContainer(realm.TopicContainer, channel);
+				}
+				catch (Exception ex)
+				{
+					Global.Logger.LogError($"Error occurred while initializing a realm of forwarder of API Gateway Router => {ex.Message}", ex);
+				}
+			}
 		}
 	}
 

@@ -18,20 +18,20 @@ using net.vieapps.Components.Caching;
 
 namespace net.vieapps.Services.APIGateway
 {
-	internal static class InternalAPIs
+	internal static  class InternalAPIs
 	{
 
 		#region Properties
-		internal static ICache Cache { get; set; }
-		internal static ILogger Logger { get; set; }
-		internal static List<string> ExcludedHeaders { get; } = UtilityService.GetAppSetting("ExcludedHeaders", "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,ms-aspnetcore-token,x-forwarded-for,x-forwarded-proto,x-forwarded-port,x-original-for,x-original-proto,x-original-remote-endpoint,x-original-port,cdn-loop,cf-ipcountry,cf-ray,cf-visitor,cf-connecting-ip").ToList();
-		internal static HashSet<string> NoTokenRequiredServices { get; } = $"{UtilityService.GetAppSetting("NoTokenRequiredServices", "")}|indexes|discovery|webhooks".ToLower().ToHashSet('|', true);
-		internal static ConcurrentDictionary<string, JObject> Controllers { get; } = new ConcurrentDictionary<string, JObject>();
-		internal static ConcurrentDictionary<string, List<JObject>> Services { get; } = new ConcurrentDictionary<string, List<JObject>>();
-		internal static ConcurrentHashSet<string> Sessions { get; } = new ConcurrentHashSet<string>();
+		public static  ICache Cache { get; set; }
+		public static  ILogger Logger { get; set; }
+		public static  List<string> ExcludedHeaders { get; } = UtilityService.GetAppSetting("ExcludedHeaders", "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,ms-aspnetcore-token,x-forwarded-for,x-forwarded-proto,x-forwarded-port,x-original-for,x-original-proto,x-original-remote-endpoint,x-original-port,cdn-loop,cf-ipcountry,cf-ray,cf-visitor,cf-connecting-ip").ToList();
+		public static  HashSet<string> NoTokenRequiredServices { get; } = $"{UtilityService.GetAppSetting("NoTokenRequiredServices", "")}|indexes|discovery|webhooks".ToLower().ToHashSet('|', true);
+		public static  ConcurrentDictionary<string, JObject> Controllers { get; } = new ConcurrentDictionary<string, JObject>();
+		public static  ConcurrentDictionary<string, List<JObject>> Services { get; } = new ConcurrentDictionary<string, List<JObject>>();
+		public static  ConcurrentHashSet<string> Sessions { get; } = new ConcurrentHashSet<string>();
 		#endregion
 
-		internal static async Task ProcessRequestAsync(HttpContext context)
+		public static  async Task ProcessRequestAsync(HttpContext context)
 		{
 			// prepare the requesting information
 			var queryString = context.Request.QueryString.ToDictionary(query =>
@@ -236,7 +236,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		#region Check existing of a session
-		internal static async Task<bool> CheckSessionExistAsync(this HttpContext context, Session session, ILogger logger = null, string objectName = null, string correlationID = null)
+		public static  async Task<bool> CheckSessionExistAsync(this HttpContext context, Session session, ILogger logger = null, string objectName = null, string correlationID = null)
 		{
 			if (string.IsNullOrWhiteSpace(session?.SessionID))
 				return false;
@@ -256,12 +256,12 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		internal static Task<bool> CheckSessionExistAsync(this Session session, ILogger logger = null, string objectName = null, string correlationID = null)
+		public static  Task<bool> CheckSessionExistAsync(this Session session, ILogger logger = null, string objectName = null, string correlationID = null)
 			=> InternalAPIs.CheckSessionExistAsync(Global.CurrentHttpContext, session, logger, objectName, correlationID);
 		#endregion
 
 		#region Send state message of a session
-		internal static async Task SendSessionStateAsync(this Session session, bool isOnline, string correlationID = null)
+		public static  async Task SendSessionStateAsync(this Session session, bool isOnline, string correlationID = null)
 		{
 			await new UpdateMessage
 			{
@@ -790,7 +790,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Helper: verify captcha, prepare related information of an account or request of a definition
-		internal static RequestInfo CaptchaIsValid(this RequestInfo requestInfo, IDictionary<object, object> items = null)
+		public static  RequestInfo CaptchaIsValid(this RequestInfo requestInfo, IDictionary<object, object> items = null)
 		{
 			if (!requestInfo.Header.ContainsKey("x-captcha"))
 				return requestInfo;
@@ -818,7 +818,7 @@ namespace net.vieapps.Services.APIGateway
 			return requestInfo;
 		}
 
-		internal static RequestInfo PrepareAccountRelated(this RequestInfo requestInfo, IDictionary<object, object> items = null, Action<string, Exception> onParseError = null)
+		public static  RequestInfo PrepareAccountRelated(this RequestInfo requestInfo, IDictionary<object, object> items = null, Action<string, Exception> onParseError = null)
 		{
 			// prepare body
 			var requestBody = requestInfo.GetBodyExpando();
@@ -958,7 +958,7 @@ namespace net.vieapps.Services.APIGateway
 			return requestInfo;
 		}
 
-		internal static RequestInfo PrepareDefinitionRelated(this RequestInfo requestInfo)
+		public static  RequestInfo PrepareDefinitionRelated(this RequestInfo requestInfo)
 		{
 			if (!requestInfo.Query.ContainsKey("x-service-name") && !requestInfo.Query.ContainsKey("x-object-name"))
 				throw new InvalidRequestException("URI format: /discovery/definitions?x-service-name=<Service Name>&x-object-name=<Object Name>&x-object-identity=<Definition Name>");
@@ -974,10 +974,10 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Heper: keys & sessions
-		internal static string GetEncryptedID(this Session session)
+		public static  string GetEncryptedID(this Session session)
 			=> session.GetEncryptedID(session.SessionID, Global.EncryptionKey, Global.ValidationKey);
 
-		internal static JObject GetSessionJson(this Session session, IDictionary<object, object> items = null)
+		public static  JObject GetSessionJson(this Session session, IDictionary<object, object> items = null)
 			=> new JObject
 			{
 				{ "ID", session.GetEncryptedID() },
@@ -1011,7 +1011,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Helper: controllers & services
-		internal static JToken GetControllers()
+		public static  JToken GetControllers()
 			=> InternalAPIs.Controllers.Values.Select(controller => new JObject
 			{
 				{ "ID", controller.Get<string>("ID").GenerateUUID() },
@@ -1020,7 +1020,7 @@ namespace net.vieapps.Services.APIGateway
 			})
 			.ToJArray();
 
-		internal static JToken GetServices()
+		public static  JToken GetServices()
 			=> InternalAPIs.Services.Values.Select(svcInfo => new
 			{
 				URI = $"net.vieapps.services.{svcInfo[0].Get<string>("Name")}",
@@ -1038,7 +1038,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Helper: process inter-communicate messages
-		internal static async Task ProcessInterCommunicateMessageAsync(CommunicateMessage message)
+		public static  async Task ProcessInterCommunicateMessageAsync(CommunicateMessage message)
 		{
 			// send information of this service
 			if (message.Type.IsEquals("Service#RequestInfo"))

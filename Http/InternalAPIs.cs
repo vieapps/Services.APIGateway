@@ -299,7 +299,7 @@ namespace net.vieapps.Services.APIGateway
 				{ "DeviceID", requestInfo.Session.DeviceID },
 				{ "AppInfo", requestInfo.Session.AppName + " @ " + requestInfo.Session.AppPlatform },
 				{ "OSInfo", $"{requestInfo.Session.AppAgent.GetOSInfo()} [{requestInfo.Session.AppAgent}]" },
-				{ "Verification", requestInfo.Session.Verification },
+				{ "Verified", requestInfo.Session.Verified },
 				{ "Online", true }
 			};
 			var body = session.ToString(Formatting.None);
@@ -608,7 +608,7 @@ namespace net.vieapps.Services.APIGateway
 				var oldUserID = requestInfo.Session.User.ID;
 				requestInfo.Session.User = response.Copy<User>();
 				requestInfo.Session.User.SessionID = requestInfo.Session.SessionID = UtilityService.NewUUID;
-				requestInfo.Session.Verification = true;
+				requestInfo.Session.Verified = true;
 				await context.CreateOrRenewSessionAsync(requestInfo).ConfigureAwait(false);
 
 				// prepare response
@@ -695,7 +695,7 @@ namespace net.vieapps.Services.APIGateway
 				var oldUserID = requestInfo.Session.User.ID;
 				requestInfo.Session.SessionID = UtilityService.NewUUID;
 				requestInfo.Session.User = new User("", requestInfo.Session.SessionID, new List<string> { SystemRole.All.ToString() }, new List<Privilege>());
-				requestInfo.Session.Verification = false;
+				requestInfo.Session.Verified = false;
 				await Task.WhenAll(
 					context.CreateOrRenewSessionAsync(requestInfo, null, false),
 					InternalAPIs.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.GetEncryptedID(), 13, Global.CancellationTokenSource.Token)

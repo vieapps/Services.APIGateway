@@ -182,8 +182,8 @@ namespace net.vieapps.Services.APIGateway
 				WebHookSender.WebHooksPath
 			}.Where(path => !Directory.Exists(path)).ForEach(path => Directory.CreateDirectory(path));
 
-			// prepare business services
-			if (ConfigurationManager.GetSection("net.vieapps.services") is AppConfigurationSectionHandler servicesConfiguration)
+			// prepare services
+			if (ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:Services", "net.vieapps.services")) is AppConfigurationSectionHandler servicesConfiguration)
 			{
 				this.ServiceHosting = servicesConfiguration.Section.Attributes["executable"]?.Value.Trim() ?? this.ServiceHosting;
 				if (this.ServiceHosting.IsEndsWith(".exe") || this.ServiceHosting.IsEndsWith(".dll"))
@@ -199,7 +199,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// prepare scheduling tasks
-			if (ConfigurationManager.GetSection("net.vieapps.task.scheduler") is AppConfigurationSectionHandler tasksConfiguration)
+			if (ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:TaskScheduler", "net.vieapps.task.scheduler")) is AppConfigurationSectionHandler tasksConfiguration)
 				if (tasksConfiguration.Section.SelectNodes("task") is XmlNodeList tasks)
 					tasks.ToList().ForEach(task =>
 					{
@@ -255,7 +255,7 @@ namespace net.vieapps.Services.APIGateway
 
 								this.InterCommunicator?.Dispose();
 								this.InterCommunicator = Router.IncomingChannel.RealmProxy.Services
-									.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
+									.GetSubject<CommunicateMessage>("rtu.communicate.messages.apigateway")
 									.Subscribe(
 										async message => await this.ProcessInterCommunicateMessageAsync(message).ConfigureAwait(false),
 										exception => Global.OnError?.Invoke($"Error occurred while fetching an inter-communicate message => {exception.Message}", this.State == ServiceState.Connected ? exception : null)
@@ -264,7 +264,7 @@ namespace net.vieapps.Services.APIGateway
 
 								this.UpdateCommunicator?.Dispose();
 								this.UpdateCommunicator = Router.IncomingChannel.RealmProxy.Services
-									.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages")
+									.GetSubject<UpdateMessage>("rtu.update.messages")
 									.Subscribe(
 										message =>
 										{
@@ -486,7 +486,7 @@ namespace net.vieapps.Services.APIGateway
 		/// </summary>
 		/// <returns></returns>
 		public Dictionary<string, string> GetAvailableBusinessServices()
-			=> this.AvailableBusinessServices.ToDictionary(kvp => $"net.vieapps.services.{kvp.Key}", kvp => kvp.Value.Arguments);
+			=> this.AvailableBusinessServices.ToDictionary(kvp => $"services.{kvp.Key}", kvp => kvp.Value.Arguments);
 
 		/// <summary>
 		/// Gets the state that determines a business service is available or not
@@ -530,7 +530,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			if (!this.IsBusinessServiceAvailable(name))
 			{
-				var ex = new ServiceNotFoundException($"The service [net.vieapps.services.{name ?? "unknown"}] is not found");
+				var ex = new ServiceNotFoundException($"The service [{name ?? "unknown"}] is not found");
 				Global.OnError?.Invoke($"[{name ?? "unknown"}] => {ex.Message}", ex);
 				return;
 			}
@@ -614,7 +614,7 @@ namespace net.vieapps.Services.APIGateway
 			name = !string.IsNullOrWhiteSpace(name) ? name.ToArray('.').Last().ToLower() : "unknown";
 			if (!this.BusinessServices.ContainsKey(name))
 			{
-				var ex = new ServiceNotFoundException($"The service [net.vieapps.services.{name}] is not found");
+				var ex = new ServiceNotFoundException($"The service [{name}] is not found");
 				Global.OnError?.Invoke($"[{name}] => {ex.Message}", ex);
 				return;
 			}
@@ -788,7 +788,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// task scheduler (hourly)
 			var runTaskSchedulerOnFirstLoad = false;
-			if (ConfigurationManager.GetSection("net.vieapps.task.scheduler") is AppConfigurationSectionHandler config)
+			if (ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:TaskScheduler", "net.vieapps.task.scheduler")) is AppConfigurationSectionHandler config)
 				runTaskSchedulerOnFirstLoad = "true".IsEquals(config.Section.Attributes["runOnFirstLoad"]?.Value);
 			this.StartTimer(async () => await this.RunTaskSchedulerAsync().ConfigureAwait(false), 65 * 60, runTaskSchedulerOnFirstLoad ? 5678 : 0);
 		}

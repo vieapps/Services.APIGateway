@@ -31,7 +31,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				this.Communicator?.Dispose();
 				this.Communicator = Router.IncomingChannel.RealmProxy.Services
-					.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
+					.GetSubject<CommunicateMessage>("rtu.communicate.messages.apigateway")
 					.Subscribe(
 						message => this.ProcessInterCommunicateMessage(message),
 						exception => Global.OnError?.Invoke($"Error occurred while fetching inter-communicate message: {exception.Message}", exception)
@@ -177,7 +177,7 @@ namespace net.vieapps.Services.APIGateway
 		public JArray GetAvailableServices()
 			=> this.Services.Values.Select(services => new JObject
 			{
-				{ "URI", $"net.vieapps.services.{services.First().Name}" },
+				{ "URI", $"services.{services.First().Name}" },
 				{ "Available", services.FirstOrDefault(service => service.Available) != null },
 				{ "Running", services.FirstOrDefault(service => service.Running) != null }
 			})

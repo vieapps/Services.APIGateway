@@ -28,7 +28,7 @@ namespace net.vieapps.Services.APIGateway
 
 			var apiCall = args?.FirstOrDefault(a => a.IsStartsWith("/agc:"));
 			var isUserInteractive = Environment.UserInteractive && apiCall == null;
-			var hostingInfo = $"VIEApps NGX API Gateway - Service Hosting {RuntimeInformation.ProcessArchitecture} {typeof(ServiceHost).Assembly.GetVersion()} [{this.GetType().Assembly.GetVersion()}]";
+			var hostingInfo = $"VIEApps NGX API Gateway - Service Hosting {RuntimeInformation.ProcessArchitecture.ToString().ToLower()} {typeof(ServiceHost).Assembly.GetVersion()} [{this.GetType().Assembly.GetVersion()}]";
 
 			// prepare type name
 			this.ServiceTypeName = args?.FirstOrDefault(a => a.IsStartsWith("/svc:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/svc:", "");
@@ -41,7 +41,7 @@ namespace net.vieapps.Services.APIGateway
 						var xml = new System.Xml.XmlDocument();
 						xml.LoadXml(UtilityService.ReadTextFile(configFilename));
 						this.ServiceTypeName = args.First(a => a.IsStartsWith("/svn:")).Replace(StringComparison.OrdinalIgnoreCase, "/svn:", "").Trim();
-						var typeNode = xml.SelectSingleNode("/configuration/net.vieapps.services")?.ChildNodes.ToList().FirstOrDefault(node => this.ServiceTypeName.IsEquals(node.Attributes["name"]?.Value));
+						var typeNode = xml.SelectSingleNode($"/configuration/{UtilityService.GetAppSetting("Section:Services", "net.vieapps.services")}")?.ChildNodes.ToList().FirstOrDefault(node => this.ServiceTypeName.IsEquals(node.Attributes["name"]?.Value));
 						this.ServiceTypeName = typeNode?.Attributes["type"]?.Value;
 					}
 					catch

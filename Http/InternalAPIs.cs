@@ -1023,7 +1023,7 @@ namespace net.vieapps.Services.APIGateway
 		public static JToken GetServices()
 			=> InternalAPIs.Services.Values.Select(svcInfo => new
 			{
-				URI = $"net.vieapps.services.{svcInfo[0].Get<string>("Name")}",
+				URI = $"services.{svcInfo[0].Get<string>("Name")}",
 				Available = svcInfo.FirstOrDefault(svc => svc.Get<bool>("Available")) != null,
 				Running = svcInfo.FirstOrDefault(svc => svc.Get<bool>("Running")) != null
 			})

@@ -38,7 +38,7 @@ namespace net.vieapps.Services.APIGateway
 					Task.Run(() => Services.Router.IncomingChannel.UpdateAsync(Services.Router.IncomingChannelSessionID, Global.ServiceName, $"Incoming ({Global.ServiceName} HTTP service)")).ConfigureAwait(false);
 					Global.PrimaryInterCommunicateMessageUpdater?.Dispose();
 					Global.PrimaryInterCommunicateMessageUpdater = Services.Router.IncomingChannel.RealmProxy.Services
-						.GetSubject<CommunicateMessage>("net.vieapps.rtu.communicate.messages.apigateway")
+						.GetSubject<CommunicateMessage>("rtu.communicate.messages.apigateway")
 						.Subscribe(
 							async message =>
 							{

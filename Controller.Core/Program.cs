@@ -66,7 +66,7 @@ namespace net.vieapps.Services.APIGateway
 			var logPath = UtilityService.GetAppSetting("Path:Logs");
 			if (logPath != null && Directory.Exists(logPath))
 			{
-				logPath = Path.Combine(logPath, "{Hour}_apigateway.controller.txt");
+				logPath = Path.Combine(logPath, "{Date}_apigateway.controller.txt");
 				Components.Utility.Logger.GetLoggerFactory().AddFile(logPath, logLevel);
 			}
 			else
@@ -105,7 +105,7 @@ namespace net.vieapps.Services.APIGateway
 							var info = $"Controllers - Total instance(s): {Program.Manager.AvailableControllers.Count:#,##0} - Available instance(s): {Program.Manager.AvailableControllers.Where(kvp => kvp.Value.Available).Count():#,##0}";
 							Program.Manager.AvailableControllers.ForEach(controller => info += "\r\n\t" + $"- ID: {controller.ID} - Status: {(controller.Available ? "Available" : "Unavailable")}  - Working mode: {controller.Mode} - Platform: {controller.Platform}");
 							info += "\r\n" + $"Services - Total: {Program.Manager.AvailableServices.Count:#,##0} - Available: {Program.Manager.AvailableServices.Where(kvp => kvp.Value.FirstOrDefault(svc => svc.Available) != null).Count():#,##0} - Running: {Program.Manager.AvailableServices.Where(kvp => kvp.Value.FirstOrDefault(svc => svc.Running) != null).Count():#,##0}";
-							Program.Manager.AvailableServices.OrderBy(kvp => kvp.Key).ForEach(kvp => info += "\r\n\t" + $"- URI: net.vieapps.services.{kvp.Key} - Available instance(s): {kvp.Value.Where(svc => svc.Available).Count():#,##0} - Running instance(s): {kvp.Value.Where(svc => svc.Running).Count():#,##0}");
+							Program.Manager.AvailableServices.OrderBy(kvp => kvp.Key).ForEach(kvp => info += "\r\n\t" + $"- URI: services.{kvp.Key} - Available instance(s): {kvp.Value.Where(svc => svc.Available).Count():#,##0} - Running instance(s): {kvp.Value.Where(svc => svc.Running).Count():#,##0}");
 							Program.Logger.LogInformation(info);
 						}
 						else if (controllerID.IsEquals("local") || controllerID.IsEquals(Program.Controller.Info.ID))
@@ -125,11 +125,11 @@ namespace net.vieapps.Services.APIGateway
 							info += "\r\n" + $"Services - Available: {services.Count:#,##0} - Running: {services.Where(kvp => kvp.Value != null).Count():#,##0}";
 							services.ForEach(kvp =>
 							{
-								info += "\r\n\t" + $"- URI: net.vieapps.services.{kvp.Key}";
+								info += "\r\n\t" + $"- URI: services.{kvp.Key}";
 								if (kvp.Value != null)
 								{
 									var svcArgs = kvp.Value.Arguments?.ToArray(' ') ?? new string[] { };
-									info += $" (net.vieapps.services.{Extensions.GetUniqueName(kvp.Key.ToArray('.').Last(), svcArgs)}) - Status: Running";
+									info += $" (services.{Extensions.GetUniqueName(kvp.Key.ToArray('.').Last(), svcArgs)}) - Status: Running";
 									if (kvp.Value.ID != null)
 										info += $" - Process ID: {kvp.Value.ID.Value}";
 									if (kvp.Value.StartTime != null)
@@ -168,7 +168,7 @@ namespace net.vieapps.Services.APIGateway
 							info += "\r\n" + $"Services - Available: {services.Where(svc => svc.Available).Count():#,##0} - Running: {services.Where(svc => svc.Running).Count():#,##0}";
 							services.ForEach(svc =>
 							{
-								info += "\r\n\t" + $"- URI: net.vieapps.services.{svc.Name} ({svc.UniqueName}) - Status: {(svc.Running ? "Running" : "Stopped")}";
+								info += "\r\n\t" + $"- URI: services.{svc.Name} ({svc.UniqueName}) - Status: {(svc.Running ? "Running" : "Stopped")}";
 								info += svc.Running
 									? $" - Starting time: {svc.Timestamp.ToDTString()} [Served times: {svc.Timestamp.GetElapsedTimes()}] - Invoked by: {svc.InvokeInfo}"
 									: $" - Last working time: {svc.Timestamp.ToDTString()}";

@@ -19,7 +19,7 @@ namespace net.vieapps.Services.APIGateway
 		ISubject<UpdateMessage> Publisher { get; set; } = null;
 
 		public ISubject<UpdateMessage> GetPublisher()
-			=> this.Publisher ?? (this.Publisher = Router.OutgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("net.vieapps.rtu.update.messages"));
+			=> this.Publisher ?? (this.Publisher = Router.OutgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("rtu.update.messages"));
 
 		public Task SendUpdateMessageAsync(UpdateMessage message, CancellationToken cancellationToken = default(CancellationToken))
 			=> UtilityService.ExecuteTask(() =>
@@ -73,7 +73,7 @@ namespace net.vieapps.Services.APIGateway
 
 		public ISubject<CommunicateMessage> GetInterCommunicatePublisher(string serviceName)
 		{
-			var uri = "net.vieapps.rtu.communicate.messages." + serviceName.Trim().ToLower();
+			var uri = "rtu.communicate.messages." + serviceName.Trim().ToLower();
 			if (!this.InterCommunicatePublishers.TryGetValue(uri, out ISubject<CommunicateMessage> subject))
 			{
 				subject = Router.OutgoingChannel.RealmProxy.Services.GetSubject<CommunicateMessage>(uri);

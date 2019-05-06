@@ -59,7 +59,7 @@ namespace net.vieapps.Services.APIGateway
 					if (gotMultipleInstances)
 					{
 						var isRunning = info.FirstOrDefault(serviceInfo => serviceInfo.Running) != null;
-						var itemOfAll = new ListViewItem(new[] { $"net.vieapps.services.{name} - {info.Count:#,##0} instance(s)", isRunning ? "Running" : "Stopped", "", name })
+						var itemOfAll = new ListViewItem(new[] { $"services.{name} - {info.Count:#,##0} instance(s)", isRunning ? "Running" : "Stopped", "", name })
 						{
 							UseItemStyleForSubItems = false
 						};
@@ -85,7 +85,7 @@ namespace net.vieapps.Services.APIGateway
 						var serviceInfo = info[0];
 						if (Program.Manager.AvailableControllers.TryGetValue(serviceInfo.ControllerID, out ControllerInfo controller))
 						{
-							var listItem = new ListViewItem(new[] { $"net.vieapps.services.{name}", serviceInfo.Running ? "Running" : "Stopped", controller.ID, name })
+							var listItem = new ListViewItem(new[] { $"services.{name}", serviceInfo.Running ? "Running" : "Stopped", controller.ID, name })
 							{
 								UseItemStyleForSubItems = false
 							};
@@ -150,7 +150,7 @@ namespace net.vieapps.Services.APIGateway
 				this.SetControlsState(true);
 				this.Change.Text = isRunning ? "Stop" : "Start";
 				if (isSelectAllControllers)
-					this.ServiceName.Text = $"net.vieapps.services.{name} - All instances";
+					this.ServiceName.Text = $"services.{name} - All instances";
 				else
 				{
 					var controller = Program.Manager.AvailableControllers[this.Selected.SubItems[2].Text];

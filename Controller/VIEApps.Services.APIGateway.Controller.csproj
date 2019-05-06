@@ -12,7 +12,7 @@
 		<Copyright>© 2019 VIEApps.net</Copyright>
 		<AssemblyVersion>10.2.1905.1</AssemblyVersion>
 		<FileVersion>10.2.1905.1</FileVersion>
-		<InformationalVersion>v10.2.netstandard-2+rev:2019.05.01-timers.logs</InformationalVersion>
+		<InformationalVersion>v10.2.netstandard-2+rev:2019.05.06-URI.timers.logs</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>

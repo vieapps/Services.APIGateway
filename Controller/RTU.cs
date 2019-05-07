@@ -16,17 +16,17 @@ namespace net.vieapps.Services.APIGateway
 {
 	public class RTUService : IRTUService
 	{
-		ISubject<UpdateMessage> Publisher { get; set; } = null;
+		ISubject<UpdateMessage> UpdateMessagePublisher { get; set; } = null;
 
-		public ISubject<UpdateMessage> GetPublisher()
-			=> this.Publisher ?? (this.Publisher = Router.OutgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("rtu.update.messages"));
+		public ISubject<UpdateMessage> GetUpdateMessagePublisher()
+			=> this.UpdateMessagePublisher ?? (this.UpdateMessagePublisher = Router.OutgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("messages.update"));
 
 		public Task SendUpdateMessageAsync(UpdateMessage message, CancellationToken cancellationToken = default(CancellationToken))
 			=> UtilityService.ExecuteTask(() =>
 			{
 				try
 				{
-					this.GetPublisher().OnNext(message);
+					this.GetUpdateMessagePublisher().OnNext(message);
 					Global.OnSendRTUMessageSuccess?.Invoke(
 						$"Publish an update message successful" + "\r\n" +
 						$"- Device: {message.DeviceID}" + "\r\n" +
@@ -55,7 +55,7 @@ namespace net.vieapps.Services.APIGateway
 				.Subscribe(
 					message =>
 					{
-						this.GetPublisher().OnNext(message);
+						this.GetUpdateMessagePublisher().OnNext(message);
 						Global.OnSendRTUMessageSuccess?.Invoke(
 							$"Publish an update message successful" + "\r\n" +
 							$"- Device: {message.DeviceID}" + "\r\n" +
@@ -69,15 +69,15 @@ namespace net.vieapps.Services.APIGateway
 				using (publisher) { }
 			}, cancellationToken);
 
-		ConcurrentDictionary<string, ISubject<CommunicateMessage>> InterCommunicatePublishers { get; set; } = new ConcurrentDictionary<string, ISubject<CommunicateMessage>>();
+		ConcurrentDictionary<string, ISubject<CommunicateMessage>> InterCommunicateMessagePublishers { get; } = new ConcurrentDictionary<string, ISubject<CommunicateMessage>>();
 
-		public ISubject<CommunicateMessage> GetInterCommunicatePublisher(string serviceName)
+		public ISubject<CommunicateMessage> GetInterCommunicateMessagePublisher(string serviceName)
 		{
-			var uri = "rtu.communicate.messages." + serviceName.Trim().ToLower();
-			if (!this.InterCommunicatePublishers.TryGetValue(uri, out ISubject<CommunicateMessage> subject))
+			var uri = "messages.services." + serviceName.Trim().ToLower();
+			if (!this.InterCommunicateMessagePublishers.TryGetValue(uri, out var subject))
 			{
 				subject = Router.OutgoingChannel.RealmProxy.Services.GetSubject<CommunicateMessage>(uri);
-				this.InterCommunicatePublishers.TryAdd(uri, subject);
+				this.InterCommunicateMessagePublishers.TryAdd(uri, subject);
 			}
 			return subject;
 		}
@@ -91,7 +91,7 @@ namespace net.vieapps.Services.APIGateway
 				if (message != null && !string.IsNullOrWhiteSpace(message.ServiceName))
 					try
 					{
-						this.GetInterCommunicatePublisher(message.ServiceName).OnNext(message);
+						this.GetInterCommunicateMessagePublisher(message.ServiceName).OnNext(message);
 						Global.OnSendRTUMessageSuccess?.Invoke(
 							$"Publish an inter-communicate message successful" + "\r\n" +
 							$"- Service: {message.ServiceName}" + "\r\n" +
@@ -128,7 +128,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				if (messages != null && !string.IsNullOrWhiteSpace(serviceName))
 				{
-					var subject = this.GetInterCommunicatePublisher(serviceName);
+					var subject = this.GetInterCommunicateMessagePublisher(serviceName);
 					var publisher = messages.ToObservable().Subscribe(
 						message =>
 						{

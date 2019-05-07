@@ -127,7 +127,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// subscribe an updater to push messages to client device
 			websocket.Set("Updater", Services.Router.IncomingChannel.RealmProxy.Services
-				.GetSubject<UpdateMessage>("rtu.update.messages")
+				.GetSubject<UpdateMessage>("messages.update")
 				.Subscribe(
 					async message =>
 					{
@@ -162,7 +162,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// subscribe a communicator to update related information
 			websocket.Set("Communicator", Services.Router.IncomingChannel.RealmProxy.Services
-				.GetSubject<CommunicateMessage>("rtu.communicate.messages.apigateway")
+				.GetSubject<CommunicateMessage>("messages.services.apigateway")
 				.Subscribe(
 					async message =>
 					{

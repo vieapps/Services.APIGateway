@@ -255,7 +255,7 @@ namespace net.vieapps.Services.APIGateway
 
 								this.InterCommunicator?.Dispose();
 								this.InterCommunicator = Router.IncomingChannel.RealmProxy.Services
-									.GetSubject<CommunicateMessage>("rtu.communicate.messages.apigateway")
+									.GetSubject<CommunicateMessage>("messages.services.apigateway")
 									.Subscribe(
 										async message => await this.ProcessInterCommunicateMessageAsync(message).ConfigureAwait(false),
 										exception => Global.OnError?.Invoke($"Error occurred while fetching an inter-communicate message => {exception.Message}", this.State == ServiceState.Connected ? exception : null)
@@ -264,7 +264,7 @@ namespace net.vieapps.Services.APIGateway
 
 								this.UpdateCommunicator?.Dispose();
 								this.UpdateCommunicator = Router.IncomingChannel.RealmProxy.Services
-									.GetSubject<UpdateMessage>("rtu.update.messages")
+									.GetSubject<UpdateMessage>("messages.update")
 									.Subscribe(
 										message =>
 										{

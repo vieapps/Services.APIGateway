@@ -107,14 +107,6 @@
     </Compile>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\Abstractions\VIEApps.Services.Abstractions.csproj">
-      <Project>{27cd8040-0800-40ae-9d73-a8bebd5116d4}</Project>
-      <Name>VIEApps.Services.Abstractions</Name>
-    </ProjectReference>
-    <ProjectReference Include="..\..\Base\VIEApps.Services.Base.csproj">
-      <Project>{c496cef5-9ff8-4364-9860-fcdefed4e277}</Project>
-      <Name>VIEApps.Services.Base</Name>
-    </ProjectReference>
     <ProjectReference Include="..\Controller\VIEApps.Services.APIGateway.Controller.csproj">
       <Project>{4ed245ba-2277-4631-8a27-b3727c98e649}</Project>
       <Name>VIEApps.Services.APIGateway.Controller</Name>

@@ -420,7 +420,7 @@ namespace net.vieapps.Services.APIGateway
 							throw new InvalidRequestException("Please change to use HTTP RESTful for working with users' sessions");
 
 						// prepare related information
-						if (verb.IsEquals("POST") || verb.IsEquals("PUT"))
+						if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT"))
 						{
 							requestInfo.CaptchaIsValid();
 							if ("account".IsEquals(requestInfo.ObjectName) || "otp".IsEquals(requestInfo.ObjectName))
@@ -429,12 +429,26 @@ namespace net.vieapps.Services.APIGateway
 						}
 						else
 						{
-							if ("otp".IsEquals(requestInfo.ObjectName) && verb.IsEquals("DELETE"))
+							if ("otp".IsEquals(requestInfo.ObjectName) && requestInfo.Verb.IsEquals("DELETE"))
 								requestInfo.PrepareAccountRelated(null, (msg, ex) => Global.WriteLogs(RTU.Logger, "Http.InternalAPIs", msg, ex, Global.ServiceName, LogLevel.Error, correlationID));
 							if (!requestInfo.Header.ContainsKey("x-app-token"))
-								requestInfo.Header["x-app-token"] = session.User.GetAuthenticateToken(Global.EncryptionKey, Global.JWTKey);
+								requestInfo.Header["x-app-token"] = requestInfo.Session.User.GetAuthenticateToken(Global.EncryptionKey, Global.JWTKey);
 							requestInfo.Extra["Signature"] = requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey);
 						}
+					}
+
+					// special: working with files
+					else if (requestInfo.ServiceName.IsEquals("files"))
+					{
+						if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT"))
+							requestInfo.Extra["Signature"] = requestInfo.Body.GetHMACSHA256(Global.ValidationKey);
+						else if (requestInfo.Verb.IsEquals("DELETE"))
+						{
+							if (!requestInfo.Header.ContainsKey("x-app-token"))
+								requestInfo.Header["x-app-token"] = requestInfo.Session.User.GetAuthenticateToken(Global.EncryptionKey, Global.JWTKey);
+							requestInfo.Extra["Signature"] = requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey);
+						}
+						requestInfo.Extra["SessionID"] = requestInfo.Session.SessionID.GetHMACBLAKE256(Global.ValidationKey);
 					}
 
 					// call the service

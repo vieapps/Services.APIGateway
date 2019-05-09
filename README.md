@@ -4,7 +4,7 @@
 
 - Router: for routing messages of all microservices and controllers/managers
 - Controller: for managing all microservices on one node
-- Http: public APIs of all microservices, incorporation with both HTTP RESTful or WebSocket (JSON messages with RESTful style)
+- Http: public APIs of all microservices, expose as REST API or WebSocket API (JSON messages with REST style)
 
 ## Supporting parts:
 

@@ -226,6 +226,34 @@ namespace net.vieapps.Services.APIGateway
 			else
 				try
 				{
+					// prepare signature when work with accounts
+					if (isAccountProccessed)
+					{
+						if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT"))
+							requestInfo.Extra["Signature"] = requestInfo.Body.GetHMACSHA256(Global.ValidationKey);
+						else
+						{
+							if (!requestInfo.Header.ContainsKey("x-app-token"))
+								requestInfo.Header["x-app-token"] = requestInfo.Session.User.GetAuthenticateToken(Global.EncryptionKey, Global.JWTKey);
+							requestInfo.Extra["Signature"] = requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey);
+						}
+					}
+
+					// prepare signature when work with files
+					else if (requestInfo.ServiceName.IsEquals("files"))
+					{
+						if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT"))
+							requestInfo.Extra["Signature"] = requestInfo.Body.GetHMACSHA256(Global.ValidationKey);
+						else if (requestInfo.Verb.IsEquals("DELETE"))
+						{
+							if (!requestInfo.Header.ContainsKey("x-app-token"))
+								requestInfo.Header["x-app-token"] = requestInfo.Session.User.GetAuthenticateToken(Global.EncryptionKey, Global.JWTKey);
+							requestInfo.Extra["Signature"] = requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey);
+						}
+						requestInfo.Extra["SessionID"] = requestInfo.Session.SessionID.GetHMACBLAKE256(Global.ValidationKey);
+					}
+
+					// call the service
 					var response = await context.CallServiceAsync(requestInfo, Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
 					await context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				}

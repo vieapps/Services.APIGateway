@@ -46,10 +46,10 @@ namespace net.vieapps.Services.APIGateway
 				{
 					var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
 					{
-						{ "Access-Control-Allow-Methods", "HEAD,GET,POST,PUT,DELETE" }
+						["Access-Control-Allow-Methods"] = "HEAD,GET,POST,PUT,DELETE"
 					};
-					if (context.Request.Headers.ContainsKey("Access-Control-Request-Headers"))
-						headers["Access-Control-Allow-Headers"] = context.Request.Headers["Access-Control-Request-Headers"];
+					if (context.Request.Headers.TryGetValue("Access-Control-Request-Headers", out var requestHeaders))
+						headers["Access-Control-Allow-Headers"] = requestHeaders;
 					context.SetResponseHeaders((int)HttpStatusCode.OK, headers, true);
 				}
 
@@ -77,7 +77,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		internal async Task ProcessRequestAsync(HttpContext context)
+		async Task ProcessRequestAsync(HttpContext context)
 		{
 			// prepare
 			context.Items["PipelineStopwatch"] = Stopwatch.StartNew();

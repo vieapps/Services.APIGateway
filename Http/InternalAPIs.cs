@@ -231,12 +231,8 @@ namespace net.vieapps.Services.APIGateway
 					{
 						if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT"))
 							requestInfo.Extra["Signature"] = requestInfo.Body.GetHMACSHA256(Global.ValidationKey);
-						else
-						{
-							if (!requestInfo.Header.ContainsKey("x-app-token"))
-								requestInfo.Header["x-app-token"] = requestInfo.Session.User.GetAuthenticateToken(Global.EncryptionKey, Global.JWTKey);
+						else if (requestInfo.Header.ContainsKey("x-app-token"))
 							requestInfo.Extra["Signature"] = requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey);
-						}
 					}
 
 					// prepare signature when work with files
@@ -244,12 +240,8 @@ namespace net.vieapps.Services.APIGateway
 					{
 						if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT"))
 							requestInfo.Extra["Signature"] = requestInfo.Body.GetHMACSHA256(Global.ValidationKey);
-						else if (requestInfo.Verb.IsEquals("DELETE") || requestInfo.Verb.IsEquals("PATCH"))
-						{
-							if (!requestInfo.Header.ContainsKey("x-app-token"))
-								requestInfo.Header["x-app-token"] = requestInfo.Session.User.GetAuthenticateToken(Global.EncryptionKey, Global.JWTKey);
+						else if (requestInfo.Header.ContainsKey("x-app-token"))
 							requestInfo.Extra["Signature"] = requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey);
-						}
 						requestInfo.Extra["SessionID"] = requestInfo.Session.SessionID.GetHMACBLAKE256(Global.ValidationKey);
 					}
 

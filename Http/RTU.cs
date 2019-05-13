@@ -88,6 +88,8 @@ namespace net.vieapps.Services.APIGateway
 				await Global.UpdateWithAuthenticateTokenAsync(session, appToken, null, null, null, RTU.Logger, "Http.InternalAPIs", correlationID).ConfigureAwait(false);
 				if (!await session.CheckSessionExistAsync(RTU.Logger, "Http.InternalAPIs", correlationID).ConfigureAwait(false))
 					throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
+
+				websocket.Set("Token", JSONWebToken.DecodeAsJson(appToken, Global.JWTKey));
 			}
 			catch (Exception ex)
 			{
@@ -324,9 +326,15 @@ namespace net.vieapps.Services.APIGateway
 			var objectName = requestObj.Get("ObjectName", "");
 			var verb = requestObj.Get("Verb", "GET").ToUpper();
 			var query = new Dictionary<string, string>(requestObj.Get("Query", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase);
-			var header = new Dictionary<string, string>(requestObj.Get("Header", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase);
-			var extra = new Dictionary<string, string>(requestObj.Get("Extra", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase);
 			query.TryGetValue("object-identity", out string objectIdentity);
+			var header = new Dictionary<string, string>(requestObj.Get("Header", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase);
+			if (!header.ContainsKey("x-app-token"))
+			{
+				var token = websocket.Get<JObject>("Token");
+				token["iat"] = DateTime.Now.ToUnixTimestamp();
+				header["x-app-token"] = JSONWebToken.Encode(token, Global.JWTKey);
+			}
+			var extra = new Dictionary<string, string>(requestObj.Get("Extra", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase);
 
 			if (Global.IsVisitLogEnabled)
 				await Global.WriteLogsAsync(RTU.Logger, "Http.WebSockets.Visits", $"Request starting {verb} " + $"/{serviceName}{(string.IsNullOrWhiteSpace(objectName) ? "" : "/" + objectName)}{(string.IsNullOrWhiteSpace(objectIdentity) ? "" : "/" + objectIdentity)}".ToLower() + (query.TryGetValue("x-request",out string xrequest) ? $"?x-request={xrequest}" : "") + $" HTTPWS/1.1", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
@@ -357,7 +365,7 @@ namespace net.vieapps.Services.APIGateway
 					}
 
 					// response to a heartbeat => refresh the session
-					else if ("PONG".IsEquals(verb) && await websocket.IsVerifiedAsync(session, correlationID).ConfigureAwait(false))
+					else if ("PONG".IsEquals(verb) && await websocket.VerifyAsync(session, correlationID).ConfigureAwait(false))
 						await Task.WhenAll(
 							new CommunicateMessage("Users")
 							{
@@ -394,7 +402,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 
 			// working with services
-			else if (await websocket.IsVerifiedAsync(session, correlationID).ConfigureAwait(false))
+			else if (await websocket.VerifyAsync(session, correlationID).ConfigureAwait(false))
 				try
 				{
 					// prepare the requesting information
@@ -425,29 +433,22 @@ namespace net.vieapps.Services.APIGateway
 							requestInfo.CaptchaIsValid();
 							if ("account".IsEquals(requestInfo.ObjectName) || "otp".IsEquals(requestInfo.ObjectName))
 								requestInfo.PrepareAccountRelated(null, (msg, ex) => Global.WriteLogs(RTU.Logger, "Http.InternalAPIs", msg, ex, Global.ServiceName, LogLevel.Error, correlationID));
-							requestInfo.Extra["Signature"] = requestInfo.Body.GetHMACSHA256(Global.ValidationKey);
 						}
-						else
-						{
-							if ("otp".IsEquals(requestInfo.ObjectName) && requestInfo.Verb.IsEquals("DELETE"))
-								requestInfo.PrepareAccountRelated(null, (msg, ex) => Global.WriteLogs(RTU.Logger, "Http.InternalAPIs", msg, ex, Global.ServiceName, LogLevel.Error, correlationID));
-							if (!requestInfo.Header.ContainsKey("x-app-token"))
-								requestInfo.Header["x-app-token"] = requestInfo.Session.User.GetAuthenticateToken(Global.EncryptionKey, Global.JWTKey);
-							requestInfo.Extra["Signature"] = requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey);
-						}
+						else if ("otp".IsEquals(requestInfo.ObjectName) && requestInfo.Verb.IsEquals("DELETE"))
+							requestInfo.PrepareAccountRelated(null, (msg, ex) => Global.WriteLogs(RTU.Logger, "Http.InternalAPIs", msg, ex, Global.ServiceName, LogLevel.Error, correlationID));
+
+						// prepare signature
+						requestInfo.Extra["Signature"] = requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT")
+							? requestInfo.Body.GetHMACSHA256(Global.ValidationKey)
+							: requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey);
 					}
 
 					// special: working with files
 					else if (requestInfo.ServiceName.IsEquals("files"))
 					{
-						if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT"))
-							requestInfo.Extra["Signature"] = requestInfo.Body.GetHMACSHA256(Global.ValidationKey);
-						else if (requestInfo.Verb.IsEquals("DELETE") || requestInfo.Verb.IsEquals("PATCH"))
-						{
-							if (!requestInfo.Header.ContainsKey("x-app-token"))
-								requestInfo.Header["x-app-token"] = requestInfo.Session.User.GetAuthenticateToken(Global.EncryptionKey, Global.JWTKey);
-							requestInfo.Extra["Signature"] = requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey);
-						}
+						requestInfo.Extra["Signature"] = requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT")
+							? requestInfo.Body.GetHMACSHA256(Global.ValidationKey)
+							: requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey);
 						requestInfo.Extra["SessionID"] = requestInfo.Session.SessionID.GetHMACBLAKE256(Global.ValidationKey);
 					}
 
@@ -555,12 +556,8 @@ namespace net.vieapps.Services.APIGateway
 					json["ID"] = identity;
 			}).ToString(Formatting.None), true, Global.CancellationTokenSource.Token);
 
-		static async Task<bool> IsVerifiedAsync(this ManagedWebSocket websocket, Session session = null, string correlationID = null)
+		static async Task<bool> VerifyAsync(this ManagedWebSocket websocket, Session session = null, string correlationID = null)
 		{
-			// get session
-			session = session ?? websocket.Get<Session>("Session");
-
-			// check state
 			if (!"Verified".IsEquals(websocket.Get<string>("State")))
 			{
 				// wait for the verifying process in 5 seconds
@@ -575,8 +572,6 @@ namespace net.vieapps.Services.APIGateway
 						}
 						catch { }
 				}
-
-				// re-check the state
 				if (!"Verified".IsEquals(websocket.Get<string>("State")))
 				{
 					await Task.WhenAll(
@@ -590,7 +585,6 @@ namespace net.vieapps.Services.APIGateway
 					return false;
 				}
 			}
-
 			return true;
 		}
 

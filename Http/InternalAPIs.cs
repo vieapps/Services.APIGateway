@@ -81,6 +81,7 @@ namespace net.vieapps.Services.APIGateway
 					isActivationProccessed = requestInfo.Verb.IsEquals("GET");
 			}
 
+			// authenticate token
 			try
 			{
 				// get token
@@ -91,7 +92,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					authenticateToken = context.GetHeaderParameter("authorization");
 					authenticateToken = authenticateToken != null && authenticateToken.IsStartsWith("Bearer") ? authenticateToken.ToArray(" ").Last() : null;
-					requestInfo.Header.TryAdd("x-app-token", authenticateToken);
+					requestInfo.Header["x-app-token"] = authenticateToken;
 					requestInfo.Header.Remove("authorization");
 				}
 
@@ -231,8 +232,8 @@ namespace net.vieapps.Services.APIGateway
 					{
 						if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT"))
 							requestInfo.Extra["Signature"] = requestInfo.Body.GetHMACSHA256(Global.ValidationKey);
-						else if (requestInfo.Header.ContainsKey("x-app-token"))
-							requestInfo.Extra["Signature"] = requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey);
+						else if (requestInfo.Header.TryGetValue("x-app-token", out var authenticateToken))
+							requestInfo.Extra["Signature"] = authenticateToken.GetHMACSHA256(Global.ValidationKey);
 					}
 
 					// prepare signature when work with files
@@ -240,8 +241,8 @@ namespace net.vieapps.Services.APIGateway
 					{
 						if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT"))
 							requestInfo.Extra["Signature"] = requestInfo.Body.GetHMACSHA256(Global.ValidationKey);
-						else if (requestInfo.Header.ContainsKey("x-app-token"))
-							requestInfo.Extra["Signature"] = requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey);
+						else if (requestInfo.Header.TryGetValue("x-app-token", out var authenticateToken))
+							requestInfo.Extra["Signature"] = authenticateToken.GetHMACSHA256(Global.ValidationKey);
 						requestInfo.Extra["SessionID"] = requestInfo.Session.SessionID.GetHMACBLAKE256(Global.ValidationKey);
 					}
 

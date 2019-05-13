@@ -1,8 +1,7 @@
 {
-	"profiles": {
-		"APIGateway.ServiceHosting": {
-			"commandName": "Project",
-			"commandLineArgs": ""
-		}
-	}
+  "profiles": {
+    "APIGateway.ServiceHosting": {
+      "commandName": "Project"
+    }
+  }
 }

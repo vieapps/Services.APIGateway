@@ -186,7 +186,7 @@ namespace net.vieapps.Services.APIGateway
 									await websocket.PrepareConnectionInfoAsync(correlatedID, session).ConfigureAwait(false);
 									if (Global.IsDebugLogEnabled)
 										await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs",
-											$"Successfully process an inter-communicate message (patch session)" + "\r\n" +
+											$"Successfully process an inter-communicate message (patch session - {message.Data.Get<string>("SessionID")} => {session.SessionID})" + "\r\n" +
 											$"{websocket.GetConnectionInfo(session)}" + "\r\n" +
 											$"- Type: {message.Type}" + "\r\n" +
 											$"- Message: {message.Data.ToString(Formatting.None)}"
@@ -346,12 +346,12 @@ namespace net.vieapps.Services.APIGateway
 					if ("VERIFY".IsEquals(verb) || "PATCH".IsEquals(verb))
 					{
 						websocket.Set("State", "Verifying");
-						var key = session.GetEncryptionKey(Global.EncryptionKey, null);
-						var iv = session.GetEncryptionIV(Global.EncryptionKey, null);
+						var encryptionKey = session.GetEncryptionKey(Global.EncryptionKey);
+						var encryptionIV = session.GetEncryptionIV(Global.EncryptionKey);
 						if (!header.TryGetValue("x-session-id", out var sessionID)
-							|| !session.SessionID.Equals(session.GetDecryptedID(sessionID.Decrypt(key, iv), Global.EncryptionKey, Global.ValidationKey))
+							|| !session.SessionID.Equals(session.GetDecryptedID(sessionID.Decrypt(encryptionKey, encryptionIV), Global.EncryptionKey, Global.ValidationKey))
 							|| !header.TryGetValue("x-device-id", out var deviceID)
-							|| !session.DeviceID.Equals(deviceID.Decrypt(key, iv)))
+							|| !session.DeviceID.Equals(deviceID.Decrypt(encryptionKey, encryptionIV)))
 							throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 						websocket.Set("State", "Verified");
 						if (Global.IsDebugLogEnabled)

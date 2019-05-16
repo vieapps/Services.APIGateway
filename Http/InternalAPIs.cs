@@ -403,7 +403,7 @@ namespace net.vieapps.Services.APIGateway
 					}
 
 					// response
-					var response = requestInfo.Session.GetSessionJson(context.Items);
+					var response = requestInfo.Session.GetSessionJson();
 					await Task.WhenAll(
 						context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
@@ -451,7 +451,7 @@ namespace net.vieapps.Services.APIGateway
 					await context.CreateOrRenewSessionAsync(requestInfo, session).ConfigureAwait(false);
 
 					// response
-					var response = requestInfo.Session.GetSessionJson(context.Items);
+					var response = requestInfo.Session.GetSessionJson();
 					await Task.WhenAll(
 						context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
@@ -525,7 +525,7 @@ namespace net.vieapps.Services.APIGateway
 					await context.CreateOrRenewSessionAsync(requestInfo).ConfigureAwait(false);
 
 					// prepare response
-					response = requestInfo.Session.GetSessionJson(context.Items);
+					response = requestInfo.Session.GetSessionJson();
 
 					// broadcast updates
 					await new CommunicateMessage("APIGateway")
@@ -633,7 +633,7 @@ namespace net.vieapps.Services.APIGateway
 				await context.CreateOrRenewSessionAsync(requestInfo).ConfigureAwait(false);
 
 				// prepare response
-				response = requestInfo.Session.GetSessionJson(context.Items);
+				response = requestInfo.Session.GetSessionJson();
 
 				// broadcast updates
 				await new CommunicateMessage("APIGateway")
@@ -703,7 +703,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					Extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
 					{
-						{ "Signature", requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey) }
+						["Signature"] = requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey)
 					},
 					CorrelationID = requestInfo.CorrelationID
 				}, Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
@@ -723,7 +723,7 @@ namespace net.vieapps.Services.APIGateway
 				).ConfigureAwait(false);
 
 				// prepare response
-				var response = requestInfo.Session.GetSessionJson(context.Items);
+				var response = requestInfo.Session.GetSessionJson();
 
 				// broadcast updates
 				await new CommunicateMessage("APIGateway")
@@ -791,7 +791,7 @@ namespace net.vieapps.Services.APIGateway
 				await context.CreateOrRenewSessionAsync(requestInfo).ConfigureAwait(false);
 
 				// response
-				response = requestInfo.Session.GetSessionJson(context.Items);
+				response = requestInfo.Session.GetSessionJson();
 				await Task.WhenAll(
 					context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
@@ -823,10 +823,10 @@ namespace net.vieapps.Services.APIGateway
 
 			try
 			{
-				var key = requestInfo.Session.GetEncryptionKey(Global.EncryptionKey, items);
-				var iv = requestInfo.Session.GetEncryptionIV(Global.EncryptionKey, items);
-				registered = registered.Decrypt(key, iv);
-				input = input.Decrypt(key, iv);
+				var encryptionKey = requestInfo.Session.GetEncryptionKey(Global.EncryptionKey);
+				var encryptionIV = requestInfo.Session.GetEncryptionIV(Global.EncryptionKey);
+				registered = registered.Decrypt(encryptionKey, encryptionIV);
+				input = input.Decrypt(encryptionKey, encryptionIV);
 			}
 			catch (Exception ex)
 			{
@@ -898,8 +898,8 @@ namespace net.vieapps.Services.APIGateway
 				}
 
 			// key & iv
-			var encryptionKey = requestInfo.Session.GetEncryptionKey(Global.EncryptionKey, items);
-			var encryptionIV = requestInfo.Session.GetEncryptionIV(Global.EncryptionKey, items);
+			var encryptionKey = requestInfo.Session.GetEncryptionKey(Global.EncryptionKey);
+			var encryptionIV = requestInfo.Session.GetEncryptionIV(Global.EncryptionKey);
 
 			// prepare roles
 			var roles = requestBody.Get<string>("Roles");
@@ -998,7 +998,7 @@ namespace net.vieapps.Services.APIGateway
 		public static string GetEncryptedID(this Session session)
 			=> session.GetEncryptedID(session.SessionID, Global.EncryptionKey, Global.ValidationKey);
 
-		public static JObject GetSessionJson(this Session session, IDictionary<object, object> items = null)
+		public static JObject GetSessionJson(this Session session)
 			=> new JObject
 			{
 				{ "ID", session.GetEncryptedID() },
@@ -1018,8 +1018,8 @@ namespace net.vieapps.Services.APIGateway
 							"AES",
 							new JObject
 							{
-								{ "Key", session.GetEncryptionKey(Global.EncryptionKey, items).ToHex() },
-								{ "IV", session.GetEncryptionIV(Global.EncryptionKey, items).ToHex() }
+								{ "Key", session.GetEncryptionKey(Global.EncryptionKey).ToHex() },
+								{ "IV", session.GetEncryptionIV(Global.EncryptionKey).ToHex() }
 							}
 						},
 						{

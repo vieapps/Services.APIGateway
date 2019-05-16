@@ -14,9 +14,9 @@ using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using WampSharp.V2.Core.Contracts;
-using net.vieapps.Components.Utility;
 using net.vieapps.Components.Security;
 using net.vieapps.Components.WebSockets;
+using net.vieapps.Components.Utility;
 #endregion
 
 namespace net.vieapps.Services.APIGateway
@@ -37,7 +37,6 @@ namespace net.vieapps.Services.APIGateway
 				OnMessageReceived = (websocket, result, data) => Task.Run(() => websocket.WhenMessageIsReceivedAsync(result, data)).ConfigureAwait(false),
 				KeepAliveInterval = TimeSpan.FromSeconds(45)
 			};
-			Components.WebSockets.WebSocket.AgentName = $"{UtilityService.GetAppSetting("HttpServerName", "VIEApps NGX")} WebSockets";
 			Global.Logger.LogInformation($"WebSocket ({Global.ServiceName} RTU) is initialized - Buffer size: {Components.WebSockets.WebSocket.ReceiveBufferSize:#,##0} bytes - Keep-Alive interval: {RTU.WebSocket.KeepAliveInterval.TotalSeconds} second(s)");
 		}
 

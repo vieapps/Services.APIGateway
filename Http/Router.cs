@@ -30,12 +30,12 @@ namespace net.vieapps.Services.APIGateway
 	{
 		public static void Connect(int waitingTimes = 6789)
 		{
-			Global.Logger.LogDebug($"Attempting to connect to API Gateway Router [{new Uri(Services.Router.GetRouterStrInfo()).GetResolvedURI()}]");
-			Global.OpenRouterChannels(
+			Global.Logger.LogInformation($"Attempting to connect to API Gateway Router [{new Uri(Services.Router.GetRouterStrInfo()).GetResolvedURI()}]");
+			Global.Connect(
 				(sender, arguments) =>
 				{
-					Global.Logger.LogDebug($"Incoming channel to API Gateway Router is established - Session ID: {arguments.SessionId}");
-					Task.Run(() => Services.Router.IncomingChannel.UpdateAsync(Services.Router.IncomingChannelSessionID, Global.ServiceName, $"Incoming ({Global.ServiceName} HTTP service)")).ConfigureAwait(false);
+					Services.Router.IncomingChannel.Update(arguments.SessionId, Global.ServiceName, $"Incoming ({Global.ServiceName} HTTP service)");
+					Global.Logger.LogInformation($"The incoming channel to API Gateway Router is established - Session ID: {arguments.SessionId}");
 					Global.PrimaryInterCommunicateMessageUpdater?.Dispose();
 					Global.PrimaryInterCommunicateMessageUpdater = Services.Router.IncomingChannel.RealmProxy.Services
 						.GetSubject<CommunicateMessage>("messages.services.apigateway")
@@ -56,10 +56,10 @@ namespace net.vieapps.Services.APIGateway
 				},
 				(sender, arguments) =>
 				{
-					Global.Logger.LogDebug($"Outgoing channel to API Gateway Router is established - Session ID: {arguments.SessionId}");
+					Services.Router.OutgoingChannel.Update(arguments.SessionId, Global.ServiceName, $"Outgoing ({Global.ServiceName} HTTP service)");
+					Global.Logger.LogInformation($"The outgoing channel to API Gateway Router is established - Session ID: {arguments.SessionId}");
 					Task.Run(async () =>
 					{
-						await Services.Router.OutgoingChannel.UpdateAsync(Services.Router.OutgoingChannelSessionID, Global.ServiceName, $"Outgoing ({Global.ServiceName} HTTP service)").ConfigureAwait(false);
 						try
 						{
 							await Task.WhenAll(
@@ -67,28 +67,33 @@ namespace net.vieapps.Services.APIGateway
 								Global.InitializeRTUServiceAsync()
 							).ConfigureAwait(false);
 							Global.Logger.LogInformation("Helper services are succesfully initialized");
-							while (Services.Router.IncomingChannel == null || Services.Router.OutgoingChannel == null)
-								await Task.Delay(UtilityService.GetRandomNumber(234, 567), Global.CancellationTokenSource.Token).ConfigureAwait(false);
 						}
 						catch (Exception ex)
 						{
 							Global.Logger.LogError($"Error occurred while initializing helper services: {ex.Message}", ex);
 						}
 					})
-					.ContinueWith(async _ => await Global.RegisterServiceAsync("Http.InternalAPIs").ConfigureAwait(false), TaskContinuationOptions.OnlyOnRanToCompletion)
-					.ContinueWith(async _ => await Global.PublishAsync(new CommunicateMessage
+					.ContinueWith(async _ =>
 					{
-						ServiceName = "APIGateway",
-						Type = "Controller#RequestInfo"
-					}, Global.Logger, "Http.InternalAPIs").ConfigureAwait(false), TaskContinuationOptions.OnlyOnRanToCompletion)
-					.ContinueWith(async _ => await Global.PublishAsync(new CommunicateMessage
-					{
-						ServiceName = "APIGateway",
-						Type = "Service#RequestInfo"
-					}, Global.Logger, "Http.InternalAPIs").ConfigureAwait(false), TaskContinuationOptions.OnlyOnRanToCompletion)
+						while (Services.Router.IncomingChannel == null || Services.Router.OutgoingChannel == null)
+							await Task.Delay(UtilityService.GetRandomNumber(234, 567), Global.CancellationTokenSource.Token).ConfigureAwait(false);
+						await Task.WhenAll(
+							Global.RegisterServiceAsync("Http.InternalAPIs"),
+							new CommunicateMessage("APIGateway")
+							{
+								Type = "Controller#RequestInfo"
+							}.PublishAsync(Global.Logger, "Http.InternalAPIs"),
+							new CommunicateMessage("APIGateway")
+							{
+								Type = "Service#RequestInfo"
+							}.PublishAsync(Global.Logger, "Http.InternalAPIs")
+						).ConfigureAwait(false);
+					}, TaskContinuationOptions.OnlyOnRanToCompletion)
 					.ConfigureAwait(false);
 				},
-				waitingTimes
+				waitingTimes,
+				exception => Global.Logger.LogError($"Cannot connect to API Gateway Router in period of times => {exception.Message}", exception),
+				exception => Global.Logger.LogError($"Error occurred while connecting to API Gateway Router => {exception.Message}", exception)
 			);
 		}
 
@@ -97,7 +102,7 @@ namespace net.vieapps.Services.APIGateway
 			Global.UnregisterService("Http.InternalAPIs", waitingTimes);
 			Global.PrimaryInterCommunicateMessageUpdater?.Dispose();
 			Global.SecondaryInterCommunicateMessageUpdater?.Dispose();
-			Services.Router.CloseChannels();
+			Global.Disconnect();
 		}
 
 		static IWampHost Forwarder { get; set; }

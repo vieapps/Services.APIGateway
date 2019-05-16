@@ -224,7 +224,7 @@ namespace net.vieapps.Services.APIGateway
 #else
 			Global.OnProcess?.Invoke($"Working mode: {(this.IsUserInteractive ? "Interactive app" : "Background service")} (RELEASE)");
 #endif
-			Global.OnProcess?.Invoke($"Starting arguments: {args?.Join(" ") ?? "None"}");
+			Global.OnProcess?.Invoke($"Starting arguments: {(args != null && args.Length > 0 ? args.Join(" ") : "None")}");
 			Global.OnProcess?.Invoke($"API Gateway Router: {new Uri(Router.GetRouterStrInfo()).GetResolvedURI()}");
 			Global.OnProcess?.Invoke($"Working directory: {this.WorkingDirectory}");
 			Global.OnProcess?.Invoke($"Number of business services: {this.BusinessServices.Count}");
@@ -243,160 +243,155 @@ namespace net.vieapps.Services.APIGateway
 				Global.OnProcess?.Invoke($"Attempting to connect to API Gateway Router [{new Uri(Router.GetRouterStrInfo()).GetResolvedURI()}] #{attemptingCounter}");
 				try
 				{
-					await Task.WhenAll(
-						Router.OpenIncomingChannelAsync(
-							(sender, arguments) =>
+					await Router.ConnectAsync(
+						(sender, arguments) =>
+						{
+							onIncomingChannelEstablished?.Invoke(sender, arguments);
+							Global.OnProcess?.Invoke($"The incoming channel is established - Session ID: {arguments.SessionId}");
+							Task.Run(() => Router.IncomingChannel.UpdateAsync(Router.IncomingChannelSessionID, "APIGateway", "Incoming (APIGateway Controller)")).ConfigureAwait(false);
+							if (this.State == ServiceState.Initializing)
+								this.State = ServiceState.Ready;
+
+							this.InterCommunicator?.Dispose();
+							this.InterCommunicator = Router.IncomingChannel.RealmProxy.Services
+								.GetSubject<CommunicateMessage>("messages.services.apigateway")
+								.Subscribe(
+									async message => await this.ProcessInterCommunicateMessageAsync(message).ConfigureAwait(false),
+									exception => Global.OnError?.Invoke($"Error occurred while fetching an inter-communicate message => {exception.Message}", this.State == ServiceState.Connected ? exception : null)
+								);
+							Global.OnProcess?.Invoke($"The communicator of API Gateway is{(this.State == ServiceState.Disconnected ? " re-" : " ")}subscribed successful");
+
+							this.UpdateCommunicator?.Dispose();
+							this.UpdateCommunicator = Router.IncomingChannel.RealmProxy.Services
+								.GetSubject<UpdateMessage>("messages.update")
+								.Subscribe(
+									message =>
+									{
+										if (message.Type.IsEquals("Ping"))
+											this.ClientPingTime = DateTime.Now;
+										else if (message.Type.IsEquals("Scheduler"))
+											this.ClientSchedulingTime = DateTime.Now;
+									},
+									exception => Global.OnError?.Invoke($"Error occurred while fetching an updating message => {exception.Message}", this.State == ServiceState.Connected ? exception : null)
+								);
+							Global.OnProcess?.Invoke($"The updater of service messages is{(this.State == ServiceState.Disconnected ? " re-" : " ")}subscribed successful");
+
+							Task.Run(async () =>
 							{
-								onIncomingChannelEstablished?.Invoke(sender, arguments);
-								Global.OnProcess?.Invoke($"The incoming channel is established - Session ID: {arguments.SessionId}");
-								Task.Run(() => Router.IncomingChannel.UpdateAsync(Router.IncomingChannelSessionID, "APIGateway", "Incoming (APIGateway Controller)")).ConfigureAwait(false);
-								if (this.State == ServiceState.Initializing)
-									this.State = ServiceState.Ready;
-
-								this.InterCommunicator?.Dispose();
-								this.InterCommunicator = Router.IncomingChannel.RealmProxy.Services
-									.GetSubject<CommunicateMessage>("messages.services.apigateway")
-									.Subscribe(
-										async message => await this.ProcessInterCommunicateMessageAsync(message).ConfigureAwait(false),
-										exception => Global.OnError?.Invoke($"Error occurred while fetching an inter-communicate message => {exception.Message}", this.State == ServiceState.Connected ? exception : null)
-									);
-								Global.OnProcess?.Invoke($"The communicator of API Gateway is{(this.State == ServiceState.Disconnected ? " re-" : " ")}subscribed successful");
-
-								this.UpdateCommunicator?.Dispose();
-								this.UpdateCommunicator = Router.IncomingChannel.RealmProxy.Services
-									.GetSubject<UpdateMessage>("messages.update")
-									.Subscribe(
-										message =>
-										{
-											if (message.Type.IsEquals("Ping"))
-												this.ClientPingTime = DateTime.Now;
-											else if (message.Type.IsEquals("Scheduler"))
-												this.ClientSchedulingTime = DateTime.Now;
-										},
-										exception => Global.OnError?.Invoke($"Error occurred while fetching an updating message => {exception.Message}", this.State == ServiceState.Connected ? exception : null)
-									);
-								Global.OnProcess?.Invoke($"The updater of service messages is{(this.State == ServiceState.Disconnected ? " re-" : " ")}subscribed successful");
-
-								Task.Run(async () =>
+								try
+								{
+									await this.RegisterHelperServicesAsync().ConfigureAwait(false);
+								}
+								catch
 								{
 									try
 									{
+										await Task.Delay(UtilityService.GetRandomNumber(456, 789)).ConfigureAwait(false);
 										await this.RegisterHelperServicesAsync().ConfigureAwait(false);
 									}
-									catch
+									catch (Exception ex)
 									{
+										Global.OnError?.Invoke($"Error occurred while{(this.State == ServiceState.Disconnected ? " re-" : " ")}registering the helper services: {ex.Message}", ex);
+									}
+								}
+							})
+							.ContinueWith(_ =>
+							{
+								if (this.State == ServiceState.Ready)
+								{
+									if (this.AllowRegisterHelperTimers)
 										try
 										{
-											await Task.Delay(UtilityService.GetRandomNumber(456, 789)).ConfigureAwait(false);
-											await this.RegisterHelperServicesAsync().ConfigureAwait(false);
+											this.RegisterMessagingTimers();
+											this.RegisterTaskSchedulingTimers();
+											this.RegisterClientIntervalTimers();
+											Global.OnProcess?.Invoke($"The background workers & schedulers are registered - Number of scheduling timers: {this.NumberOfTimers:#,##0} - Number of scheduling tasks: {this.NumberOfTasks:#,##0}");
 										}
 										catch (Exception ex)
 										{
-											Global.OnError?.Invoke($"Error occurred while{(this.State == ServiceState.Disconnected ? " re-" : " ")}registering the helper services: {ex.Message}", ex);
+											Global.OnError?.Invoke($"Error occurred while registering background workers & schedulers: {ex.Message}", ex);
 										}
-									}
-								})
-								.ContinueWith(_ =>
-								{
-									if (this.State == ServiceState.Ready)
-									{
-										if (this.AllowRegisterHelperTimers)
-											try
-											{
-												this.RegisterMessagingTimers();
-												this.RegisterTaskSchedulingTimers();
-												this.RegisterClientIntervalTimers();
-												Global.OnProcess?.Invoke($"The background workers & schedulers are registered - Number of scheduling timers: {this.NumberOfTimers:#,##0} - Number of scheduling tasks: {this.NumberOfTasks:#,##0}");
-											}
-											catch (Exception ex)
-											{
-												Global.OnError?.Invoke($"Error occurred while registering background workers & schedulers: {ex.Message}", ex);
-											}
 
-										if (this.AllowRegisterBusinessServices)
-										{
-											var svcArgs = this.GetServiceArguments().Replace("/", "/call-");
-											Parallel.ForEach(this.BusinessServices, kvp => this.StartBusinessService(kvp.Key, svcArgs));
-											this.StartTimer(() => this.WatchBusinessServices(), 30);
-										}
-									}
-								}, TaskContinuationOptions.OnlyOnRanToCompletion)
-								.ContinueWith(async _ =>
-								{
-									if (nextAsync != null && this.State == ServiceState.Ready)
-										try
-										{
-											await nextAsync().ConfigureAwait(false);
-										}
-										catch (Exception ex)
-										{
-											Global.OnError?.Invoke($"Error occurred while invoking the next action: {ex.Message}", ex);
-										}
-								}, TaskContinuationOptions.OnlyOnRanToCompletion)
-								.ContinueWith(_ =>
-								{
-									stopwatch.Stop();
-									Global.OnProcess?.Invoke($"The API Gateway Controller is{(this.State == ServiceState.Disconnected ? " re-" : " ")}started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");
-									this.State = ServiceState.Connected;
-								}, TaskContinuationOptions.OnlyOnRanToCompletion)
-								.ContinueWith(async _ =>
-								{
-									if (this.AllowRegisterBusinessServices || this.AllowRegisterHelperServices || this.AllowRegisterHelperTimers)
+									if (this.AllowRegisterBusinessServices)
 									{
-										while (Router.IncomingChannel == null || Router.OutgoingChannel == null)
-											await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
-										await this.SendInterCommunicateMessageAsync("Controller#Info", this.Info.ToJson(), this.CancellationTokenSource.Token).ConfigureAwait(false);
+										var svcArgs = this.GetServiceArguments().Replace("/", "/call-");
+										Parallel.ForEach(this.BusinessServices, kvp => this.StartBusinessService(kvp.Key, svcArgs));
+										this.StartTimer(() => this.WatchBusinessServices(), 30);
 									}
-								}, TaskContinuationOptions.OnlyOnRanToCompletion)
-								.ContinueWith(async _ =>
-								{
-									await Task.Delay(UtilityService.GetRandomNumber(5678, 7890)).ConfigureAwait(false);
-									await Task.WhenAll(
-										this.SendInterCommunicateMessageAsync("Controller#RequestInfo"),
-										this.SendInterCommunicateMessageAsync("Service#RequestInfo")
-									).ConfigureAwait(false);
-								}, TaskContinuationOptions.OnlyOnRanToCompletion)
-								.ConfigureAwait(false);
-							},
-							(sender, arguments) =>
-							{
-								if (this.State == ServiceState.Connected)
-								{
-									stopwatch.Restart();
-									this.State = ServiceState.Disconnected;
 								}
+							}, TaskContinuationOptions.OnlyOnRanToCompletion)
+							.ContinueWith(async _ =>
+							{
+								if (nextAsync != null && this.State == ServiceState.Ready)
+									try
+									{
+										await nextAsync().ConfigureAwait(false);
+									}
+									catch (Exception ex)
+									{
+										Global.OnError?.Invoke($"Error occurred while invoking the next action: {ex.Message}", ex);
+									}
+							}, TaskContinuationOptions.OnlyOnRanToCompletion)
+							.ContinueWith(_ =>
+							{
+								stopwatch.Stop();
+								Global.OnProcess?.Invoke($"The API Gateway Controller is{(this.State == ServiceState.Disconnected ? " re-" : " ")}started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");
+								this.State = ServiceState.Connected;
+							}, TaskContinuationOptions.OnlyOnRanToCompletion)
+							.ContinueWith(async _ =>
+							{
+								if (this.AllowRegisterBusinessServices || this.AllowRegisterHelperServices || this.AllowRegisterHelperTimers)
+								{
+									while (Router.IncomingChannel == null || Router.OutgoingChannel == null)
+										await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
+									await this.SendInterCommunicateMessageAsync("Controller#Info", this.Info.ToJson(), this.CancellationTokenSource.Token).ConfigureAwait(false);
+								}
+							}, TaskContinuationOptions.OnlyOnRanToCompletion)
+							.ContinueWith(async _ =>
+							{
+								await Task.Delay(UtilityService.GetRandomNumber(5678, 7890)).ConfigureAwait(false);
+								await Task.WhenAll(
+									this.SendInterCommunicateMessageAsync("Controller#RequestInfo"),
+									this.SendInterCommunicateMessageAsync("Service#RequestInfo")
+								).ConfigureAwait(false);
+							}, TaskContinuationOptions.OnlyOnRanToCompletion)
+							.ConfigureAwait(false);
+						},
+						(sender, arguments) =>
+						{
+							if (this.State == ServiceState.Connected)
+							{
+								stopwatch.Restart();
+								this.State = ServiceState.Disconnected;
+							}
 
-								if (Router.ChannelsAreClosedBySystem || arguments.CloseType.Equals(SessionCloseType.Goodbye))
-									Global.OnProcess?.Invoke($"The incoming channel is closed - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
-								else if (Router.IncomingChannel != null)
-								{
-									Global.OnProcess?.Invoke($"The incoming channel to API Gateway Router is broken - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
-									Router.IncomingChannel.ReOpen(this.CancellationTokenSource.Token, Global.OnError, "Incoming");
-								}
-							},
-							(sender, arguments) => Global.OnError?.Invoke($"The incoming channel to API Gateway Router got an error: {arguments.Exception?.Message}", arguments.Exception),
-							this.CancellationTokenSource.Token
-						),
-						Router.OpenOutgoingChannelAsync(
-							(sender, arguments) =>
+							if (Router.ChannelsAreClosedBySystem || arguments.CloseType.Equals(SessionCloseType.Goodbye))
+								Global.OnProcess?.Invoke($"The incoming channel is closed - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
+							else if (Router.IncomingChannel != null)
 							{
-								onOutgoingChannelEstablished?.Invoke(sender, arguments);
-								Global.OnProcess?.Invoke($"The outgoing channel is established - Session ID: {arguments.SessionId}");
-								Task.Run(() => Router.OutgoingChannel.UpdateAsync(Router.OutgoingChannelSessionID, "APIGateway", "Outgoing (APIGateway Controller)")).ConfigureAwait(false);
-							},
-							(sender, arguments) =>
+								Global.OnProcess?.Invoke($"The incoming channel to API Gateway Router is broken - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
+								Router.IncomingChannel.ReOpen(this.CancellationTokenSource.Token, Global.OnError, "Incoming");
+							}
+						},
+						(sender, arguments) => Global.OnError?.Invoke($"Got an unexpected error of the incoming channel to API Gateway Router => {arguments.Exception?.Message}", arguments.Exception),
+						(sender, arguments) =>
+						{
+							onOutgoingChannelEstablished?.Invoke(sender, arguments);
+							Global.OnProcess?.Invoke($"The outgoing channel is established - Session ID: {arguments.SessionId}");
+							Task.Run(() => Router.OutgoingChannel.UpdateAsync(Router.OutgoingChannelSessionID, "APIGateway", "Outgoing (APIGateway Controller)")).ConfigureAwait(false);
+						},
+						(sender, arguments) =>
+						{
+							if (Router.ChannelsAreClosedBySystem || arguments.CloseType.Equals(SessionCloseType.Goodbye))
+								Global.OnProcess?.Invoke($"The outgoing channel is closed - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
+							else if (Router.OutgoingChannel != null)
 							{
-								if (Router.ChannelsAreClosedBySystem || arguments.CloseType.Equals(SessionCloseType.Goodbye))
-									Global.OnProcess?.Invoke($"The outgoing channel is closed - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
-								else if (Router.OutgoingChannel != null)
-								{
-									Global.OnProcess?.Invoke($"The outgoing channel to API Gateway Router is broken - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
-									Router.OutgoingChannel.ReOpen(this.CancellationTokenSource.Token, Global.OnError, "Outgoing");
-								}
-							},
-							(sender, arguments) => Global.OnError?.Invoke($"The outgoging channel to API Gateway Router got an error: {arguments.Exception?.Message}", arguments.Exception),
-							this.CancellationTokenSource.Token
-						)
+								Global.OnProcess?.Invoke($"The outgoing channel to API Gateway Router is broken - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
+								Router.OutgoingChannel.ReOpen(this.CancellationTokenSource.Token, Global.OnError, "Outgoing");
+							}
+						},
+						(sender, arguments) => Global.OnError?.Invoke($"Got an unexpected error of the outgoging channel to API Gateway Router => {arguments.Exception?.Message}", arguments.Exception),
+						this.CancellationTokenSource.Token						
 					).ConfigureAwait(false);
 				}
 				catch (Exception ex)
@@ -461,7 +456,7 @@ namespace net.vieapps.Services.APIGateway
 
 			this.RTUService = null;
 			this.State = ServiceState.Disconnected;
-			Router.CloseChannels();
+			Router.Disconnect();
 			Global.OnProcess?.Invoke($"The API Gateway Controller is stopped");
 		}
 		#endregion

@@ -51,7 +51,8 @@ namespace net.vieapps.Services.APIGateway
 			var stopwatch = Stopwatch.StartNew();
 			Console.OutputEncoding = Encoding.UTF8;
 			Global.ServiceName = "APIGateway";
-			AspNetCoreUtilityService.ServerName = Components.WebSockets.WebSocket.AgentName = UtilityService.GetAppSetting("ServerName", "VIEApps NGX");
+			AspNetCoreUtilityService.ServerName = UtilityService.GetAppSetting("ServerName", "VIEApps NGX");
+			Components.WebSockets.WebSocket.AgentName = $"{UtilityService.GetAppSetting("ServerName", "VIEApps NGX")} WebSockets";
 
 			var loggerFactory = appBuilder.ApplicationServices.GetService<ILoggerFactory>();
 			var logPath = UtilityService.GetAppSetting("Path:Logs");

@@ -20,7 +20,7 @@ namespace net.vieapps.Services.APIGateway
 		/// Gets all available business services
 		/// </summary>
 		/// <returns></returns>
-		[WampProcedure("net.vieapps.apigateway.controller.{0}.get.available.business.services")]
+		[WampProcedure("services.apigateway.controller.{0}.get.available.business.services")]
 		Dictionary<string, string> GetAvailableBusinessServices();
 
 		/// <summary>
@@ -28,7 +28,7 @@ namespace net.vieapps.Services.APIGateway
 		/// </summary>
 		/// <param name="name"></param>
 		/// <returns></returns>
-		[WampProcedure("net.vieapps.apigateway.controller.{0}.is.business.service.available")]
+		[WampProcedure("services.apigateway.controller.{0}.is.business.service.available")]
 		bool IsBusinessServiceAvailable(string name);
 
 		/// <summary>
@@ -36,7 +36,7 @@ namespace net.vieapps.Services.APIGateway
 		/// </summary>
 		/// <param name="name"></param>
 		/// <returns></returns>
-		[WampProcedure("net.vieapps.apigateway.controller.{0}.is.business.service.running")]
+		[WampProcedure("services.apigateway.controller.{0}.is.business.service.running")]
 		bool IsBusinessServiceRunning(string name);
 
 		/// <summary>
@@ -44,14 +44,14 @@ namespace net.vieapps.Services.APIGateway
 		/// </summary>
 		/// <param name="name"></param>
 		/// <param name="arguments"></param>
-		[WampProcedure("net.vieapps.apigateway.controller.{0}.start.business.service")]
+		[WampProcedure("services.apigateway.controller.{0}.start.business.service")]
 		void StartBusinessService(string name, string arguments = null);
 
 		/// <summary>
 		/// Stops a business service
 		/// </summary>
 		/// <param name="name"></param>
-		[WampProcedure("net.vieapps.apigateway.controller.{0}.stop.business.service")]
+		[WampProcedure("services.apigateway.controller.{0}.stop.business.service")]
 		void StopBusinessService(string name);
 	}
 
@@ -66,14 +66,14 @@ namespace net.vieapps.Services.APIGateway
 		/// Gets all available service controllers
 		/// </summary>
 		/// <returns></returns>
-		[WampProcedure("net.vieapps.apigateway.manager.get.available.controllers")]
+		[WampProcedure("services.apigateway.manager.get.available.controllers")]
 		JArray GetAvailableControllers();
 
 		/// <summary>
 		/// Gets all available business services
 		/// </summary>
 		/// <returns></returns>
-		[WampProcedure("net.vieapps.apigateway.manager.get.available.services")]
+		[WampProcedure("services.apigateway.manager.get.available.services")]
 		JArray GetAvailableServices();
 	}
 
@@ -154,6 +154,5 @@ namespace net.vieapps.Services.APIGateway
 		static string _StatusPath = null;
 
 		internal static string StatusPath => Global._StatusPath ?? (Global._StatusPath = Global.GetPath("Path:Status", "status"));
-
 	}
 }

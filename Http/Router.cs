@@ -34,8 +34,6 @@ namespace net.vieapps.Services.APIGateway
 			Global.Connect(
 				(sender, arguments) =>
 				{
-					Services.Router.IncomingChannel.Update(arguments.SessionId, Global.ServiceName, $"Incoming ({Global.ServiceName} HTTP service)");
-					Global.Logger.LogInformation($"The incoming channel to API Gateway Router is established - Session ID: {arguments.SessionId}");
 					Global.PrimaryInterCommunicateMessageUpdater?.Dispose();
 					Global.PrimaryInterCommunicateMessageUpdater = Services.Router.IncomingChannel.RealmProxy.Services
 						.GetSubject<CommunicateMessage>("messages.services.apigateway")
@@ -54,43 +52,25 @@ namespace net.vieapps.Services.APIGateway
 							async exception => await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"Error occurred while fetching an inter-communicating message => {exception.Message}", exception).ConfigureAwait(false)
 						);
 				},
-				(sender, arguments) =>
+				(sender, arguments) => Task.Run(async () =>
 				{
-					Services.Router.OutgoingChannel.Update(arguments.SessionId, Global.ServiceName, $"Outgoing ({Global.ServiceName} HTTP service)");
-					Global.Logger.LogInformation($"The outgoing channel to API Gateway Router is established - Session ID: {arguments.SessionId}");
-					Task.Run(async () =>
-					{
-						try
+					await Task.WhenAll(
+						Global.RegisterServiceAsync("Http.InternalAPIs"),
+						Task.Delay(UtilityService.GetRandomNumber(234, 567), Global.CancellationTokenSource.Token)
+					).ConfigureAwait(false);
+					while (Services.Router.IncomingChannel == null)
+						await Task.Delay(UtilityService.GetRandomNumber(234, 567), Global.CancellationTokenSource.Token).ConfigureAwait(false);
+					await Task.WhenAll(
+						new CommunicateMessage("APIGateway")
 						{
-							await Task.WhenAll(
-								Global.InitializeLoggingServiceAsync(),
-								Global.InitializeRTUServiceAsync()
-							).ConfigureAwait(false);
-							Global.Logger.LogInformation("Helper services are succesfully initialized");
-						}
-						catch (Exception ex)
+							Type = "Controller#RequestInfo"
+						}.PublishAsync(Global.Logger, "Http.InternalAPIs"),
+						new CommunicateMessage("APIGateway")
 						{
-							Global.Logger.LogError($"Error occurred while initializing helper services: {ex.Message}", ex);
-						}
-					})
-					.ContinueWith(async _ =>
-					{
-						while (Services.Router.IncomingChannel == null || Services.Router.OutgoingChannel == null)
-							await Task.Delay(UtilityService.GetRandomNumber(234, 567), Global.CancellationTokenSource.Token).ConfigureAwait(false);
-						await Task.WhenAll(
-							Global.RegisterServiceAsync("Http.InternalAPIs"),
-							new CommunicateMessage("APIGateway")
-							{
-								Type = "Controller#RequestInfo"
-							}.PublishAsync(Global.Logger, "Http.InternalAPIs"),
-							new CommunicateMessage("APIGateway")
-							{
-								Type = "Service#RequestInfo"
-							}.PublishAsync(Global.Logger, "Http.InternalAPIs")
-						).ConfigureAwait(false);
-					}, TaskContinuationOptions.OnlyOnRanToCompletion)
-					.ConfigureAwait(false);
-				},
+							Type = "Service#RequestInfo"
+						}.PublishAsync(Global.Logger, "Http.InternalAPIs")
+					).ConfigureAwait(false);
+				}).ConfigureAwait(false),
 				waitingTimes,
 				exception => Global.Logger.LogError($"Cannot connect to API Gateway Router in period of times => {exception.Message}", exception),
 				exception => Global.Logger.LogError($"Error occurred while connecting to API Gateway Router => {exception.Message}", exception)

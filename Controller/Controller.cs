@@ -29,7 +29,7 @@ namespace net.vieapps.Services.APIGateway
 		/// <summary>
 		/// Creates new instance of services controller
 		/// </summary>
-		/// <param name="cancellationToken"></param>
+		/// <param name="cancellationToken">The cancellation token</param>
 		public Controller(CancellationToken cancellationToken = default(CancellationToken))
 		{
 			this.CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -444,7 +444,7 @@ namespace net.vieapps.Services.APIGateway
 			WebHookSender.SaveMessages();
 
 			this.Timers.ForEach(timer => timer.Dispose());
-			this.Tasks.Values.ForEach(serviceInfo => ExternalProcess.Stop(serviceInfo.Instance));
+			this.Tasks.Values.ForEach(serviceInfo => ExternalProcess.Stop(serviceInfo.Instance, null, null, 1234));
 			this.BusinessServices.Keys.ForEach(name => this.StopBusinessService(name));
 
 			this.InterCommunicator?.Dispose();
@@ -468,7 +468,7 @@ namespace net.vieapps.Services.APIGateway
 		/// <param name="name"></param>
 		/// <returns></returns>
 		public ProcessInfo GetServiceProcessInfo(string name)
-			=> !string.IsNullOrWhiteSpace(name) && this.BusinessServices.TryGetValue(name.ToArray('.').Last().ToLower(), out ProcessInfo info) ? info : null;
+			=> !string.IsNullOrWhiteSpace(name) && this.BusinessServices.TryGetValue(name.ToArray('.').Last().ToLower(), out var processInfo) ? processInfo : null;
 
 		/// <summary>
 		/// Gets the collection of available businness services
@@ -536,7 +536,6 @@ namespace net.vieapps.Services.APIGateway
 
 			var re = "Running".IsEquals(this.BusinessServices[name].Get<string>("State")) ? "re-" : "";
 			Global.OnProcess?.Invoke($"[{name}] => The service is {re}starting");
-			var serviceArguments = $"/svc:{this.BusinessServices[name].Arguments} /agc:r {this.GetServiceArguments().Replace("/", "/run-")} {arguments ?? ""}".Trim();
 
 			try
 			{
@@ -546,12 +545,11 @@ namespace net.vieapps.Services.APIGateway
 
 				this.BusinessServices[name].Instance = ExternalProcess.Start(
 					serviceHosting,
-					serviceArguments,
+					$"/svc:{this.BusinessServices[name].Arguments} /agc:r {this.GetServiceArguments().Replace("/", "/run-")} {arguments ?? ""} /controller-id:{this.Info.ID}".Trim(),
 					(sender, args) =>
 					{
 						this.BusinessServices[name].Instance = null;
-						Global.OnServiceStopped?.Invoke(name, $"The sevice is stopped{("Error".IsEquals(this.BusinessServices[name].Get<string>("State")) ? $" ({this.BusinessServices[name].Get<string>("Error")})" : ("Stopped".IsEquals(this.BusinessServices[name].Get<string>("State")) ? "" : " (unexpected)"))}");
-						Task.Run(() => this.SendServiceInfoAsync(name, false, serviceArguments)).ConfigureAwait(false);
+						Global.OnServiceStopped?.Invoke(name, $"The sevice is stopped{("Error".IsEquals(this.BusinessServices[name].Get<string>("State")) ? $" ({this.BusinessServices[name].Get<string>("Error")})" : "")}");
 					},
 					(sender, args) =>
 					{
@@ -581,22 +579,6 @@ namespace net.vieapps.Services.APIGateway
 					{ "Error", ex.Message },
 					{ "ErrorStack", ex.StackTrace }
 				});
-			}
-			finally
-			{
-				Task.Run(async () =>
-				{
-					await Task.Delay(UtilityService.GetRandomNumber(1234, 2345)).ConfigureAwait(false);
-					if (this.IsBusinessServiceRunning(name))
-						await Task.WhenAll(
-							this.SendServiceInfoAsync(name, true, serviceArguments),
-							this.SendInterCommunicateMessageAsync($"Service#UniqueInfo#{name}", new JObject
-							{
-								{ "OSPlatform", Extensions.GetRuntimeOS() },
-								{ "Name", $"{Extensions.GetUniqueName(name, serviceArguments.ToArray(' '))}" }
-							})
-						).ConfigureAwait(false);
-				}).ConfigureAwait(false);
 			}
 		}
 
@@ -637,6 +619,7 @@ namespace net.vieapps.Services.APIGateway
 						{ "Error", ex.Message },
 						{ "ErrorStack", ex.StackTrace }
 					});
+					Task.Run(() => this.SendServiceInfoAsync(name, processInfo.Instance?.Arguments, false, false)).ConfigureAwait(false);
 				}
 			else
 				ExternalProcess.Stop(
@@ -651,7 +634,9 @@ namespace net.vieapps.Services.APIGateway
 							{ "Error", ex.Message },
 							{ "ErrorStack", ex.StackTrace }
 						});
-					}
+						Task.Run(() => this.SendServiceInfoAsync(name, processInfo.Instance?.Arguments, false, false)).ConfigureAwait(false);
+					},
+					1234
 				);
 		}
 
@@ -1182,14 +1167,15 @@ namespace net.vieapps.Services.APIGateway
 				case "Service#RequestInfo":
 					if (this.AllowRegisterBusinessServices)
 					{
-						var svcArgs = this.GetServiceArguments().Replace("/", "/call-").ToArray(' ');
+						var args = this.GetServiceArguments().Replace("/", "/call-").ToArray(' ');
 						var osPlatform = Extensions.GetRuntimeOS();
-						await Task.WhenAll(this.AvailableBusinessServices.Select(kvp => this.SendServiceInfoAsync(kvp.Key, kvp.Value.Instance != null, kvp.Value.Instance?.Arguments))
+						await Task.WhenAll(this.AvailableBusinessServices.Select(kvp => this.SendServiceInfoAsync(kvp.Key, kvp.Value.Instance?.Arguments, "Error".IsEquals(this.BusinessServices[kvp.Key]?.Get<string>("State")) ? false : true, kvp.Value.Instance != null))
 							.Concat(this.BusinessServices.Select(kvp => this.SendInterCommunicateMessageAsync($"Service#UniqueInfo#{kvp.Key}", new JObject
 							{
 								{ "OSPlatform", osPlatform },
-								{ "Name", Extensions.GetUniqueName(kvp.Key, svcArgs) }
-							})))).ConfigureAwait(false);
+								{ "Name", Extensions.GetUniqueName(kvp.Key, args) }
+							})))
+						).ConfigureAwait(false);
 					}
 					break;
 
@@ -1215,43 +1201,40 @@ namespace net.vieapps.Services.APIGateway
 
 			try
 			{
-				await this.RTUService.SendInterCommunicateMessageAsync(new CommunicateMessage
+				await this.RTUService.SendInterCommunicateMessageAsync(new CommunicateMessage("APIGateway")
 				{
-					ServiceName = "APIGateway",
 					Type = type,
 					Data = data ?? new JObject()
 				}, cancellationToken).ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
-				Global.OnError?.Invoke($"Cannot send a communicate message => {ex.Message}", ex);
+				Global.OnError?.Invoke($"Cannot send an inter-communicate message => {ex.Message}", ex);
 			}
 		}
 
-		async Task SendServiceInfoAsync(string name, bool state, string arguments)
+		Task SendServiceInfoAsync(string name, string args, bool available, bool running)
 		{
-			var svcArgs = arguments?.ToArray(' ') ?? new string[] { };
-
-			var invokeInfo = svcArgs.FirstOrDefault(a => a.IsStartsWith("/call-user:")) ?? "";
+			var arguments = (args?.ToArray(' ') ?? new string[] { }).Where(arg => !arg.IsStartsWith("/controller-id:")).ToArray();
+			var invokeInfo = arguments.FirstOrDefault(a => a.IsStartsWith("/call-user:")) ?? "";
 			if (!string.IsNullOrWhiteSpace(invokeInfo))
 			{
 				invokeInfo = invokeInfo.Replace(StringComparison.OrdinalIgnoreCase, "/call-user:", "").UrlDecode();
-				var host = svcArgs.FirstOrDefault(a => a.IsStartsWith("/call-host:"));
-				var platform = svcArgs.FirstOrDefault(a => a.IsStartsWith("/call-platform:"));
-				var os = svcArgs.FirstOrDefault(a => a.IsStartsWith("/call-os:"));
+				var host = arguments.FirstOrDefault(a => a.IsStartsWith("/call-host:"));
+				var platform = arguments.FirstOrDefault(a => a.IsStartsWith("/call-platform:"));
+				var os = arguments.FirstOrDefault(a => a.IsStartsWith("/call-os:"));
 				if (!string.IsNullOrWhiteSpace(host) && !string.IsNullOrWhiteSpace(platform) && !string.IsNullOrWhiteSpace(os))
 					invokeInfo += $" [Host: {host.Replace(StringComparison.OrdinalIgnoreCase, "/call-host:", "").UrlDecode()} - Platform: {platform.Replace(StringComparison.OrdinalIgnoreCase, "/call-platform:", "").UrlDecode()} @ {os.Replace(StringComparison.OrdinalIgnoreCase, "/call-os:", "").UrlDecode()}]";
 			}
-
-			await this.SendInterCommunicateMessageAsync("Service#Info", new ServiceInfo
+			return this.SendInterCommunicateMessageAsync("Service#Info", new ServiceInfo
 			{
 				Name = name,
-				UniqueName = Extensions.GetUniqueName(name, svcArgs),
+				UniqueName = Extensions.GetUniqueName(name, arguments),
 				ControllerID = this.Info.ID,
 				InvokeInfo = invokeInfo,
-				Available = true,
-				Running = state
-			}.ToJson()).ConfigureAwait(false);
+				Available = available,
+				Running = running
+			}.ToJson());
 		}
 		#endregion
 

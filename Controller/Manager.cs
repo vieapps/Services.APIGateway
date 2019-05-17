@@ -21,33 +21,35 @@ namespace net.vieapps.Services.APIGateway
 		/// </summary>
 		public Manager()
 		{
-			this.OnIncomingChannelEstablished = (sender, args) => Task.Run(async () =>
-			{
-				if (this.Instance != null)
-					await this.Instance.DisposeAsync().ConfigureAwait(false);
-				this.Instance = await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(this, RegistrationInterceptor.Create()).ConfigureAwait(false);
-			})
-			.ContinueWith(_ =>
-			{
-				this.Communicator?.Dispose();
-				this.Communicator = Router.IncomingChannel.RealmProxy.Services
-					.GetSubject<CommunicateMessage>("messages.services.apigateway")
-					.Subscribe(
-						message => this.ProcessInterCommunicateMessage(message),
-						exception => Global.OnError?.Invoke($"Error occurred while fetching inter-communicate message: {exception.Message}", exception)
-					);
-			}, TaskContinuationOptions.OnlyOnRanToCompletion)
-			.ConfigureAwait(false);
+			this.OnIncomingChannelEstablished = (sender, args)
+				=> Task.Run(async () =>
+				{
+					if (this.Instance != null)
+						await this.Instance.DisposeAsync().ConfigureAwait(false);
+					this.Instance = await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(this, RegistrationInterceptor.Create()).ConfigureAwait(false);
+				})
+				.ContinueWith(_ =>
+				{
+					this.Communicator?.Dispose();
+					this.Communicator = Router.IncomingChannel.RealmProxy.Services
+						.GetSubject<CommunicateMessage>("messages.services.apigateway")
+						.Subscribe(
+							message => this.ProcessInterCommunicateMessage(message),
+							exception => Global.OnError?.Invoke($"Error occurred while fetching inter-communicate message: {exception.Message}", exception)
+						);
+				}, TaskContinuationOptions.OnlyOnRanToCompletion)
+				.ConfigureAwait(false);
 
-			this.OnOutgoingChannelEstablished = (sender, args) =>Task.Run(() => this.RTUService = Router.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create()))
-			.ContinueWith(async _ =>
-			{
-				await this.SendRequestInfoAsync().ConfigureAwait(false);
-				Global.OnProcess?.Invoke($"Successfully subscribe the manager's communicator");
-			}, TaskContinuationOptions.OnlyOnRanToCompletion)
-			.ConfigureAwait(false);
+			this.OnOutgoingChannelEstablished = (sender, args)
+				=>Task.Run(() => this.RTUService = Router.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create()))
+				.ContinueWith(async _ =>
+				{
+					await this.SendRequestInfoAsync().ConfigureAwait(false);
+					Global.OnProcess?.Invoke($"Successfully subscribe the manager's communicator");
+				}, TaskContinuationOptions.OnlyOnRanToCompletion)
+				.ConfigureAwait(false);
 
-			this.RequestInterval = UtilityService.GetAppSetting("RequestTimer:Interval", "15").CastAs<int>();
+			this.RequestInterval = Int32.TryParse(UtilityService.GetAppSetting("RequestTimer:Interval"), out var requestInterval) ? requestInterval : 15;
 			this.RequestTimer = Observable.Timer(TimeSpan.FromMinutes(this.RequestInterval), TimeSpan.FromMinutes(this.RequestInterval)).Subscribe(_ => Task.Run(async () =>
 			{
 				if ((DateTime.Now - this.RequestTime).TotalMinutes >= this.RequestInterval - 2)
@@ -57,27 +59,6 @@ namespace net.vieapps.Services.APIGateway
 				}
 			}).ConfigureAwait(false));
 		}
-
-		public void Dispose()
-		{
-			if (!this.Disposed)
-			{
-				this.Disposed = true;
-				Task.Run(async () =>
-				{
-					if (this.Instance != null)
-						await this.Instance.DisposeAsync().ConfigureAwait(false);
-				})
-				.ContinueWith(_ =>
-				{
-					this.Communicator?.Dispose();
-					this.RequestTimer?.Dispose();
-				}, TaskContinuationOptions.OnlyOnRanToCompletion)
-				.ConfigureAwait(false);
-			}
-		}
-
-		~Manager() => this.Dispose();
 
 		#region Properties
 		ConcurrentDictionary<string, ControllerInfo> Controllers { get; } = new ConcurrentDictionary<string, ControllerInfo>();
@@ -286,36 +267,26 @@ namespace net.vieapps.Services.APIGateway
 
 		Task SendRequestInfoAsync()
 			=> Task.WhenAll(this.SendInterCommunicateMessageAsync("Controller#RequestInfo"), this.SendInterCommunicateMessageAsync("Service#RequestInfo"));
-	}
 
-	// ------------------------------------------------------------
+		public void Dispose()
+		{
+			if (!this.Disposed)
+			{
+				this.Disposed = true;
+				Task.Run(async () =>
+				{
+					if (this.Instance != null)
+						await this.Instance.DisposeAsync().ConfigureAwait(false);
+				})
+				.ContinueWith(_ =>
+				{
+					this.Communicator?.Dispose();
+					this.RequestTimer?.Dispose();
+				}, TaskContinuationOptions.OnlyOnRanToCompletion)
+				.ConfigureAwait(false);
+			}
+		}
 
-	[Serializable]
-	public class ControllerInfo
-	{
-		public ControllerInfo() { }
-		public string ID { get; set; }
-		public string User { get; set; }
-		public string Host { get; set; }
-		public string Platform { get; set; }
-		public string Mode { get; set; }
-		public bool Available { get; set; } = false;
-		public DateTime Timestamp { get; set; } = DateTime.Now;
-		public Dictionary<string, string> Extra { get; set; }
-	}
-
-	// ------------------------------------------------------------
-
-	[Serializable]
-	public class ServiceInfo
-	{
-		public ServiceInfo() { }
-		public string Name { get; set; }
-		public string UniqueName { get; set; }
-		public string ControllerID { get; set; }
-		public string InvokeInfo { get; set; }
-		public DateTime Timestamp { get; set; } = DateTime.Now;
-		public bool Available { get; set; } = false;
-		public bool Running { get; set; } = false;
+		~Manager() => this.Dispose();
 	}
 }

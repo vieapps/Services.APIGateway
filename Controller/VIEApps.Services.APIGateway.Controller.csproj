@@ -10,9 +10,9 @@
 		<Company>VIEApps.net</Company>
 		<Product>VIEApps NGX</Product>
 		<Copyright>© 2019 VIEApps.net</Copyright>
-		<AssemblyVersion>10.2.1905.1</AssemblyVersion>
-		<FileVersion>10.2.1905.1</FileVersion>
-		<InformationalVersion>v10.2.netstandard-2+rev:2019.05.16-router</InformationalVersion>
+		<AssemblyVersion>10.2.1905.2</AssemblyVersion>
+		<FileVersion>10.2.1905.2</FileVersion>
+		<InformationalVersion>v10.2.netstandard-2+rev:2019.05.17-meta</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>

@@ -205,7 +205,7 @@ namespace net.vieapps.Services.APIGateway
 			void stop()
 			{
 				stopped = true;
-				serviceComponent.Stop();
+				serviceComponent.Stop(args);
 				serviceComponent.Dispose();
 			}
 
@@ -233,6 +233,7 @@ namespace net.vieapps.Services.APIGateway
 			logger.LogInformation($"Version: {this.ServiceType.Assembly.GetVersion()}");
 			logger.LogInformation($"Mode: {(isUserInteractive ? "Interactive app" : "Background service")}");
 			logger.LogInformation($"Platform: {Extensions.GetRuntimePlatform()}");
+			logger.LogInformation($"Starting arguments: {(args != null && args.Length > 0 ? args.Join(" ") : "None")}");
 
 			ServiceBase.ServiceComponent = serviceComponent as ServiceBase;
 			try

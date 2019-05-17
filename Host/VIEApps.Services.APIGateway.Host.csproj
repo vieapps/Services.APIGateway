@@ -12,7 +12,7 @@
 		<Copyright>© 2019 VIEApps.net</Copyright>
 		<AssemblyVersion>10.2.1905.2</AssemblyVersion>
 		<FileVersion>10.2.1905.2</FileVersion>
-		<InformationalVersion>v10.2+rev:2019.05.07-packages</InformationalVersion>
+		<InformationalVersion>v10.2+rev:2019.05.17-args</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>

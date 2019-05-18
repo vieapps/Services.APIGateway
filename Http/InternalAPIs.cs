@@ -23,12 +23,16 @@ namespace net.vieapps.Services.APIGateway
 
 		#region Properties
 		public static ICache Cache { get; set; }
+
 		public static ILogger Logger { get; set; }
+
 		public static List<string> ExcludedHeaders { get; } = UtilityService.GetAppSetting("ExcludedHeaders", "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,ms-aspnetcore-token,x-forwarded-for,x-forwarded-proto,x-forwarded-port,x-original-for,x-original-proto,x-original-remote-endpoint,x-original-port,cdn-loop,cf-ipcountry,cf-ray,cf-visitor,cf-connecting-ip").ToList();
+
 		public static HashSet<string> NoTokenRequiredServices { get; } = $"{UtilityService.GetAppSetting("NoTokenRequiredServices", "")}|indexes|discovery|webhooks".ToLower().ToHashSet('|', true);
+
 		public static ConcurrentDictionary<string, JObject> Controllers { get; } = new ConcurrentDictionary<string, JObject>();
+
 		public static ConcurrentDictionary<string, List<JObject>> Services { get; } = new ConcurrentDictionary<string, List<JObject>>();
-		public static ConcurrentHashSet<string> Sessions { get; } = new ConcurrentHashSet<string>();
 		#endregion
 
 		public static async Task ProcessRequestAsync(HttpContext context)
@@ -107,8 +111,16 @@ namespace net.vieapps.Services.APIGateway
 					throw new InvalidSessionException("Session is invalid (Token is not found)");
 
 				// check existed of session
-				if (tokenIsRequired && !await context.CheckSessionExistAsync(requestInfo.Session, InternalAPIs.Logger, "Http.InternalAPIs", requestInfo.CorrelationID).ConfigureAwait(false))
-					throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
+				if (tokenIsRequired)
+				{
+					if (requestInfo.Query.TryGetValue("register", out var registered))
+					{
+						if (!registered.IsEquals(await InternalAPIs.Cache.GetAsync<string>($"Session#{requestInfo.Session.SessionID}").ConfigureAwait(false)))
+							throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
+					}
+					else if (!await context.IsSessionExistAsync(requestInfo.Session, InternalAPIs.Logger, "Http.InternalAPIs", requestInfo.CorrelationID).ConfigureAwait(false))
+						throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
+				}
 			}
 			catch (Exception ex)
 			{
@@ -256,35 +268,9 @@ namespace net.vieapps.Services.APIGateway
 				}
 		}
 
-		#region Check existing of a session
-		public static async Task<bool> CheckSessionExistAsync(this HttpContext context, Session session, ILogger logger = null, string objectName = null, string correlationID = null)
-		{
-			if (string.IsNullOrWhiteSpace(session?.SessionID))
-				return false;
-			else if (InternalAPIs.Sessions.Contains(session.SessionID))
-				return true;
-			else
-			{
-				var sessionID = string.IsNullOrWhiteSpace(session?.User?.ID)
-					? await InternalAPIs.Cache.GetAsync<string>($"Session#{session.SessionID}", Global.CancellationTokenSource.Token).ConfigureAwait(false)
-					: null;
-				if (!string.IsNullOrWhiteSpace(sessionID))
-					return sessionID.Equals(session.GetEncryptedID());
-				var existed = await context.IsSessionExistAsync(session, logger ?? InternalAPIs.Logger, objectName ?? "Http.InternalAPIs", correlationID).ConfigureAwait(false);
-				if (existed)
-					InternalAPIs.Sessions.Add(session.SessionID);
-				return existed;
-			}
-		}
-
-		public static Task<bool> CheckSessionExistAsync(this Session session, ILogger logger = null, string objectName = null, string correlationID = null)
-			=> InternalAPIs.CheckSessionExistAsync(Global.CurrentHttpContext, session, logger, objectName, correlationID);
-		#endregion
-
 		#region Send state message of a session
 		public static async Task SendSessionStateAsync(this Session session, bool isOnline, string correlationID = null)
-		{
-			await new UpdateMessage
+			=> await new UpdateMessage
 			{
 				Type = "Users#Session#State",
 				DeviceID = "*",
@@ -299,9 +285,6 @@ namespace net.vieapps.Services.APIGateway
 					{ "IsOnline", isOnline }
 				}
 			}.PublishAsync(RTU.Logger, "Http.InternalAPIs").ConfigureAwait(false);
-			if (!isOnline)
-				InternalAPIs.Sessions.TryRemove(session.SessionID);
-		}
 		#endregion
 
 		#region Create/Renew a session
@@ -333,9 +316,6 @@ namespace net.vieapps.Services.APIGateway
 				},
 				CorrelationID = requestInfo.CorrelationID
 			}, Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
-
-			// update into the collection of session
-			InternalAPIs.Sessions.Add(requestInfo.Session.SessionID);
 
 			// update session state
 			if (sendSessionState)

@@ -85,7 +85,7 @@ namespace net.vieapps.Services.APIGateway
 
 				// verify client credential
 				await Global.UpdateWithAuthenticateTokenAsync(session, appToken, null, null, null, RTU.Logger, "Http.InternalAPIs", correlationID).ConfigureAwait(false);
-				if (!await session.CheckSessionExistAsync(RTU.Logger, "Http.InternalAPIs", correlationID).ConfigureAwait(false))
+				if (!await session.IsSessionExistAsync(RTU.Logger, "Http.InternalAPIs", correlationID).ConfigureAwait(false))
 					throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 
 				websocket.Set("Token", JSONWebToken.DecodeAsJson(appToken, Global.JWTKey));
@@ -179,7 +179,7 @@ namespace net.vieapps.Services.APIGateway
 									var authenticateToken = message.Data.Get<string>("AuthenticateToken");
 									var encryptedSessionID = message.Data.Get<string>("EncryptedID");
 									await Global.UpdateWithAuthenticateTokenAsync(session, authenticateToken, null, null, null, RTU.Logger, "Http.InternalAPIs", correlationID).ConfigureAwait(false);
-									if (!await session.CheckSessionExistAsync(RTU.Logger, "Http.InternalAPIs", correlationID).ConfigureAwait(false))
+									if (!await session.IsSessionExistAsync(RTU.Logger, "Http.InternalAPIs", correlationID).ConfigureAwait(false))
 										throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 									else if (!session.SessionID.Equals(session.GetDecryptedID(encryptedSessionID, Global.EncryptionKey, Global.ValidationKey)))
 										throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");

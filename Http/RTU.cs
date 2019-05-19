@@ -96,7 +96,7 @@ namespace net.vieapps.Services.APIGateway
 					? ex
 					: new InvalidRequestException($"Request is invalid => {ex.Message}", ex);
 				var additionalMsg = $"Credential error => {ex.Message}\r\n- Query String:\r\n\t{query.Select(kvp => $"{kvp.Key}: {kvp.Value}").Join("\r\n\t")}\r\n- Headers:\r\n\t{websocket.Headers.Select(kvp => $"{kvp.Key}: {kvp.Value}").Join("\r\n\t")}";
-				await websocket.SendAsync(exception, null, correlationID, null, additionalMsg, "Http.WebSockets.Errors").ConfigureAwait(false);
+				await websocket.SendAsync(exception, null, correlationID, null, additionalMsg).ConfigureAwait(false);
 				await RTU.WebSocket.CloseWebSocketAsync(websocket, WebSocketCloseStatus.InvalidPayloadData, ex is InvalidRequestException ? ex.Message : $"Request is invalid => {ex.Message}").ConfigureAwait(false);
 				return;
 			}
@@ -254,7 +254,7 @@ namespace net.vieapps.Services.APIGateway
 			// update the state
 			websocket.Set("State", headers.ContainsKey("x-app-token") ? "Verified" : "Connected");
 			if (Global.IsVisitLogEnabled)
-				await Global.WriteLogsAsync(RTU.Logger, "Http.WebSockets.Visits", $"The real-time updater (RTU) of a subscriber's device is started" + "\r\n" + websocket.GetConnectionInfo(session) + "\r\n" + $"- State: {websocket.Get<string>("State")}", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
+				await Global.WriteLogsAsync(RTU.Logger, "Http.Visits.WebSockets", $"The real-time updater (RTU) of a subscriber's device is started" + "\r\n" + websocket.GetConnectionInfo(session) + "\r\n" + $"- State: {websocket.Get<string>("State")}", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
 		}
 
 		static async Task WhenConnectionIsBrokenAsync(this ManagedWebSocket websocket)
@@ -272,7 +272,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					await Global.WriteLogsAsync(RTU.Logger, "Http.WebSockets.Errors", $"Error occurred while disposing updater: {session?.ToJson()?.ToString(Global.IsDebugResultsEnabled ? Formatting.Indented : Formatting.None)}", ex, Global.ServiceName, LogLevel.Error, correlationID).ConfigureAwait(false);
+					await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"Error occurred while disposing updater: {session?.ToJson()?.ToString(Global.IsDebugResultsEnabled ? Formatting.Indented : Formatting.None)}", ex, Global.ServiceName, LogLevel.Error, correlationID).ConfigureAwait(false);
 				}
 
 			// remove the communicator
@@ -283,13 +283,13 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					await Global.WriteLogsAsync(RTU.Logger, "Http.WebSockets.Errors", $"Error occurred while disposing communicator: {session?.ToJson()?.ToString(Global.IsDebugResultsEnabled ? Formatting.Indented : Formatting.None)}", ex, Global.ServiceName, LogLevel.Error, correlationID).ConfigureAwait(false);
+					await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"Error occurred while disposing communicator: {session?.ToJson()?.ToString(Global.IsDebugResultsEnabled ? Formatting.Indented : Formatting.None)}", ex, Global.ServiceName, LogLevel.Error, correlationID).ConfigureAwait(false);
 				}
 
 			// update the session state
 			await Task.WhenAll(
 				session != null ? session.SendSessionStateAsync(false, correlationID) : Task.CompletedTask,
-				Global.IsVisitLogEnabled ? Global.WriteLogsAsync(RTU.Logger, "Http.WebSockets.Visits", $"The real-time updater (RTU) of a subscriber's device is stopped" + "\r\n" + websocket.GetConnectionInfo(session) + "\r\n" + $"- Served times: {websocket.Timestamp.GetElapsedTimes()}", null, Global.ServiceName, LogLevel.Information, correlationID) : Task.CompletedTask
+				Global.IsVisitLogEnabled ? Global.WriteLogsAsync(RTU.Logger, "Http.Visits.WebSockets", $"The real-time updater (RTU) of a subscriber's device is stopped" + "\r\n" + websocket.GetConnectionInfo(session) + "\r\n" + $"- Served times: {websocket.Timestamp.GetElapsedTimes()}", null, Global.ServiceName, LogLevel.Information, correlationID) : Task.CompletedTask
 			).ConfigureAwait(false);
 		}
 
@@ -313,7 +313,7 @@ namespace net.vieapps.Services.APIGateway
 			if (session == null)
 			{
 				await Task.WhenAll(
-					Global.WriteLogsAsync(RTU.Logger, "Http.WebSockets.Errors", $"No session is attached - Request: {requestMsg}", null, Global.ServiceName, LogLevel.Critical, correlationID),
+					Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"No session is attached - Request: {requestMsg}", null, Global.ServiceName, LogLevel.Critical, correlationID),
 					RTU.WebSocket.CloseWebSocketAsync(websocket, WebSocketCloseStatus.PolicyViolation, "No session")
 				).ConfigureAwait(false);
 				return;
@@ -336,7 +336,7 @@ namespace net.vieapps.Services.APIGateway
 			var extra = new Dictionary<string, string>(requestObj.Get("Extra", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase);
 
 			if (Global.IsVisitLogEnabled)
-				await Global.WriteLogsAsync(RTU.Logger, "Http.WebSockets.Visits", $"Request starting {verb} " + $"/{serviceName}{(string.IsNullOrWhiteSpace(objectName) ? "" : "/" + objectName)}{(string.IsNullOrWhiteSpace(objectIdentity) ? "" : "/" + objectIdentity)}".ToLower() + (query.TryGetValue("x-request",out string xrequest) ? $"?x-request={xrequest}" : "") + $" HTTPWS/1.1", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
+				await Global.WriteLogsAsync(RTU.Logger, "Http.Visits.WebSockets", $"Request starting {verb} " + $"/{serviceName}{(string.IsNullOrWhiteSpace(objectName) ? "" : "/" + objectName)}{(string.IsNullOrWhiteSpace(objectIdentity) ? "" : "/" + objectIdentity)}".ToLower() + (query.TryGetValue("x-request",out string xrequest) ? $"?x-request={xrequest}" : "") + $" HTTPWS/1.1", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
 
 			// working with sessions
 			if ("session".IsEquals(serviceName))
@@ -480,10 +480,10 @@ namespace net.vieapps.Services.APIGateway
 
 			stopwatch.Stop();
 			if (Global.IsVisitLogEnabled)
-				await Global.WriteLogsAsync(RTU.Logger, "Http.WebSockets.Visits", $"Request finished in {stopwatch.GetElapsedTimes()}", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
+				await Global.WriteLogsAsync(RTU.Logger, "Http.Visits.WebSockets", $"Request finished in {stopwatch.GetElapsedTimes()}", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
 		}
 
-		static async Task SendAsync(this ManagedWebSocket websocket, Exception exception, string msg = null, string correlationID = null, string identity = null, string additionalMsg = null, string objectName = null)
+		static async Task SendAsync(this ManagedWebSocket websocket, Exception exception, string msg = null, string correlationID = null, string identity = null, string additionalMsg = null)
 		{
 			// prepare
 			correlationID = correlationID ?? UtilityService.NewUUID;
@@ -542,7 +542,7 @@ namespace net.vieapps.Services.APIGateway
 
 			await Task.WhenAll(
 				websocket.SendAsync(message.ToString(Formatting.None), true, Global.CancellationTokenSource.Token),
-				Global.WriteLogsAsync(RTU.Logger, objectName ?? "Http.InternalAPIs", $"{msg ?? exception.Message}", exception, Global.ServiceName, LogLevel.Error, correlationID, string.IsNullOrWhiteSpace(additionalMsg) ? null : $"{additionalMsg}\r\nWebSocket Info:\r\n{websocket.GetConnectionInfo()}")
+				Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"{msg ?? exception.Message}", exception, Global.ServiceName, LogLevel.Error, correlationID, string.IsNullOrWhiteSpace(additionalMsg) ? null : $"{additionalMsg}\r\nWebSocket Info:\r\n{websocket.GetConnectionInfo()}")
 			).ConfigureAwait(false);
 		}
 
@@ -574,7 +574,7 @@ namespace net.vieapps.Services.APIGateway
 				if (!"Verified".IsEquals(websocket.Get<string>("State")))
 				{
 					await Task.WhenAll(
-						Global.WriteLogsAsync(RTU.Logger, "Http.WebSockets.Errors",
+						Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs",
 							$"Session is not verified" + "\r\n" +
 							$"{websocket.GetConnectionInfo(session)}" + "\r\n" +
 							$"- State: {websocket.Get<string>("State")}"

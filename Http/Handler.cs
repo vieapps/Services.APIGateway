@@ -31,7 +31,7 @@ namespace net.vieapps.Services.APIGateway
 			// request of WebSocket
 			if (context.WebSockets.IsWebSocketRequest)
 				await Task.WhenAll(
-					Global.IsVisitLogEnabled ? context.WriteLogsAsync(Global.Logger, "Http.WebSockets.Visits", $"Wrap a WebSocket connection successful\r\n- Endpoint: {context.Connection.RemoteIpAddress}:{context.Connection.RemotePort}\r\n- URI: {context.GetRequestUri()}{(Global.IsDebugLogEnabled ? $"\r\n- Headers:\r\n\t{context.Request.Headers.Select(kvp => $"{kvp.Key}: {kvp.Value}").Join("\r\n\t")}" : "")}") : Task.CompletedTask,
+					Global.IsVisitLogEnabled ? context.WriteLogsAsync(Global.Logger, "Http.Visits.WebSockets", $"Wrap a WebSocket connection successful\r\n- Endpoint: {context.Connection.RemoteIpAddress}:{context.Connection.RemotePort}\r\n- URI: {context.GetRequestUri()}{(Global.IsDebugLogEnabled ? $"\r\n- Headers:\r\n\t{context.Request.Headers.Select(kvp => $"{kvp.Key}: {kvp.Value}").Join("\r\n\t")}" : "")}") : Task.CompletedTask,
 					APIGateway.RTU.WebSocket.WrapAsync(context)
 				).ConfigureAwait(false);
 
@@ -71,7 +71,7 @@ namespace net.vieapps.Services.APIGateway
 					catch (InvalidOperationException) { }
 					catch (Exception ex)
 					{
-						Global.Logger.LogCritical($"Error occurred while invoking the next middleware: {ex.Message}", ex);
+						Global.Logger.LogCritical($"Error occurred while invoking the next middleware => {ex.Message}", ex);
 					}
 				}
 			}
@@ -84,7 +84,7 @@ namespace net.vieapps.Services.APIGateway
 			var requestPath = context.GetRequestPathSegments(true).First();
 
 			if (Global.IsVisitLogEnabled)
-				await context.WriteVisitStartingLogAsync(Global.Logger, "Http.RESTful.Visits").ConfigureAwait(false);
+				await context.WriteVisitStartingLogAsync(Global.Logger, "Http.Visits.RESTAPIs").ConfigureAwait(false);
 
 			// request to favicon.ico file
 			if (requestPath.Equals("favicon.ico"))
@@ -103,7 +103,7 @@ namespace net.vieapps.Services.APIGateway
 				await APIGateway.InternalAPIs.ProcessRequestAsync(context).ConfigureAwait(false);
 
 			if (Global.IsVisitLogEnabled)
-				await context.WriteVisitFinishingLogAsync(Global.Logger, "Http.RESTful.Visits").ConfigureAwait(false);
+				await context.WriteVisitFinishingLogAsync(Global.Logger, "Http.Visits.RESTAPIs").ConfigureAwait(false);
 		}
 
 		#region classes for logging

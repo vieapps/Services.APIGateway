@@ -12,7 +12,7 @@ using Newtonsoft.Json;
 using net.vieapps.Components.Utility;
 namespace net.vieapps.Services.APIGateway
 {
-	public abstract class ServiceHost
+	public abstract class ServiceHostingBase
 	{
 		protected string ServiceTypeName { get; private set; }
 
@@ -23,16 +23,16 @@ namespace net.vieapps.Services.APIGateway
 		public void Run(string[] args)
 		{
 			// prepare
-			var start = DateTime.Now;
+			var time = DateTime.Now;
 			var stopwatch = Stopwatch.StartNew();
 
-			var apiCall = args?.FirstOrDefault(a => a.IsStartsWith("/agc:"));
+			var apiCall = args?.FirstOrDefault(arg => arg.IsStartsWith("/agc:"));
 			var isUserInteractive = Environment.UserInteractive && apiCall == null;
-			var hostingInfo = $"VIEApps NGX API Gateway - Service Hosting {RuntimeInformation.ProcessArchitecture.ToString().ToLower()} {typeof(ServiceHost).Assembly.GetVersion()} [{this.GetType().Assembly.GetVersion()}]";
+			var hostingInfo = $"VIEApps NGX API Gateway - Service Hosting {RuntimeInformation.ProcessArchitecture.ToString().ToLower()} {typeof(ServiceHostingBase).Assembly.GetVersion()} [{this.GetType().Assembly.GetVersion()}]";
 
 			// prepare type name
-			this.ServiceTypeName = args?.FirstOrDefault(a => a.IsStartsWith("/svc:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/svc:", "");
-			if (string.IsNullOrWhiteSpace(this.ServiceTypeName) && args?.FirstOrDefault(a => a.IsStartsWith("/svn:")) != null)
+			this.ServiceTypeName = args?.FirstOrDefault(arg => arg.IsStartsWith("/svc:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/svc:", "");
+			if (string.IsNullOrWhiteSpace(this.ServiceTypeName) && args?.FirstOrDefault(arg => arg.IsStartsWith("/svn:")) != null)
 			{
 				var configFilename = Path.Combine($"{UtilityService.GetAppSetting("Path:APIGateway:Controller")}", $"VIEApps.Services.APIGateway.{(RuntimeInformation.FrameworkDescription.IsContains(".NET Framework") ? "exe" : "dll")}.config");
 				if (File.Exists(configFilename))
@@ -40,7 +40,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 						var xml = new System.Xml.XmlDocument();
 						xml.LoadXml(UtilityService.ReadTextFile(configFilename));
-						this.ServiceTypeName = args.First(a => a.IsStartsWith("/svn:")).Replace(StringComparison.OrdinalIgnoreCase, "/svn:", "").Trim();
+						this.ServiceTypeName = args.First(arg => arg.IsStartsWith("/svn:")).Replace(StringComparison.OrdinalIgnoreCase, "/svn:", "").Trim();
 						var typeNode = xml.SelectSingleNode($"/configuration/{UtilityService.GetAppSetting("Section:Services", "net.vieapps.services")}")?.ChildNodes.ToList().FirstOrDefault(node => this.ServiceTypeName.IsEquals(node.Attributes["name"]?.Value));
 						this.ServiceTypeName = typeNode?.Attributes["type"]?.Value;
 					}
@@ -94,7 +94,7 @@ namespace net.vieapps.Services.APIGateway
 					Console.Error.WriteLine($"Error: The service component [{this.ServiceTypeName},{this.ServiceAssemblyName}] got an unexpected error while preparing");
 					(ex as ReflectionTypeLoadException).LoaderExceptions.ForEach(exception =>
 					{
-						Console.Error.WriteLine($"{exception.Message}");
+						Console.Error.WriteLine(exception.Message);
 						var inner = exception.InnerException;
 						while (inner != null)
 						{
@@ -140,8 +140,8 @@ namespace net.vieapps.Services.APIGateway
 			if (useEventWaitHandle)
 			{
 				// get the flag of the existing instance
-				var name = $"{serviceComponent.ServiceURI}#{string.Join("#", args.Where(a => !a.IsStartsWith("/agc:"))).GenerateUUID()}";
-				eventWaitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, name, out bool createdNew);
+				var name = $"{serviceComponent.ServiceURI}#{args.Where(arg => !arg.IsStartsWith("/agc:") && !arg.IsStartsWith("/controller-id:")).Join("#").GenerateUUID()}";
+				eventWaitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, name, out var createdNew);
 
 				// process the call to stop
 				if ("/agc:s".IsEquals(apiCall))
@@ -167,7 +167,7 @@ namespace net.vieapps.Services.APIGateway
 			};
 
 			// prepare logging
-			var loglevel = args?.FirstOrDefault(a => a.IsStartsWith("/loglevel:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/loglevel:", "");
+			var loglevel = args?.FirstOrDefault(arg => arg.IsStartsWith("/loglevel:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/loglevel:", "");
 			if (string.IsNullOrWhiteSpace(loglevel))
 #if DEBUG
 				loglevel = UtilityService.GetAppSetting("Logs:Level", "Debug");
@@ -214,7 +214,7 @@ namespace net.vieapps.Services.APIGateway
 				if (!stopped)
 				{
 					stop();
-					logger.LogInformation($"The service is stopped (by \"process exit\" signal) - Served times: {start.GetElapsedTimes()}");
+					logger.LogInformation($"The service is stopped (by \"process exit\" signal) - Served times: {time.GetElapsedTimes()}");
 				}
 			};
 
@@ -223,7 +223,7 @@ namespace net.vieapps.Services.APIGateway
 				if (!stopped)
 				{
 					stop();
-					logger.LogInformation($"The service is stopped (by \"cancel key press\" signal) - Served times: {start.GetElapsedTimes()}");
+					logger.LogInformation($"The service is stopped (by \"cancel key press\" signal) - Served times: {time.GetElapsedTimes()}");
 				}
 				Environment.Exit(0);
 			};
@@ -288,7 +288,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			stop();
-			logger.LogInformation($"The service is stopped - Served times: {start.GetElapsedTimes()}");
+			logger.LogInformation($"The service is stopped - Served times: {time.GetElapsedTimes()}");
 		}
 
 		protected virtual void PrepareServiceType()

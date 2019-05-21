@@ -6,7 +6,7 @@ namespace net.vieapps.Services.APIGateway
 		static void Main(string[] args) => new ServiceHosting().Run(args);
 	}
 
-	class ServiceHosting : ServiceHost
+	class ServiceHosting : ServiceHostingBase
 	{
 		protected override void PrepareServiceType()
 		{

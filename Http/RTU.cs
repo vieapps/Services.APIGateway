@@ -595,7 +595,7 @@ namespace net.vieapps.Services.APIGateway
 				try
 				{
 					var json = await Global.CallServiceAsync(new RequestInfo(session, "Users", "Profile", "GET"), Global.CancellationTokenSource.Token, RTU.Logger, "Http.InternalAPIs").ConfigureAwait(false);
-					account = (json?.Get<string>("Name") ?? "Unknown") + $" ({session.User.ID})";
+					account = $"{json?.Get<string>("Name") ?? "Unknown"} ({session.User.ID})";
 				}
 				catch (Exception ex)
 				{

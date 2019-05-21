@@ -270,21 +270,24 @@ namespace net.vieapps.Services.APIGateway
 
 		#region Send state message of a session
 		public static async Task SendSessionStateAsync(this Session session, bool isOnline, string correlationID = null)
-			=> await new UpdateMessage
-			{
-				Type = "Users#Session#State",
-				DeviceID = "*",
-				Data = new JObject
+		{
+			if (!string.IsNullOrWhiteSpace(session.User.ID))
+				await new UpdateMessage
 				{
-					{ "SessionID", session.GetEncryptedID(session.SessionID) },
-					{ "UserID", session.User.ID },
-					{ "DeviceID", session.DeviceID },
-					{ "AppName", session.AppName },
-					{ "AppPlatform", session.AppPlatform },
-					{ "Location", await session.GetLocationAsync(correlationID, Global.CancellationTokenSource.Token).ConfigureAwait(false) },
-					{ "IsOnline", isOnline }
-				}
-			}.PublishAsync(RTU.Logger, "Http.InternalAPIs").ConfigureAwait(false);
+					Type = "Users#Session#State",
+					DeviceID = "*",
+					Data = new JObject
+					{
+						{ "SessionID", session.GetEncryptedID(session.SessionID) },
+						{ "UserID", session.User.ID },
+						{ "DeviceID", session.DeviceID },
+						{ "AppName", session.AppName },
+						{ "AppPlatform", session.AppPlatform },
+						{ "Location", await session.GetLocationAsync(correlationID, Global.CancellationTokenSource.Token).ConfigureAwait(false) },
+						{ "IsOnline", isOnline }
+					}
+				}.PublishAsync(RTU.Logger, "Http.InternalAPIs").ConfigureAwait(false);
+		}
 		#endregion
 
 		#region Create/Renew a session

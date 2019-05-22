@@ -31,7 +31,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="VIEApps.Components.Utility" Version="10.2.1905.2" />
+		<PackageReference Include="VIEApps.Components.Utility" Version="10.2.1906.1" />
 	</ItemGroup>
 
 </Project>

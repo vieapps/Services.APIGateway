@@ -24,6 +24,8 @@ namespace net.vieapps.Services.APIGateway
 	{
 		RequestDelegate Next { get; }
 
+		string LoadBalancingHealthCheckUrl => UtilityService.GetAppSetting("HealthCheckUrl", "/load-balancing-health-check");
+
 		public Handler(RequestDelegate next) => this.Next = next;
 
 		public async Task Invoke(HttpContext context)
@@ -54,7 +56,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 
 				// load balancing health check
-				else if (context.Request.Path.Value.IsEquals("/load-balancing-health-check"))
+				else if (context.Request.Path.Value.IsEquals(this.LoadBalancingHealthCheckUrl))
 					await context.WriteAsync("OK", "text/plain", null, 0, null, TimeSpan.Zero, null, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 
 				// APIs
@@ -89,6 +91,10 @@ namespace net.vieapps.Services.APIGateway
 			// request to favicon.ico file
 			if (requestPath.Equals("favicon.ico"))
 				await context.ProcessFavouritesIconFileRequestAsync().ConfigureAwait(false);
+
+			// request to robots.txt file
+			else if (requestPath.Equals("robots.txt"))
+				context.WriteHttpError((int)HttpStatusCode.NotFound, "Not Found", "FileNotFoundException", context.GetCorrelationID());
 
 			// request to static segments
 			else if (Global.StaticSegments.Contains(requestPath))

@@ -12,9 +12,9 @@
 		<Company>VIEApps.net</Company>
 		<Product>VIEApps NGX</Product>
 		<Copyright>© 2019 VIEApps.net</Copyright>
-		<AssemblyVersion>10.2.1905.1</AssemblyVersion>
-		<FileVersion>10.2.1905.1</FileVersion>
-		<InformationalVersion>v10.2.netcore-2.2+rev:2019.05.01-latest.components</InformationalVersion>
+		<AssemblyVersion>10.2.1906.1</AssemblyVersion>
+		<FileVersion>10.2.1906.1</FileVersion>
+		<InformationalVersion>v10.2.netcore-2.2+rev:2019.05.23-latest.components</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>

@@ -35,6 +35,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<ProjectReference Include="..\..\Books\Service\VIEApps.Services.Books.csproj" />
 		<ProjectReference Include="..\Host\VIEApps.Services.APIGateway.Host.csproj" />
 	</ItemGroup>
 

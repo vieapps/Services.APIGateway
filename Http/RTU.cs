@@ -424,7 +424,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 						// stop process when request to work with users' sessions
 						if ("session".IsEquals(requestInfo.ObjectName))
-							throw new InvalidRequestException("Please change to use HTTP RESTful for working with users' sessions");
+							throw new InvalidRequestException("Please change to use REST APIs for working with users' sessions");
 
 						// prepare related information
 						if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT"))

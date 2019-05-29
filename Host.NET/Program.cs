@@ -5,8 +5,5 @@
 		static void Main(string[] args) => new ServiceHosting().Run(args);
 	}
 
-	class ServiceHosting : ServiceHostingBase
-	{
-		protected override void PrepareServiceType() => base.PrepareServiceType();
-	}
+	class ServiceHosting : ServiceHostingBase { }
 }

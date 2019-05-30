@@ -140,7 +140,7 @@ namespace net.vieapps.Services.APIGateway
 							await websocket.SendAsync(message).ConfigureAwait(false);
 							if (Global.IsDebugLogEnabled)
 								await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs",
-									$"Successfully push a message to the subscriber's device" + "\r\n" +
+									$"Successfully push a message to the device ({message.DeviceID})" + "\r\n" +
 									$"{websocket.GetConnectionInfo(session)}" + "\r\n" +
 									$"- Type: {message.Type}" + "\r\n" +
 									$"- Message: {message.Data.ToString(Formatting.None)}"
@@ -150,7 +150,7 @@ namespace net.vieapps.Services.APIGateway
 						catch (Exception ex)
 						{
 							await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs",
-								$"Error occurred while pushing a message to the subscriber's device => {ex.Message}" + "\r\n" +
+								$"Error occurred while pushing a message to the device ({message.DeviceID}) => {ex.Message}" + "\r\n" +
 								$"{websocket.GetConnectionInfo(session)}" + "\r\n" +
 								$"- Type: {message.Type}" + "\r\n" +
 								$"- Message: {message.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}"
@@ -254,7 +254,7 @@ namespace net.vieapps.Services.APIGateway
 			// update the state
 			websocket.Set("State", headers.ContainsKey("x-app-token") ? "Verified" : "Connected");
 			if (Global.IsVisitLogEnabled)
-				await Global.WriteLogsAsync(RTU.Logger, "Http.Visits.WebSockets", $"The real-time updater (RTU) of a subscriber's device is started" + "\r\n" + websocket.GetConnectionInfo(session) + "\r\n" + $"- State: {websocket.Get<string>("State")}", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
+				await Global.WriteLogsAsync(RTU.Logger, "Http.Visits.WebSockets", $"The real-time updater (RTU) is started" + "\r\n" + websocket.GetConnectionInfo(session) + "\r\n" + $"- State: {websocket.Get<string>("State")}", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
 		}
 
 		static async Task WhenConnectionIsBrokenAsync(this ManagedWebSocket websocket)
@@ -289,7 +289,7 @@ namespace net.vieapps.Services.APIGateway
 			// update the session state
 			await Task.WhenAll(
 				session != null ? session.SendSessionStateAsync(false, correlationID) : Task.CompletedTask,
-				Global.IsVisitLogEnabled ? Global.WriteLogsAsync(RTU.Logger, "Http.Visits.WebSockets", $"The real-time updater (RTU) of a subscriber's device is stopped" + "\r\n" + websocket.GetConnectionInfo(session) + "\r\n" + $"- Served times: {websocket.Timestamp.GetElapsedTimes()}", null, Global.ServiceName, LogLevel.Information, correlationID) : Task.CompletedTask
+				Global.IsVisitLogEnabled ? Global.WriteLogsAsync(RTU.Logger, "Http.Visits.WebSockets", $"The real-time updater (RTU) is stopped" + "\r\n" + websocket.GetConnectionInfo(session) + "\r\n" + $"- Served times: {websocket.Timestamp.GetElapsedTimes()}", null, Global.ServiceName, LogLevel.Information, correlationID) : Task.CompletedTask
 			).ConfigureAwait(false);
 		}
 
@@ -542,7 +542,7 @@ namespace net.vieapps.Services.APIGateway
 
 			await Task.WhenAll(
 				websocket.SendAsync(message.ToString(Formatting.None), true, Global.CancellationTokenSource.Token),
-				Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"{msg ?? exception.Message}", exception, Global.ServiceName, LogLevel.Error, correlationID, string.IsNullOrWhiteSpace(additionalMsg) ? null : $"{additionalMsg}\r\nWebSocket Info:\r\n{websocket.GetConnectionInfo()}")
+				Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", msg ?? exception.Message, exception, Global.ServiceName, LogLevel.Error, correlationID, string.IsNullOrWhiteSpace(additionalMsg) ? null : $"{additionalMsg}\r\nWebSocket Info:\r\n{websocket.GetConnectionInfo()}")
 			).ConfigureAwait(false);
 		}
 

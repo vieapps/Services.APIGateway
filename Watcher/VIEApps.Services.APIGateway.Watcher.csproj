@@ -10,9 +10,9 @@
 		<Company>VIEApps.net</Company>
 		<Product>VIEApps NGX</Product>
 		<Copyright>© 2019 VIEApps.net</Copyright>
-		<AssemblyVersion>10.2.1904.3</AssemblyVersion>
-		<FileVersion>10.2.1904.3</FileVersion>
-		<InformationalVersion>v10.2+netstandard2.0-rev:2019.04.11-latest.components</InformationalVersion>
+		<AssemblyVersion>10.2.1906.2</AssemblyVersion>
+		<FileVersion>10.2.1906.2</FileVersion>
+		<InformationalVersion>v10.2+netstandard2.0-rev:2019.06.12-latest.components</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -25,7 +25,7 @@
 		<PackageReference Include="Serilog.Extensions.Logging.File" Version="1.1.0" />
 		<PackageReference Include="System.Reactive" Version="4.1.5" />
 		<PackageReference Include="System.ServiceProcess.ServiceController" Version="4.5.0" />
-		<PackageReference Include="VIEApps.Components.Utility" Version="10.2.1906.1" />
+		<PackageReference Include="VIEApps.Components.Utility" Version="10.2.1906.2" />
 	</ItemGroup>
 
 </Project>

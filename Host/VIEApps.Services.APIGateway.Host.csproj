@@ -10,9 +10,9 @@
 		<Company>VIEApps.net</Company>
 		<Product>VIEApps NGX</Product>
 		<Copyright>© 2019 VIEApps.net</Copyright>
-		<AssemblyVersion>10.2.1906.1</AssemblyVersion>
-		<FileVersion>10.2.1906.1</FileVersion>
-		<InformationalVersion>v10.2+rev:2019.05.23-arguments</InformationalVersion>
+		<AssemblyVersion>10.2.1906.2</AssemblyVersion>
+		<FileVersion>10.2.1906.2</FileVersion>
+		<InformationalVersion>v10.2+rev:2019.06.12-latest.components</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -21,7 +21,7 @@
 
 	<ItemGroup>
 		<PackageReference Include="Microsoft.Extensions.Logging.Console" Version="2.2.0" />
-		<PackageReference Include="VIEApps.Services.Base" Version="10.2.1906.1" />
+		<PackageReference Include="VIEApps.Services.Base" Version="10.2.1906.2" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))|$(Platform)' == 'true|AnyCPU'">

@@ -2,7 +2,7 @@
 
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
-		<TargetFramework>netcoreapp2.2</TargetFramework>
+		<TargetFramework>netcoreapp3.0</TargetFramework>
 		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
 		<StartupObject>net.vieapps.Services.APIGateway.Program</StartupObject>
 		<AssemblyName>VIEApps.Services.APIGateway</AssemblyName>
@@ -12,9 +12,9 @@
 		<Company>VIEApps.net</Company>
 		<Product>VIEApps NGX</Product>
 		<Copyright>© 2019 VIEApps.net</Copyright>
-		<AssemblyVersion>10.2.1906.2</AssemblyVersion>
-		<FileVersion>10.2.1906.2</FileVersion>
-		<InformationalVersion>v10.2.netcore-2.2+rev:2019.06.12-latest.components</InformationalVersion>
+		<AssemblyVersion>10.3.1906.3</AssemblyVersion>
+		<FileVersion>10.3.1906.3</FileVersion>
+		<InformationalVersion>v10.3.netcore-3.0+rev:2019.06.18-preview</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -31,7 +31,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.2.1906.2" />
+		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.3.1906.3-preview" />
 	</ItemGroup>
 
 	<ItemGroup>

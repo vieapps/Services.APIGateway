@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFramework>netstandard2.0</TargetFramework>
+		<TargetFrameworks>netstandard2.0;netstandard2.1</TargetFrameworks>
 		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
 		<AssemblyName>VIEApps.Services.Controller</AssemblyName>
 		<WarningLevel>3</WarningLevel>
@@ -10,9 +10,9 @@
 		<Company>VIEApps.net</Company>
 		<Product>VIEApps NGX</Product>
 		<Copyright>© 2019 VIEApps.net</Copyright>
-		<AssemblyVersion>10.2.1906.2</AssemblyVersion>
-		<FileVersion>10.2.1906.2</FileVersion>
-		<InformationalVersion>v10.2.netstandard-2+rev:2019.06.12-latest.components</InformationalVersion>
+		<AssemblyVersion>10.3.1906.3</AssemblyVersion>
+		<FileVersion>10.3.1906.3</FileVersion>
+		<InformationalVersion>v10.3.netstandard-2.x+rev:2019.06.18-multiple.targets.preview</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -20,23 +20,23 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <PackageReference Include="VIEApps.Services.Base" Version="10.2.1906.2" />
+	  <PackageReference Include="VIEApps.Services.Base" Version="10.3.1906.3-preview" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))|$(Platform)' == 'true|AnyCPU'">
-		<PackageReference Include="JavaScriptEngineSwitcher.ChakraCore.Native.win-x64" Version="3.1.1" />
+		<PackageReference Include="JavaScriptEngineSwitcher.ChakraCore.Native.win-x64" Version="3.1.2" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))|$(Platform)' == 'true|x86'">
-		<PackageReference Include="JavaScriptEngineSwitcher.ChakraCore.Native.win-x86" Version="3.1.1" />
+		<PackageReference Include="JavaScriptEngineSwitcher.ChakraCore.Native.win-x86" Version="3.1.2" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::OSX)))' == 'true'">
-		<PackageReference Include="JavaScriptEngineSwitcher.ChakraCore.Native.osx-x64" Version="3.1.1" />
+		<PackageReference Include="JavaScriptEngineSwitcher.ChakraCore.Native.osx-x64" Version="3.1.2" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))' == 'true'">
-		<PackageReference Include="JavaScriptEngineSwitcher.ChakraCore.Native.linux-x64" Version="3.1.1" />
+		<PackageReference Include="JavaScriptEngineSwitcher.ChakraCore.Native.linux-x64" Version="3.1.2" />
 	</ItemGroup>
 
 </Project>

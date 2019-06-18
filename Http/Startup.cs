@@ -7,19 +7,16 @@ using System.Text;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Runtime.InteropServices;
-
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.HttpOverrides;
-
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Caching.Distributed;
-
 using Newtonsoft.Json;
-
 using net.vieapps.Components.Utility;
 using net.vieapps.Components.Caching;
 #endregion
@@ -45,7 +42,7 @@ namespace net.vieapps.Services.APIGateway
 				.AddHttpContextAccessor();
 		}
 
-		public void Configure(IApplicationBuilder appBuilder, IApplicationLifetime appLifetime, IHostingEnvironment environment)
+		public void Configure(IApplicationBuilder appBuilder, IHostApplicationLifetime appLifetime, IWebHostEnvironment environment)
 		{
 			// settings
 			var stopwatch = Stopwatch.StartNew();

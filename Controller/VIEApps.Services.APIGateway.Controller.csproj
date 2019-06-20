@@ -3,24 +3,28 @@
 	<PropertyGroup>
 		<TargetFrameworks>netstandard2.0;netstandard2.1</TargetFrameworks>
 		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
-		<AssemblyName>VIEApps.Services.Controller</AssemblyName>
+		<AssemblyName>VIEApps.Services.APIGateway.Controller</AssemblyName>
 		<WarningLevel>3</WarningLevel>
 		<AssemblyTitle>VIEApps NGX API Gateway</AssemblyTitle>
 		<Authors>VIEApps.net</Authors>
 		<Company>VIEApps.net</Company>
 		<Product>VIEApps NGX</Product>
 		<Copyright>© 2019 VIEApps.net</Copyright>
-		<AssemblyVersion>10.3.1906.3</AssemblyVersion>
-		<FileVersion>10.3.1906.3</FileVersion>
-		<InformationalVersion>v10.3.netstandard-2.x+rev:2019.06.18-multiple.targets.preview</InformationalVersion>
+		<AssemblyVersion>10.3.1906.4</AssemblyVersion>
+		<FileVersion>10.3.1906.4</FileVersion>
+		<InformationalVersion>v10.3+rev:2019.06.20-multiple.targets</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>
 		<None Remove=".DS_Store" />
 	</ItemGroup>
 
-	<ItemGroup>
-	  <PackageReference Include="VIEApps.Services.Base" Version="10.3.1906.3-preview" />
+	<ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+	  <PackageReference Include="VIEApps.Services.Base" Version="10.2.1906.2" />
+	</ItemGroup>
+
+	<ItemGroup Condition="'$(TargetFramework)' != 'netstandard2.0'">
+		<PackageReference Include="VIEApps.Services.Base" Version="10.3.1906.4-preview" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))|$(Platform)' == 'true|AnyCPU'">

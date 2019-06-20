@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
 	<PropertyGroup>
-		<TargetFramework>netcoreapp3.0</TargetFramework>
+		<TargetFrameworks>netcoreapp2.2;netcoreapp3.0</TargetFrameworks>
 		<OutputType>Exe</OutputType>
 		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
 		<StartupObject>net.vieapps.Services.APIGateway.Startup</StartupObject>
@@ -12,9 +12,9 @@
 		<Company>VIEApps.net</Company>
 		<Product>VIEApps NGX</Product>
 		<Copyright>© 2019 VIEApps.net</Copyright>
-		<AssemblyVersion>10.3.1906.3</AssemblyVersion>
-		<FileVersion>10.3.1906.3</FileVersion>
-		<InformationalVersion>v10.3.netcore-3.0+rev:2019.06.18-preview</InformationalVersion>
+		<AssemblyVersion>10.3.1906.4</AssemblyVersion>
+		<FileVersion>10.3.1906.4</FileVersion>
+		<InformationalVersion>v10.3+rev:2019.06.20-multiple.targets</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -27,9 +27,16 @@
 		<PackageReference Include="Microsoft.AspNetCore" Version="2.2.0" />
 		<PackageReference Include="Microsoft.AspNetCore.ResponseCompression" Version="2.2.0" />
 		<PackageReference Include="Microsoft.AspNetCore.WebSockets" Version="2.2.1" />
-		<PackageReference Include="Microsoft.Extensions.Hosting" Version="3.0.0-preview6.19304.6" />
-		<PackageReference Include="VIEApps.Services.Base.Http" Version="10.3.1906.3-preview" />
 		<PackageReference Include="WampSharp.AspNetCore.WebSockets.Server" Version="19.3.1" />
+	</ItemGroup>
+
+	<ItemGroup Condition="'$(TargetFramework)' == 'netcoreapp2.2'">
+		<PackageReference Include="VIEApps.Services.Base.Http" Version="10.2.1906.2" />
+	</ItemGroup>
+
+	<ItemGroup Condition="'$(TargetFramework)' != 'netcoreapp2.2'">
+		<PackageReference Include="Microsoft.Extensions.Hosting" Version="3.0.0-preview6.19304.6" />
+		<PackageReference Include="VIEApps.Services.Base.Http" Version="10.3.1906.4-preview" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))|$(Platform)' == 'true|AnyCPU'">

@@ -20,7 +20,23 @@ namespace net.vieapps.Services.APIGateway
 
 		protected Type ServiceType { get; set; }
 
+		protected virtual void PrepareServiceType()
+			=> this.ServiceType = Type.GetType($"{this.ServiceTypeName},{this.ServiceAssemblyName}");
+
 		public void Run(string[] args)
+		{
+			try
+			{
+				this.RunInternal(args);
+			}
+			catch (Exception ex)
+			{
+				Console.Error.WriteLine("Error: The service component is got unexpected error => " + ex.Message);
+				Console.Error.WriteLine(ex.StackTrace);
+			}
+		}
+
+		protected void RunInternal(string[] args)
 		{
 			// prepare
 			var time = DateTime.Now;
@@ -290,8 +306,5 @@ namespace net.vieapps.Services.APIGateway
 			stop();
 			logger.LogInformation($"The service is stopped - Served times: {time.GetElapsedTimes()}");
 		}
-
-		protected virtual void PrepareServiceType()
-			=> this.ServiceType = Type.GetType($"{this.ServiceTypeName},{this.ServiceAssemblyName}");
 	}
 }

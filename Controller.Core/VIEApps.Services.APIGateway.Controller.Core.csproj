@@ -12,9 +12,9 @@
 		<Company>VIEApps.net</Company>
 		<Product>VIEApps NGX</Product>
 		<Copyright>© 2019 VIEApps.net</Copyright>
-		<AssemblyVersion>10.3.1906.4</AssemblyVersion>
-		<FileVersion>10.3.1906.4</FileVersion>
-		<InformationalVersion>v10.3+rev:2019.06.20-mutiple.targets</InformationalVersion>
+		<AssemblyVersion>10.3.1906.5</AssemblyVersion>
+		<FileVersion>10.3.1906.5</FileVersion>
+		<InformationalVersion>v10.3.1906+rev:2019.06.21-mutiple.targets</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -30,8 +30,12 @@
 		</Content>
 	</ItemGroup>
 
-	<ItemGroup>
+	<ItemGroup Condition="'$(TargetFramework)' == 'netcoreapp2.2'">
 		<PackageReference Include="Microsoft.Extensions.Logging.Console" Version="2.2.0" />
+	</ItemGroup>
+
+	<ItemGroup Condition="'$(TargetFramework)' != 'netcoreapp2.2'">
+		<PackageReference Include="Microsoft.Extensions.Logging.Console" Version="3.0.0-preview6.19304.6" />
 	</ItemGroup>
 
 	<ItemGroup>

@@ -20,6 +20,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<PackageReference Include="VIEApps.Components.Utility.Epub" Version="10.3.1906.5-preview" />
 		<PackageReference Include="VIEApps.Services.Base" Version="10.3.1906.5-preview" />
 	</ItemGroup>
 

@@ -14,7 +14,7 @@ namespace net.vieapps.Services.APIGateway
 		void InitializeComponent()
 		{
 			this.components = new System.ComponentModel.Container();
-			this.ServiceName = "VIEApps-API-Watcher";
+			this.ServiceName = "VIEApps-APIGateway-Watcher";
 		}
 	}
 }

@@ -11,7 +11,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			this.InitializeComponent();
 
-			this.Installers.Add(new ServiceProcessInstaller()
+			this.Installers.Add(new ServiceProcessInstaller
 			{
 				Account = ServiceAccount.LocalSystem,
 				Username = null,
@@ -30,9 +30,9 @@ namespace net.vieapps.Services.APIGateway
 			{
 				try
 				{
-					using (var controller = new ServiceController("VIEApps-APIGateway-Controller"))
+					using (var serviceController = new ServiceController("VIEApps-APIGateway-Controller"))
 					{
-						controller.Start();
+						serviceController.Start();
 					}
 				}
 				catch { }

@@ -31,7 +31,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-				Console.Error.WriteLine("Error: The service component is got unexpected error => " + ex.Message);
+				Console.Error.WriteLine("Error: The service component was got an unexpected error => " + ex.Message);
 				Console.Error.WriteLine(ex.StackTrace);
 			}
 		}
@@ -44,7 +44,7 @@ namespace net.vieapps.Services.APIGateway
 
 			var apiCall = args?.FirstOrDefault(arg => arg.IsStartsWith("/agc:"));
 			var isUserInteractive = Environment.UserInteractive && apiCall == null;
-			var hostingInfo = $"VIEApps NGX API Gateway - Service Hosting {RuntimeInformation.ProcessArchitecture.ToString().ToLower()} {typeof(ServiceHostingBase).Assembly.GetVersion()} [{this.GetType().Assembly.GetVersion()}]";
+			var hostingInfo = $"VIEApps NGX API Gateway - Service Hosting {RuntimeInformation.ProcessArchitecture.ToString().ToLower()} {typeof(ServiceHostingBase).Assembly.GetVersion()}";
 
 			// prepare type name
 			this.ServiceTypeName = args?.FirstOrDefault(arg => arg.IsStartsWith("/svc:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/svc:", "");
@@ -294,13 +294,13 @@ namespace net.vieapps.Services.APIGateway
 			{
 				eventWaitHandle.WaitOne();
 				eventWaitHandle.Dispose();
-				logger.LogDebug(">>>>> Got \"stop\" call from API Gateway ...............");
+				logger.LogDebug(">>>>> Got \"stop\" call from API Gateway Controller ...............");
 			}
 			else
 			{
 				while (Console.ReadLine() != "exit") { }
 				if (!isUserInteractive)
-					logger.LogDebug(">>>>> Got \"exit\" command from API Gateway ...............");
+					logger.LogDebug(">>>>> Got \"exit\" command from API Gateway Controller ...............");
 			}
 
 			stop();

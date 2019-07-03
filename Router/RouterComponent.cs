@@ -20,7 +20,7 @@ namespace net.vieapps.Services.APIGateway
 {
 	public class RouterComponent
 	{
-		public const string Powered = "WampSharp v19.3.1.netstandard-2.x-castle.core.4.4-rxnet-4.2-msgpack-1.0-json-12.0-fleck-1.1-ssl+rev:2019.06.18-preview";
+		public const string Powered = "WAMP#v19.3.1.netstandard-2.x-castle.core.4.4-rxnet-4.2-msgpack-1.0-json-12.0-fleck-1.1-ssl+rev:2019.06.20-multiple.targets";
 
 		public IWampHost Host { get; private set; } = null;
 
@@ -32,7 +32,7 @@ namespace net.vieapps.Services.APIGateway
 
 		public X509Certificate2 SslCertificate { get; set; } = null;
 
-		public SslProtocols SslProtocol { get; set; } = SslProtocols.Tls;
+		public SslProtocols SslProtocol { get; set; } = SslProtocols.Tls12;
 
 		public ConcurrentDictionary<long, SessionInfo> Sessions { get; } = new ConcurrentDictionary<long, SessionInfo>();
 
@@ -86,9 +86,9 @@ namespace net.vieapps.Services.APIGateway
 							? new X509Certificate2(sslCertificateFilePath, sslCertificatePassword, X509KeyStorageFlags.UserKeySet)
 							: new X509Certificate2(sslCertificateFilePath);
 
-						this.SslProtocol = Enum.TryParse(ConfigurationManager.AppSettings["SslProtocol"] ?? "Tls", out SslProtocols sslProtocol)
+						this.SslProtocol = Enum.TryParse(ConfigurationManager.AppSettings["SslProtocol"] ?? "Tls12", out SslProtocols sslProtocol)
 							? sslProtocol
-							: SslProtocols.Tls;
+							: SslProtocols.Tls12;
 					}
 					catch (Exception ex)
 					{

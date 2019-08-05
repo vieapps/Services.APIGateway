@@ -46,7 +46,7 @@ namespace net.vieapps.Services.APIGateway
 								}
 								catch (Exception ex)
 								{
-									await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"{ex.Message} => {message?.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}", ex).ConfigureAwait(false);
+									await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"{ex.Message} => {message?.ToJson().ToString(InternalAPIs.JsonFormat)}", ex).ConfigureAwait(false);
 								}
 							},
 							async exception => await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"Error occurred while fetching an inter-communicating message => {exception.Message}", exception).ConfigureAwait(false)

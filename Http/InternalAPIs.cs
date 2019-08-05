@@ -26,13 +26,15 @@ namespace net.vieapps.Services.APIGateway
 
 		public static ILogger Logger { get; set; }
 
-		public static List<string> ExcludedHeaders { get; } = UtilityService.GetAppSetting("ExcludedHeaders", "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,ms-aspnetcore-token,x-forwarded-for,x-forwarded-proto,x-forwarded-port,x-original-for,x-original-proto,x-original-remote-endpoint,x-original-port,cdn-loop,cf-ipcountry,cf-ray,cf-visitor,cf-connecting-ip").ToList();
+		public static List<string> ExcludedHeaders { get; } = UtilityService.GetAppSetting("ExcludedHeaders", "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,ms-aspnetcore-token,x-forwarded-for,x-forwarded-proto,x-forwarded-port,x-original-for,x-original-proto,x-original-remote-endpoint,x-original-port,cdn-loop,cf-ipcountry,cf-ray,cf-visitor,cf-connecting-ip,sec-fetch-mode,sec-fetch-site").ToList();
 
 		public static HashSet<string> NoTokenRequiredServices { get; } = $"{UtilityService.GetAppSetting("NoTokenRequiredServices", "")}|indexes|discovery|webhooks".ToLower().ToHashSet('|', true);
 
 		public static ConcurrentDictionary<string, JObject> Controllers { get; } = new ConcurrentDictionary<string, JObject>();
 
 		public static ConcurrentDictionary<string, List<JObject>> Services { get; } = new ConcurrentDictionary<string, List<JObject>>();
+
+		public static Formatting JsonFormat { get; } = Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None;
 		#endregion
 
 		public static async Task ProcessRequestAsync(HttpContext context)
@@ -228,7 +230,7 @@ namespace net.vieapps.Services.APIGateway
 							: requestInfo.ObjectName.IsEquals("definitions")
 								? await context.CallServiceAsync(requestInfo.PrepareDefinitionRelated(), Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false)
 								: throw new InvalidRequestException("Unknown request");
-					await context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+					await context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -260,7 +262,7 @@ namespace net.vieapps.Services.APIGateway
 
 					// call the service
 					var response = await context.CallServiceAsync(requestInfo, Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
-					await context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+					await context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -388,12 +390,12 @@ namespace net.vieapps.Services.APIGateway
 					// response
 					var response = requestInfo.Session.GetSessionJson();
 					await Task.WhenAll(
-						context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
+						context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
 						{
 							$"Successfully process request of session (registration of anonymous user)",
-							$"- Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-							$"- Response: {response.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+							$"- Request: {requestInfo.ToJson().ToString(InternalAPIs.JsonFormat)}",
+							$"- Response: {response.ToJson().ToString(InternalAPIs.JsonFormat)}",
 							$"- Execution times: {context.GetExecutionTimes()}"
 						})
 					).ConfigureAwait(false);
@@ -436,12 +438,12 @@ namespace net.vieapps.Services.APIGateway
 					// response
 					var response = requestInfo.Session.GetSessionJson();
 					await Task.WhenAll(
-						context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
+						context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
 						{
 							$"Successfully process request of session (registration of authenticated user)",
-							$"- Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-							$"- Response: {response.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+							$"- Request: {requestInfo.ToJson().ToString(InternalAPIs.JsonFormat)}",
+							$"- Response: {response.ToJson().ToString(InternalAPIs.JsonFormat)}",
 							$"- Execution times: {context.GetExecutionTimes()}"
 						})
 					).ConfigureAwait(false);
@@ -525,13 +527,13 @@ namespace net.vieapps.Services.APIGateway
 
 				// response
 				await Task.WhenAll(
-					context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
+					context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 					InternalAPIs.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token),
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (sign-in)",
-						$"- Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-						$"- Response: {response.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"- Request: {requestInfo.ToJson().ToString(InternalAPIs.JsonFormat)}",
+						$"- Response: {response.ToJson().ToString(InternalAPIs.JsonFormat)}",
 						$"- Execution times: {context.GetExecutionTimes()}"
 					})
 				).ConfigureAwait(false);
@@ -632,13 +634,13 @@ namespace net.vieapps.Services.APIGateway
 
 				// response
 				await Task.WhenAll(
-					context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
+					context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 					InternalAPIs.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token),
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (OTP validation)",
-						$"- Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-						$"- Response: {response.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"- Request: {requestInfo.ToJson().ToString(InternalAPIs.JsonFormat)}",
+						$"- Response: {response.ToJson().ToString(InternalAPIs.JsonFormat)}",
 						$"- Execution times: {context.GetExecutionTimes()}"
 					})
 				).ConfigureAwait(false);
@@ -722,12 +724,12 @@ namespace net.vieapps.Services.APIGateway
 
 				// response
 				await Task.WhenAll(
-					context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
+					context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (sign-out)",
-						$"- Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-						$"- Response: {response.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"- Request: {requestInfo.ToJson().ToString(InternalAPIs.JsonFormat)}",
+						$"- Response: {response.ToJson().ToString(InternalAPIs.JsonFormat)}",
 						$"- Execution times: {context.GetExecutionTimes()}"
 					})
 				).ConfigureAwait(false);
@@ -776,12 +778,12 @@ namespace net.vieapps.Services.APIGateway
 				// response
 				response = requestInfo.Session.GetSessionJson();
 				await Task.WhenAll(
-					context.WriteAsync(response, Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
+					context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (activation)",
-						$"- Request: {requestInfo.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
-						$"- Response: {response.ToJson().ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}",
+						$"- Request: {requestInfo.ToJson().ToString(InternalAPIs.JsonFormat)}",
+						$"- Response: {response.ToJson().ToString(InternalAPIs.JsonFormat)}",
 						$"- Execution times: {context.GetExecutionTimes()}"
 					})
 				).ConfigureAwait(false);

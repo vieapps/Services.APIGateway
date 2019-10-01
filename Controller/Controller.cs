@@ -10,6 +10,7 @@ using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Configuration;
+using System.Reflection;
 using System.Runtime.InteropServices;
 
 using WampSharp.V2.Realm;
@@ -217,7 +218,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// start
 			Global.OnProcess?.Invoke("The API Gateway Controller is starting");
-			Global.OnProcess?.Invoke($"Version: {typeof(Controller).Assembly.GetVersion()}");
+			Global.OnProcess?.Invoke($"Version: {typeof(Controller).Assembly.GetVersion()} => {Assembly.GetCallingAssembly().GetVersion()}");
 			Global.OnProcess?.Invoke($"Platform: {Extensions.GetRuntimePlatform()}");
 #if DEBUG
 			Global.OnProcess?.Invoke($"Working mode: {(this.IsUserInteractive ? "Interactive app" : "Background service")} (DEBUG)");

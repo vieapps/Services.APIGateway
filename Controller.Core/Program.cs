@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Reflection;
 using System.Runtime.InteropServices;
 
 using Newtonsoft.Json;
@@ -112,7 +113,7 @@ namespace net.vieapps.Services.APIGateway
 						{
 							var info =
 								$"Controller:" + "\r\n\t" +
-								$"- Version: {typeof(Controller).Assembly.GetVersion()}" + "\r\n\t" +
+								$"- Version: {typeof(Controller).Assembly.GetVersion()} => {Assembly.GetExecutingAssembly().GetVersion()}" + "\r\n\t" +
 								$"- Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "macOS")} {RuntimeInformation.OSArchitecture} ({(RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "Macintosh; Intel Mac OS X; " : "")}{RuntimeInformation.OSDescription.Trim()})" + "\r\n\t" +
 								$"- Working mode: {(Environment.UserInteractive ? "Interactive app" : "Background service")}" + "\r\n\t" +
 								$"- API Gateway Router: {new Uri(Router.GetRouterStrInfo()).GetResolvedURI()}" + "\r\n\t" +

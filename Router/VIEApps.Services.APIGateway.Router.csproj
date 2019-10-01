@@ -12,7 +12,7 @@
 		<Copyright>© 2019 VIEApps.net</Copyright>
 		<AssemblyVersion>10.3$(ReleaseVersion)</AssemblyVersion>
 		<FileVersion>10.3$(ReleaseVersion)</FileVersion>
-		<InformationalVersion>10.3-$(TargetFramework)-$(ReleaseRevision)</InformationalVersion>
+		<InformationalVersion>10.3@$(TargetFramework)-$(ReleaseRevision)</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -23,17 +23,9 @@
 		<PackageReference Include="Castle.Core" Version="4.4.0" />
 		<PackageReference Include="MsgPack.Cli" Version="1.0.1" />
 		<PackageReference Include="Newtonsoft.Json" Version="12.0.2" />
-		<PackageReference Include="WampSharp.Default.Router" Version="19.3.1" />
-	</ItemGroup>
-
-	<ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
-		<PackageReference Include="System.Configuration.ConfigurationManager" Version="4.5.0" />
-		<PackageReference Include="System.Reactive" Version="4.1.5" />
-	</ItemGroup>
-
-	<ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.1'">
-		<PackageReference Include="System.Configuration.ConfigurationManager" Version="4.6.0-preview7.19362.9" />
-		<PackageReference Include="System.Reactive" Version="4.2.0-preview.566" />
+		<PackageReference Include="System.Configuration.ConfigurationManager" Version="4.6.0" />
+		<PackageReference Include="System.Reactive" Version="4.1.6" />
+		<PackageReference Include="WampSharp.Default.Router" Version="19.8.2" />
 	</ItemGroup>
 
 </Project>

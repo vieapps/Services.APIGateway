@@ -20,7 +20,7 @@ namespace net.vieapps.Services.APIGateway
 {
 	public class RouterComponent
 	{
-		public const string Powered = "WAMP#v19.3.1.netstandard-2.x-castle.core.4.4-rxnet-4.2-msgpack-1.0-json-12.0-fleck-1.1-ssl+rev:2019.06.20-multiple.targets";
+		public const string Powered = "WAMP#v19.8.1.netstandard-2.x-castle.core.4.4-rxnet-4.2-msgpack-1.0-json-12.0-fleck-1.1-ssl+rev:2019.08.13-multiple.targets";
 
 		public IWampHost Host { get; private set; } = null;
 

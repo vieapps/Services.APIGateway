@@ -1,12 +1,12 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
+		<TargetFrameworks>netcoreapp3.0</TargetFrameworks>
 		<OutputType>Exe</OutputType>
-		<TargetFrameworks>netcoreapp2.2;netcoreapp3.0</TargetFrameworks>
+		<WarningLevel>3</WarningLevel>
 		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
 		<StartupObject>net.vieapps.Services.APIGateway.Program</StartupObject>
 		<AssemblyName>VIEApps.Services.APIGateway</AssemblyName>
-		<WarningLevel>3</WarningLevel>
 		<AssemblyTitle>VIEApps NGX API Gateway</AssemblyTitle>
 		<Authors>VIEApps.net</Authors>
 		<Company>VIEApps.net</Company>
@@ -14,7 +14,7 @@
 		<Copyright>© 2019 VIEApps.net</Copyright>
 		<AssemblyVersion>10.3$(ReleaseVersion)</AssemblyVersion>
 		<FileVersion>10.3$(ReleaseVersion)</FileVersion>
-		<InformationalVersion>10.3-$(TargetFramework)-$(ReleaseRevision)</InformationalVersion>
+		<InformationalVersion>10.3@$(TargetFramework)-$(ReleaseRevision)</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -31,7 +31,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="VIEApps.Components.Utility" Version="10.3.1907.1-preview" />
+		<PackageReference Include="VIEApps.Components.Utility" Version="10.3.1910.2" />
 	</ItemGroup>
 
 </Project>

@@ -118,7 +118,7 @@ namespace net.vieapps.Services.APIGateway
 				Program.Logger.LogInformation(message);
 				if (Environment.UserInteractive)
 					Program.MainForm.UpdateLogs(message);
-				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "Emails", message)).ConfigureAwait(false);
+				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, null, null, "APIGateway", "Emails", message)).ConfigureAwait(false);
 			};
 
 			Global.OnSendWebHookSuccess = (message) =>
@@ -126,7 +126,7 @@ namespace net.vieapps.Services.APIGateway
 				Program.Logger.LogInformation(message);
 				if (Environment.UserInteractive)
 					Program.MainForm.UpdateLogs(message);
-				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "WebHooks", message)).ConfigureAwait(false);
+				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, null, null, "APIGateway", "WebHooks", message)).ConfigureAwait(false);
 			};
 
 			Global.OnSendEmailFailure = (message, exception) =>
@@ -134,7 +134,7 @@ namespace net.vieapps.Services.APIGateway
 				Program.Logger.LogError(message, exception);
 				if (Environment.UserInteractive)
 					Program.MainForm.UpdateLogs(message);
-				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "Emails", message, exception.GetStack())).ConfigureAwait(false);
+				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, null, null, "APIGateway", "Emails", message, exception.GetStack())).ConfigureAwait(false);
 			};
 
 			Global.OnSendWebHookFailure = (message, exception) =>
@@ -142,7 +142,7 @@ namespace net.vieapps.Services.APIGateway
 				Program.Logger.LogError(message, exception);
 				if (Environment.UserInteractive)
 					Program.MainForm.UpdateLogs(message);
-				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "WebHooks", message, exception.GetStack())).ConfigureAwait(false);
+				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, null, null, "APIGateway", "WebHooks", message, exception.GetStack())).ConfigureAwait(false);
 			};
 
 			Global.OnServiceStarted = (serviceName, message) =>

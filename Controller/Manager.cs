@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Reactive.Linq;
+using System.Runtime.InteropServices;
 
 using WampSharp.V2.Realm;
 using Newtonsoft.Json.Linq;
@@ -49,10 +50,10 @@ namespace net.vieapps.Services.APIGateway
 				}, TaskContinuationOptions.OnlyOnRanToCompletion)
 				.ConfigureAwait(false);
 
-			this.RequestInterval = Int32.TryParse(UtilityService.GetAppSetting("RequestTimer:Interval"), out var requestInterval) ? requestInterval : 15;
-			this.RequestTimer = Observable.Timer(TimeSpan.FromMinutes(this.RequestInterval), TimeSpan.FromMinutes(this.RequestInterval)).Subscribe(_ => Task.Run(async () =>
+			this.RequestInfoInterval = Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:RequestInfo"), out var requestInterval) ? requestInterval : 15;
+			this.RequestInfoTimer = Observable.Timer(TimeSpan.FromMinutes(this.RequestInfoInterval), TimeSpan.FromMinutes(this.RequestInfoInterval)).Subscribe(_ => Task.Run(async () =>
 			{
-				if ((DateTime.Now - this.RequestTime).TotalMinutes >= this.RequestInterval - 2)
+				if ((DateTime.Now - this.RequestTime).TotalMinutes >= this.RequestInfoInterval - 2)
 				{
 					await this.SendRequestInfoAsync().ConfigureAwait(false);
 					this.RequestTime = DateTime.Now;
@@ -73,9 +74,9 @@ namespace net.vieapps.Services.APIGateway
 
 		IRTUService RTUService { get; set; }
 
-		IDisposable RequestTimer { get; set; }
+		IDisposable RequestInfoTimer { get; set; }
 
-		int RequestInterval { get; set; }
+		int RequestInfoInterval { get; set; }
 
 		DateTime RequestTime { get; set; } = DateTime.Now;
 
@@ -268,25 +269,27 @@ namespace net.vieapps.Services.APIGateway
 		Task SendRequestInfoAsync()
 			=> Task.WhenAll(this.SendInterCommunicateMessageAsync("Controller#RequestInfo"), this.SendInterCommunicateMessageAsync("Service#RequestInfo"));
 
-		public void Dispose()
+		async Task DisposeAsync()
 		{
 			if (!this.Disposed)
 			{
 				this.Disposed = true;
-				Task.Run(async () =>
-				{
-					if (this.Instance != null)
-						await this.Instance.DisposeAsync().ConfigureAwait(false);
-				})
-				.ContinueWith(_ =>
-				{
-					this.Communicator?.Dispose();
-					this.RequestTimer?.Dispose();
-				}, TaskContinuationOptions.OnlyOnRanToCompletion)
-				.ConfigureAwait(false);
+				if (this.Instance != null)
+					await this.Instance.DisposeAsync().ConfigureAwait(false);
+				this.Communicator?.Dispose();
+				this.RequestInfoTimer?.Dispose();
 			}
 		}
 
-		~Manager() => this.Dispose();
+		public void Dispose()
+		{
+			if (RuntimeInformation.FrameworkDescription.IsContains(".NET Framework"))
+				Task.Run(this.DisposeAsync).ConfigureAwait(false);
+			else
+				Task.WaitAll(new[] { this.DisposeAsync() }, 1234);
+		}
+
+		~Manager()
+			=> this.Dispose();
 	}
 }

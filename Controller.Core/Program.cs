@@ -113,8 +113,8 @@ namespace net.vieapps.Services.APIGateway
 						{
 							var info =
 								$"Controller:" + "\r\n\t" +
-								$"- Version: {typeof(Controller).Assembly.GetVersion()} => {Assembly.GetExecutingAssembly().GetVersion()}" + "\r\n\t" +
-								$"- Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "macOS")} {RuntimeInformation.OSArchitecture} ({(RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "Macintosh; Intel Mac OS X; " : "")}{RuntimeInformation.OSDescription.Trim()})" + "\r\n\t" +
+								$"- Version: {Assembly.GetExecutingAssembly().GetVersion()}" + "\r\n\t" +
+								$"- Platform: {Extensions.GetRuntimePlatform()}" + "\r\n\t" +
 								$"- Working mode: {(Environment.UserInteractive ? "Interactive app" : "Background service")}" + "\r\n\t" +
 								$"- API Gateway Router: {new Uri(Router.GetRouterStrInfo()).GetResolvedURI()}" + "\r\n\t" +
 								$"- Incoming channel session identity: {Router.IncomingChannelSessionID}" + "\r\n\t" +
@@ -267,7 +267,7 @@ namespace net.vieapps.Services.APIGateway
 				if (!string.IsNullOrWhiteSpace(message))
 				{
 					Program.Logger.LogInformation(message);
-					Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "Emails", message)).ConfigureAwait(false);
+					Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, null, null, "APIGateway", "Emails", message)).ConfigureAwait(false);
 				}
 			};
 
@@ -276,20 +276,20 @@ namespace net.vieapps.Services.APIGateway
 				if (!string.IsNullOrWhiteSpace(message))
 				{
 					Program.Logger.LogInformation(message);
-					Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "WebHooks", message)).ConfigureAwait(false);
+					Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, null, null, "APIGateway", "WebHooks", message)).ConfigureAwait(false);
 				}
 			};
 
 			Global.OnSendEmailFailure = (message, exception) =>
 			{
 				Program.Logger.LogError(message, exception);
-				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "Emails", message, exception.GetStack())).ConfigureAwait(false);
+				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, null, null, "APIGateway", "Emails", message, exception.GetStack())).ConfigureAwait(false);
 			};
 
 			Global.OnSendWebHookFailure = (message, exception) =>
 			{
 				Program.Logger.LogError(message, exception);
-				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, "APIGateway", "WebHooks", message, exception.GetStack())).ConfigureAwait(false);
+				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, null, null, "APIGateway", "WebHooks", message, exception.GetStack())).ConfigureAwait(false);
 			};
 
 			Global.OnServiceStarted = Global.OnServiceStopped = Global.OnGotServiceMessage = (serviceName, message) =>

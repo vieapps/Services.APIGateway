@@ -31,11 +31,8 @@ namespace net.vieapps.Services.APIGateway
 		/// Creates new instance of services controller
 		/// </summary>
 		/// <param name="cancellationToken">The cancellation token</param>
-		public Controller(CancellationToken cancellationToken = default(CancellationToken))
-		{
-			this.CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-			this.LoggingService = new LoggingService(this.CancellationTokenSource.Token);
-		}
+		public Controller(CancellationToken cancellationToken = default)
+			=> this.CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
 		public void Dispose()
 		{
@@ -48,7 +45,8 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		~Controller() => this.Dispose();
+		~Controller()
+			=> this.Dispose();
 
 		#region Process Info
 		public class ProcessInfo
@@ -77,7 +75,7 @@ namespace net.vieapps.Services.APIGateway
 			public void Set<T>(IDictionary<string, T> items)
 				=> items?.ForEach(kvp => this.Set(kvp.Key, kvp.Value));
 
-			public T Get<T>(string name, T @default = default(T))
+			public T Get<T>(string name, T @default = default)
 				=> this.Extra.TryGetValue(name, out object value) && value != null && value is T
 					? (T)value
 					: @default;
@@ -93,7 +91,7 @@ namespace net.vieapps.Services.APIGateway
 
 		IDisposable InterCommunicator { get; set; } = null;
 
-		LoggingService LoggingService { get; } = null;
+		LoggingService LoggingService { get; set; } = null;
 
 		IRTUService RTUService { get; set; } = null;
 
@@ -133,6 +131,10 @@ namespace net.vieapps.Services.APIGateway
 
 		DateTime ClientSchedulingTime { get; set; } = DateTime.Now;
 
+		List<string> VersionDataSources { get; } = new List<string>();
+
+		List<string> TrashDataSources { get; } = new List<string>();
+
 		/// <summary>
 		/// Gets the number of registered helper serivces
 		/// </summary>
@@ -150,6 +152,13 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Start/Stop controller
+		/// <summary>
+		/// Starts the API Gateway Controller
+		/// </summary>
+		/// <param name="args"></param>
+		/// <param name="onIncomingChannelEstablished"></param>
+		/// <param name="onOutgoingChannelEstablished"></param>
+		/// <param name="nextAsync"></param>
 		public void Start(string[] args = null, Action<object, WampSessionCreatedEventArgs> onIncomingChannelEstablished = null, Action<object, WampSessionCreatedEventArgs> onOutgoingChannelEstablished = null, Func<Task> nextAsync = null)
 		{
 			// prepare arguments
@@ -218,7 +227,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// start
 			Global.OnProcess?.Invoke("The API Gateway Controller is starting");
-			Global.OnProcess?.Invoke($"Version: {typeof(Controller).Assembly.GetVersion()} => {Assembly.GetCallingAssembly().GetVersion()}");
+			Global.OnProcess?.Invoke($"Version: {Assembly.GetCallingAssembly().GetVersion()}");
 			Global.OnProcess?.Invoke($"Platform: {Extensions.GetRuntimePlatform()}");
 #if DEBUG
 			Global.OnProcess?.Invoke($"Working mode: {(this.IsUserInteractive ? "Interactive app" : "Background service")} (DEBUG)");
@@ -231,6 +240,14 @@ namespace net.vieapps.Services.APIGateway
 			Global.OnProcess?.Invoke($"Number of business services: {this.BusinessServices.Count}");
 			Global.OnProcess?.Invoke($"Number of scheduling tasks: {this.Tasks.Count}");
 
+			// prepare database settings
+			this.PrepareDatabaseSettings();
+
+			// prepare logging service
+			if (this.AllowRegisterHelperServices)
+				this.LoggingService = new LoggingService(this.CancellationTokenSource.Token);
+
+			// connect to router
 			var attemptingCounter = 0;
 
 			void connectRouter()
@@ -392,7 +409,7 @@ namespace net.vieapps.Services.APIGateway
 							}
 						},
 						(sender, arguments) => Global.OnError?.Invoke($"Got an unexpected error of the outgoging channel to API Gateway Router => {arguments.Exception?.Message}", arguments.Exception),
-						this.CancellationTokenSource.Token						
+						this.CancellationTokenSource.Token
 					).ConfigureAwait(false);
 				}
 				catch (Exception ex)
@@ -411,24 +428,26 @@ namespace net.vieapps.Services.APIGateway
 			connectRouter();
 		}
 
-		public void Stop()
+		/// <summary>
+		/// Stops the API Gateway Controller
+		/// </summary>
+		/// <returns></returns>
+		public async Task StopAsync()
 		{
-			Task.Run(async () =>
-			{
-				if (this.AllowRegisterBusinessServices || this.AllowRegisterHelperServices || this.AllowRegisterHelperTimers)
-					try
-					{
-						await this.SendInterCommunicateMessageAsync("Controller#Disconnect", this.Info.ToJson()).ConfigureAwait(false);
+			if (this.AllowRegisterBusinessServices || this.AllowRegisterHelperServices || this.AllowRegisterHelperTimers)
+				try
+				{
+					await this.SendInterCommunicateMessageAsync("Controller#Disconnect", this.Info.ToJson()).ConfigureAwait(false);
 #if DEBUG
-						Global.OnProcess?.Invoke($"The updating message was sent when the controller is disconnected => {this.Info.ToJson()}");
+					Global.OnProcess?.Invoke($"The updating message was sent when the controller is disconnected => {this.Info.ToJson()}");
 #endif
-					}
-					catch (Exception ex)
-					{
-						Global.OnError?.Invoke($"Cannot send the updating information => {ex.Message}", ex);
-					}
-			})
-			.ContinueWith(async _ => await this.HelperServices.ForEachAsync(async (service, token) =>
+				}
+				catch (Exception ex)
+				{
+					Global.OnError?.Invoke($"Cannot send the updating information => {ex.Message}", ex);
+				}
+
+			await this.HelperServices.ForEachAsync(async (service, token) =>
 			{
 				try
 				{
@@ -438,27 +457,208 @@ namespace net.vieapps.Services.APIGateway
 				{
 					Global.OnError?.Invoke($"Cannot dispose the helper service => {ex.Message}", ex);
 				}
-			}), TaskContinuationOptions.OnlyOnRanToCompletion)
-			.ConfigureAwait(false);
+			}).ConfigureAwait(false);
 
-			MailSender.SaveMessages();
-			WebHookSender.SaveMessages();
+			try
+			{
+				MailSender.SaveMessages();
+				WebHookSender.SaveMessages();
 
-			this.Timers.ForEach(timer => timer.Dispose());
-			this.Tasks.Values.ForEach(serviceInfo => ExternalProcess.Stop(serviceInfo.Instance, null, null, 1234));
-			this.BusinessServices.Keys.ForEach(name => this.StopBusinessService(name));
+				this.Timers.ForEach(timer => timer.Dispose());
+				this.Tasks.Values.ForEach(serviceInfo => ExternalProcess.Stop(serviceInfo.Instance, null, null, 789));
+				this.BusinessServices.Keys.ForEach(name => this.StopBusinessService(name));
 
-			this.InterCommunicator?.Dispose();
-			this.UpdateCommunicator?.Dispose();
-			this.MailSender?.Dispose();
-			this.WebHookSender?.Dispose();
-			this.LoggingService?.FlushAllLogs();
-			this.CancellationTokenSource.Cancel();
+				this.InterCommunicator?.Dispose();
+				this.UpdateCommunicator?.Dispose();
+				this.MailSender?.Dispose();
+				this.WebHookSender?.Dispose();
+				await (this.LoggingService != null ? this.LoggingService.FlushAsync() : Task.CompletedTask).ConfigureAwait(false);
+				this.CancellationTokenSource.Cancel();
 
-			this.RTUService = null;
-			this.State = ServiceState.Disconnected;
-			Router.Disconnect();
-			Global.OnProcess?.Invoke($"The API Gateway Controller is stopped");
+				this.RTUService = null;
+				this.State = ServiceState.Disconnected;
+				Router.Disconnect();
+				Global.OnProcess?.Invoke($"The API Gateway Controller is stopped");
+			}
+			catch (Exception ex)
+			{
+				Global.OnError?.Invoke($"Error occurred while stopping the controller => {ex.Message}", ex);
+			}
+		}
+
+		/// <summary>
+		/// Stops the API Gateway Controller
+		/// </summary>
+		public void Stop()
+		{
+			if (RuntimeInformation.FrameworkDescription.IsContains(".NET Framework"))
+				Task.Run(this.StopAsync).ConfigureAwait(false);
+			else
+				Task.WaitAll(new[] { this.StopAsync() }, 1234);
+		}
+
+		void PrepareDatabaseSettings()
+		{
+			Global.OnProcess?.Invoke($"Prepare database settings with additional configuration of [{(this.ServiceHosting.IndexOf(Path.DirectorySeparatorChar) < 0 ? this.WorkingDirectory : "")}{this.ServiceHosting}]");
+
+			var connectionStrings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+			var dbProviderFactories = new Dictionary<string, XmlNode>(StringComparer.OrdinalIgnoreCase);
+			var dataSources = new Dictionary<string, XmlNode>(StringComparer.OrdinalIgnoreCase);
+			var repositoriesSection = UtilityService.GetAppSetting("Section:Repositories", "net.vieapps.repositories");
+
+			// settings of controllers
+			if (ConfigurationManager.ConnectionStrings != null && ConfigurationManager.ConnectionStrings.Count > 0)
+				for (var index = 0; index < ConfigurationManager.ConnectionStrings.Count; index++)
+				{
+					var connectionString = ConfigurationManager.ConnectionStrings[index];
+					if (!connectionStrings.ContainsKey(connectionString.Name))
+						connectionStrings[connectionString.Name] = connectionString.ConnectionString;
+				}
+
+			if (ConfigurationManager.GetSection("dbProviderFactories") is AppConfigurationSectionHandler dbProviderFactoriesConfiguration)
+				dbProviderFactoriesConfiguration.Section.SelectNodes("./add").ToList().ForEach(dbProviderFactoryNode =>
+				{
+					var invariant = dbProviderFactoryNode.Attributes["invariant"]?.Value;
+					if (!string.IsNullOrWhiteSpace(invariant) && !dbProviderFactories.ContainsKey(invariant))
+						dbProviderFactories[invariant] = dbProviderFactoryNode;
+				});
+
+			if (ConfigurationManager.GetSection(repositoriesSection) is AppConfigurationSectionHandler repositoriesConfiguration)
+			{
+				repositoriesConfiguration.Section.SelectNodes("./dataSources/dataSource").ToList().ForEach(dataSourceNode =>
+				{
+					var dataSourceName = dataSourceNode.Attributes["name"]?.Value;
+					if (!string.IsNullOrWhiteSpace(dataSourceName) && !dataSources.ContainsKey(dataSourceName))
+					{
+						var connectionStringName = dataSourceNode.Attributes["connectionStringName"]?.Value;
+						if (!string.IsNullOrWhiteSpace(connectionStringName) && connectionStrings.ContainsKey(connectionStringName))
+						{
+							var attribute = dataSourceNode.OwnerDocument.CreateAttribute("connectionString");
+							attribute.Value = connectionStrings[connectionStringName];
+							dataSourceNode.Attributes.Append(attribute);
+							dataSources[dataSourceName] = dataSourceNode;
+						}
+					}
+				});
+
+				var name = repositoriesConfiguration.Section.Attributes["versionDataSource"]?.Value;
+				if (!string.IsNullOrWhiteSpace(name) && dataSources.ContainsKey(name) && this.VersionDataSources.IndexOf(name) < 0)
+					this.VersionDataSources.Add(name);
+
+				name = repositoriesConfiguration.Section.Attributes["trashDataSource"]?.Value;
+				if (!string.IsNullOrWhiteSpace(name) && dataSources.ContainsKey(name) && this.TrashDataSources.IndexOf(name) < 0)
+					this.TrashDataSources.Add(name);
+
+				if (repositoriesConfiguration.Section.SelectNodes("./repository") is XmlNodeList repositoryNodes)
+					foreach (XmlNode repository in repositoryNodes)
+					{
+						name = repository.Attributes["versionDataSource"]?.Value;
+						if (!string.IsNullOrWhiteSpace(name) && dataSources.ContainsKey(name) && this.TrashDataSources.IndexOf(name) < 0)
+							this.TrashDataSources.Add(name);
+
+						name = repository.Attributes["trashDataSource"]?.Value;
+						if (!string.IsNullOrWhiteSpace(name) && dataSources.ContainsKey(name) && this.TrashDataSources.IndexOf(name) < 0)
+							this.TrashDataSources.Add(name);
+					}
+			}
+
+			// settings of services
+			new[]
+			{
+				$"{(this.ServiceHosting.IndexOf(Path.DirectorySeparatorChar) < 0 ? this.WorkingDirectory : "")}{this.ServiceHosting}.exe.config",
+				$"{(this.ServiceHosting.IndexOf(Path.DirectorySeparatorChar) < 0 ? this.WorkingDirectory : "")}{this.ServiceHosting}.dll.config"
+			}.Where(filename => File.Exists(filename)).ForEach(filename =>
+			{
+				var xml = new XmlDocument();
+				xml.LoadXml(UtilityService.ReadTextFile(filename));
+
+				if (xml.DocumentElement.SelectNodes("/configuration/connectionStrings/add") is XmlNodeList connectionStringNodes)
+					connectionStringNodes.ToList().ForEach(connectionStringNode =>
+					{
+						var name = connectionStringNode.Attributes["name"]?.Value;
+						var connectionString = connectionStringNode.Attributes["connectionString"]?.Value;
+						if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(connectionString) && !connectionStrings.ContainsKey(name))
+							connectionStrings[name] = connectionString;
+					});
+
+				if (xml.DocumentElement.SelectNodes("/configuration/dbProviderFactories/add") is XmlNodeList dbProviderFactoryNodes)
+					dbProviderFactoryNodes.ToList().ForEach(dbProviderFactoryNode =>
+					{
+						var invariant = dbProviderFactoryNode.Attributes["invariant"]?.Value;
+						if (!string.IsNullOrWhiteSpace(invariant) && !dbProviderFactories.ContainsKey(invariant))
+							dbProviderFactories[invariant] = dbProviderFactoryNode;
+					});
+
+				if (xml.DocumentElement.SelectSingleNode($"/configuration/{repositoriesSection}") is XmlNode repositoriesConfig)
+				{
+					if (repositoriesConfig.SelectNodes("./dataSources/dataSource") is XmlNodeList dataSourceNodes)
+						dataSourceNodes.ToList().ForEach(dataSourceNode =>
+						{
+							var dataSourceName = dataSourceNode.Attributes["name"]?.Value;
+							if (!string.IsNullOrWhiteSpace(dataSourceName) && !dataSources.ContainsKey(dataSourceName))
+							{
+								var connectionStringName = dataSourceNode.Attributes["connectionStringName"]?.Value;
+								if (!string.IsNullOrWhiteSpace(connectionStringName) && connectionStrings.ContainsKey(connectionStringName))
+								{
+									var attribute = xml.CreateAttribute("connectionString");
+									attribute.Value = connectionStrings[connectionStringName];
+									dataSourceNode.Attributes.Append(attribute);
+									dataSources[dataSourceName] = dataSourceNode;
+								}
+							}
+						});
+
+					var name = repositoriesConfig.Attributes["versionDataSource"]?.Value;
+					if (!string.IsNullOrWhiteSpace(name) && dataSources.ContainsKey(name) && this.VersionDataSources.IndexOf(name) < 0)
+						this.VersionDataSources.Add(name);
+
+					name = repositoriesConfig.Attributes["trashDataSource"]?.Value;
+					if (!string.IsNullOrWhiteSpace(name) && dataSources.ContainsKey(name) && this.TrashDataSources.IndexOf(name) < 0)
+						this.TrashDataSources.Add(name);
+
+					if (repositoriesConfig.SelectNodes("./repository") is XmlNodeList repositoryNodes)
+						foreach (XmlNode repository in repositoryNodes)
+						{
+							name = repository.Attributes["versionDataSource"]?.Value;
+							if (!string.IsNullOrWhiteSpace(name) && dataSources.ContainsKey(name) && this.TrashDataSources.IndexOf(name) < 0)
+								this.TrashDataSources.Add(name);
+
+							name = repository.Attributes["trashDataSource"]?.Value;
+							if (!string.IsNullOrWhiteSpace(name) && dataSources.ContainsKey(name) && this.TrashDataSources.IndexOf(name) < 0)
+								this.TrashDataSources.Add(name);
+						}
+				}
+			});
+
+			Global.OnProcess?.Invoke($"Construct {dbProviderFactories.Count:#,##0} SQL Provider(s)");
+			RepositoryStarter.ConstructDbProviderFactories(dbProviderFactories.Values.ToList(), (msg, ex) =>
+			{
+				if (ex != null)
+					Global.OnError?.Invoke(msg, ex);
+				else
+					Global.OnProcess?.Invoke(msg);
+			});
+
+			Global.OnProcess?.Invoke($"Construct {dataSources.Count:#,##0} data source(s) with {connectionStrings.Count:#,##0} connection string(s): {connectionStrings.ToString(", ", kvp => kvp.Key)}");
+			RepositoryStarter.ConstructDataSources(dataSources.Values.ToList(), (msg, ex) =>
+			{
+				if (ex != null)
+					Global.OnError?.Invoke(msg, ex);
+				else
+					Global.OnProcess?.Invoke(msg);
+			});
+
+			Global.OnProcess?.Invoke($"{this.VersionDataSources.Count:#,##0} data source(s) of version content: {this.VersionDataSources.Join(", ")}");
+			Global.OnProcess?.Invoke($"{this.TrashDataSources.Count:#,##0} data source(s) of trash content: {this.TrashDataSources.Join(", ")}");
+
+			Global.OnProcess?.Invoke($"Initialize the entity (LoggingItem) for storing logs into database with data source: {UtilityService.GetAppSetting("Logs:DataSource", "(None)")}");
+			RepositoryStarter.Initialize(this.GetType().Assembly, (msg, ex) =>
+			{
+				if (ex != null)
+					Global.OnError?.Invoke(msg, ex);
+				else
+					Global.OnProcess?.Invoke(msg);
+			});
 		}
 		#endregion
 
@@ -761,10 +961,9 @@ namespace net.vieapps.Services.APIGateway
 			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:FlushLogs", "45"), out int interval))
 				interval = 45;
 #endif
-			this.StartTimer(() => this.LoggingService?.FlushAllLogs(), interval);
+			this.StartTimer(async () => await (this.LoggingService != null ? this.LoggingService.FlushAsync() : Task.CompletedTask).ConfigureAwait(false), interval);
 
 			// house keeper (hourly)
-			this.PrepareRecycleBin();
 			this.StartTimer(() => this.RunHouseKeeper(), 60 * 60);
 
 			// task scheduler (hourly)
@@ -890,128 +1089,12 @@ namespace net.vieapps.Services.APIGateway
 			this.IsHouseKeeperRunning = false;
 		}
 
-		void PrepareRecycleBin()
-		{
-			var connectionStrings = new Dictionary<string, string>();
-			var dataSources = new Dictionary<string, XmlNode>();
-			var dbProviderFactories = new Dictionary<string, XmlNode>();
-
-#if DEBUG
-			Global.OnProcess($"Prepare recycle-bin information [{(this.ServiceHosting.IndexOf(Path.DirectorySeparatorChar) < 0 ? this.WorkingDirectory : "")}{this.ServiceHosting}]");
-#endif
-
-			new[]
-			{
-				$"{(this.ServiceHosting.IndexOf(Path.DirectorySeparatorChar) < 0 ? this.WorkingDirectory : "")}{this.ServiceHosting}.exe.config",
-				$"{(this.ServiceHosting.IndexOf(Path.DirectorySeparatorChar) < 0 ? this.WorkingDirectory : "")}{this.ServiceHosting}.dll.config"
-			}.Where(filename => File.Exists(filename)).ForEach(filename =>
-			{
-				var xml = new XmlDocument();
-				xml.LoadXml(UtilityService.ReadTextFile(filename));
-
-				if (xml.DocumentElement.SelectNodes("/configuration/connectionStrings/add") is XmlNodeList connectionStringNodes)
-					connectionStringNodes.ToList().ForEach(connectionStringNode =>
-					{
-						var name = connectionStringNode.Attributes["name"]?.Value;
-						var connectionString = connectionStringNode.Attributes["connectionString"]?.Value;
-						if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(connectionString) && !connectionStrings.ContainsKey(name))
-							connectionStrings[name] = connectionString;
-					});
-
-				if (xml.DocumentElement.SelectNodes("/configuration/net.vieapps.repositories/dataSources/dataSource") is XmlNodeList dataSourceNodes)
-					dataSourceNodes.ToList().ForEach(dataSourceNode =>
-					{
-						var dataSourceName = dataSourceNode.Attributes["name"]?.Value;
-						if (!string.IsNullOrWhiteSpace(dataSourceName) && !dataSources.ContainsKey(dataSourceName))
-						{
-							var connectionStringName = dataSourceNode.Attributes["connectionStringName"]?.Value;
-							if (!string.IsNullOrWhiteSpace(connectionStringName) && connectionStrings.ContainsKey(connectionStringName))
-							{
-								var attribute = xml.CreateAttribute("connectionString");
-								attribute.Value = connectionStrings[connectionStringName];
-								dataSourceNode.Attributes.Append(attribute);
-								dataSources[dataSourceName] = dataSourceNode;
-							}
-						}
-					});
-
-				if (xml.DocumentElement.SelectNodes("/configuration/dbProviderFactories/add") is XmlNodeList dbProviderFactoryNodes)
-					dbProviderFactoryNodes.ToList().ForEach(dbProviderFactoryNode =>
-					{
-						var invariant = dbProviderFactoryNode.Attributes["invariant"]?.Value;
-						if (!string.IsNullOrWhiteSpace(invariant) && !dbProviderFactories.ContainsKey(invariant))
-							dbProviderFactories[invariant] = dbProviderFactoryNode;
-					});
-			});
-
-#if DEBUG
-			Global.OnProcess?.Invoke($"Construct database provider factories ({dbProviderFactories.Count:#,##0})");
-#endif
-
-			RepositoryStarter.ConstructDbProviderFactories(dbProviderFactories.Values.ToList(), (msg, ex) =>
-			{
-				if (ex != null)
-					Global.OnError?.Invoke(msg, ex);
-				else
-					Global.OnProcess?.Invoke(msg);
-			});
-
-#if DEBUG
-			Global.OnProcess?.Invoke($"Construct data sources ({dataSources.Count:#,##0}) - Total of connection strings: {connectionStrings.Count:#,##0}");
-#endif
-
-			RepositoryStarter.ConstructDataSources(dataSources.Values.ToList(), (msg, ex) =>
-			{
-				if (ex != null)
-					Global.OnError?.Invoke(msg, ex);
-				else
-					Global.OnProcess?.Invoke(msg);
-			});
-		}
-
 		List<string> CleanRecycleBin()
 		{
-			// prepare data sources
-			var versionDataSources = new List<string>();
-			var trashDataSources = new List<string>();
-
-			new[]
-			{
-				$"{(this.ServiceHosting.IndexOf(Path.DirectorySeparatorChar) < 0 ? this.WorkingDirectory : "")}{this.ServiceHosting}.exe.config",
-				$"{(this.ServiceHosting.IndexOf(Path.DirectorySeparatorChar) < 0 ? this.WorkingDirectory : "")}{this.ServiceHosting}.dll.config"
-			}.Where(filename => File.Exists(filename)).ForEach(filename =>
-			{
-				var xml = new XmlDocument();
-				xml.LoadXml(UtilityService.ReadTextFile(filename));
-
-				if (xml.DocumentElement.SelectSingleNode("/configuration/net.vieapps.repositories") is XmlNode root)
-				{
-					var name = root.Attributes["versionDataSource"]?.Value;
-					if (!string.IsNullOrWhiteSpace(name) && versionDataSources.IndexOf(name) < 0)
-						versionDataSources.Add(name);
-
-					name = root.Attributes["trashDataSource"]?.Value;
-					if (!string.IsNullOrWhiteSpace(name) && trashDataSources.IndexOf(name) < 0)
-						trashDataSources.Add(name);
-
-					if (root.SelectNodes("./repository") is XmlNodeList repositories)
-						foreach (XmlNode repository in repositories)
-						{
-							name = repository.Attributes["versionDataSource"]?.Value;
-							if (!string.IsNullOrWhiteSpace(name) && versionDataSources.IndexOf(name) < 0)
-								versionDataSources.Add(name);
-
-							name = repository.Attributes["trashDataSource"]?.Value;
-							if (!string.IsNullOrWhiteSpace(name) && trashDataSources.IndexOf(name) < 0)
-								trashDataSources.Add(name);
-						}
-				}
-			});
-
 			var logs = new List<string>();
 
 			// clean version contents
-			versionDataSources.ForEach(dataSource =>
+			this.VersionDataSources.ForEach(dataSource =>
 			{
 				try
 				{
@@ -1020,12 +1103,12 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					logs.Add($"Error occurred while cleaning old version contents of data source [{dataSource}]\r\n[{ex.GetType()}]: {ex.Message}\r\nStack:{ex.StackTrace}");
+					logs.Add($"Error occurred while cleaning old version contents of data source [{dataSource}]\r\n[{ex.GetType()}]: {ex.Message}\r\nStack: {ex.StackTrace}");
 					var inner = ex.InnerException;
 					var count = 1;
 					while (inner != null)
 					{
-						logs.Add($"-- Inner ({count}) -----\r\n[{inner.GetType()}]: {inner.Message}\r\nStack:{inner.StackTrace}");
+						logs.Add($"-- Inner ({count}) -----\r\n[{inner.GetType()}]: {inner.Message}\r\nStack: {inner.StackTrace}");
 						count++;
 						inner = inner.InnerException;
 					}
@@ -1034,7 +1117,7 @@ namespace net.vieapps.Services.APIGateway
 			});
 
 			// clean trash contents
-			trashDataSources.ForEach(dataSource =>
+			this.TrashDataSources.ForEach(dataSource =>
 			{
 				try
 				{
@@ -1043,12 +1126,12 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					logs.Add($"Error occurred while cleaning old trash contents of data source [{dataSource}]\r\n[{ex.GetType()}]: {ex.Message}\r\nStack:{ex.StackTrace}");
+					logs.Add($"Error occurred while cleaning old trash contents of data source [{dataSource}]\r\n[{ex.GetType()}]: {ex.Message}\r\nStack: {ex.StackTrace}");
 					var inner = ex.InnerException;
 					var count = 1;
 					while (inner != null)
 					{
-						logs.Add($"-- Inner ({count}) -----\r\n[{inner.GetType()}] : {inner.Message}\r\nStack:{inner.StackTrace}");
+						logs.Add($"-- Inner ({count}) -----\r\n[{inner.GetType()}] : {inner.Message}\r\nStack: {inner.StackTrace}");
 						count++;
 						inner = inner.InnerException;
 					}
@@ -1195,7 +1278,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		public async Task SendInterCommunicateMessageAsync(string type, JToken data = null, CancellationToken cancellationToken = default(CancellationToken))
+		public async Task SendInterCommunicateMessageAsync(string type, JToken data = null, CancellationToken cancellationToken = default)
 		{
 			if (this.RTUService == null && Router.OutgoingChannel != null)
 				this.RTUService = Router.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create());

@@ -44,7 +44,7 @@ namespace net.vieapps.Services.APIGateway
 
 			var apiCall = args?.FirstOrDefault(arg => arg.IsStartsWith("/agc:"));
 			var isUserInteractive = Environment.UserInteractive && apiCall == null;
-			var hostingInfo = $"VIEApps NGX API Gateway - Service Hosting {RuntimeInformation.ProcessArchitecture.ToString().ToLower()} {typeof(ServiceHostingBase).Assembly.GetVersion()}";
+			var hostingInfo = $"VIEApps NGX API Gateway - Service Hosting {RuntimeInformation.ProcessArchitecture.ToString().ToLower()} {Assembly.GetCallingAssembly().GetVersion()}";
 
 			// prepare type name
 			this.ServiceTypeName = args?.FirstOrDefault(arg => arg.IsStartsWith("/svc:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/svc:", "");
@@ -110,11 +110,11 @@ namespace net.vieapps.Services.APIGateway
 					Console.Error.WriteLine($"Error: The service component [{this.ServiceTypeName},{this.ServiceAssemblyName}] got an unexpected error while preparing");
 					(ex as ReflectionTypeLoadException).LoaderExceptions.ForEach(exception =>
 					{
-						Console.Error.WriteLine(exception.Message);
+						Console.Error.WriteLine($"{exception.Message} [{exception.GetType()}]\r\nStack: {exception.StackTrace}");
 						var inner = exception.InnerException;
 						while (inner != null)
 						{
-							Console.Error.WriteLine($"{inner.Message} [{inner.GetType()}]\r\nStack: {inner.StackTrace}");
+							Console.Error.WriteLine($"-------------------------\r\n{inner.Message} [{inner.GetType()}]\r\nStack: {inner.StackTrace}");
 							inner = inner.InnerException;
 						}
 					});
@@ -123,11 +123,11 @@ namespace net.vieapps.Services.APIGateway
 				{
 					Console.Error.WriteLine(hostingInfo);
 					Console.Error.WriteLine("");
-					Console.Error.WriteLine($"Error: The service component [{this.ServiceTypeName},{this.ServiceAssemblyName}] got an unexpected error while preparing => {ex.Message}");
+					Console.Error.WriteLine($"Error: The service component [{this.ServiceTypeName},{this.ServiceAssemblyName}] got an unexpected error while preparing => {ex.Message} [{ex.GetType()}]\r\nStack: {ex.StackTrace}");
 					var inner = ex.InnerException;
 					while (inner != null)
 					{
-						Console.Error.WriteLine($"{inner.Message}\r\nStack: {inner.StackTrace}");
+						Console.Error.WriteLine($"-------------------------\r\n{inner.Message} [{inner.GetType()}]\r\nStack: {inner.StackTrace}");
 						inner = inner.InnerException;
 					}
 				}

@@ -21,7 +21,7 @@ namespace net.vieapps.Services.APIGateway
 		public ISubject<UpdateMessage> GetUpdateMessagePublisher()
 			=> this.UpdateMessagePublisher ?? (this.UpdateMessagePublisher = Router.OutgoingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("messages.update"));
 
-		public Task SendUpdateMessageAsync(UpdateMessage message, CancellationToken cancellationToken = default(CancellationToken))
+		public Task SendUpdateMessageAsync(UpdateMessage message, CancellationToken cancellationToken = default)
 			=> UtilityService.ExecuteTask(() =>
 			{
 				try
@@ -41,7 +41,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 			}, cancellationToken);
 
-		public Task SendUpdateMessagesAsync(List<BaseMessage> messages, string deviceID, string excludedDeviceID, CancellationToken cancellationToken = default(CancellationToken))
+		public Task SendUpdateMessagesAsync(List<BaseMessage> messages, string deviceID, string excludedDeviceID, CancellationToken cancellationToken = default)
 			=> UtilityService.ExecuteTask(() =>
 			{
 				var publisher = messages.Select(message => new UpdateMessage
@@ -82,10 +82,10 @@ namespace net.vieapps.Services.APIGateway
 			return subject;
 		}
 
-		public Task SendInterCommunicateMessageAsync(string serviceName, BaseMessage message, CancellationToken cancellationToken = default(CancellationToken))
+		public Task SendInterCommunicateMessageAsync(string serviceName, BaseMessage message, CancellationToken cancellationToken = default)
 			=> this.SendInterCommunicateMessageAsync(new CommunicateMessage(serviceName, message), cancellationToken);
 
-		public Task SendInterCommunicateMessageAsync(CommunicateMessage message, CancellationToken cancellationToken = default(CancellationToken))
+		public Task SendInterCommunicateMessageAsync(CommunicateMessage message, CancellationToken cancellationToken = default)
 			=> UtilityService.ExecuteTask(() =>
 			{
 				if (message != null && !string.IsNullOrWhiteSpace(message.ServiceName))
@@ -105,12 +105,12 @@ namespace net.vieapps.Services.APIGateway
 					}
 			}, cancellationToken);
 
-		public Task SendInterCommunicateMessagesAsync(string serviceName, List<BaseMessage> messages, CancellationToken cancellationToken = default(CancellationToken))
+		public Task SendInterCommunicateMessagesAsync(string serviceName, List<BaseMessage> messages, CancellationToken cancellationToken = default)
 			=> !string.IsNullOrWhiteSpace(serviceName) && messages != null && messages.Count > 0
 				? this.SendInterCommunicateMessagesAsync(serviceName, messages.Select(msg => new CommunicateMessage(serviceName, msg)).ToList(), cancellationToken)
 				: Task.CompletedTask;
 
-		public Task SendInterCommunicateMessagesAsync(List<CommunicateMessage> messages, CancellationToken cancellationToken = default(CancellationToken))
+		public Task SendInterCommunicateMessagesAsync(List<CommunicateMessage> messages, CancellationToken cancellationToken = default)
 		{
 			var byServiceMessages = messages != null && messages.Count > 0
 				? messages.ToLookup(m => m.ServiceName)
@@ -123,7 +123,7 @@ namespace net.vieapps.Services.APIGateway
 			);
 		}
 
-		Task SendInterCommunicateMessagesAsync(string serviceName, List<CommunicateMessage> messages, CancellationToken cancellationToken = default(CancellationToken))
+		Task SendInterCommunicateMessagesAsync(string serviceName, List<CommunicateMessage> messages, CancellationToken cancellationToken = default)
 			=> UtilityService.ExecuteTask(() =>
 			{
 				if (messages != null && !string.IsNullOrWhiteSpace(serviceName))

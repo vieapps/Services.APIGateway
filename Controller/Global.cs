@@ -7,6 +7,7 @@ using WampSharp.V2.Rpc;
 using Newtonsoft.Json.Linq;
 
 using net.vieapps.Components.Utility;
+using net.vieapps.Components.Repository;
 #endregion
 
 namespace net.vieapps.Services.APIGateway
@@ -154,5 +155,13 @@ namespace net.vieapps.Services.APIGateway
 		static string _StatusPath = null;
 
 		internal static string StatusPath => Global._StatusPath ?? (Global._StatusPath = Global.GetPath("Path:Status", "status"));
+	}
+
+	[Serializable]
+	[Repository]
+	public abstract class Repository<T> : RepositoryBase<T> where T : class
+	{
+		[Newtonsoft.Json.JsonIgnore, System.Xml.Serialization.XmlIgnore, MongoDB.Bson.Serialization.Attributes.BsonIgnore, Ignore]
+		public override string ServiceName => "APIGateway";
 	}
 }

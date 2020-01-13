@@ -17,7 +17,7 @@ namespace net.vieapps.Services.APIGateway
 {
 	public class MessagingService : IMessagingService
 	{
-		public async Task SendEmailAsync(EmailMessage message, CancellationToken cancellationToken = default(CancellationToken))
+		public async Task SendEmailAsync(EmailMessage message, CancellationToken cancellationToken = default)
 		{
 			message.From = string.IsNullOrWhiteSpace(message.From) ? MailSender.EmailDefaultSender : message.From;
 			if (string.IsNullOrWhiteSpace(message.SmtpServer))
@@ -31,7 +31,7 @@ namespace net.vieapps.Services.APIGateway
 			await EmailMessage.SaveAsync(message, MailSender.EmailsPath).ConfigureAwait(false);
 		}
 
-		public Task SendWebHookAsync(WebHookMessage message, CancellationToken cancellationToken = default(CancellationToken))
+		public Task SendWebHookAsync(WebHookMessage message, CancellationToken cancellationToken = default)
 			=> WebHookMessage.SaveAsync(message, WebHookSender.WebHooksPath);
 	}
 
@@ -41,10 +41,11 @@ namespace net.vieapps.Services.APIGateway
 	{
 		CancellationTokenSource CancellationTokenSource { get; }
 
-		public MailSender(CancellationToken cancellationToken = default(CancellationToken))
+		public MailSender(CancellationToken cancellationToken = default)
 			=> this.CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
-		public void Dispose() => this.CancellationTokenSource.Cancel();
+		public void Dispose()
+			=> this.CancellationTokenSource.Cancel();
 
 		~MailSender()
 		{
@@ -219,10 +220,11 @@ namespace net.vieapps.Services.APIGateway
 	{
 		CancellationTokenSource CancellationTokenSource { get; }
 
-		public WebHookSender(CancellationToken cancellationToken = default(CancellationToken))
+		public WebHookSender(CancellationToken cancellationToken = default)
 			=> this.CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
-		public void Dispose() => this.CancellationTokenSource.Cancel();
+		public void Dispose()
+			=> this.CancellationTokenSource.Cancel();
 
 		~WebHookSender()
 		{
@@ -316,11 +318,11 @@ namespace net.vieapps.Services.APIGateway
 				await UtilityService.GetWebResponseAsync("POST", msg.EndpointURL + (!query.Equals("") ? "?" + query : ""), msg.Header, null, msg.Body, "application/json", 45, UtilityService.DesktopUserAgent + " VIEApps NGX WebHook Sender", null, null, null, this.CancellationTokenSource.Token);
 				WebHookSender.Messages.Remove(msg.ID);
 
-				Global.OnSendWebHookSuccess?.Invoke(
-					"The web-hook message has been sent" + "\r\n" +
+				var log = "The web-hook message has been sent" + "\r\n" +
 					$"- ID: {msg.ID}" + "\r\n" +
-					$"- End-point: {msg.EndpointURL}"
-				);
+					$"- End-point: {msg.EndpointURL}";
+				onSuccess?.Invoke(log);
+				Global.OnSendWebHookSuccess?.Invoke(log);
 			}
 			catch (OperationCanceledException) { }
 			catch (Exception ex)
@@ -352,6 +354,7 @@ namespace net.vieapps.Services.APIGateway
 					log += $"- Status: Update queue to re-send {time.ToDTString()}";
 				}
 
+				onError?.Invoke(log, ex);
 				Global.OnSendWebHookFailure?.Invoke(log, ex);
 			}
 		}

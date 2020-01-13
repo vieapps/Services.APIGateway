@@ -43,7 +43,7 @@ namespace net.vieapps.Services.APIGateway
 			var queryString = context.Request.QueryString.ToDictionary(query =>
 			{
 				var pathSegments = context.GetRequestPathSegments();
-				query["service-name"] = !string.IsNullOrWhiteSpace(pathSegments[0]) ? pathSegments[0].GetANSIUri() : "";
+				query["service-name"] = pathSegments.Length > 0 && !string.IsNullOrWhiteSpace(pathSegments[0]) ? pathSegments[0].GetANSIUri() : "";
 				query["object-name"] = pathSegments.Length > 1 && !string.IsNullOrWhiteSpace(pathSegments[1]) ? pathSegments[1].GetANSIUri() : "";
 				query["object-identity"] = pathSegments.Length > 2 && !string.IsNullOrWhiteSpace(pathSegments[2]) ? pathSegments[2].GetANSIUri() : "";
 			});
@@ -108,7 +108,10 @@ namespace net.vieapps.Services.APIGateway
 					: !InternalAPIs.NoTokenRequiredServices.Contains(requestInfo.ServiceName);
 
 				if (!string.IsNullOrWhiteSpace(authenticateToken))
+				{
 					await context.UpdateWithAuthenticateTokenAsync(requestInfo.Session, authenticateToken, null, null, null, InternalAPIs.Logger, "Http.InternalAPIs", requestInfo.CorrelationID).ConfigureAwait(false);
+					context.SetSession(requestInfo.Session);
+				}
 				else if (tokenIsRequired)
 					throw new InvalidSessionException("Session is invalid (Token is not found)");
 
@@ -177,7 +180,7 @@ namespace net.vieapps.Services.APIGateway
 			if (isAccountProccessed || "otp".IsEquals(requestInfo.ObjectName))
 				try
 				{
-					requestInfo.PrepareAccountRelated(context.Items, (msg, ex) => context.WriteLogs(InternalAPIs.Logger, "Http.InternalAPIs", msg, ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID));
+					requestInfo.PrepareAccountRelated(context.Items, async (msg, ex) => await context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", msg, ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID).ConfigureAwait(false));
 				}
 				catch (Exception ex)
 				{
@@ -306,6 +309,8 @@ namespace net.vieapps.Services.APIGateway
 				{ "AccessToken", requestInfo.Session.User.GetAccessToken(Global.ECCKey) },
 				{ "IP", requestInfo.Session.IP },
 				{ "DeviceID", requestInfo.Session.DeviceID },
+				{ "DeveloperID", requestInfo.Session.DeveloperID },
+				{ "AppID", requestInfo.Session.AppID },
 				{ "AppInfo", requestInfo.Session.AppName + " @ " + requestInfo.Session.AppPlatform },
 				{ "OSInfo", $"{requestInfo.Session.AppAgent.GetOSInfo()} [{requestInfo.Session.AppAgent}]" },
 				{ "Verified", requestInfo.Session.Verified },
@@ -430,6 +435,8 @@ namespace net.vieapps.Services.APIGateway
 					session["ExpiredAt"] = DateTime.Now.AddDays(90);
 					session["IP"] = requestInfo.Session.IP;
 					session["DeviceID"] = requestInfo.Session.DeviceID;
+					session["DeveloperID"] = requestInfo.Session.DeveloperID;
+					session["AppID"] = requestInfo.Session.AppID;
 					session["AppInfo"] = requestInfo.Session.AppName + " @ " + requestInfo.Session.AppPlatform;
 					session["OSInfo"] = $"{requestInfo.Session.AppAgent.GetOSInfo()} [{requestInfo.Session.AppAgent}]";
 					session["Online"] = true;

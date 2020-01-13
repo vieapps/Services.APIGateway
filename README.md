@@ -16,4 +16,4 @@
 
 - Messaging protocol: WAMP-proto with WampSharp
 - Authentication mechanisim: JSON Web Token
-- .NET Standard 2.0
+- .NET Core 2.x/3.x

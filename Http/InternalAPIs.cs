@@ -26,7 +26,7 @@ namespace net.vieapps.Services.APIGateway
 
 		public static ILogger Logger { get; set; }
 
-		public static List<string> ExcludedHeaders { get; } = UtilityService.GetAppSetting("ExcludedHeaders", "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,ms-aspnetcore-token,x-forwarded-for,x-forwarded-proto,x-forwarded-port,x-original-for,x-original-proto,x-original-remote-endpoint,x-original-port,cdn-loop,cf-ipcountry,cf-ray,cf-visitor,cf-connecting-ip,sec-fetch-mode,sec-fetch-site").ToList();
+		public static List<string> ExcludedHeaders { get; } = UtilityService.GetAppSetting("ExcludedHeaders", "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,ms-aspnetcore-token,x-forwarded-for,x-forwarded-proto,x-forwarded-port,x-original-for,x-original-proto,x-original-remote-endpoint,x-original-port,cdn-loop,cf-ipcountry,cf-ray,cf-visitor,cf-connecting-ip,sec-fetch-site,sec-fetch-mode,sec-fetch-dest").ToList();
 
 		public static HashSet<string> NoTokenRequiredServices { get; } = $"{UtilityService.GetAppSetting("NoTokenRequiredServices", "")}|indexes|discovery|webhooks".ToLower().ToHashSet('|', true);
 
@@ -52,7 +52,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				try
 				{
-					extra = extraInfo.Url64Decode().ToExpandoObject().ToDictionary(kvp => kvp.Key, kvp => kvp.Value?.ToString());
+					extra = extraInfo.Url64Decode().ToExpandoObject().ToDictionary(kvp => kvp.Key, kvp => kvp.Value?.ToString(), StringComparer.OrdinalIgnoreCase);
 				}
 				catch { }
 				queryString.Remove("x-request-extra");

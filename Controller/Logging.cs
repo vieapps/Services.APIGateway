@@ -71,16 +71,15 @@ namespace net.vieapps.Services.APIGateway
 			var loggingItem = new LoggingItem
 			{
 				CorrelationID = correlationID,
-				Time = DateTime.Now,
-				ServiceName = !string.IsNullOrWhiteSpace(serviceName) ? serviceName : "APIGateway",
-				ObjectName = !string.IsNullOrWhiteSpace(objectName) && !objectName.IsEquals(serviceName) ? objectName : "",
+				ServiceName = (!string.IsNullOrWhiteSpace(serviceName) ? serviceName : "APIGateway").ToLower(),
+				ObjectName = (!string.IsNullOrWhiteSpace(objectName) && !objectName.IsEquals(serviceName) ? objectName : "").ToLower(),
 				Logs = "",
 				Stack = string.IsNullOrWhiteSpace(stack) ? null : stack
 			};
 
 			var time = loggingItem.Time.ToString("HH:mm:ss.fff");
-			var name = (!string.IsNullOrWhiteSpace(serviceName) ? serviceName : "APIGateway").ToLower();
-			var suffix = !string.IsNullOrWhiteSpace(objectName) && !objectName.IsEquals(serviceName) ? "." + objectName.ToLower() : "";
+			var name = loggingItem.ServiceName;
+			var suffix = (!string.IsNullOrWhiteSpace(loggingItem.ObjectName) ? "." : "") + loggingItem.ObjectName;
 
 			if (!this.Logs.TryGetValue(name + suffix, out var logItems))
 			{
@@ -111,7 +110,7 @@ namespace net.vieapps.Services.APIGateway
 			if (Router.OutgoingChannel != null)
 				Router.OutgoingChannel.RealmProxy.Services.GetSubject<BaseMessage>("messages.log")?.OnNext(new BaseMessage
 				{
-					Type = (!string.IsNullOrWhiteSpace(serviceName) ? serviceName : "APIGateway") + (!string.IsNullOrWhiteSpace(objectName) && !objectName.IsEquals(serviceName) ? "#" + objectName : ""),
+					Type = "Update",
 					Data = loggingItem.ToJson()
 				});
 
@@ -201,7 +200,7 @@ namespace net.vieapps.Services.APIGateway
 			=> this.ID = UtilityService.NewUUID;
 
 		[Sortable(IndexName = "Time")]
-		public DateTime Time { get; set; }
+		public DateTime Time { get; set; } = DateTime.Now;
 
 		[Property(MaxLength = 32, NotNull = true), Sortable(IndexName = "IDs")]
 		public string CorrelationID { get; set; }

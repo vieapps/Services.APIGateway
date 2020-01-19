@@ -87,7 +87,7 @@ namespace net.vieapps.Services.APIGateway
 
 		static IWampHost Forwarder { get; set; }
 
-		public static ConcurrentDictionary<long, SystemEx.IAsyncDisposable> ForwardingTokens { get; } = new ConcurrentDictionary<long, SystemEx.IAsyncDisposable>();
+		public static ConcurrentDictionary<long, IAsyncDisposable> ForwardingTokens { get; } = new ConcurrentDictionary<long, IAsyncDisposable>();
 
 		public static void InitializeForwarder()
 		{
@@ -100,7 +100,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			appBuilder.UseWebSockets();
 			var transport = new AspNetCoreWebSocketTransport(appBuilder);
-			Router.Forwarder.RegisterTransport(transport, new JTokenJsonBinding(), new JTokenMsgpackBinding());
+			Router.Forwarder.RegisterTransport(transport, new JTokenJsonBinding(), new JTokenMessagePackBinding());
 			Global.Logger.LogInformation($"The transport of forwarder of API Gateway Router is registered => {transport.GetType()}");
 		}
 
@@ -111,7 +111,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		public static void CloseForwarder()
-			=> Task.Run(async () => await Router.ForwardingTokens.Values.ToList().ForEachAsync((forwardingToken, cancellationToken) => forwardingToken.DisposeAsync()).ConfigureAwait(false))
+			=> Task.Run(async () => await Router.ForwardingTokens.Values.ToList().ForEachAsync(async (forwardingToken, cancellationToken) => await forwardingToken.DisposeAsync().ConfigureAwait(false)).ConfigureAwait(false))
 				.ContinueWith(_ => Router.Forwarder?.Dispose(), TaskContinuationOptions.OnlyOnRanToCompletion)
 				.ContinueWith(_ => Global.Logger.LogInformation("The forwarder of API Gateway Router is stopped"), TaskContinuationOptions.OnlyOnRanToCompletion)
 				.ConfigureAwait(false)
@@ -122,17 +122,17 @@ namespace net.vieapps.Services.APIGateway
 	class ForwardingToken : IWampRegistrationSubscriptionToken
 	{
 		readonly IWampRegistrationSubscriptionToken _localToken;
-		SystemEx.IAsyncDisposable _remoteToken;
+		IAsyncDisposable _remoteToken;
 
 		public long TokenId => this._localToken.TokenId;
 
-		public ForwardingToken(IWampRegistrationSubscriptionToken localToken, Task<SystemEx.IAsyncDisposable> remoteToken)
+		public ForwardingToken(IWampRegistrationSubscriptionToken localToken, Task<IAsyncDisposable> remoteToken)
 		{
 			this._localToken = localToken;
 			Task.Run(() => this.RegisterForwardingTokenAsync(remoteToken)).ConfigureAwait(false);
 		}
 
-		public async Task RegisterForwardingTokenAsync(Task<SystemEx.IAsyncDisposable> remoteToken)
+		public async Task RegisterForwardingTokenAsync(Task<IAsyncDisposable> remoteToken)
 		{
 			try
 			{

@@ -68,7 +68,7 @@ namespace net.vieapps.Services.APIGateway
 
 		ConcurrentDictionary<string, List<ServiceInfo>> Services { get; } = new ConcurrentDictionary<string, List<ServiceInfo>>();
 
-		SystemEx.IAsyncDisposable Instance { get; set; }
+		IAsyncDisposable Instance { get; set; }
 
 		IDisposable Communicator { get; set; }
 

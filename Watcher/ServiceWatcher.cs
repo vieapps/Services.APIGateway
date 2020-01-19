@@ -64,10 +64,10 @@ namespace net.vieapps.Services.APIGateway
 
 			var watchingProcessID = Process.GetCurrentProcess().Id;
 			var watchingTime = DateTime.Now.AddMinutes(-90);
-			var watchingInterval = UtilityService.GetAppSetting("Interval", "120").CastAs<int>();
+			var watchingInterval = UtilityService.GetAppSetting("TimerInterval:Watcher", "120").CastAs<int>();
 			var watchingServices = new Dictionary<string, Tuple<string, string>>(StringComparer.OrdinalIgnoreCase);
 
-			if (System.Configuration.ConfigurationManager.GetSection("net.vieapps.services") is AppConfigurationSectionHandler config)
+			if (System.Configuration.ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:Services", "net.vieapps.services")) is AppConfigurationSectionHandler config)
 				if (config.Section.SelectNodes("./service") is System.Xml.XmlNodeList services)
 					services
 						.ToList()
@@ -186,12 +186,12 @@ namespace net.vieapps.Services.APIGateway
 					watchingTime = DateTime.Now;
 			});
 
-			ServiceWatcher.Logger.LogInformation($"Starting");
-			ServiceWatcher.Logger.LogInformation($"Version: VIEApps NGX API Watcher {typeof(Watcher).Assembly.GetVersion()}");
+			ServiceWatcher.Logger.LogInformation($"VIEApps NGX API Watcher is starting");
+			ServiceWatcher.Logger.LogInformation($"Version: {typeof(Watcher).Assembly.GetVersion()}");
 			ServiceWatcher.Logger.LogInformation($"Mode: {(isUserInteractive ? "Interactive app" : "Background service")}");
 			ServiceWatcher.Logger.LogInformation($"Platform: {RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "macOS")} {RuntimeInformation.OSArchitecture} ({(RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "Macintosh; Intel Mac OS X; " : "")}{RuntimeInformation.OSDescription.Trim()})");
-			ServiceWatcher.Logger.LogInformation($"Root path (base directory): {AppDomain.CurrentDomain.BaseDirectory}");
-			ServiceWatcher.Logger.LogInformation($"Logging level: {logLevel} - Rolling log files is {(logPath == null ? "disabled" : $"enabled => {logPath}")}");
+			ServiceWatcher.Logger.LogInformation($"Root (base) directory: {AppDomain.CurrentDomain.BaseDirectory}");
+			ServiceWatcher.Logger.LogInformation($"Logging level: {logLevel} - Local rolling log files is {(logPath == null ? "disabled" : $"enabled => {logPath}")}");
 			ServiceWatcher.Logger.LogInformation($"Watching interval: {watchingInterval} seconds - {watchingServices.Count} service(s) being watched => {watchingServices.Keys.ToString(", ")}");
 
 			stopwatch.Stop();

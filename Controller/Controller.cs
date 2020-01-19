@@ -95,7 +95,7 @@ namespace net.vieapps.Services.APIGateway
 
 		IRTUService RTUService { get; set; } = null;
 
-		List<SystemEx.IAsyncDisposable> HelperServices { get; } = new List<SystemEx.IAsyncDisposable>();
+		List<IAsyncDisposable> HelperServices { get; } = new List<IAsyncDisposable>();
 
 		List<IDisposable> Timers { get; } = new List<IDisposable>();
 
@@ -651,14 +651,39 @@ namespace net.vieapps.Services.APIGateway
 			Global.OnProcess?.Invoke($"{this.VersionDataSources.Count:#,##0} data source(s) of version content: {this.VersionDataSources.Join(", ")}");
 			Global.OnProcess?.Invoke($"{this.TrashDataSources.Count:#,##0} data source(s) of trash content: {this.TrashDataSources.Join(", ")}");
 
-			Global.OnProcess?.Invoke($"Initialize the entity (LoggingItem) for storing logs into database with data source: {UtilityService.GetAppSetting("Logs:DataSource", "(None)")}");
-			RepositoryStarter.Initialize(this.GetType().Assembly, (msg, ex) =>
-			{
-				if (ex != null)
-					Global.OnError?.Invoke(msg, ex);
-				else
-					Global.OnProcess?.Invoke(msg);
-			});
+			var loggingDataSource = RepositoryMediator.GetDataSource(UtilityService.GetAppSetting("Logs:DataSource"));
+			if (this.AllowRegisterHelperServices && loggingDataSource != null)
+				Task.Run(() =>
+				{
+					Global.OnProcess?.Invoke($"Initialize the entity (LoggingItem) for storing logs into database with data source: {loggingDataSource.Name}");
+					RepositoryStarter.Initialize(this.GetType().Assembly, (msg, ex) =>
+					{
+						if (ex != null)
+							Global.OnError?.Invoke(msg, ex);
+						else
+							Global.OnProcess?.Invoke(msg);
+					});
+				})
+				.ContinueWith(async _ =>
+				{
+					if (loggingDataSource.Mode.Equals(RepositoryMode.SQL))
+						await RepositoryStarter.EnsureSqlSchemasAsync(RepositoryMediator.GetEntityDefinition<LoggingItem>(), loggingDataSource, (msg, ex) =>
+						{
+							if (ex != null)
+								Global.OnError?.Invoke(msg, ex);
+							else
+								Global.OnProcess?.Invoke(msg);
+						}).ConfigureAwait(false);
+					else if (loggingDataSource.Mode.Equals(RepositoryMode.NoSQL))
+						await RepositoryStarter.EnsureNoSqlIndexesAsync(RepositoryMediator.GetEntityDefinition<LoggingItem>(), loggingDataSource, (msg, ex) =>
+						{
+							if (ex != null)
+								Global.OnError?.Invoke(msg, ex);
+							else
+								Global.OnProcess?.Invoke(msg);
+						}).ConfigureAwait(false);
+				}, TaskContinuationOptions.OnlyOnRanToCompletion)
+				.ConfigureAwait(false);
 		}
 		#endregion
 

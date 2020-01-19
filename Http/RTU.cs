@@ -31,7 +31,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			RTU.WebSocket = new Components.WebSockets.WebSocket(Components.Utility.Logger.GetLoggerFactory(), Global.CancellationTokenSource.Token)
 			{
-				OnError = (websocket, exception) => Global.WriteLogs(RTU.Logger, "Http.InternalAPIs", $"Got an error while processing => {exception.Message} ({websocket?.ID} {websocket?.RemoteEndPoint})", exception),
+				OnError = async (websocket, exception) => await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"Got an error while processing => {exception.Message} ({websocket?.ID} {websocket?.RemoteEndPoint})", exception).ConfigureAwait(false),
 				OnConnectionEstablished = async websocket => await websocket.WhenConnectionIsEstablishedAsync().ConfigureAwait(false),
 				OnConnectionBroken = async websocket => await websocket.WhenConnectionIsBrokenAsync().ConfigureAwait(false),
 				OnMessageReceived = async (websocket, result, data) => await websocket.WhenMessageIsReceivedAsync(result, data).ConfigureAwait(false),

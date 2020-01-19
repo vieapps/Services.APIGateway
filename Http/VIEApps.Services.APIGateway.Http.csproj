@@ -27,9 +27,9 @@
 		<PackageReference Include="Microsoft.AspNetCore" Version="2.2.0" />
 		<PackageReference Include="Microsoft.AspNetCore.ResponseCompression" Version="2.2.0" />
 		<PackageReference Include="Microsoft.AspNetCore.WebSockets" Version="2.2.1" />
-		<PackageReference Include="Microsoft.Extensions.Hosting" Version="3.1.0" />
-		<PackageReference Include="VIEApps.Services.Base.Http" Version="10.3.2001.2" />
-		<PackageReference Include="WampSharp.AspNetCore.WebSockets.Server" Version="19.8.2" />
+		<PackageReference Include="Microsoft.Extensions.Hosting" Version="3.1.1" />
+		<PackageReference Include="VIEApps.Services.Base.Http" Version="10.3.2001.4" />
+		<PackageReference Include="WampSharp.AspNetCore.WebSockets.Server" Version="20.1.1" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))|$(Platform)' == 'true|AnyCPU'">

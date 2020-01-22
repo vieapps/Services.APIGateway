@@ -46,16 +46,16 @@ namespace net.vieapps.Services.APIGateway
 			{
 				OnError = ex => Program.WriteLog(ex.Message, ex),
 				OnStarted = () => Program.WriteLog(Program.Router.RouterInfoString.Replace("\t", "")),
-				OnStopped = () => Program.WriteLog("VIEApps NGX API Gateway Router is stopped"),
+				OnStopped = () => Program.WriteLog("VIEApps NGX API Gateway Router was stopped"),
 				OnSessionCreated = info =>
 				{
 					if (Environment.UserInteractive)
-						Program.WriteLog("\r\n" + $"A session is opened - Session ID: {info.SessionID} - Connection Info: {info.ConnectionID} - {info.EndPoint})");
+						Program.WriteLog("\r\n" + $"A session was opened - Session ID: {info.SessionID} - Connection Info: {info.ConnectionID} - {info.EndPoint})");
 				},
 				OnSessionClosed = info =>
 				{
 					if (Environment.UserInteractive)
-						Program.WriteLog("\r\n" + $"A session is closed - Type: {info?.CloseType} ({info?.CloseReason ?? "N/A"}) - Session ID: {info?.SessionID} - Connection Info: {info?.ConnectionID} - {info?.EndPoint})");
+						Program.WriteLog("\r\n" + $"A session was closed - Type: {info?.CloseType} ({info?.CloseReason ?? "N/A"}) - Session ID: {info?.SessionID} - Connection Info: {info?.ConnectionID} - {info?.EndPoint})");
 				}
 			};
 			Program.Router.Start(args);

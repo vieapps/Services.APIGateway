@@ -20,7 +20,7 @@ namespace net.vieapps.Services.APIGateway
 {
 	public class RouterComponent
 	{
-		public const string Powered = "WAMP#v20.1.1-castle.core.4.4-rxnet-4.3-msgpack-1.0-json-12.0-fleck-1.1-ssl+rev:2020.01.20-multiple.targets";
+		public const string Powered = "WAMP#v20.1.1-SSL+rev:2020.01.22-multiple.targets+only.standards";
 
 		public IWampHost Host { get; private set; } = null;
 
@@ -118,23 +118,23 @@ namespace net.vieapps.Services.APIGateway
 						var id = property != null && property.CanRead
 							? property.GetValue(details)
 							: null;
-						var info = new SessionInfo
+						var sessionInfo = new SessionInfo
 						{
 							SessionID = arguments.SessionId,
 							ConnectionID = id != null ? (Guid)id : Guid.NewGuid(),
 							EndPoint = new IPEndPoint(IPAddress.Parse(uri != null ? uri.Host : "0.0.0.0"), uri != null ? uri.Port : 16429)
 						};
-						this.Sessions.TryAdd(arguments.SessionId, info);
-						this.OnSessionCreated?.Invoke(info);
+						this.Sessions.TryAdd(arguments.SessionId, sessionInfo);
+						this.OnSessionCreated?.Invoke(sessionInfo);
 					};
 					this.HostedRealm.SessionClosed += (sender, arguments) =>
 					{
-						if (this.Sessions.TryRemove(arguments.SessionId, out SessionInfo info))
+						if (this.Sessions.TryRemove(arguments.SessionId, out var sessionInfo))
 						{
-							info.CloseType = arguments.CloseType.ToString();
-							info.CloseReason = arguments.Reason;
+							sessionInfo.CloseType = arguments.CloseType.ToString();
+							sessionInfo.CloseReason = arguments.Reason;
 						}
-						this.OnSessionClosed?.Invoke(info);
+						this.OnSessionClosed?.Invoke(sessionInfo);
 					};
 
 					this.Host.Open();

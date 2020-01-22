@@ -61,6 +61,28 @@ namespace net.vieapps.Services.APIGateway
 			}).ConfigureAwait(false));
 		}
 
+		public async Task DisposeAsync()
+		{
+			if (!this.Disposed)
+			{
+				this.Disposed = true;
+				if (this.Instance != null)
+					await this.Instance.DisposeAsync().ConfigureAwait(false);
+				this.Communicator?.Dispose();
+				this.RequestInfoTimer?.Dispose();
+				GC.SuppressFinalize(this);
+#if DEBUG
+				Global.OnProcess?.Invoke($"The API Gateway Manager was disposed");
+#endif
+			}
+		}
+
+		public void Dispose()
+			=> this.DisposeAsync().Wait(2345);
+
+		~Manager()
+			=> this.Dispose();
+
 		#region Properties
 		ConcurrentDictionary<string, ControllerInfo> Controllers { get; } = new ConcurrentDictionary<string, ControllerInfo>();
 
@@ -268,28 +290,5 @@ namespace net.vieapps.Services.APIGateway
 
 		Task SendRequestInfoAsync()
 			=> Task.WhenAll(this.SendInterCommunicateMessageAsync("Controller#RequestInfo"), this.SendInterCommunicateMessageAsync("Service#RequestInfo"));
-
-		async Task DisposeAsync()
-		{
-			if (!this.Disposed)
-			{
-				this.Disposed = true;
-				if (this.Instance != null)
-					await this.Instance.DisposeAsync().ConfigureAwait(false);
-				this.Communicator?.Dispose();
-				this.RequestInfoTimer?.Dispose();
-			}
-		}
-
-		public void Dispose()
-		{
-			if (RuntimeInformation.FrameworkDescription.IsContains(".NET Framework"))
-				Task.Run(this.DisposeAsync).ConfigureAwait(false);
-			else
-				Task.WaitAll(new[] { this.DisposeAsync() }, 1234);
-		}
-
-		~Manager()
-			=> this.Dispose();
 	}
 }

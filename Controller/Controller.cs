@@ -34,16 +34,22 @@ namespace net.vieapps.Services.APIGateway
 		public Controller(CancellationToken cancellationToken = default)
 			=> this.CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
-		public void Dispose()
+		public async Task DisposeAsync()
 		{
 			if (!this.IsDisposed)
 			{
 				this.IsDisposed = true;
-				this.Stop();
+				await this.StopAsync().ConfigureAwait(false);
 				this.CancellationTokenSource.Dispose();
 				GC.SuppressFinalize(this);
+#if DEBUG
+				Global.OnProcess?.Invoke($"The API Gateway Controller was disposed");
+#endif
 			}
 		}
+
+		public void Dispose()
+			=> this.DisposeAsync().Wait(2345);
 
 		~Controller()
 			=> this.Dispose();
@@ -437,6 +443,7 @@ namespace net.vieapps.Services.APIGateway
 			if (this.AllowRegisterBusinessServices || this.AllowRegisterHelperServices || this.AllowRegisterHelperTimers)
 				try
 				{
+					this.Info.Available = false;
 					await this.SendInterCommunicateMessageAsync("Controller#Disconnect", this.Info.ToJson()).ConfigureAwait(false);
 #if DEBUG
 					Global.OnProcess?.Invoke($"The updating message was sent when the controller is disconnected => {this.Info.ToJson()}");
@@ -447,17 +454,23 @@ namespace net.vieapps.Services.APIGateway
 					Global.OnError?.Invoke($"Cannot send the updating information => {ex.Message}", ex);
 				}
 
-			await this.HelperServices.ForEachAsync(async (service, token) =>
+			if (this.AllowRegisterHelperServices)
 			{
-				try
+				await this.HelperServices.ForEachAsync(async (service, token) =>
 				{
-					await service.DisposeAsync().ConfigureAwait(false);
-				}
-				catch (Exception ex)
-				{
-					Global.OnError?.Invoke($"Cannot dispose the helper service => {ex.Message}", ex);
-				}
-			}).ConfigureAwait(false);
+					try
+					{
+						await service.DisposeAsync().ConfigureAwait(false);
+					}
+					catch (Exception ex)
+					{
+						Global.OnError?.Invoke($"Cannot dispose the helper service => {ex.Message}", ex);
+					}
+				}).ConfigureAwait(false);
+#if DEBUG
+				Global.OnProcess?.Invoke($"{this.HelperServices.Count:#,##0} helper service(s) of the API Gateway Controller was disposed");
+#endif
+			}
 
 			try
 			{
@@ -478,7 +491,7 @@ namespace net.vieapps.Services.APIGateway
 				this.RTUService = null;
 				this.State = ServiceState.Disconnected;
 				Router.Disconnect();
-				Global.OnProcess?.Invoke($"The API Gateway Controller is stopped");
+				Global.OnProcess?.Invoke($"The API Gateway Controller was stopped");
 			}
 			catch (Exception ex)
 			{
@@ -490,12 +503,7 @@ namespace net.vieapps.Services.APIGateway
 		/// Stops the API Gateway Controller
 		/// </summary>
 		public void Stop()
-		{
-			if (RuntimeInformation.FrameworkDescription.IsContains(".NET Framework"))
-				Task.Run(this.StopAsync).ConfigureAwait(false);
-			else
-				Task.WaitAll(new[] { this.StopAsync() }, 1234);
-		}
+			=> this.StopAsync().Wait(2345);
 
 		void PrepareDatabaseSettings()
 		{

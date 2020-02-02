@@ -1,5 +1,4 @@
-﻿using System.Linq;
-namespace net.vieapps.Services.APIGateway
+﻿namespace net.vieapps.Services.APIGateway
 {
 	class Program
 	{
@@ -11,7 +10,7 @@ namespace net.vieapps.Services.APIGateway
 		protected override void PrepareServiceType()
 		{
 			base.PrepareServiceType();
-			this.ServiceType = this.ServiceType ?? new Components.Utility.AssemblyLoader(System.IO.Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, $"{this.ServiceAssemblyName}.dll")).Assembly.GetExportedTypes().FirstOrDefault(serviceType => this.ServiceTypeName.Equals(serviceType.ToString()));
+			this.ServiceType = this.ServiceType ?? Components.Utility.AssemblyLoader.GetType(System.IO.Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, $"{this.ServiceAssemblyName}.dll"), this.ServiceTypeName);
 		}
 	}
 }

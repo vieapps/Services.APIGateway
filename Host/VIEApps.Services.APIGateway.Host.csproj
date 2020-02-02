@@ -21,7 +21,7 @@
 
 	<ItemGroup>
 		<PackageReference Include="Microsoft.Extensions.Logging.Console" Version="3.1.1" />
-		<PackageReference Include="VIEApps.Services.Base" Version="10.3.2001.4" />
+		<PackageReference Include="VIEApps.Services.Base" Version="10.3.2002.1" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))|$(Platform)' == 'true|AnyCPU'">

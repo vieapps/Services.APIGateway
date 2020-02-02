@@ -211,11 +211,11 @@ namespace net.vieapps.Services.APIGateway
 		[Property(MaxLength = 32), Sortable(IndexName = "IDs")]
 		public string AppID { get; set; }
 
-		[Property(MaxLength = 100, NotNull = true), Sortable(IndexName = "Services")]
+		[Property(MaxLength = 50, NotNull = true), Sortable(IndexName = "Services")]
 		public new string ServiceName { get; set; }
 
-		[Property(MaxLength = 100, NotNull = true), Sortable(IndexName = "Services")]
-		public string ObjectName { get; set; }
+		[Property(MaxLength = 50, NotNull = true), Sortable(IndexName = "Services")]
+		public new string ObjectName { get; set; }
 
 		[Property(NotNull = true, IsCLOB = true)]
 		public string Logs { get; set; }

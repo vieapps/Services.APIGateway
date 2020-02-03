@@ -1,18 +1,14 @@
-﻿#region Related components
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Reflection;
 using System.Runtime.InteropServices;
-
 using Newtonsoft.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
-
 using net.vieapps.Components.Utility;
-#endregion
 
 namespace net.vieapps.Services.APIGateway
 {

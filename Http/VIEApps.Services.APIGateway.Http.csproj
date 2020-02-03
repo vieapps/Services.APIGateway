@@ -19,8 +19,6 @@
 
 	<ItemGroup>
 		<None Remove=".DS_Store" />
-		<None Remove=".gitattributes" />
-		<None Remove=".gitignore" />
 	</ItemGroup>
 
 	<ItemGroup>

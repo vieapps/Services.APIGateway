@@ -24,7 +24,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				StartType = ServiceStartMode.Automatic,
 				ServiceName = "VIEApps-APIGateway-Router",
-				DisplayName = "VIEApps APIGateway Router",
+				DisplayName = "VIEApps API Gateway Router",
 				Description = "Router for serving RPC and Pub/Sub messages of all microservices in the VIEApps NGX - using Web Application Messaging Protocol (WAMP)"
 			});
 

@@ -20,7 +20,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				StartType = ServiceStartMode.Automatic,
 				ServiceName = "VIEApps-APIGateway-Watcher",
-				DisplayName = "VIEApps APIGateway Watcher",
+				DisplayName = "VIEApps API Gateway Watcher",
 				Description = "The Night Watch of VIEApps NGX API Gateway & all microservices"
 			});
 

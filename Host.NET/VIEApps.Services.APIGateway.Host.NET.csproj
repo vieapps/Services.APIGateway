@@ -38,7 +38,8 @@
     <StartupObject>net.vieapps.Services.APIGateway.Program</StartupObject>
   </PropertyGroup>
   <PropertyGroup>
-    <ApplicationIcon></ApplicationIcon>
+    <ApplicationIcon>
+    </ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />

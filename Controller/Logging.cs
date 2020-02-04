@@ -29,7 +29,7 @@ namespace net.vieapps.Services.APIGateway
 
 		ConcurrentQueue<LoggingItem> LoggingItems { get; } = new ConcurrentQueue<LoggingItem>();
 
-		string LoggingDataSource { get; }
+		DataSource LoggingDataSource { get; }
 
 		CancellationTokenSource CancellationTokenSource { get; }
 
@@ -52,8 +52,8 @@ namespace net.vieapps.Services.APIGateway
 				this.MaxItems = 13;
 			}
 #endif
+			this.LoggingDataSource = RepositoryMediator.GetDataSource(UtilityService.GetAppSetting("Logs:DataSource"));
 			this.CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-			this.LoggingDataSource = UtilityService.GetAppSetting("Logs:DataSource");
 		}
 
 		public void Dispose()
@@ -71,15 +71,15 @@ namespace net.vieapps.Services.APIGateway
 			var loggingItem = new LoggingItem
 			{
 				CorrelationID = correlationID,
-				ServiceName = (!string.IsNullOrWhiteSpace(serviceName) ? serviceName : "APIGateway").ToLower(),
-				ObjectName = (!string.IsNullOrWhiteSpace(objectName) && !objectName.IsEquals(serviceName) ? objectName : "").ToLower(),
+				ServiceName = (string.IsNullOrWhiteSpace(serviceName) ? "APIGateway" : serviceName).ToLower(),
+				ObjectName = (string.IsNullOrWhiteSpace(objectName) || objectName.IsEquals(serviceName) ? "" : objectName).ToLower(),
 				Logs = "",
 				Stack = string.IsNullOrWhiteSpace(stack) ? null : stack
 			};
 
 			var time = loggingItem.Time.ToString("HH:mm:ss.fff");
 			var name = loggingItem.ServiceName;
-			var suffix = (!string.IsNullOrWhiteSpace(loggingItem.ObjectName) ? "." : "") + loggingItem.ObjectName;
+			var suffix = $"{(string.IsNullOrWhiteSpace(loggingItem.ObjectName) ? "" : ".")}{loggingItem.ObjectName}";
 
 			if (!this.Logs.TryGetValue(name + suffix, out var logItems))
 			{
@@ -87,7 +87,7 @@ namespace net.vieapps.Services.APIGateway
 				this.Logs.TryAdd(name + suffix, logItems);
 			}
 
-			// normalize
+			// normalize & update into queue
 			var messages = "";
 			logs?.Where(log => !string.IsNullOrWhiteSpace(log)).ForEach(log =>
 			{
@@ -102,11 +102,14 @@ namespace net.vieapps.Services.APIGateway
 				messages += (!messages.Equals("") ? "\r\n" : "") + $"==> Stack:\r\n{stack}";
 			}
 
+			// update into DB queue
+			if (this.LoggingDataSource != null)
+				this.LoggingItems.Enqueue(loggingItem);
+
 			// update to controller
 			Global.OnLogsUpdated(serviceName, messages);
 
-			// update and broadcast
-			this.LoggingItems.Enqueue(loggingItem);
+			// broadcast
 			if (Router.OutgoingChannel != null)
 				Router.OutgoingChannel.RealmProxy.Services.GetSubject<BaseMessage>("messages.log")?.OnNext(new BaseMessage
 				{
@@ -122,7 +125,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					await Task.WhenAll(
 						this.FlushIntoFileAsync(name + suffix, logItems, this.CancellationTokenSource.Token),
-						this.FlushIntoDatabaseAsync(this.CancellationTokenSource.Token)
+						this.LoggingDataSource != null ? this.FlushIntoDatabaseAsync(this.CancellationTokenSource.Token) : Task.CompletedTask
 					).ConfigureAwait(false);
 				}
 				catch (Exception ex)
@@ -159,15 +162,11 @@ namespace net.vieapps.Services.APIGateway
 
 		async Task FlushIntoDatabaseAsync(CancellationToken cancellationToken = default)
 		{
-			var dataSource = string.IsNullOrWhiteSpace(this.LoggingDataSource)
-				? null
-				: RepositoryMediator.GetDataSource(this.LoggingDataSource);
-			if (dataSource != null)
-				using (var context = new RepositoryContext(true, await dataSource.StartSessionAsync<LoggingItem>(cancellationToken).ConfigureAwait(false)))
-				{
-					while (this.LoggingItems.TryDequeue(out var logItem))
-						await RepositoryMediator.CreateAsync(context, dataSource, logItem, cancellationToken).ConfigureAwait(false);
-				}
+			using (var context = new RepositoryContext(true, await this.LoggingDataSource.StartSessionAsync<LoggingItem>(cancellationToken).ConfigureAwait(false)))
+			{
+				while (this.LoggingItems.TryDequeue(out var logItem))
+					await RepositoryMediator.CreateAsync(context, this.LoggingDataSource, logItem, cancellationToken).ConfigureAwait(false);
+			}
 		}
 
 		internal async Task FlushAsync(CancellationToken cancellationToken = default)
@@ -177,7 +176,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				await Task.WhenAll(
 					this.Logs.ForEachAsync((kvp, token) => this.FlushIntoFileAsync(kvp.Key, kvp.Value, token), cancellationToken, true, false),
-					this.FlushIntoDatabaseAsync(cancellationToken)
+					this.LoggingDataSource != null ? this.FlushIntoDatabaseAsync(cancellationToken) : Task.CompletedTask
 				).ConfigureAwait(false);
 			}
 			catch (Exception ex)

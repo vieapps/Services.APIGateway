@@ -57,7 +57,7 @@ namespace net.vieapps.Services.APIGateway
 		#region Process Info
 		public class ProcessInfo
 		{
-			public ProcessInfo(string id = "", string executable = "", string arguments = "", Dictionary<string, object> extra = null)
+			public ProcessInfo(string id, string executable, string arguments = "", Dictionary<string, object> extra = null)
 			{
 				this.ID = id;
 				this.Executable = executable;
@@ -226,7 +226,7 @@ namespace net.vieapps.Services.APIGateway
 							var id = (executable + " " + arguments).ToLower().GenerateUUID();
 							this.Tasks[id] = new ProcessInfo(id, executable, arguments, new Dictionary<string, object>
 							{
-								{ "Time", Int32.TryParse(task.Attributes["time"]?.Value, out int time) ? time.ToString() : task.Attributes["time"]?.Value ?? "3" }
+								{ "Time", Int32.TryParse(task.Attributes["time"]?.Value, out var time) ? time.ToString() : task.Attributes["time"]?.Value ?? "3" }
 							});
 						}
 					});
@@ -943,7 +943,7 @@ namespace net.vieapps.Services.APIGateway
 		void RegisterMessagingTimers()
 		{
 			// send email messages (15 seconds)
-			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:Mail", "15"), out int interval))
+			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:Mail", "15"), out var interval))
 				interval = 15;
 			this.StartTimer(async () =>
 			{
@@ -1009,7 +1009,7 @@ namespace net.vieapps.Services.APIGateway
 		void RegisterClientIntervalTimers()
 		{
 			// ping - default: 2 minutes
-			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:Ping", "120"), out int pingInterval))
+			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:Ping", "120"), out var pingInterval))
 				pingInterval = 120;
 			this.StartTimer(() =>
 			{
@@ -1024,7 +1024,7 @@ namespace net.vieapps.Services.APIGateway
 			}, pingInterval + 13);
 
 			// scheduler (update online status, signal to run scheduler at client, ...) - default: 15 minutes
-			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:Scheduler", "900"), out int scheduleInterval))
+			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:Scheduler", "900"), out var scheduleInterval))
 				scheduleInterval = 900;
 			this.StartTimer(() =>
 			{

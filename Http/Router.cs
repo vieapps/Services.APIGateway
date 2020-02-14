@@ -58,8 +58,10 @@ namespace net.vieapps.Services.APIGateway
 						Global.RegisterServiceAsync("Http.InternalAPIs"),
 						Task.Delay(UtilityService.GetRandomNumber(234, 567), Global.CancellationTokenSource.Token)
 					).ConfigureAwait(false);
+
 					while (Services.Router.IncomingChannel == null)
 						await Task.Delay(UtilityService.GetRandomNumber(234, 567), Global.CancellationTokenSource.Token).ConfigureAwait(false);
+
 					await Task.WhenAll(
 						new CommunicateMessage("APIGateway")
 						{
@@ -92,7 +94,7 @@ namespace net.vieapps.Services.APIGateway
 		public static void InitializeForwarder()
 		{
 			var routerInfo = Services.Router.GetRouterInfo();
-			Global.Logger.LogInformation("Initialize the forwarder of API Gateway Router");
+			Global.Logger.LogInformation($"Initialize the forwarder of API Gateway Router [{UtilityService.GetAppSetting("HttpUri:APIs")}/router => {new Uri(Services.Router.GetRouterStrInfo()).GetResolvedURI()}]");
 			Router.Forwarder = new WampHost(new ForwardingRealmContainer($"{routerInfo.Item1}{(routerInfo.Item1.EndsWith("/") ? "" : "/")}{routerInfo.Item2}", routerInfo.Item3));
 		}
 

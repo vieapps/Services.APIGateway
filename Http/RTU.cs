@@ -177,7 +177,7 @@ namespace net.vieapps.Services.APIGateway
 			var objectName = requestObj.Get("ObjectName", "");
 			var verb = requestObj.Get("Verb", "GET").ToUpper();
 			var query = new Dictionary<string, string>(requestObj.Get("Query", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase);
-			query.TryGetValue("object-identity", out string objectIdentity);
+			query.TryGetValue("object-identity", out var objectIdentity);
 
 			// visit logs
 			if (Global.IsVisitLogEnabled)
@@ -517,7 +517,7 @@ namespace net.vieapps.Services.APIGateway
 			catch (Exception ex)
 			{
 				await Task.WhenAll(
-					websocket.SendAsync(ex, null, correlationID),
+					websocket.SendAsync(ex, null, correlationID, requestObj.Get<string>("ID")),
 					Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs",
 						$"Error occurred while processing the session" + "\r\n" +
 						$"{websocket.GetConnectionInfo(session)}" + "\r\n" +

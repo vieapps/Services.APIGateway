@@ -82,7 +82,7 @@ namespace net.vieapps.Services.APIGateway
 		async Task ProcessRequestAsync(HttpContext context)
 		{
 			// prepare
-			context.Items["PipelineStopwatch"] = Stopwatch.StartNew();
+			context.SetItem("PipelineStopwatch", Stopwatch.StartNew());
 			var requestPath = context.GetRequestPathSegments(true).First();
 
 			if (Global.IsVisitLogEnabled)

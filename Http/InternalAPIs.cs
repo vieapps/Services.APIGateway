@@ -166,7 +166,7 @@ namespace net.vieapps.Services.APIGateway
 			// verify captcha
 			try
 			{
-				requestInfo.CaptchaIsValid(context.Items);
+				requestInfo.CaptchaIsValid();
 			}
 			catch (Exception ex)
 			{
@@ -643,13 +643,13 @@ namespace net.vieapps.Services.APIGateway
 				await Task.WhenAll(
 					context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
 					InternalAPIs.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token),
-					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
+					Global.IsDebugResultsEnabled ? context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (OTP validation)",
 						$"- Request: {requestInfo.ToJson().ToString(InternalAPIs.JsonFormat)}",
 						$"- Response: {response.ToJson().ToString(InternalAPIs.JsonFormat)}",
 						$"- Execution times: {context.GetExecutionTimes()}"
-					})
+					}) : Task.CompletedTask
 				).ConfigureAwait(false);
 
 				// update state of old session
@@ -803,7 +803,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Helper: verify captcha, prepare related information of an account or request of a definition
-		public static RequestInfo CaptchaIsValid(this RequestInfo requestInfo, IDictionary<object, object> items = null)
+		public static RequestInfo CaptchaIsValid(this RequestInfo requestInfo)
 		{
 			if (!requestInfo.Header.ContainsKey("x-captcha"))
 				return requestInfo;
@@ -979,7 +979,7 @@ namespace net.vieapps.Services.APIGateway
 			requestInfo.ServiceName = requestInfo.Query["service-name"] = requestInfo.Query["x-service-name"];
 			requestInfo.ObjectName = requestInfo.Query["object-name"] = "definitions";
 			requestInfo.Query["object-identity"] = requestInfo.Query["x-object-name"];
-			requestInfo.Query["mode"] = requestInfo.Query.ContainsKey("x-object-identity") ? requestInfo.Query["x-object-identity"] : "";
+			requestInfo.Query["mode"] = requestInfo.Query.TryGetValue("x-object-identity", out var mode) ? mode : "";
 
 			new[] { "x-service-name", "x-object-name", "x-object-identity" }.ForEach(name => requestInfo.Query.Remove(name));
 			return requestInfo;
@@ -991,7 +991,10 @@ namespace net.vieapps.Services.APIGateway
 			=> session.GetEncryptedID(session.SessionID, Global.EncryptionKey, Global.ValidationKey);
 
 		public static JObject GetSessionJson(this Session session)
-			=> new JObject
+		{
+			var encryptionKey = session.GetEncryptionKey(Global.EncryptionKey);
+			var encryptionIV = session.GetEncryptionIV(Global.EncryptionKey);
+			return new JObject
 			{
 				{ "ID", session.GetEncryptedID() },
 				{ "DeviceID", session.DeviceID },
@@ -1010,35 +1013,36 @@ namespace net.vieapps.Services.APIGateway
 							"AES",
 							new JObject
 							{
-								{ "Key", session.GetEncryptionKey(Global.EncryptionKey).ToHex() },
-								{ "IV", session.GetEncryptionIV(Global.EncryptionKey).ToHex() }
+								{ "Key", encryptionKey.ToHex() },
+								{ "IV", encryptionIV.ToHex() }
 							}
 						},
 						{
 							"JWT",
-							Global.JWTKey
+							Global.JWTKey.Encrypt(encryptionKey, encryptionIV)
 						}
 					}
 				}
 			};
+		}
 		#endregion
 
 		#region Helper: controllers & services
 		public static JToken GetControllers()
-			=> InternalAPIs.Controllers.Values.Select(controller => new JObject
+			=> InternalAPIs.Controllers.Values.Select(info => new JObject
 			{
-				{ "ID", controller.Get<string>("ID").GenerateUUID() },
-				{ "Platform", controller.Get<string>("Platform") },
-				{ "Available" , controller.Get<bool>("Available") }
+				{ "ID", info.Get<string>("ID").GenerateUUID() },
+				{ "Platform", info.Get<string>("Platform") },
+				{ "Available" , info.Get<bool>("Available") }
 			})
 			.ToJArray();
 
 		public static JToken GetServices()
-			=> InternalAPIs.Services.Values.Select(svcInfo => new
+			=> InternalAPIs.Services.Values.Select(info => new
 			{
-				URI = $"services.{svcInfo[0].Get<string>("Name")}",
-				Available = svcInfo.FirstOrDefault(svc => svc.Get<bool>("Available")) != null,
-				Running = svcInfo.FirstOrDefault(svc => svc.Get<bool>("Running")) != null
+				URI = $"services.{info[0].Get<string>("Name")}",
+				Available = info.FirstOrDefault(svc => svc.Get<bool>("Available")) != null,
+				Running = info.FirstOrDefault(svc => svc.Get<bool>("Running")) != null
 			})
 			.OrderBy(info => info.URI)
 			.Select(info => new JObject

@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFrameworks>netcoreapp2.0;netcoreapp2.1;netcoreapp2.2;netcoreapp3.0;netcoreapp3.1</TargetFrameworks>
+		<TargetFrameworks>netcoreapp2.1;netcoreapp3.1</TargetFrameworks>
 		<OutputType>Exe</OutputType>
 		<WarningLevel>3</WarningLevel>
 		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
@@ -31,7 +31,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.3.2002.2" />
+		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.3.2002.3" />
 	</ItemGroup>
 
 	<ItemGroup>

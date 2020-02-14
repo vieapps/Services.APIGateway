@@ -11,7 +11,7 @@ using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Hosting;
-#if !NETCOREAPP2_0 && !NETCOREAPP2_1 && !NETCOREAPP2_2
+#if !NETCOREAPP2_1
 using Microsoft.Extensions.Hosting;
 #endif
 using Microsoft.Extensions.Logging;
@@ -44,11 +44,16 @@ namespace net.vieapps.Services.APIGateway
 				.AddHttpContextAccessor();
 		}
 
-#if !NETCOREAPP2_0 && !NETCOREAPP2_1 && !NETCOREAPP2_2
-		public void Configure(IApplicationBuilder appBuilder, IHostApplicationLifetime appLifetime, IWebHostEnvironment environment)
+		public void Configure(
+			IApplicationBuilder appBuilder,
+#if !NETCOREAPP2_1
+			IHostApplicationLifetime appLifetime,
+			IWebHostEnvironment environment
 #else
-		public void Configure(IApplicationBuilder appBuilder, IApplicationLifetime appLifetime, IHostingEnvironment environment)
+			IApplicationLifetime appLifetime,
+			IHostingEnvironment environment
 #endif
+		)
 		{
 			// settings
 			var stopwatch = Stopwatch.StartNew();

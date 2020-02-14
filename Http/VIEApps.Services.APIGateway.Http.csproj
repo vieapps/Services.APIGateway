@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
 	<PropertyGroup>
-		<TargetFrameworks>netcoreapp2.0;netcoreapp2.1;netcoreapp2.2;netcoreapp3.0;netcoreapp3.1</TargetFrameworks>
+		<TargetFrameworks>netcoreapp2.1;netcoreapp3.1</TargetFrameworks>
 		<OutputType>Exe</OutputType>
 		<WarningLevel>3</WarningLevel>
 		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
@@ -30,7 +30,7 @@
 		<PackageReference Include="Microsoft.AspNetCore.ResponseCompression" Version="2.2.0" />
 		<PackageReference Include="Microsoft.AspNetCore.WebSockets" Version="2.2.1" />
 		<PackageReference Include="Microsoft.Extensions.Hosting" Version="3.1.1" />
-		<PackageReference Include="VIEApps.Services.Base.Http" Version="10.3.2002.2" />
+		<PackageReference Include="VIEApps.Services.Base.Http" Version="10.3.2002.3" />
 		<PackageReference Include="WampSharp.AspNetCore.WebSockets.Server" Version="20.1.1" />
 	</ItemGroup>
 

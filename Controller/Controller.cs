@@ -783,7 +783,7 @@ namespace net.vieapps.Services.APIGateway
 					(sender, args) =>
 					{
 						this.BusinessServices[name].Instance = null;
-						Global.OnServiceStopped?.Invoke(name, $"The sevice is stopped{("Error".IsEquals(this.BusinessServices[name].Get<string>("State")) ? $" ({this.BusinessServices[name].Get<string>("Error")})" : "")}");
+						Global.OnServiceStopped?.Invoke(name, $"The sevice was stopped{("Error".IsEquals(this.BusinessServices[name].Get<string>("State")) ? $" ({this.BusinessServices[name].Get<string>("Error")})" : "")}");
 					},
 					(sender, args) =>
 					{

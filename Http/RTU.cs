@@ -182,9 +182,9 @@ namespace net.vieapps.Services.APIGateway
 			// visit logs
 			if (Global.IsVisitLogEnabled)
 				await Global.WriteLogsAsync(RTU.Logger, "Http.Visits",
-					$"Request starting {verb} /{serviceName}{(string.IsNullOrWhiteSpace(objectName) ? "" : $"/{objectName}")}{(string.IsNullOrWhiteSpace(objectIdentity) ? "" : $"/{objectIdentity}")}".ToLower() + (query.TryGetValue("x-request", out var xrequest) ? $"?x-request={xrequest}" : "") + " HTTPWS/1.1" + " \r\n" +
-					$"- IP: {session.IP} (WebSocket: {websocket.ID} @ {websocket.RemoteEndPoint})" + " \r\n" +
-					$"- App: {session.AppName ?? "Unknown"} @ {session.AppPlatform ?? "Unknown"} [{session.AppAgent ?? "Unknown"}]"
+					$"Request starting {verb} " + $"/{serviceName}{(string.IsNullOrWhiteSpace(objectName) ? "" : $"/{objectName}")}{(string.IsNullOrWhiteSpace(objectIdentity) ? "" : $"/{objectIdentity}")}".ToLower() + (query.TryGetValue("x-request", out var xrequest) ? $"?x-request={xrequest}" : "") + " HTTPWS/1.1" + " \r\n" +
+					$"- App: {session.AppName ?? "Unknown"} @ {session.AppPlatform ?? "Unknown"} [{session.AppAgent ?? "Unknown"}]" + " \r\n" +
+					$"- WebSocket: {websocket.ID} @ {websocket.RemoteEndPoint}"
 				, null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
 
 			// process requests of a session

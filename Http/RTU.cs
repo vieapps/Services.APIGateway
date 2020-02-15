@@ -181,7 +181,11 @@ namespace net.vieapps.Services.APIGateway
 
 			// visit logs
 			if (Global.IsVisitLogEnabled)
-				await Global.WriteLogsAsync(RTU.Logger, "Http.Visits", $"Request starting {verb} " + $"/{serviceName}{(string.IsNullOrWhiteSpace(objectName) ? "" : $"/{objectName}")}{(string.IsNullOrWhiteSpace(objectIdentity) ? "" : $"/{objectIdentity}")}".ToLower() + (query.TryGetValue("x-request", out string xrequest) ? $"?x-request={xrequest}" : "") + $" HTTPWS/1.1", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
+				await Global.WriteLogsAsync(RTU.Logger, "Http.Visits",
+					$"Request starting {verb} /{serviceName}{(string.IsNullOrWhiteSpace(objectName) ? "" : $"/{objectName}")}{(string.IsNullOrWhiteSpace(objectIdentity) ? "" : $"/{objectIdentity}")}".ToLower() + (query.TryGetValue("x-request", out var xrequest) ? $"?x-request={xrequest}" : "") + " HTTPWS/1.1" + " \r\n" +
+					$"- IP: {session.IP} (WebSocket: {websocket.ID} @ {websocket.RemoteEndPoint})" + " \r\n" +
+					$"- App: {session.AppName ?? "Unknown"} @ {session.AppPlatform ?? "Unknown"} [{session.AppAgent ?? "Unknown"}]"
+				, null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
 
 			// process requests of a session
 			if ("session".IsEquals(serviceName))
@@ -246,7 +250,7 @@ namespace net.vieapps.Services.APIGateway
 		static string GetConnectionInfo(this ManagedWebSocket websocket, Session session = null)
 		{
 			session = session ?? websocket.Get<Session>("Session");
-			return $"- Account: {websocket.Get("AccountInfo", "Visitor")} - Session ID: {session?.SessionID ?? "Unknown"} - Device ID: {session?.DeviceID ?? "Unknown"} - Origin: {(websocket.Headers.TryGetValue("Origin", out string origin) ? origin : session?.AppOrigin ?? "Unknown")}" + "\r\n" +
+			return $"- Account: {websocket.Get("AccountInfo", "Visitor")} - Session ID: {session?.SessionID ?? "Unknown"} - Device ID: {session?.DeviceID ?? "Unknown"} - Origin: {(websocket.Headers.TryGetValue("Origin", out var origin) ? origin : session?.AppOrigin ?? "Unknown")}" + "\r\n" +
 				$"- App: {session?.AppName ?? "Unknown"} @ {session?.AppPlatform ?? "Unknown"} [{session?.AppAgent ?? "Unknown"}]" + "\r\n" +
 				$"- Connection IP: {session?.IP ?? "Unknown"} - Location: {websocket.Get("LocationInfo", "Unknown")} - WebSocket: {websocket.ID} @ {websocket.RemoteEndPoint}";
 		}

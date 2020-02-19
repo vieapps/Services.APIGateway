@@ -33,7 +33,7 @@ namespace net.vieapps.Services.APIGateway
 
 		public IConfiguration Configuration { get; }
 
-		LogLevel LogLevel => this.Configuration.GetAppSetting("Logging/LogLevel/Default", UtilityService.GetAppSetting("Logs:Level", "Information")).ToEnum<LogLevel>();
+		LogLevel LogLevel => this.Configuration.GetAppSetting("Logging/LogLevel/Default", UtilityService.GetAppSetting("Logs:Level", "Information")).TryToEnum(out LogLevel logLevel) ? logLevel : LogLevel.Information;
 
 		public void ConfigureServices(IServiceCollection services)
 		{
@@ -131,7 +131,7 @@ namespace net.vieapps.Services.APIGateway
 			appBuilder.UseMiddleware<Handler>();
 
 			// setup the caching storage
-			InternalAPIs.Cache = appBuilder.ApplicationServices.GetService<ICache>();
+			Global.Cache = appBuilder.ApplicationServices.GetService<ICache>();
 
 			// assign app event handler => on started
 			appLifetime.ApplicationStarted.Register(() =>

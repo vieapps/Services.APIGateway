@@ -22,8 +22,6 @@ namespace net.vieapps.Services.APIGateway
 	{
 
 		#region Properties
-		public static ICache Cache { get; set; }
-
 		public static ILogger Logger { get; set; }
 
 		public static List<string> ExcludedHeaders { get; } = UtilityService.GetAppSetting("ExcludedHeaders", "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,ms-aspnetcore-token,x-forwarded-for,x-forwarded-proto,x-forwarded-port,x-original-for,x-original-proto,x-original-remote-endpoint,x-original-port,cdn-loop,cf-ipcountry,cf-ray,cf-visitor,cf-connecting-ip,sec-fetch-site,sec-fetch-mode,sec-fetch-dest,sec-fetch-user").ToList();
@@ -120,7 +118,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					if (requestInfo.Query.TryGetValue("register", out var registered))
 					{
-						if (!registered.IsEquals(await InternalAPIs.Cache.GetAsync<string>($"Session#{requestInfo.Session.SessionID}").ConfigureAwait(false)))
+						if (!registered.IsEquals(await Global.Cache.GetAsync<string>($"Session#{requestInfo.Session.SessionID}").ConfigureAwait(false)))
 							throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 					}
 					else if (!await context.IsSessionExistAsync(requestInfo.Session, InternalAPIs.Logger, "Http.InternalAPIs", requestInfo.CorrelationID).ConfigureAwait(false))
@@ -360,14 +358,14 @@ namespace net.vieapps.Services.APIGateway
 							requestInfo.Session.DeviceID = (requestInfo.Session.AppName + "/" + requestInfo.Session.AppPlatform + "@" + (requestInfo.Session.AppAgent ?? "N/A")).GetHMACBLAKE128(requestInfo.Session.SessionID, true) + "@pwa";
 
 						// store identity into cache for further use
-						await InternalAPIs.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.GetEncryptedID(), 13, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+						await Global.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.GetEncryptedID(), 13, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 					}
 
 					// register session
 					else
 					{
 						// validate
-						var registered = await InternalAPIs.Cache.GetAsync<string>($"Session#{requestInfo.Session.SessionID}").ConfigureAwait(false);
+						var registered = await Global.Cache.GetAsync<string>($"Session#{requestInfo.Session.SessionID}").ConfigureAwait(false);
 						if (!requestInfo.Query["register"].IsEquals(registered))
 						{
 							var ex = new InvalidSessionException("Session is invalid (The session is not issued by the system)");
@@ -388,7 +386,7 @@ namespace net.vieapps.Services.APIGateway
 						// register the new session
 						await Task.WhenAll(
 							context.CreateOrRenewSessionAsync(requestInfo),
-							InternalAPIs.Cache.RemoveAsync($"Session#{requestInfo.Session.SessionID}", Global.CancellationTokenSource.Token)
+							Global.Cache.RemoveAsync($"Session#{requestInfo.Session.SessionID}", Global.CancellationTokenSource.Token)
 						).ConfigureAwait(false);
 					}
 
@@ -535,7 +533,7 @@ namespace net.vieapps.Services.APIGateway
 				// response
 				await Task.WhenAll(
 					context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
-					InternalAPIs.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token),
+					Global.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token),
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (sign-in)",
@@ -561,12 +559,12 @@ namespace net.vieapps.Services.APIGateway
 			catch (Exception ex)
 			{
 				// wait
-				var attempt = await InternalAPIs.Cache.ExistsAsync("Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token).ConfigureAwait(false)
-					? await InternalAPIs.Cache.GetAsync<int>("Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token).ConfigureAwait(false) + 1
+				var attempt = await Global.Cache.ExistsAsync("APIs:Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token).ConfigureAwait(false)
+					? await Global.Cache.GetAsync<int>("APIs:Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token).ConfigureAwait(false) + 1
 					: 1;
 				await Task.WhenAll(
 					Task.Delay(567 + ((attempt - 1) * 5678)),
-					InternalAPIs.Cache.SetAsync("Attempt#" + requestInfo.Session.IP, attempt, 13, Global.CancellationTokenSource.Token)
+					Global.Cache.SetAsync("APIs:Attempt#" + requestInfo.Session.IP, attempt, 13, Global.CancellationTokenSource.Token)
 				).ConfigureAwait(false);
 
 				// show error
@@ -642,7 +640,7 @@ namespace net.vieapps.Services.APIGateway
 				// response
 				await Task.WhenAll(
 					context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
-					InternalAPIs.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token),
+					Global.Cache.RemoveAsync("APIs:Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token),
 					Global.IsDebugResultsEnabled ? context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (OTP validation)",
@@ -667,12 +665,12 @@ namespace net.vieapps.Services.APIGateway
 			catch (Exception ex)
 			{
 				// wait
-				var attempt = await InternalAPIs.Cache.ExistsAsync("Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token).ConfigureAwait(false)
-					? await InternalAPIs.Cache.GetAsync<int>("Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token).ConfigureAwait(false) + 1
+				var attempt = await Global.Cache.ExistsAsync("APIs:Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token).ConfigureAwait(false)
+					? await Global.Cache.GetAsync<int>("APIs:Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token).ConfigureAwait(false) + 1
 					: 1;
 				await Task.WhenAll(
 					Task.Delay(567 + ((attempt - 1) * 5678)),
-					InternalAPIs.Cache.SetAsync("Attempt#" + requestInfo.Session.IP, attempt, 13, Global.CancellationTokenSource.Token)
+					Global.Cache.SetAsync("APIs:Attempt#" + requestInfo.Session.IP, attempt, 13, Global.CancellationTokenSource.Token)
 				).ConfigureAwait(false);
 
 				// show error
@@ -711,7 +709,7 @@ namespace net.vieapps.Services.APIGateway
 				requestInfo.Session.Verified = false;
 				await Task.WhenAll(
 					context.CreateOrRenewSessionAsync(requestInfo, null, false),
-					InternalAPIs.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.GetEncryptedID(), 13, Global.CancellationTokenSource.Token)
+					Global.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.GetEncryptedID(), 13, Global.CancellationTokenSource.Token)
 				).ConfigureAwait(false);
 
 				// prepare response

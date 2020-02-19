@@ -425,7 +425,7 @@ namespace net.vieapps.Services.APIGateway
 					session.User = new User("", session.SessionID, new List<string> { SystemRole.All.ToString() }, new List<Privilege>());
 					session.Verified = false;
 					await Task.WhenAll(
-						InternalAPIs.Cache.SetAsync($"Session#{session.SessionID}", session.GetEncryptedID(), 13),
+						Global.Cache.SetAsync($"Session#{session.SessionID}", session.GetEncryptedID(), 13),
 						websocket.SendAsync(new UpdateMessage
 						{
 							Type = "Users#Session#Revoke",

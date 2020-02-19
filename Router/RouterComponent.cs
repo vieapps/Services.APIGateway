@@ -20,7 +20,7 @@ namespace net.vieapps.Services.APIGateway
 {
 	public class RouterComponent
 	{
-		public const string Powered = "WAMP#v20.1.1-SSL+rev:2020.01.22-multiple.targets+only.standards";
+		public const string Powered = "WAMP#v20.1.1-SSL+rev:2020.02.19-lts.targets";
 
 		public IWampHost Host { get; private set; } = null;
 
@@ -122,7 +122,7 @@ namespace net.vieapps.Services.APIGateway
 						{
 							SessionID = arguments.SessionId,
 							ConnectionID = id != null ? (Guid)id : Guid.NewGuid(),
-							EndPoint = new IPEndPoint(IPAddress.Parse(uri != null ? uri.Host : "0.0.0.0"), uri != null ? uri.Port : 16429)
+							EndPoint = new IPEndPoint(IPAddress.TryParse(uri?.Host ?? "0.0.0.0", out var ipAddress) ? ipAddress : IPAddress.Parse("0.0.0.0"), uri != null ? uri.Port : 16429)
 						};
 						this.Sessions.TryAdd(arguments.SessionId, sessionInfo);
 						this.OnSessionCreated?.Invoke(sessionInfo);
@@ -150,7 +150,7 @@ namespace net.vieapps.Services.APIGateway
 
 			void startStatisticServer()
 			{
-				var address = $"{(this.SslCertificate != null ? "wss" : "ws")}://0.0.0.0:{(Int32.TryParse(ConfigurationManager.AppSettings["StatisticsWebSocketServer:Port"] ?? "56429", out int port) ? port : 56429)}/ ";
+				var address = $"{(this.SslCertificate != null ? "wss" : "ws")}://0.0.0.0:{(Int32.TryParse(ConfigurationManager.AppSettings["StatisticsWebSocketServer:Port"] ?? "56429", out var port) ? port : 56429)}/ ";
 				try
 				{
 					this.StatisticsServer = new Fleck.WebSocketServer(address)
@@ -182,7 +182,7 @@ namespace net.vieapps.Services.APIGateway
 
 								else if (command.ToLower().Equals("session"))
 								{
-									if (this.Sessions.TryGetValue(json.Value<long>("SessionID"), out SessionInfo sessionInfo))
+									if (this.Sessions.TryGetValue(json.Value<long>("SessionID"), out var sessionInfo))
 										Task.Run(() => websocket.Send(sessionInfo.ToJson().ToString(Formatting.None))).ConfigureAwait(false);
 									else
 										Task.Run(() => websocket.Send(new JObject
@@ -193,7 +193,7 @@ namespace net.vieapps.Services.APIGateway
 
 								else if (command.ToLower().Equals("update"))
 								{
-									if (this.Sessions.TryGetValue(json.Value<long>("SessionID"), out SessionInfo sessionInfo))
+									if (this.Sessions.TryGetValue(json.Value<long>("SessionID"), out var sessionInfo))
 									{
 										sessionInfo.Name = json.Value<string>("Name");
 										sessionInfo.Description = json.Value<string>("Description");

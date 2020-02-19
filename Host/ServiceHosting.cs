@@ -39,6 +39,7 @@ namespace net.vieapps.Services.APIGateway
 		protected void RunInternal(string[] args)
 		{
 			// prepare
+			Console.OutputEncoding = System.Text.Encoding.UTF8;
 			var time = DateTime.Now;
 			var stopwatch = Stopwatch.StartNew();
 
@@ -174,7 +175,6 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// prepare environment
-			Console.OutputEncoding = System.Text.Encoding.UTF8;
 			JsonConvert.DefaultSettings = () => new JsonSerializerSettings
 			{
 				Formatting = Formatting.None,

@@ -215,21 +215,20 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// prepare scheduling tasks
-			if (ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:TaskScheduler", "net.vieapps.task.scheduler")) is AppConfigurationSectionHandler tasksConfiguration)
-				if (tasksConfiguration.Section.SelectNodes("task") is XmlNodeList tasks)
-					tasks.ToList().ForEach(task =>
+			if (ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:TaskScheduler", "net.vieapps.task.scheduler")) is AppConfigurationSectionHandler tasksConfiguration && tasksConfiguration.Section.SelectNodes("task") is XmlNodeList tasks)
+				tasks.ToList().ForEach(task =>
+				{
+					var executable = task.Attributes["executable"]?.Value.Trim();
+					if (!string.IsNullOrWhiteSpace(executable) && File.Exists(executable))
 					{
-						var executable = task.Attributes["executable"]?.Value.Trim();
-						if (!string.IsNullOrWhiteSpace(executable) && File.Exists(executable))
+						var arguments = (task.Attributes["arguments"]?.Value ?? "").Trim();
+						var id = (executable + " " + arguments).ToLower().GenerateUUID();
+						this.Tasks[id] = new ProcessInfo(id, executable, arguments, new Dictionary<string, object>
 						{
-							var arguments = (task.Attributes["arguments"]?.Value ?? "").Trim();
-							var id = (executable + " " + arguments).ToLower().GenerateUUID();
-							this.Tasks[id] = new ProcessInfo(id, executable, arguments, new Dictionary<string, object>
-							{
-								{ "Time", Int32.TryParse(task.Attributes["time"]?.Value, out var time) ? time.ToString() : task.Attributes["time"]?.Value ?? "3" }
-							});
-						}
-					});
+							{ "Time", Int32.TryParse(task.Attributes["time"]?.Value, out var time) ? time.ToString() : task.Attributes["time"]?.Value ?? "3" }
+						});
+					}
+				});
 
 			// start
 			Global.OnProcess?.Invoke("The API Gateway Controller is starting");

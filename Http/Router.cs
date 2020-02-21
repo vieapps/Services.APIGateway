@@ -100,7 +100,11 @@ namespace net.vieapps.Services.APIGateway
 
 		public static void RegisterForwarderTransport(IApplicationBuilder appBuilder)
 		{
-			appBuilder.UseWebSockets();
+			appBuilder.UseWebSockets().Run(context =>
+			{
+				context.WriteError(Global.Logger, new NotImplementedException());
+				return Task.CompletedTask;
+			});
 			var transport = new AspNetCoreWebSocketTransport(appBuilder);
 			Router.Forwarder.RegisterTransport(transport, new JTokenJsonBinding(), new JTokenMessagePackBinding());
 			Global.Logger.LogInformation($"The transport of forwarder of API Gateway Router is registered => {transport.GetType()}");

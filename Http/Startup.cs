@@ -127,6 +127,26 @@ namespace net.vieapps.Services.APIGateway
 				Router.OpenForwarder();
 			}
 
+			// setup the path mappers
+			if (System.Configuration.ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:Maps", "net.vieapps.services.apigateway.http.maps")) is AppConfigurationSectionHandler config && config.Section.SelectNodes("map") is System.Xml.XmlNodeList maps)
+				maps.ToList()
+					.Select(map => new Tuple<string, string>(map.Attributes["path"]?.Value?.ToLower()?.Trim(), map.Attributes["type"]?.Value))
+					.Where(map => !string.IsNullOrEmpty(map.Item1) && map.Item1.IsStartsWith("/") && !map.Item1.IsEquals("/router") && !string.IsNullOrEmpty(map.Item2))
+					.ForEach(map =>
+					{
+						PathMapper pathMapper = null;
+						try
+						{
+							pathMapper = AssemblyLoader.GetType(map.Item2)?.CreateInstance() as PathMapper;
+						}
+						catch (Exception ex)
+						{
+							Global.Logger.LogError($"Cannot load a path mapper ({map.Item2})", ex);
+						}
+						if (pathMapper != null)
+							appBuilder.Map(map.Item1, builder => pathMapper.Map(builder));
+					});
+
 			// setup the handler for all requests
 			appBuilder.UseMiddleware<Handler>();
 

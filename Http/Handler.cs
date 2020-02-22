@@ -26,7 +26,8 @@ namespace net.vieapps.Services.APIGateway
 
 		string LoadBalancingHealthCheckUrl => UtilityService.GetAppSetting("HealthCheckUrl", "/load-balancing-health-check");
 
-		public Handler(RequestDelegate next) => this.Next = next;
+		public Handler(RequestDelegate next)
+			=> this.Next = next;
 
 		public async Task Invoke(HttpContext context)
 		{

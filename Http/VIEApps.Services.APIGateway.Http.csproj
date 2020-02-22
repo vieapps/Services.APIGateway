@@ -29,10 +29,14 @@
 		<PackageReference Include="Microsoft.AspNetCore" Version="2.2.0" />
 		<PackageReference Include="Microsoft.AspNetCore.ResponseCompression" Version="2.2.0" />
 		<PackageReference Include="Microsoft.AspNetCore.WebSockets" Version="2.2.1" />
-		<PackageReference Include="Microsoft.Extensions.Hosting" Version="3.1.2" />
+		<PackageReference Include="Microsoft.Extensions.Hosting" Version="3.1.2" Condition="'$(TargetFramework)' != 'netcoreapp2.1'" />
 		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.3.2002.5" />
 		<PackageReference Include="VIEApps.Services.Base.Http" Version="10.3.2002.5" />
 		<PackageReference Include="WampSharp.AspNetCore.WebSockets.Server" Version="20.1.1" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <ProjectReference Include="..\..\..\..\ChickensG\Service\TheChickensG.CardGames.csproj" />
 	</ItemGroup>
 
 </Project>

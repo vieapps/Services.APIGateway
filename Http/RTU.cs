@@ -35,15 +35,15 @@ namespace net.vieapps.Services.APIGateway
 				OnConnectionEstablished = async websocket => await websocket.WhenConnectionIsEstablishedAsync().ConfigureAwait(false),
 				OnConnectionBroken = async websocket => await websocket.WhenConnectionIsBrokenAsync().ConfigureAwait(false),
 				OnMessageReceived = async (websocket, result, data) => await websocket.WhenMessageIsReceivedAsync(result, data).ConfigureAwait(false),
-				KeepAliveInterval = TimeSpan.FromSeconds(45)
+				KeepAliveInterval = TimeSpan.FromSeconds(Int32.TryParse(UtilityService.GetAppSetting("Proxy:KeepAliveInterval", "45"), out var interval) ? interval : 45)
 			};
-			Global.Logger.LogInformation($"WebSocket ({Global.ServiceName} RTU) is initialized - Buffer size: {Components.WebSockets.WebSocket.ReceiveBufferSize:#,##0} bytes - Keep-Alive interval: {RTU.WebSocket.KeepAliveInterval.TotalSeconds} second(s)");
+			Global.Logger.LogInformation($"WebSocket ({Global.ServiceName} RTU) was initialized - Buffer size: {Components.WebSockets.WebSocket.ReceiveBufferSize:#,##0} bytes - Keep-Alive interval: {RTU.WebSocket.KeepAliveInterval.TotalSeconds} second(s)");
 		}
 
 		public static void Dispose()
 		{
 			RTU.WebSocket.Dispose();
-			Global.Logger.LogInformation($"WebSocket ({Global.ServiceName} RTU) is stopped");
+			Global.Logger.LogInformation($"WebSocket ({Global.ServiceName} RTU) was disposed");
 		}
 
 		static async Task WhenConnectionIsEstablishedAsync(this ManagedWebSocket websocket)
@@ -70,7 +70,7 @@ namespace net.vieapps.Services.APIGateway
 
 				// update session
 				websocket.Set("Session", session);
-				await websocket.PrepareConnectionInfoAsync(correlationID, session).ConfigureAwait(false);
+				await websocket.PrepareConnectionInfoAsync(correlationID, session, Global.CancellationTokenSource.Token, RTU.Logger).ConfigureAwait(false);
 
 				// wait for few times before connecting to API Gateway Router because RxNET needs that
 				if (query.ContainsKey("x-restart"))
@@ -228,33 +228,6 @@ namespace net.vieapps.Services.APIGateway
 				await Global.WriteLogsAsync(RTU.Logger, "Http.Visits", $"Request finished in {stopwatch.GetElapsedTimes()}", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
 		}
 
-		static async Task PrepareConnectionInfoAsync(this ManagedWebSocket websocket, string correlationID = null, Session session = null)
-		{
-			session = session ?? websocket.Get<Session>("Session");
-			var account = "Visitor";
-			if (!string.IsNullOrWhiteSpace(session?.User?.ID))
-				try
-				{
-					var json = await Global.CallServiceAsync(new RequestInfo(session, "Users", "Profile", "GET"), Global.CancellationTokenSource.Token, RTU.Logger, "Http.InternalAPIs").ConfigureAwait(false);
-					account = $"{json?.Get("Name", "Unknown")} ({session.User.ID})";
-				}
-				catch (Exception ex)
-				{
-					account = $"Unknown ({session.User.ID})";
-					await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"Error occurred while fetching an account profile => {ex.Message}", ex).ConfigureAwait(false);
-				}
-			websocket.Set("AccountInfo", account);
-			websocket.Set("LocationInfo", session != null ? await session.GetLocationAsync(correlationID, Global.CancellationTokenSource.Token).ConfigureAwait(false) : "Unknown");
-		}
-
-		static string GetConnectionInfo(this ManagedWebSocket websocket, Session session = null)
-		{
-			session = session ?? websocket.Get<Session>("Session");
-			return $"- Account: {websocket.Get("AccountInfo", "Visitor")} - Session ID: {session?.SessionID ?? "Unknown"} - Device ID: {session?.DeviceID ?? "Unknown"} - Origin: {(websocket.Headers.TryGetValue("Origin", out var origin) ? origin : session?.AppOrigin ?? "Unknown")}" + "\r\n" +
-				$"- App: {session?.AppName ?? "Unknown"} @ {session?.AppPlatform ?? "Unknown"} [{session?.AppAgent ?? "Unknown"}]" + "\r\n" +
-				$"- Connection IP: {session?.IP ?? "Unknown"} - Location: {websocket.Get("LocationInfo", "Unknown")} - WebSocket: {websocket.ID} @ {websocket.RemoteEndPoint}";
-		}
-
 		static void SetStatus(this ManagedWebSocket websocket, string status)
 			=> websocket.Set("Status", status);
 
@@ -319,19 +292,19 @@ namespace net.vieapps.Services.APIGateway
 				message["ID"] = identity;
 
 			await Task.WhenAll(
-				websocket.SendAsync(message.ToString(Formatting.None), true, Global.CancellationTokenSource.Token),
+				websocket.SendAsync(message, Global.CancellationTokenSource.Token),
 				Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", msg ?? exception.Message, exception, Global.ServiceName, LogLevel.Error, correlationID, string.IsNullOrWhiteSpace(additionalMsg) ? null : $"{additionalMsg}\r\nWebSocket Info:\r\n{websocket.GetConnectionInfo()}")
 			).ConfigureAwait(false);
 		}
 
 		static Task SendAsync(this ManagedWebSocket websocket, UpdateMessage message, string identity = null)
-			=> websocket.SendAsync(message.ToJson(json =>
+			=> websocket.SendAsync(message, Global.CancellationTokenSource.Token, json =>
 			{
 				(json as JObject).Remove("DeviceID");
 				(json as JObject).Remove("ExcludedDeviceID");
 				if (!string.IsNullOrWhiteSpace(identity))
 					json["ID"] = identity;
-			}).ToString(Formatting.None), true, Global.CancellationTokenSource.Token);
+			});
 
 		static async Task PushAsync(this ManagedWebSocket websocket, UpdateMessage message)
 		{
@@ -388,7 +361,7 @@ namespace net.vieapps.Services.APIGateway
 						throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 					else if (!session.SessionID.Equals(session.GetDecryptedID(encryptedSessionID, Global.EncryptionKey, Global.ValidationKey)))
 						throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
-					await websocket.PrepareConnectionInfoAsync(correlationID, session).ConfigureAwait(false);
+					await websocket.PrepareConnectionInfoAsync(correlationID, session, Global.CancellationTokenSource.Token, RTU.Logger).ConfigureAwait(false);
 					if (Global.IsDebugLogEnabled)
 						await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs",
 							$"Successfully process an inter-communicate message (patch session - {message.Data.Get<string>("SessionID")} => {session.SessionID})" + "\r\n" +
@@ -486,7 +459,7 @@ namespace net.vieapps.Services.APIGateway
 					// update session
 					session.AppName = body?.Get<string>("x-app-name") ?? session.AppName;
 					session.AppPlatform = body?.Get<string>("x-app-platform") ?? session.AppPlatform;
-					await websocket.PrepareConnectionInfoAsync(correlationID, session).ConfigureAwait(false);
+					await websocket.PrepareConnectionInfoAsync(correlationID, session, Global.CancellationTokenSource.Token, RTU.Logger).ConfigureAwait(false);
 
 					// update status
 					websocket.SetStatus("Authenticated");

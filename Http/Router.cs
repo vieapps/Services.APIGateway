@@ -8,7 +8,6 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Logging;
 using WampSharp.Binding;
 using WampSharp.Core.Serialization;
-using WampSharp.AspNetCore.WebSockets.Server;
 using WampSharp.V2;
 using WampSharp.V2.Core;
 using WampSharp.V2.Core.Contracts;
@@ -84,7 +83,7 @@ namespace net.vieapps.Services.APIGateway
 			Global.UnregisterService("Http.InternalAPIs", waitingTimes);
 			Global.PrimaryInterCommunicateMessageUpdater?.Dispose();
 			Global.SecondaryInterCommunicateMessageUpdater?.Dispose();
-			Global.Disconnect();
+			Global.Disconnect(waitingTimes);
 		}
 
 		static IWampHost Forwarder { get; set; }
@@ -100,14 +99,15 @@ namespace net.vieapps.Services.APIGateway
 
 		public static void RegisterForwarderTransport(IApplicationBuilder appBuilder)
 		{
-			appBuilder.UseWebSockets().Run(context =>
-			{
-				context.WriteError(Global.Logger, new NotImplementedException());
-				return Task.CompletedTask;
-			});
-			var transport = new AspNetCoreWebSocketTransport(appBuilder);
-			Router.Forwarder.RegisterTransport(transport, new JTokenJsonBinding(), new JTokenMessagePackBinding());
-			Global.Logger.LogInformation($"The transport of forwarder of API Gateway Router is registered => {transport.GetType()}");
+			appBuilder
+				.UseForwardedHeaders(Global.GetForwardedHeadersOptions())
+				.UseWebSockets(new WebSocketOptions
+				{
+					ReceiveBufferSize = Components.WebSockets.WebSocket.ReceiveBufferSize,
+					KeepAliveInterval = RTU.WebSocket.KeepAliveInterval
+				});
+			Router.Forwarder.RegisterTransport(new WampSharp.AspNetCore.WebSockets.Server.AspNetCoreWebSocketTransport(appBuilder), new JTokenJsonBinding(), new JTokenMessagePackBinding());
+			Global.Logger.LogInformation("The transport of forwarder of API Gateway Router was registered (ASP.NET Core WebSocket)");
 		}
 
 		public static void OpenForwarder()
@@ -119,7 +119,7 @@ namespace net.vieapps.Services.APIGateway
 		public static void CloseForwarder()
 			=> Task.Run(async () => await Router.ForwardingTokens.Values.ToList().ForEachAsync(async (forwardingToken, cancellationToken) => await forwardingToken.DisposeAsync().ConfigureAwait(false)).ConfigureAwait(false))
 				.ContinueWith(_ => Router.Forwarder?.Dispose(), TaskContinuationOptions.OnlyOnRanToCompletion)
-				.ContinueWith(_ => Global.Logger.LogInformation("The forwarder of API Gateway Router is stopped"), TaskContinuationOptions.OnlyOnRanToCompletion)
+				.ContinueWith(_ => Global.Logger.LogInformation("The forwarder of API Gateway Router was disposed"), TaskContinuationOptions.OnlyOnRanToCompletion)
 				.ConfigureAwait(false)
 				.GetAwaiter()
 				.GetResult();

@@ -1057,7 +1057,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			// send information of this service
 			if (message.Type.IsEquals("Service#RequestInfo"))
-				await Global.UpdateServiceInfoAsync("Http.InternalAPIs").ConfigureAwait(false);
+				await Global.SendServiceInfoAsync("Http.InternalAPIs").ConfigureAwait(false);
 
 			// update information of a service
 			else if (message.Type.IsEquals("Service#Info"))

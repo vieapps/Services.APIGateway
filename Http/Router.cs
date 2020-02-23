@@ -27,11 +27,21 @@ namespace net.vieapps.Services.APIGateway
 {
 	internal static class Router
 	{
-		public static void Connect(int waitingTimes = 6789)
+		public static void Connect(List<Action<object, WampSessionCreatedEventArgs>> onIncomingConnectionEstablished = null, List<Action<object, WampSessionCreatedEventArgs>> onOutgoingConnectionEstablished = null, int waitingTimes = 6789)
 		{
 			Global.Logger.LogInformation($"Attempting to connect to API Gateway Router [{new Uri(Services.Router.GetRouterStrInfo()).GetResolvedURI()}]");
 			Global.Connect(
-				(sender, arguments) =>
+				(sender, arguments) => Task.Run(() => onIncomingConnectionEstablished?.ForEach(action =>
+				{
+					try
+					{
+						action?.Invoke(sender, arguments);
+					}
+					catch (Exception ex)
+					{
+						Global.Logger.LogError($"Error occurred while calling on-incoming action => {ex.Message}", ex);
+					}
+				})).ContinueWith(_ =>
 				{
 					Global.PrimaryInterCommunicateMessageUpdater?.Dispose();
 					Global.PrimaryInterCommunicateMessageUpdater = Services.Router.IncomingChannel.RealmProxy.Services
@@ -50,8 +60,18 @@ namespace net.vieapps.Services.APIGateway
 							},
 							async exception => await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"Error occurred while fetching an inter-communicating message => {exception.Message}", exception).ConfigureAwait(false)
 						);
-				},
-				(sender, arguments) => Task.Run(async () =>
+				}, TaskContinuationOptions.OnlyOnRanToCompletion).ConfigureAwait(false),
+				(sender, arguments) => Task.Run(() => onOutgoingConnectionEstablished?.ForEach(action =>
+				{
+					try
+					{
+						action?.Invoke(sender, arguments);
+					}
+					catch (Exception ex)
+					{
+						Global.Logger.LogError($"Error occurred while calling on-outgoing action => {ex.Message}", ex);
+					}
+				})).ContinueWith(async _ =>
 				{
 					await Task.WhenAll(
 						Global.RegisterServiceAsync("Http.InternalAPIs"),
@@ -71,7 +91,7 @@ namespace net.vieapps.Services.APIGateway
 							Type = "Service#RequestInfo"
 						}.PublishAsync(Global.Logger, "Http.InternalAPIs")
 					).ConfigureAwait(false);
-				}).ConfigureAwait(false),
+				}, TaskContinuationOptions.OnlyOnRanToCompletion).ConfigureAwait(false),
 				waitingTimes,
 				exception => Global.Logger.LogError($"Cannot connect to API Gateway Router in period of times => {exception.Message}", exception),
 				exception => Global.Logger.LogError($"Error occurred while connecting to API Gateway Router => {exception.Message}", exception)
@@ -90,15 +110,12 @@ namespace net.vieapps.Services.APIGateway
 
 		public static ConcurrentDictionary<long, IAsyncDisposable> ForwardingTokens { get; } = new ConcurrentDictionary<long, IAsyncDisposable>();
 
-		public static void InitializeForwarder()
+		public static void OpenForwarder(IApplicationBuilder appBuilder)
 		{
 			var routerInfo = Services.Router.GetRouterInfo();
-			Global.Logger.LogInformation($"Initialize the forwarder of API Gateway Router [{UtilityService.GetAppSetting("HttpUri:APIs")}/router => {new Uri(Services.Router.GetRouterStrInfo()).GetResolvedURI()}]");
+			Global.Logger.LogInformation($"Initialize the forwarder of API Gateway Router [{UtilityService.GetAppSetting("HttpUri:APIs")}/router]");
 			Router.Forwarder = new WampHost(new ForwardingRealmContainer($"{routerInfo.Item1}{(routerInfo.Item1.EndsWith("/") ? "" : "/")}{routerInfo.Item2}", routerInfo.Item3));
-		}
 
-		public static void RegisterForwarderTransport(IApplicationBuilder appBuilder)
-		{
 			appBuilder
 				.UseForwardedHeaders(Global.GetForwardedHeadersOptions())
 				.UseWebSockets(new WebSocketOptions
@@ -108,12 +125,9 @@ namespace net.vieapps.Services.APIGateway
 				});
 			Router.Forwarder.RegisterTransport(new WampSharp.AspNetCore.WebSockets.Server.AspNetCoreWebSocketTransport(appBuilder), new JTokenJsonBinding(), new JTokenMessagePackBinding());
 			Global.Logger.LogInformation("The transport of forwarder of API Gateway Router was registered (ASP.NET Core WebSocket)");
-		}
 
-		public static void OpenForwarder()
-		{
 			Router.Forwarder.Open();
-			Global.Logger.LogInformation("The forwarder of API Gateway Router is ready for serving");
+			Global.Logger.LogInformation($"The forwarder of API Gateway Router is ready for serving [{UtilityService.GetAppSetting("HttpUri:APIs")}/router => {new Uri(Services.Router.GetRouterStrInfo()).GetResolvedURI()}]");
 		}
 
 		public static void CloseForwarder()

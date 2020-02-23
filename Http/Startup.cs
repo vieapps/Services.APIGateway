@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net;
 using System.Text;
 using System.Diagnostics;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 using Microsoft.AspNetCore;
@@ -19,6 +20,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Caching.Distributed;
 using Newtonsoft.Json;
+using WampSharp.V2.Realm;
 using net.vieapps.Components.Utility;
 using net.vieapps.Components.Caching;
 #endregion
@@ -100,13 +102,6 @@ namespace net.vieapps.Services.APIGateway
 				DateTimeZoneHandling = DateTimeZoneHandling.Local
 			};
 
-			// connect to API Gateway Router
-			Router.Connect();
-
-			var enableForwarder = "true".IsEquals(UtilityService.GetAppSetting("Router:Forwarder", "false"));
-			if (enableForwarder)
-				Router.InitializeForwarder();
-
 			// setup the real-time updater
 			RTU.Initialize();
 
@@ -123,13 +118,13 @@ namespace net.vieapps.Services.APIGateway
 				});
 
 			// setup the forwarder of API Gateway Router
+			var enableForwarder = "true".IsEquals(UtilityService.GetAppSetting("Router:Forwarder", "false"));
 			if (enableForwarder)
-			{
-				appBuilder.Map("/router", builder => Router.RegisterForwarderTransport(builder));
-				Router.OpenForwarder();
-			}
+				appBuilder.Map("/router", builder => Router.OpenForwarder(builder));
 
 			// setup the path mappers
+			var onIncomingConnectionEstablished = new List<Action<object, WampSessionCreatedEventArgs>>();
+			var onOutgoingConnectionEstablished = new List<Action<object, WampSessionCreatedEventArgs>>();
 			if (System.Configuration.ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:Maps", "net.vieapps.services.apigateway.http.maps")) is AppConfigurationSectionHandler config && config.Section.SelectNodes("map") is System.Xml.XmlNodeList maps)
 				maps.ToList()
 					.Select(info => new Tuple<string, string>(info.Attributes["path"]?.Value?.ToLower()?.Trim(), info.Attributes["type"]?.Value))
@@ -157,7 +152,7 @@ namespace net.vieapps.Services.APIGateway
 						}
 						if (pathMapper != null)
 						{
-							appBuilder.Map($"/{info.Item1}", builder => pathMapper.Map(builder, appLifetime));
+							appBuilder.Map($"/{info.Item1}", builder => pathMapper.Map(builder, appLifetime, onIncomingConnectionEstablished, onOutgoingConnectionEstablished));
 							Global.Logger.LogInformation($"Branch the request to a specified path sucessfully: /{info.Item1} => {pathMapper.GetTypeName()}");
 						}
 					});
@@ -167,6 +162,9 @@ namespace net.vieapps.Services.APIGateway
 
 			// setup the caching storage
 			Global.Cache = appBuilder.ApplicationServices.GetService<ICache>();
+
+			// connect to API Gateway Router
+			Router.Connect(onIncomingConnectionEstablished, onOutgoingConnectionEstablished);
 
 			// assign app event handler => on started
 			appLifetime.ApplicationStarted.Register(() =>

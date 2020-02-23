@@ -453,8 +453,22 @@ namespace net.vieapps.Services.APIGateway
 					Global.OnError?.Invoke($"Cannot send the updating information => {ex.Message}", ex);
 				}
 
+			if (this.AllowRegisterBusinessServices || this.Tasks.Count > 0)
+				try
+				{
+					await Task.WhenAll(
+						this.BusinessServices.Keys.ForEachAsync((name, token) => Task.Run(() => this.StopBusinessService(name))),
+						this.Tasks.Values.ForEachAsync((serviceInfo, token) => Task.Run(() => ExternalProcess.Stop(serviceInfo.Instance, null, null, 789)))	
+					).ConfigureAwait(false);
+				}
+				catch (Exception ex)
+				{
+					Global.OnError?.Invoke($"Error occurred while disposing external processes (services & tasks) => {ex.Message}", ex);
+				}
+
 			if (this.AllowRegisterHelperServices)
 			{
+				await Task.Delay(UtilityService.GetRandomNumber(456, 789)).ConfigureAwait(false);
 				await this.HelperServices.ForEachAsync(async (service, token) =>
 				{
 					try
@@ -474,22 +488,22 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				MailSender.SaveMessages();
+				this.MailSender?.Dispose();
 				WebHookSender.SaveMessages();
+				this.WebHookSender?.Dispose();
 
 				this.Timers.ForEach(timer => timer.Dispose());
-				this.Tasks.Values.ForEach(serviceInfo => ExternalProcess.Stop(serviceInfo.Instance, null, null, 789));
-				this.BusinessServices.Keys.ForEach(name => this.StopBusinessService(name));
-
 				this.InterCommunicator?.Dispose();
 				this.UpdateCommunicator?.Dispose();
-				this.MailSender?.Dispose();
-				this.WebHookSender?.Dispose();
-				await (this.LoggingService != null ? this.LoggingService.FlushAsync() : Task.CompletedTask).ConfigureAwait(false);
 				this.CancellationTokenSource.Cancel();
+				this.CancellationTokenSource.Dispose();
+
+				await (this.LoggingService != null ? this.LoggingService.FlushAsync() : Task.CompletedTask).ConfigureAwait(false);
 
 				this.RTUService = null;
 				this.State = ServiceState.Disconnected;
 				Router.Disconnect();
+
 				Global.OnProcess?.Invoke($"The API Gateway Controller was stopped");
 			}
 			catch (Exception ex)
@@ -502,7 +516,7 @@ namespace net.vieapps.Services.APIGateway
 		/// Stops the API Gateway Controller
 		/// </summary>
 		public void Stop()
-			=> this.StopAsync().Wait(2345);
+			=> this.StopAsync().Wait(3456);
 
 		void PrepareDatabaseSettings()
 		{

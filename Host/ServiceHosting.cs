@@ -230,7 +230,7 @@ namespace net.vieapps.Services.APIGateway
 				if (!stopped)
 				{
 					stop();
-					logger.LogInformation($"The service is stopped (by \"process exit\" signal) - Served times: {time.GetElapsedTimes()}");
+					logger.LogInformation($"The service was terminated (by \"process exit\" signal) - Served times: {time.GetElapsedTimes()}");
 				}
 			};
 
@@ -239,14 +239,14 @@ namespace net.vieapps.Services.APIGateway
 				if (!stopped)
 				{
 					stop();
-					logger.LogInformation($"The service is stopped (by \"cancel key press\" signal) - Served times: {time.GetElapsedTimes()}");
+					logger.LogInformation($"The service was terminated (by \"cancel key press\" signal) - Served times: {time.GetElapsedTimes()}");
 				}
 				Environment.Exit(0);
 			};
 
 			// start the service component
-			logger.LogInformation($"The {serviceComponent.ServiceName} service is starting");
-			logger.LogInformation($"Version: {this.ServiceType.Assembly.GetVersion()}");
+			logger.LogInformation($"The service is starting");
+			logger.LogInformation($"Info: {serviceComponent.ServiceName} - Version: {this.ServiceType.Assembly.GetVersion()}");
 			logger.LogInformation($"Mode: {(isUserInteractive ? "Interactive app" : "Background service")}");
 			logger.LogInformation($"Platform: {Extensions.GetRuntimePlatform()}");
 			logger.LogInformation($"Starting arguments: {(args != null && args.Length > 0 ? args.Join(" ") : "None")}");
@@ -272,7 +272,7 @@ namespace net.vieapps.Services.APIGateway
 						logger.LogInformation($"Service URIs:\r\n\t- Round robin: {service.ServiceURI}\r\n\t- Single (unique): {(service as IUniqueService).ServiceUniqueURI}");
 
 						stopwatch.Stop();
-						logger.LogInformation($"The service is started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");
+						logger.LogInformation($"The service was started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");
 
 						if (isUserInteractive)
 							logger.LogWarning($"=====> Enter \"exit\" to terminate ...............");
@@ -304,7 +304,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			stop();
-			logger.LogInformation($"The service is stopped - Served times: {time.GetElapsedTimes()}");
+			logger.LogInformation($"The service was terminated - Served times: {time.GetElapsedTimes()}");
 		}
 	}
 }

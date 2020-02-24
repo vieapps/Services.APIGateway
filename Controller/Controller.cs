@@ -12,13 +12,10 @@ using System.Diagnostics;
 using System.Configuration;
 using System.Reflection;
 using System.Runtime.InteropServices;
-
+using Newtonsoft.Json.Linq;
 using WampSharp.V2.Realm;
 using WampSharp.V2.Client;
 using WampSharp.V2.Core.Contracts;
-
-using Newtonsoft.Json.Linq;
-
 using net.vieapps.Components.Utility;
 using net.vieapps.Components.Repository;
 #endregion
@@ -49,7 +46,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		public void Dispose()
-			=> this.DisposeAsync().Wait(2345);
+			=> this.DisposeAsync().Wait(3456);
 
 		~Controller()
 			=> this.Dispose();
@@ -165,20 +162,27 @@ namespace net.vieapps.Services.APIGateway
 		/// <param name="onIncomingChannelEstablished"></param>
 		/// <param name="onOutgoingChannelEstablished"></param>
 		/// <param name="nextAsync"></param>
-		public void Start(string[] args = null, Action<object, WampSessionCreatedEventArgs> onIncomingChannelEstablished = null, Action<object, WampSessionCreatedEventArgs> onOutgoingChannelEstablished = null, Func<Task> nextAsync = null)
+		public void Start(
+			string[] args = null,
+			Action<object, WampSessionCreatedEventArgs> onIncomingChannelEstablished = null,
+			Action<object, WampSessionCreatedEventArgs> onOutgoingChannelEstablished = null,
+			Func<Task> nextAsync = null
+		)
 		{
 			// prepare arguments
 			var stopwatch = Stopwatch.StartNew();
 			this.IsUserInteractive = Environment.UserInteractive && args?.FirstOrDefault(a => a.StartsWith("/daemon")) == null;
+
+			var mode = this.IsUserInteractive ? "Interactive app" : "Background service";
 			this.Info = new ControllerInfo
 			{
+				ID = $"{Environment.UserName}-{Environment.MachineName}-".ToLower() + $"{Extensions.GetRuntimePlatform()}{mode}".ToLower().GenerateUUID(),
 				User = Environment.UserName.ToLower(),
 				Host = Environment.MachineName.ToLower(),
 				Platform = $"{Extensions.GetRuntimePlatform()}",
-				Mode = this.IsUserInteractive ? "Interactive app" : "Background service",
+				Mode = mode,
 				Available = true
 			};
-			this.Info.ID = $"{this.Info.User}-{this.Info.Host}-" + $"{this.Info.Platform}{this.Info.Mode}".ToLower().GenerateUUID();
 
 			if (args?.FirstOrDefault(a => a.StartsWith("/no-helper-services")) != null)
 				this.AllowRegisterHelperServices = false;
@@ -189,14 +193,21 @@ namespace net.vieapps.Services.APIGateway
 			if (args?.FirstOrDefault(a => a.StartsWith("/no-business-services")) != null)
 				this.AllowRegisterBusinessServices = false;
 
-			// prepare folders
-			new[]
+			// prepare directories
+			try
 			{
-				Global.StatusPath,
-				LoggingService.LogsPath,
-				MailSender.EmailsPath,
-				WebHookSender.WebHooksPath
-			}.Where(path => !Directory.Exists(path)).ForEach(path => Directory.CreateDirectory(path));
+				new[]
+					{
+					Global.StatusPath,
+					LoggingService.LogsPath,
+					MailSender.EmailsPath,
+					WebHookSender.WebHooksPath
+				}.Where(path => !Directory.Exists(path)).ForEach(path => Directory.CreateDirectory(path));
+			}
+			catch (Exception ex)
+			{
+				Global.OnError?.Invoke($"Error occurred while preparing directories => {ex.Message}", ex);
+			}
 
 			// prepare services
 			if (ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:Services", "net.vieapps.services")) is AppConfigurationSectionHandler servicesConfiguration)
@@ -252,7 +263,7 @@ namespace net.vieapps.Services.APIGateway
 			if (this.AllowRegisterHelperServices)
 				this.LoggingService = new LoggingService(this.CancellationTokenSource.Token);
 
-			// connect to router
+			// connect to API Gateway Router
 			var attemptingCounter = 0;
 
 			void connectRouter()
@@ -267,11 +278,10 @@ namespace net.vieapps.Services.APIGateway
 				try
 				{
 					await Router.ConnectAsync(
-						(sender, arguments) =>
+						async (sender, arguments) =>
 						{
-							onIncomingChannelEstablished?.Invoke(sender, arguments);
 							Global.OnProcess?.Invoke($"The incoming channel is established - Session ID: {arguments.SessionId}");
-							Task.Run(() => Router.IncomingChannel.UpdateAsync(Router.IncomingChannelSessionID, "APIGateway", "Incoming (APIGateway Controller)")).ConfigureAwait(false);
+							await Router.IncomingChannel.UpdateAsync(Router.IncomingChannelSessionID, "APIGateway", "Incoming (APIGateway Controller)").ConfigureAwait(false);
 							if (this.State == ServiceState.Initializing)
 								this.State = ServiceState.Ready;
 
@@ -299,86 +309,81 @@ namespace net.vieapps.Services.APIGateway
 								);
 							Global.OnProcess?.Invoke($"The updater of service messages is{(this.State == ServiceState.Disconnected ? " re-" : " ")}subscribed successful");
 
-							Task.Run(async () =>
+							try
+							{
+								await this.RegisterHelperServicesAsync().ConfigureAwait(false);
+							}
+							catch
 							{
 								try
 								{
+									await Task.Delay(UtilityService.GetRandomNumber(456, 789)).ConfigureAwait(false);
 									await this.RegisterHelperServicesAsync().ConfigureAwait(false);
 								}
-								catch
+								catch (Exception ex)
 								{
-									try
-									{
-										await Task.Delay(UtilityService.GetRandomNumber(456, 789)).ConfigureAwait(false);
-										await this.RegisterHelperServicesAsync().ConfigureAwait(false);
-									}
-									catch (Exception ex)
-									{
-										Global.OnError?.Invoke($"Error occurred while{(this.State == ServiceState.Disconnected ? " re-" : " ")}registering the helper services: {ex.Message}", ex);
-									}
+									Global.OnError?.Invoke($"Error occurred while{(this.State == ServiceState.Disconnected ? " re-" : " ")}registering the helper services => {ex.Message}", ex);
 								}
-							})
-							.ContinueWith(_ =>
-							{
-								if (this.State == ServiceState.Ready)
-								{
-									if (this.AllowRegisterHelperTimers)
-										try
-										{
-											this.RegisterMessagingTimers();
-											this.RegisterTaskSchedulingTimers();
-											this.RegisterClientIntervalTimers();
-											Global.OnProcess?.Invoke($"The background workers & schedulers are registered - Number of scheduling timers: {this.NumberOfTimers:#,##0} - Number of scheduling tasks: {this.NumberOfTasks:#,##0}");
-										}
-										catch (Exception ex)
-										{
-											Global.OnError?.Invoke($"Error occurred while registering background workers & schedulers: {ex.Message}", ex);
-										}
+							}
 
-									if (this.AllowRegisterBusinessServices)
-									{
-										var svcArgs = this.GetServiceArguments().Replace("/", "/call-");
-										Parallel.ForEach(this.BusinessServices, kvp => this.StartBusinessService(kvp.Key, svcArgs));
-										this.StartTimer(() => this.WatchBusinessServices(), 30);
-									}
-								}
-							}, TaskContinuationOptions.OnlyOnRanToCompletion)
-							.ContinueWith(async _ =>
+							if (this.State == ServiceState.Ready)
 							{
-								if (nextAsync != null && this.State == ServiceState.Ready)
+								if (this.AllowRegisterHelperTimers)
 									try
 									{
-										await nextAsync().ConfigureAwait(false);
+										this.RegisterMessagingTimers();
+										this.RegisterTaskSchedulingTimers();
+										this.RegisterClientIntervalTimers();
+										Global.OnProcess?.Invoke($"The background workers & schedulers are registered - Number of scheduling timers: {this.NumberOfTimers:#,##0} - Number of scheduling tasks: {this.NumberOfTasks:#,##0}");
 									}
 									catch (Exception ex)
 									{
-										Global.OnError?.Invoke($"Error occurred while invoking the next action: {ex.Message}", ex);
+										Global.OnError?.Invoke($"Error occurred while registering background workers & schedulers => {ex.Message}", ex);
 									}
-							}, TaskContinuationOptions.OnlyOnRanToCompletion)
-							.ContinueWith(_ =>
-							{
-								stopwatch.Stop();
-								Global.OnProcess?.Invoke($"The API Gateway Controller is{(this.State == ServiceState.Disconnected ? " re-" : " ")}started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");
-								this.State = ServiceState.Connected;
-							}, TaskContinuationOptions.OnlyOnRanToCompletion)
-							.ContinueWith(async _ =>
-							{
-								if (this.AllowRegisterBusinessServices || this.AllowRegisterHelperServices || this.AllowRegisterHelperTimers)
+
+								if (this.AllowRegisterBusinessServices)
 								{
-									while (Router.IncomingChannel == null || Router.OutgoingChannel == null)
-										await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
-									await this.SendInterCommunicateMessageAsync("Controller#Info", this.Info.ToJson(), this.CancellationTokenSource.Token).ConfigureAwait(false);
+									var svcArgs = this.GetServiceArguments().Replace("/", "/call-");
+									Parallel.ForEach(this.BusinessServices, kvp => this.StartBusinessService(kvp.Key, svcArgs));
+									this.StartTimer(() => this.WatchBusinessServices(), 30);
 								}
-							}, TaskContinuationOptions.OnlyOnRanToCompletion)
-							.ContinueWith(async _ =>
+							}
+
+							try
 							{
-								await Task.Delay(UtilityService.GetRandomNumber(5678, 7890)).ConfigureAwait(false);
-								await Task.WhenAll(
-									this.SendInterCommunicateMessageAsync("Controller#RequestInfo"),
-									this.SendInterCommunicateMessageAsync("Service#RequestInfo")
-								).ConfigureAwait(false);
-							}, TaskContinuationOptions.OnlyOnRanToCompletion)
-							.ConfigureAwait(false);
+								onIncomingChannelEstablished?.Invoke(sender, arguments);
+							}
+							catch (Exception ex)
+							{
+								Global.OnError?.Invoke($"Error occurred while invoking \"{nameof(onIncomingChannelEstablished)}\" => {ex.Message}", ex);
+							}
+
+							if (nextAsync != null && this.State == ServiceState.Ready)
+								try
+								{
+									await nextAsync().ConfigureAwait(false);
+								}
+								catch (Exception ex)
+								{
+									Global.OnError?.Invoke($"Error occurred while invoking the next action => {ex.Message}", ex);
+								}
+
+							stopwatch.Stop();
+							Global.OnProcess?.Invoke($"The API Gateway Controller was{(this.State == ServiceState.Disconnected ? " re-" : " ")}started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");
+							this.State = ServiceState.Connected;
+
+							if (this.AllowRegisterBusinessServices || this.AllowRegisterHelperServices || this.AllowRegisterHelperTimers)
+							{
+								while (Router.IncomingChannel == null || Router.OutgoingChannel == null)
+									await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
+								await this.SendInterCommunicateMessageAsync("Controller#Info", this.Info.ToJson(), this.CancellationTokenSource.Token).ConfigureAwait(false);
+							}
+
+							await Task.Delay(UtilityService.GetRandomNumber(5678, 7890)).ConfigureAwait(false);
+							await Task.WhenAll(
+								this.SendInterCommunicateMessageAsync("Controller#RequestInfo"),
+								this.SendInterCommunicateMessageAsync("Service#RequestInfo")
+							).ConfigureAwait(false);
 						},
 						(sender, arguments) =>
 						{
@@ -397,11 +402,19 @@ namespace net.vieapps.Services.APIGateway
 							}
 						},
 						(sender, arguments) => Global.OnError?.Invoke($"Got an unexpected error of the incoming channel to API Gateway Router => {arguments.Exception?.Message}", arguments.Exception),
-						(sender, arguments) =>
+						async (sender, arguments) =>
 						{
-							onOutgoingChannelEstablished?.Invoke(sender, arguments);
 							Global.OnProcess?.Invoke($"The outgoing channel is established - Session ID: {arguments.SessionId}");
-							Task.Run(() => Router.OutgoingChannel.UpdateAsync(Router.OutgoingChannelSessionID, "APIGateway", "Outgoing (APIGateway Controller)")).ConfigureAwait(false);
+							await Router.OutgoingChannel.UpdateAsync(Router.OutgoingChannelSessionID, "APIGateway", "Outgoing (APIGateway Controller)").ConfigureAwait(false);
+
+							try
+							{
+								onOutgoingChannelEstablished?.Invoke(sender, arguments);
+							}
+							catch (Exception ex)
+							{
+								Global.OnError?.Invoke($"Error occurred while invoking \"{nameof(onOutgoingChannelEstablished)}\" => {ex.Message}", ex);
+							}
 						},
 						(sender, arguments) =>
 						{
@@ -526,6 +539,7 @@ namespace net.vieapps.Services.APIGateway
 			var dbProviderFactories = new Dictionary<string, XmlNode>(StringComparer.OrdinalIgnoreCase);
 			var dataSources = new Dictionary<string, XmlNode>(StringComparer.OrdinalIgnoreCase);
 			var repositoriesSection = UtilityService.GetAppSetting("Section:Repositories", "net.vieapps.repositories");
+			var dbprovidersSection = UtilityService.GetAppSetting("Section:DbProviders", "net.vieapps.dbproviders");
 
 			// settings of controllers
 			if (ConfigurationManager.ConnectionStrings != null && ConfigurationManager.ConnectionStrings.Count > 0)
@@ -536,13 +550,14 @@ namespace net.vieapps.Services.APIGateway
 						connectionStrings[connectionString.Name] = connectionString.ConnectionString;
 				}
 
-			if (ConfigurationManager.GetSection("dbProviderFactories") is AppConfigurationSectionHandler dbProviderFactoriesConfiguration)
-				dbProviderFactoriesConfiguration.Section.SelectNodes("./add").ToList().ForEach(dbProviderFactoryNode =>
-				{
-					var invariant = dbProviderFactoryNode.Attributes["invariant"]?.Value;
-					if (!string.IsNullOrWhiteSpace(invariant) && !dbProviderFactories.ContainsKey(invariant))
-						dbProviderFactories[invariant] = dbProviderFactoryNode;
-				});
+			if (!(ConfigurationManager.GetSection(dbprovidersSection) is AppConfigurationSectionHandler dbProviderFactoriesConfiguration))
+				dbProviderFactoriesConfiguration = ConfigurationManager.GetSection("dbProviderFactories") as AppConfigurationSectionHandler;
+			dbProviderFactoriesConfiguration?.Section.SelectNodes("./add").ToList().ForEach(dbProviderFactoryNode =>
+			{
+				var invariant = dbProviderFactoryNode.Attributes["invariant"]?.Value ?? dbProviderFactoryNode.Attributes["name"]?.Value;
+				if (!string.IsNullOrWhiteSpace(invariant) && !dbProviderFactories.ContainsKey(invariant))
+					dbProviderFactories[invariant] = dbProviderFactoryNode;
+			});
 
 			if (ConfigurationManager.GetSection(repositoriesSection) is AppConfigurationSectionHandler repositoriesConfiguration)
 			{
@@ -602,13 +617,14 @@ namespace net.vieapps.Services.APIGateway
 							connectionStrings[name] = connectionString;
 					});
 
-				if (xml.DocumentElement.SelectNodes("/configuration/dbProviderFactories/add") is XmlNodeList dbProviderFactoryNodes)
-					dbProviderFactoryNodes.ToList().ForEach(dbProviderFactoryNode =>
-					{
-						var invariant = dbProviderFactoryNode.Attributes["invariant"]?.Value;
-						if (!string.IsNullOrWhiteSpace(invariant) && !dbProviderFactories.ContainsKey(invariant))
-							dbProviderFactories[invariant] = dbProviderFactoryNode;
-					});
+				if (!(xml.DocumentElement.SelectNodes($"/configuration/{dbprovidersSection}/add") is XmlNodeList dbProviderFactoryNodes))
+					dbProviderFactoryNodes = xml.DocumentElement.SelectNodes("/configuration/dbProviderFactories/add");
+				dbProviderFactoryNodes?.ToList().ForEach(dbProviderFactoryNode =>
+				{
+					var invariant = dbProviderFactoryNode.Attributes["invariant"]?.Value ?? dbProviderFactoryNode.Attributes["name"]?.Value;
+					if (!string.IsNullOrWhiteSpace(invariant) && !dbProviderFactories.ContainsKey(invariant))
+						dbProviderFactories[invariant] = dbProviderFactoryNode;
+				});
 
 				if (xml.DocumentElement.SelectSingleNode($"/configuration/{repositoriesSection}") is XmlNode repositoriesConfig)
 				{
@@ -761,7 +777,7 @@ namespace net.vieapps.Services.APIGateway
 		/// </summary>
 		/// <returns></returns>
 		public string GetServiceArguments()
-			=> $"/user:{Environment.UserName?.ToLower().UrlEncode()} /host:{Environment.MachineName?.ToLower().UrlEncode()} /platform:{RuntimeInformation.FrameworkDescription.UrlEncode()} /os:{Extensions.GetRuntimePlatform(false).UrlEncode()}";
+			=> $"/user:{Environment.UserName.ToLower().UrlEncode()} /host:{Environment.MachineName.ToLower().UrlEncode()} /platform:{RuntimeInformation.FrameworkDescription.UrlEncode()} /os:{Extensions.GetRuntimePlatform(false).UrlEncode()}";
 
 		/// <summary>
 		/// Starts a business service
@@ -815,7 +831,7 @@ namespace net.vieapps.Services.APIGateway
 				);
 
 				this.BusinessServices[name].Set("State", "Running");
-				Global.OnServiceStarted?.Invoke(name, $"The service is {re}started - Process ID: {this.BusinessServices[name].Instance.ID}");
+				Global.OnServiceStarted?.Invoke(name, $"The service was {re}started - Process ID: {this.BusinessServices[name].Instance.ID}");
 			}
 			catch (Exception ex)
 			{
@@ -903,7 +919,7 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				this.HelperServices.Add(await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(this, RegistrationInterceptor.Create(this.Info.ID, WampInvokePolicy.Single)).ConfigureAwait(false));
-				Global.OnProcess?.Invoke($"The managing service is{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
+				Global.OnProcess?.Invoke($"The managing service was{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
 			}
 			catch (WampSessionNotEstablishedException)
 			{
@@ -917,13 +933,13 @@ namespace net.vieapps.Services.APIGateway
 			if (this.AllowRegisterHelperServices)
 			{
 				this.HelperServices.Add(await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(this.LoggingService, RegistrationInterceptor.Create()).ConfigureAwait(false));
-				Global.OnProcess?.Invoke($"The logging service is{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
+				Global.OnProcess?.Invoke($"The logging service was{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
 
 				this.HelperServices.Add(await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(new RTUService(), RegistrationInterceptor.Create()).ConfigureAwait(false));
-				Global.OnProcess?.Invoke($"The real-time update (RTU) service is{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
+				Global.OnProcess?.Invoke($"The real-time update (RTU) service was{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
 
 				this.HelperServices.Add(await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(new MessagingService(), RegistrationInterceptor.Create()).ConfigureAwait(false));
-				Global.OnProcess?.Invoke($"The messaging service is{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
+				Global.OnProcess?.Invoke($"The messaging service was{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
 			}
 
 			while (Router.OutgoingChannel == null)

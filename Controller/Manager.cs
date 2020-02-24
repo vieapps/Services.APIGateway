@@ -6,10 +6,8 @@ using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Reactive.Linq;
 using System.Runtime.InteropServices;
-
 using WampSharp.V2.Realm;
 using Newtonsoft.Json.Linq;
-
 using net.vieapps.Components.Utility;
 #endregion
 
@@ -22,43 +20,37 @@ namespace net.vieapps.Services.APIGateway
 		/// </summary>
 		public Manager()
 		{
-			this.OnIncomingChannelEstablished = (sender, args)
-				=> Task.Run(async () =>
-				{
-					if (this.Instance != null)
-						await this.Instance.DisposeAsync().ConfigureAwait(false);
-					this.Instance = await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(this, RegistrationInterceptor.Create()).ConfigureAwait(false);
-				})
-				.ContinueWith(_ =>
-				{
-					this.Communicator?.Dispose();
-					this.Communicator = Router.IncomingChannel.RealmProxy.Services
-						.GetSubject<CommunicateMessage>("messages.services.apigateway")
-						.Subscribe(
-							message => this.ProcessInterCommunicateMessage(message),
-							exception => Global.OnError?.Invoke($"Error occurred while fetching inter-communicate message: {exception.Message}", exception)
-						);
-				}, TaskContinuationOptions.OnlyOnRanToCompletion)
-				.ConfigureAwait(false);
+			this.OnIncomingChannelEstablished = async (sender, args) =>
+			{
+				if (this.Instance != null)
+					await this.Instance.DisposeAsync().ConfigureAwait(false);
+				this.Instance = await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(this, RegistrationInterceptor.Create()).ConfigureAwait(false);
 
-			this.OnOutgoingChannelEstablished = (sender, args)
-				=>Task.Run(() => this.RTUService = Router.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create()))
-				.ContinueWith(async _ =>
-				{
-					await this.SendRequestInfoAsync().ConfigureAwait(false);
-					Global.OnProcess?.Invoke($"Successfully subscribe the manager's communicator");
-				}, TaskContinuationOptions.OnlyOnRanToCompletion)
-				.ConfigureAwait(false);
+				this.Communicator?.Dispose();
+				this.Communicator = Router.IncomingChannel.RealmProxy.Services
+					.GetSubject<CommunicateMessage>("messages.services.apigateway")
+					.Subscribe(
+						message => this.ProcessInterCommunicateMessage(message),
+						exception => Global.OnError?.Invoke($"Error occurred while fetching inter-communicate message: {exception.Message}", exception)
+					);
+			};
+
+			this.OnOutgoingChannelEstablished = async (sender, args) =>
+			{
+				this.RTUService = Router.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create());
+				await this.SendRequestInfoAsync().ConfigureAwait(false);
+				Global.OnProcess?.Invoke($"Successfully subscribe the manager's communicator");
+			};
 
 			this.RequestInfoInterval = Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:RequestInfo"), out var requestInterval) ? requestInterval : 15;
-			this.RequestInfoTimer = Observable.Timer(TimeSpan.FromMinutes(this.RequestInfoInterval), TimeSpan.FromMinutes(this.RequestInfoInterval)).Subscribe(_ => Task.Run(async () =>
+			this.RequestInfoTimer = Observable.Timer(TimeSpan.FromMinutes(this.RequestInfoInterval), TimeSpan.FromMinutes(this.RequestInfoInterval)).Subscribe(async _ =>
 			{
 				if ((DateTime.Now - this.RequestTime).TotalMinutes >= this.RequestInfoInterval - 2)
 				{
 					await this.SendRequestInfoAsync().ConfigureAwait(false);
 					this.RequestTime = DateTime.Now;
 				}
-			}).ConfigureAwait(false));
+			});
 		}
 
 		public async Task DisposeAsync()

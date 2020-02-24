@@ -17,7 +17,7 @@ namespace net.vieapps.Services.APIGateway
 {
 	public class MessagingService : IMessagingService
 	{
-		public async Task SendEmailAsync(EmailMessage message, CancellationToken cancellationToken = default)
+		public Task SendEmailAsync(EmailMessage message, CancellationToken cancellationToken = default)
 		{
 			message.From = string.IsNullOrWhiteSpace(message.From) ? MailSender.EmailDefaultSender : message.From;
 			if (string.IsNullOrWhiteSpace(message.SmtpServer))
@@ -28,7 +28,7 @@ namespace net.vieapps.Services.APIGateway
 				message.SmtpUsername = MailSender.EmailSmtpUser;
 				message.SmtpPassword = MailSender.EmailSmtpUserPassword;
 			}
-			await EmailMessage.SaveAsync(message, MailSender.EmailsPath).ConfigureAwait(false);
+			return EmailMessage.SaveAsync(message, MailSender.EmailsPath);
 		}
 
 		public Task SendWebHookAsync(WebHookMessage message, CancellationToken cancellationToken = default)
@@ -45,13 +45,13 @@ namespace net.vieapps.Services.APIGateway
 			=> this.CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
 		public void Dispose()
-			=> this.CancellationTokenSource.Cancel();
-
-		~MailSender()
 		{
-			this.Dispose();
+			this.CancellationTokenSource.Cancel();
 			this.CancellationTokenSource.Dispose();
 		}
+
+		~MailSender()
+			=> this.Dispose();
 
 		#region Information
 		static Dictionary<string, MailInfo> Messages = null;
@@ -224,13 +224,13 @@ namespace net.vieapps.Services.APIGateway
 			=> this.CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
 		public void Dispose()
-			=> this.CancellationTokenSource.Cancel();
-
-		~WebHookSender()
 		{
-			this.Dispose();
+			this.CancellationTokenSource.Cancel();
 			this.CancellationTokenSource.Dispose();
 		}
+
+		~WebHookSender()
+			=> this.Dispose();
 
 		#region Information
 		static Dictionary<string, WebHookInfo> Messages = null;

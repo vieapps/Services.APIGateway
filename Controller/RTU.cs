@@ -7,7 +7,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reactive.Subjects;
 using System.Reactive.Linq;
-
 using Newtonsoft.Json;
 using net.vieapps.Components.Utility;
 #endregion
@@ -44,29 +43,28 @@ namespace net.vieapps.Services.APIGateway
 		public Task SendUpdateMessagesAsync(List<BaseMessage> messages, string deviceID, string excludedDeviceID, CancellationToken cancellationToken = default)
 			=> UtilityService.ExecuteTask(() =>
 			{
-				var publisher = messages.Select(message => new UpdateMessage
-				{
-					Type = message.Type,
-					Data = message.Data,
-					DeviceID = deviceID,
-					ExcludedDeviceID = excludedDeviceID
-				})
-				.ToObservable()
-				.Subscribe(
-					message =>
+				using (var publisher = messages.Select(message => new UpdateMessage
 					{
-						this.GetUpdateMessagePublisher().OnNext(message);
-						Global.OnSendRTUMessageSuccess?.Invoke(
-							$"Publish an update message successful" + "\r\n" +
-							$"- Device: {message.DeviceID}" + "\r\n" +
-							$"- Excluded: {(string.IsNullOrWhiteSpace(message.ExcludedDeviceID) ? "None" : message.ExcludedDeviceID)}" + "\r\n" +
-							$"- Type: {message.Type}" + "\r\n" +
-							$"- Data: {message.Data.ToString(Formatting.None)}"
-						);
-					},
-					exception => Global.OnSendRTUMessageFailure?.Invoke($"Error occurred while publishing an update message: {exception.Message}", exception)
-				);
-				using (publisher) { }
+						Type = message.Type,
+						Data = message.Data,
+						DeviceID = deviceID,
+						ExcludedDeviceID = excludedDeviceID
+					})
+					.ToObservable()
+					.Subscribe(
+						message =>
+						{
+							this.GetUpdateMessagePublisher().OnNext(message);
+							Global.OnSendRTUMessageSuccess?.Invoke(
+								$"Publish an update message successful" + "\r\n" +
+								$"- Device: {message.DeviceID}" + "\r\n" +
+								$"- Excluded: {(string.IsNullOrWhiteSpace(message.ExcludedDeviceID) ? "None" : message.ExcludedDeviceID)}" + "\r\n" +
+								$"- Type: {message.Type}" + "\r\n" +
+								$"- Data: {message.Data.ToString(Formatting.None)}"
+							);
+						},
+						exception => Global.OnSendRTUMessageFailure?.Invoke($"Error occurred while publishing an update message: {exception.Message}", exception)
+				)) { }
 			}, cancellationToken);
 
 		ConcurrentDictionary<string, ISubject<CommunicateMessage>> InterCommunicateMessagePublishers { get; } = new ConcurrentDictionary<string, ISubject<CommunicateMessage>>();
@@ -129,7 +127,7 @@ namespace net.vieapps.Services.APIGateway
 				if (messages != null && !string.IsNullOrWhiteSpace(serviceName))
 				{
 					var subject = this.GetInterCommunicateMessagePublisher(serviceName);
-					var publisher = messages.ToObservable().Subscribe(
+					using (var publisher = messages.ToObservable().Subscribe(
 						message =>
 						{
 							subject.OnNext(message);
@@ -141,8 +139,7 @@ namespace net.vieapps.Services.APIGateway
 							);
 						},
 						exception => Global.OnSendRTUMessageFailure?.Invoke($"Error occurred while publishing an inter-communicate message: {exception.Message}", exception)
-					);
-					using (publisher) { }
+					)) { }
 				}
 			}, cancellationToken);
 	}

@@ -281,7 +281,7 @@ namespace net.vieapps.Services.APIGateway
 						async (sender, arguments) =>
 						{
 							Global.OnProcess?.Invoke($"The incoming channel is established - Session ID: {arguments.SessionId}");
-							await Router.IncomingChannel.UpdateAsync(Router.IncomingChannelSessionID, "APIGateway", "Incoming (APIGateway Controller)").ConfigureAwait(false);
+							Router.IncomingChannel.Update(Router.IncomingChannelSessionID, "APIGateway", "Incoming (APIGateway Controller)");
 							if (this.State == ServiceState.Initializing)
 								this.State = ServiceState.Ready;
 
@@ -402,10 +402,10 @@ namespace net.vieapps.Services.APIGateway
 							}
 						},
 						(sender, arguments) => Global.OnError?.Invoke($"Got an unexpected error of the incoming channel to API Gateway Router => {arguments.Exception?.Message}", arguments.Exception),
-						async (sender, arguments) =>
+						(sender, arguments) =>
 						{
 							Global.OnProcess?.Invoke($"The outgoing channel is established - Session ID: {arguments.SessionId}");
-							await Router.OutgoingChannel.UpdateAsync(Router.OutgoingChannelSessionID, "APIGateway", "Outgoing (APIGateway Controller)").ConfigureAwait(false);
+							Router.OutgoingChannel.Update(Router.OutgoingChannelSessionID, "APIGateway", "Outgoing (APIGateway Controller)");
 
 							try
 							{

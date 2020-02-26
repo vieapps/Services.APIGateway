@@ -31,18 +31,20 @@ namespace net.vieapps.Services.APIGateway
 		{
 			Global.Logger.LogInformation($"Attempting to connect to API Gateway Router [{new Uri(Services.Router.GetRouterStrInfo()).GetResolvedURI()}]");
 			Global.Connect(
-				(sender, arguments) => Task.Run(() => onIncomingConnectionEstablished?.ForEach(action =>
+				(sender, arguments) =>
 				{
-					try
+					onIncomingConnectionEstablished?.ForEach(action =>
 					{
-						action?.Invoke(sender, arguments);
-					}
-					catch (Exception ex)
-					{
-						Global.Logger.LogError($"Error occurred while calling on-incoming action => {ex.Message}", ex);
-					}
-				})).ContinueWith(_ =>
-				{
+						try
+						{
+							action?.Invoke(sender, arguments);
+						}
+						catch (Exception ex)
+						{
+							Global.Logger.LogError($"Error occurred while calling on-incoming action => {ex.Message}", ex);
+						}
+					});
+
 					Global.PrimaryInterCommunicateMessageUpdater?.Dispose();
 					Global.PrimaryInterCommunicateMessageUpdater = Services.Router.IncomingChannel.RealmProxy.Services
 						.GetSubject<CommunicateMessage>("messages.services.apigateway")
@@ -60,19 +62,21 @@ namespace net.vieapps.Services.APIGateway
 							},
 							async exception => await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"Error occurred while fetching an inter-communicating message => {exception.Message}", exception).ConfigureAwait(false)
 						);
-				}, TaskContinuationOptions.OnlyOnRanToCompletion).ConfigureAwait(false),
-				(sender, arguments) => Task.Run(() => onOutgoingConnectionEstablished?.ForEach(action =>
+				},
+				async (sender, arguments) =>
 				{
-					try
+					onOutgoingConnectionEstablished?.ForEach(action =>
 					{
-						action?.Invoke(sender, arguments);
-					}
-					catch (Exception ex)
-					{
-						Global.Logger.LogError($"Error occurred while calling on-outgoing action => {ex.Message}", ex);
-					}
-				})).ContinueWith(async _ =>
-				{
+						try
+						{
+							action?.Invoke(sender, arguments);
+						}
+						catch (Exception ex)
+						{
+							Global.Logger.LogError($"Error occurred while calling on-outgoing action => {ex.Message}", ex);
+						}
+					});
+
 					await Task.WhenAll(
 						Global.RegisterServiceAsync("Http.InternalAPIs"),
 						Task.Delay(UtilityService.GetRandomNumber(234, 567), Global.CancellationTokenSource.Token)
@@ -91,7 +95,7 @@ namespace net.vieapps.Services.APIGateway
 							Type = "Service#RequestInfo"
 						}.PublishAsync(Global.Logger, "Http.InternalAPIs")
 					).ConfigureAwait(false);
-				}, TaskContinuationOptions.OnlyOnRanToCompletion).ConfigureAwait(false),
+				},
 				waitingTimes,
 				exception => Global.Logger.LogError($"Cannot connect to API Gateway Router in period of times => {exception.Message}", exception),
 				exception => Global.Logger.LogError($"Error occurred while connecting to API Gateway Router => {exception.Message}", exception)

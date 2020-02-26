@@ -22,8 +22,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			this.OnIncomingChannelEstablished = async (sender, args) =>
 			{
-				if (this.Instance != null)
-					await this.Instance.DisposeAsync().ConfigureAwait(false);
+				await (this.Instance != null ? this.Instance.DisposeAsync().AsTask() : Task.CompletedTask).ConfigureAwait(false);
 				this.Instance = await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(this, RegistrationInterceptor.Create()).ConfigureAwait(false);
 
 				this.Communicator?.Dispose();
@@ -58,8 +57,7 @@ namespace net.vieapps.Services.APIGateway
 			if (!this.Disposed)
 			{
 				this.Disposed = true;
-				if (this.Instance != null)
-					await this.Instance.DisposeAsync().ConfigureAwait(false);
+				await (this.Instance != null ? this.Instance.DisposeAsync().AsTask() : Task.CompletedTask).ConfigureAwait(false);
 				this.Communicator?.Dispose();
 				this.RequestInfoTimer?.Dispose();
 				GC.SuppressFinalize(this);

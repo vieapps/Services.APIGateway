@@ -271,7 +271,7 @@ namespace net.vieapps.Services.APIGateway
 						{
 							inners.Add(new JObject
 							{
-								{ "Error", "(" + counter + "): " + inner.Message + " [" + inner.GetType().ToString() + "]" },
+								{ "Error", $"({counter}): {inner.Message} [{inner.GetType()}]" },
 								{ "Stack", inner.StackTrace }
 							});
 							counter++;

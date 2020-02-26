@@ -34,4 +34,8 @@
 		<PackageReference Include="WampSharp.AspNetCore.WebSockets.Server" Version="20.1.1" />
 	</ItemGroup>
 
+	<ItemGroup>
+	  <ProjectReference Include="..\..\..\..\ChickensG\Service\TheChickensG.CardGames.csproj" />
+	</ItemGroup>
+
 </Project>

@@ -44,26 +44,24 @@ namespace net.vieapps.Services.APIGateway
 			=> UtilityService.ExecuteTask(() =>
 			{
 				using (var publisher = messages.Select(message => new UpdateMessage
+				{
+					Type = message.Type,
+					Data = message.Data,
+					DeviceID = deviceID,
+					ExcludedDeviceID = excludedDeviceID
+				}).ToObservable().Subscribe(
+					message =>
 					{
-						Type = message.Type,
-						Data = message.Data,
-						DeviceID = deviceID,
-						ExcludedDeviceID = excludedDeviceID
-					})
-					.ToObservable()
-					.Subscribe(
-						message =>
-						{
-							this.GetUpdateMessagePublisher().OnNext(message);
-							Global.OnSendRTUMessageSuccess?.Invoke(
-								$"Publish an update message successful" + "\r\n" +
-								$"- Device: {message.DeviceID}" + "\r\n" +
-								$"- Excluded: {(string.IsNullOrWhiteSpace(message.ExcludedDeviceID) ? "None" : message.ExcludedDeviceID)}" + "\r\n" +
-								$"- Type: {message.Type}" + "\r\n" +
-								$"- Data: {message.Data.ToString(Formatting.None)}"
-							);
-						},
-						exception => Global.OnSendRTUMessageFailure?.Invoke($"Error occurred while publishing an update message: {exception.Message}", exception)
+						this.GetUpdateMessagePublisher().OnNext(message);
+						Global.OnSendRTUMessageSuccess?.Invoke(
+							$"Publish an update message successful" + "\r\n" +
+							$"- Device: {message.DeviceID}" + "\r\n" +
+							$"- Excluded: {(string.IsNullOrWhiteSpace(message.ExcludedDeviceID) ? "None" : message.ExcludedDeviceID)}" + "\r\n" +
+							$"- Type: {message.Type}" + "\r\n" +
+							$"- Data: {message.Data.ToString(Formatting.None)}"
+						);
+					},
+					exception => Global.OnSendRTUMessageFailure?.Invoke($"Error occurred while publishing an update message: {exception.Message}", exception)
 				)) { }
 			}, cancellationToken);
 

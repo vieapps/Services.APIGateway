@@ -88,7 +88,7 @@ namespace net.vieapps.Services.APIGateway
 #else
 			Global.Logger.LogInformation($"Working mode: RELEASE ({(environment.IsDevelopment() ? "Development" : "Production")})");
 #endif
-			Global.Logger.LogInformation($"Environment:\r\n\t- User: {Environment.UserName.ToLower()} @ {Environment.MachineName.ToLower()}\r\n\t- Platform: {Extensions.GetRuntimePlatform()}");
+			Global.Logger.LogInformation($"Environment:\r\n\t{Extensions.GetRuntimeEnvironment()}");
 			Global.Logger.LogInformation($"Service URIs:\r\n\t- Round robin: services.{Global.ServiceName.ToLower()}.http\r\n\t- Single (unique): services.{Extensions.GetUniqueName(Global.ServiceName + ".http")}");
 
 			Global.CreateRSA();
@@ -141,19 +141,17 @@ namespace net.vieapps.Services.APIGateway
 					.Where(info => !info.Item1.IsEquals("router"))
 					.ForEach(info =>
 					{
-						PathMapper pathMapper = null;
 						try
 						{
-							pathMapper = AssemblyLoader.GetType(info.Item2)?.CreateInstance() as PathMapper;
+							if (AssemblyLoader.GetType(info.Item2)?.CreateInstance() is PathMapper mapper)
+							{
+								appBuilder.Map($"/{info.Item1}", builder => mapper.Map(builder, appLifetime, onIncomingConnectionEstablished, onOutgoingConnectionEstablished));
+								Global.Logger.LogInformation($"Successfully branch the request to a specified path: /{info.Item1} => {mapper.GetTypeName()}");
+							}
 						}
 						catch (Exception ex)
 						{
 							Global.Logger.LogError($"Cannot load a path mapper ({info.Item2})", ex);
-						}
-						if (pathMapper != null)
-						{
-							appBuilder.Map($"/{info.Item1}", builder => pathMapper.Map(builder, appLifetime, onIncomingConnectionEstablished, onOutgoingConnectionEstablished));
-							Global.Logger.LogInformation($"Branch the request to a specified path sucessfully: /{info.Item1} => {pathMapper.GetTypeName()}");
 						}
 					});
 

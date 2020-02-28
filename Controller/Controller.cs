@@ -161,12 +161,12 @@ namespace net.vieapps.Services.APIGateway
 		/// <param name="args"></param>
 		/// <param name="onIncomingChannelEstablished"></param>
 		/// <param name="onOutgoingChannelEstablished"></param>
-		/// <param name="nextAsync"></param>
+		/// <param name="next"></param>
 		public void Start(
 			string[] args = null,
 			Action<object, WampSessionCreatedEventArgs> onIncomingChannelEstablished = null,
 			Action<object, WampSessionCreatedEventArgs> onOutgoingChannelEstablished = null,
-			Func<Task> nextAsync = null
+			Action<Controller> next = null
 		)
 		{
 			// prepare arguments
@@ -358,10 +358,10 @@ namespace net.vieapps.Services.APIGateway
 								Global.OnError?.Invoke($"Error occurred while invoking \"{nameof(onIncomingChannelEstablished)}\" => {ex.Message}", ex);
 							}
 
-							if (nextAsync != null && this.State == ServiceState.Ready)
+							if (this.State == ServiceState.Ready)
 								try
 								{
-									await nextAsync().ConfigureAwait(false);
+									next?.Invoke(this);
 								}
 								catch (Exception ex)
 								{

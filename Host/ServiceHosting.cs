@@ -23,11 +23,11 @@ namespace net.vieapps.Services.APIGateway
 		protected virtual void PrepareServiceType()
 			=> this.ServiceType = Type.GetType($"{this.ServiceTypeName},{this.ServiceAssemblyName}");
 
-		public void Run(string[] args)
+		public virtual void Run(string[] args)
 		{
 			try
 			{
-				this.RunInternal(args);
+				this.RunService(args);
 			}
 			catch (Exception ex)
 			{
@@ -36,7 +36,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		protected void RunInternal(string[] args)
+		protected virtual void RunService(string[] args)
 		{
 			// prepare
 			Console.OutputEncoding = System.Text.Encoding.UTF8;
@@ -148,8 +148,8 @@ namespace net.vieapps.Services.APIGateway
 				return;
 			}
 
-			// initialize the instance of service component
-			var serviceComponent = this.ServiceType.CreateInstance() as IServiceComponent;
+			// initialize the instance of the service
+			var service = this.ServiceType.CreateInstance() as IServiceComponent;
 
 			// prepare the signal to start/stop when the service was called from API Gateway
 			EventWaitHandle eventWaitHandle = null;
@@ -157,7 +157,7 @@ namespace net.vieapps.Services.APIGateway
 			if (useEventWaitHandle)
 			{
 				// get the flag of the existing instance
-				var name = $"{serviceComponent.ServiceURI}#{args.Where(arg => !arg.IsStartsWith("/agc:") && !arg.IsStartsWith("/controller-id:")).Join("#").GenerateUUID()}";
+				var name = $"{service.ServiceURI}#{args.Where(arg => !arg.IsStartsWith("/agc:") && !arg.IsStartsWith("/controller-id:")).Join("#").GenerateUUID()}";
 				eventWaitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, name, out var createdNew);
 
 				// process the call to stop
@@ -169,7 +169,7 @@ namespace net.vieapps.Services.APIGateway
 
 					// then exit
 					eventWaitHandle.Dispose();
-					serviceComponent.Dispose();
+					service.Dispose();
 					return;
 				}
 			}
@@ -208,56 +208,49 @@ namespace net.vieapps.Services.APIGateway
 			var logPath = UtilityService.GetAppSetting("Path:Logs");
 			if (!string.IsNullOrWhiteSpace(logPath) && Directory.Exists(logPath))
 			{
-				logPath = Path.Combine(logPath, "{Hour}_" + $"{serviceComponent.ServiceName.ToLower()}.all.txt");
+				logPath = Path.Combine(logPath, "{Hour}_" + $"{service.ServiceName.ToLower()}.all.txt");
 				Logger.GetLoggerFactory().AddFile(logPath, logLevel);
 			}
 			else
 				logPath = null;
 
-			var logger = serviceComponent.Logger = Logger.CreateLogger(this.ServiceType);
+			var logger = service.Logger = Logger.CreateLogger(this.ServiceType);
 
 			// setup hooks
-			bool stopped = false;
-			void stop()
+			void stopService(string message)
 			{
-				stopped = true;
-				serviceComponent.Stop(args);
-				serviceComponent.Dispose();
+				if (!(service as ServiceBase).Stopped)
+				{
+					service.Stop(args);
+					service.Dispose();
+					logger.LogDebug(message);
+				}
 			}
 
-			AppDomain.CurrentDomain.ProcessExit += (sender, arguments) =>
-			{
-				if (!stopped)
-				{
-					stop();
-					logger.LogInformation($"The service was terminated (by \"process exit\" signal) - Served times: {time.GetElapsedTimes()}");
-				}
-			};
+			AppDomain.CurrentDomain.ProcessExit += (sender, arguments) => stopService($"The service was terminated (by \"process exit\" signal) - Served times: {time.GetElapsedTimes()}");
 
 			Console.CancelKeyPress += (sender, arguments) =>
 			{
-				if (!stopped)
-				{
-					stop();
-					logger.LogInformation($"The service was terminated (by \"cancel key press\" signal) - Served times: {time.GetElapsedTimes()}");
-				}
+				stopService($"The service was terminated (by \"cancel key press\" signal) - Served times: {time.GetElapsedTimes()}");
 				Environment.Exit(0);
 			};
 
-			// start the service component
+			// start the service
 			logger.LogInformation($"The service is starting");
-			logger.LogInformation($"Info: {serviceComponent.ServiceName} - Version: {this.ServiceType.Assembly.GetVersion()}");
 			logger.LogInformation($"Mode: {(isUserInteractive ? "Interactive app" : "Background service")}");
-			logger.LogInformation($"Platform: {Extensions.GetRuntimePlatform()}");
+			logger.LogInformation($"Service name: {service.ServiceName}");
+			logger.LogInformation($"Service version: {this.ServiceType.Assembly.GetVersion()}");
 			logger.LogInformation($"Starting arguments: {(args != null && args.Length > 0 ? args.Join(" ") : "None")}");
+			logger.LogInformation($"Hosted by: {hostingInfo}");
+			logger.LogInformation($"Environment:\r\n\t{Extensions.GetRuntimeEnvironment()}");
 
-			ServiceBase.ServiceComponent = serviceComponent as ServiceBase;
+			ServiceBase.ServiceComponent = service as ServiceBase;
 			try
 			{
-				serviceComponent.Start(
+				service.Start(
 					args,
 					"false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", "")) ? false : true,
-					service =>
+					_ =>
 					{
 						logger.LogInformation($"API Gateway Router: {new Uri(Router.GetRouterStrInfo()).GetResolvedURI()}");
 						logger.LogInformation($"API Gateway HTTP service: {UtilityService.GetAppSetting("HttpUri:APIs", "None")}");
@@ -269,23 +262,21 @@ namespace net.vieapps.Services.APIGateway
 						logger.LogInformation($"Static files directory: {UtilityService.GetAppSetting("Path:StaticFiles", "None")}");
 						logger.LogInformation($"Logging level: {logLevel} - Local rolling log files is {(string.IsNullOrWhiteSpace(logPath) ? "disabled" : $"enabled => {logPath}")}");
 						logger.LogInformation($"Show debugs: {(service as ServiceBase).IsDebugLogEnabled} - Show results: {(service as ServiceBase).IsDebugResultsEnabled} - Show stacks: {(service as ServiceBase).IsDebugStacksEnabled}");
-						logger.LogInformation($"Service URIs:\r\n\t- Round robin: {service.ServiceURI}\r\n\t- Single (unique): {(service as IUniqueService).ServiceUniqueURI}");
+						logger.LogInformation($"Service URIs:\r\n\t- Round robin: {service.ServiceURI}\r\n\t- Single (unique): {(service as ServiceBase).ServiceUniqueURI}");
 
 						stopwatch.Stop();
 						logger.LogInformation($"The service was started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");
 
 						if (isUserInteractive)
 							logger.LogWarning($"=====> Enter \"exit\" to terminate ...............");
-
-						return Task.CompletedTask;
 					}
 				);
 			}
 			catch (Exception ex)
 			{
-				logger.LogError($">>>>> Error occurred while starting the service: {ex.Message}", ex);
 				eventWaitHandle?.Dispose();
-				stop();
+				logger.LogError($">>>>> Error occurred while starting the service: {ex.Message}", ex);
+				stopService("The service was terminated because that got error on starting....");
 				return;
 			}
 
@@ -303,8 +294,7 @@ namespace net.vieapps.Services.APIGateway
 					logger.LogDebug(">>>>> Got \"exit\" command from API Gateway Controller ...............");
 			}
 
-			stop();
-			logger.LogInformation($"The service was terminated - Served times: {time.GetElapsedTimes()}");
+			stopService($"The service was terminated - Served times: {time.GetElapsedTimes()}");
 		}
 	}
 }

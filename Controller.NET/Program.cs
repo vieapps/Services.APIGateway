@@ -1,4 +1,5 @@
-﻿using System;
+﻿#region Related components
+using System;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -8,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
 using net.vieapps.Components.Utility;
+#endregion
 
 namespace net.vieapps.Services.APIGateway
 {
@@ -171,7 +173,7 @@ namespace net.vieapps.Services.APIGateway
 			};
 		}
 
-		internal static void Start(string[] args, Func<Task> nextAsync = null)
+		internal static void Start(string[] args, Action<Controller> next = null)
 		{
 			Program.CancellationTokenSource = new CancellationTokenSource();
 			Program.Manager = new Manager
@@ -188,7 +190,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 			};
 			Program.Controller = new Controller(Program.CancellationTokenSource.Token);
-			Program.Controller.Start(args, Program.Manager.OnIncomingChannelEstablished, Program.Manager.OnOutgoingChannelEstablished, nextAsync);
+			Program.Controller.Start(args, Program.Manager.OnIncomingChannelEstablished, Program.Manager.OnOutgoingChannelEstablished, next);
 		}
 
 		internal static void Stop()

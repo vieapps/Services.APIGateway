@@ -178,7 +178,7 @@ namespace net.vieapps.Services.APIGateway
 			if (isAccountProccessed || "otp".IsEquals(requestInfo.ObjectName))
 				try
 				{
-					requestInfo.PrepareAccountRelated(context.Items, async (msg, ex) => await context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", msg, ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID).ConfigureAwait(false));
+					requestInfo.PrepareAccountRelated(async (msg, ex) => await context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", msg, ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID).ConfigureAwait(false));
 				}
 				catch (Exception ex)
 				{
@@ -829,7 +829,7 @@ namespace net.vieapps.Services.APIGateway
 			return requestInfo;
 		}
 
-		public static RequestInfo PrepareAccountRelated(this RequestInfo requestInfo, IDictionary<object, object> items = null, Action<string, Exception> onParseError = null)
+		public static RequestInfo PrepareAccountRelated(this RequestInfo requestInfo, Action<string, Exception> onParseError = null)
 		{
 			// prepare body
 			var requestBody = requestInfo.GetBodyExpando();

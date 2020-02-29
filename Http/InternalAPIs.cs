@@ -46,15 +46,12 @@ namespace net.vieapps.Services.APIGateway
 				query["object-identity"] = pathSegments.Length > 2 && !string.IsNullOrWhiteSpace(pathSegments[2]) ? pathSegments[2].GetANSIUri() : "";
 			});
 			var extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-			if (queryString.TryGetValue("x-request-extra", out var extraInfo))
-			{
+			if (queryString.Remove("x-request-extra", out var extraInfo) && !string.IsNullOrWhiteSpace(extraInfo))
 				try
 				{
 					extra = extraInfo.Url64Decode().ToExpandoObject().ToDictionary(kvp => kvp.Key, kvp => kvp.Value?.ToString(), StringComparer.OrdinalIgnoreCase);
 				}
 				catch { }
-				queryString.Remove("x-request-extra");
-			}
 
 			var requestInfo = new RequestInfo
 			{

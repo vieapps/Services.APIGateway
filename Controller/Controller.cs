@@ -39,9 +39,7 @@ namespace net.vieapps.Services.APIGateway
 				await this.StopAsync().ConfigureAwait(false);
 				this.CancellationTokenSource.Dispose();
 				GC.SuppressFinalize(this);
-#if DEBUG
 				Global.OnProcess?.Invoke($"The API Gateway Controller was disposed");
-#endif
 			}
 		}
 
@@ -88,15 +86,17 @@ namespace net.vieapps.Services.APIGateway
 		#region Properties
 		public ServiceState State { get; private set; } = ServiceState.Initializing;
 
-		public ControllerInfo Info { get; private set; } = null;
+		public ControllerInfo Info { get; private set; }
 
 		public CancellationTokenSource CancellationTokenSource { get; private set; }
 
-		IDisposable InterCommunicator { get; set; } = null;
+		IDisposable InterCommunicator { get; set; }
 
-		LoggingService LoggingService { get; set; } = null;
+		IDisposable UpdateCommunicator { get; set; }
 
-		IRTUService RTUService { get; set; } = null;
+		LoggingService LoggingService { get; set; }
+
+		IRTUService RTUService { get; set; }
 
 		List<IAsyncDisposable> HelperServices { get; } = new List<IAsyncDisposable>();
 
@@ -104,15 +104,15 @@ namespace net.vieapps.Services.APIGateway
 
 		Dictionary<string, ProcessInfo> Tasks { get; } = new Dictionary<string, ProcessInfo>(StringComparer.OrdinalIgnoreCase);
 
-		string WorkingDirectory { get; } = Directory.GetCurrentDirectory() + Path.DirectorySeparatorChar.ToString();
+		string WorkingDirectory { get; } = $"{Directory.GetCurrentDirectory()}{Path.DirectorySeparatorChar}";
 
 		string ServiceHosting { get; set; } = "VIEApps.Services.APIGateway";
 
 		Dictionary<string, ProcessInfo> BusinessServices { get; } = new Dictionary<string, ProcessInfo>(StringComparer.OrdinalIgnoreCase);
 
-		MailSender MailSender { get; set; } = null;
+		MailSender MailSender { get; set; }
 
-		WebHookSender WebHookSender { get; set; } = null;
+		WebHookSender WebHookSender { get; set; }
 
 		bool IsHouseKeeperRunning { get; set; } = false;
 
@@ -127,8 +127,6 @@ namespace net.vieapps.Services.APIGateway
 		bool AllowRegisterHelperTimers { get; set; } = true;
 
 		bool AllowRegisterBusinessServices { get; set; } = true;
-
-		IDisposable UpdateCommunicator { get; set; } = null;
 
 		DateTime ClientPingTime { get; set; } = DateTime.Now;
 
@@ -197,7 +195,7 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				new[]
-					{
+				{
 					Global.StatusPath,
 					LoggingService.LogsPath,
 					MailSender.EmailsPath,
@@ -251,6 +249,7 @@ namespace net.vieapps.Services.APIGateway
 			Global.OnProcess?.Invoke($"Working mode: {(this.IsUserInteractive ? "Interactive app" : "Background service")} (RELEASE)");
 #endif
 			Global.OnProcess?.Invoke($"Starting arguments: {(args != null && args.Length > 0 ? args.Join(" ") : "None")}");
+			Global.OnProcess?.Invoke($"Environment:\r\n\t{Extensions.GetRuntimeEnvironment()}");
 			Global.OnProcess?.Invoke($"API Gateway Router: {new Uri(Router.GetRouterStrInfo()).GetResolvedURI()}");
 			Global.OnProcess?.Invoke($"Working directory: {this.WorkingDirectory}");
 			Global.OnProcess?.Invoke($"Number of business services: {this.BusinessServices.Count}");
@@ -290,9 +289,9 @@ namespace net.vieapps.Services.APIGateway
 								.GetSubject<CommunicateMessage>("messages.services.apigateway")
 								.Subscribe(
 									async message => await this.ProcessInterCommunicateMessageAsync(message).ConfigureAwait(false),
-									exception => Global.OnError?.Invoke($"Error occurred while fetching an inter-communicate message => {exception.Message}", this.State == ServiceState.Connected ? exception : null)
+									exception => Global.OnError?.Invoke($"Error occurred while fetching an inter-communicate message of API Gateway => {exception.Message}", this.State == ServiceState.Connected ? exception : null)
 								);
-							Global.OnProcess?.Invoke($"The communicator of API Gateway is{(this.State == ServiceState.Disconnected ? " re-" : " ")}subscribed successful");
+							Global.OnProcess?.Invoke($"The communicator of API Gateway was{(this.State == ServiceState.Disconnected ? " re-" : " ")}subscribed successful");
 
 							this.UpdateCommunicator?.Dispose();
 							this.UpdateCommunicator = Router.IncomingChannel.RealmProxy.Services
@@ -307,7 +306,7 @@ namespace net.vieapps.Services.APIGateway
 									},
 									exception => Global.OnError?.Invoke($"Error occurred while fetching an updating message => {exception.Message}", this.State == ServiceState.Connected ? exception : null)
 								);
-							Global.OnProcess?.Invoke($"The updater of service messages is{(this.State == ServiceState.Disconnected ? " re-" : " ")}subscribed successful");
+							Global.OnProcess?.Invoke($"The updater of service messages was{(this.State == ServiceState.Disconnected ? " re-" : " ")}subscribed successful");
 
 							try
 							{
@@ -493,9 +492,7 @@ namespace net.vieapps.Services.APIGateway
 						Global.OnError?.Invoke($"Cannot dispose the helper service => {ex.Message}", ex);
 					}
 				}).ConfigureAwait(false);
-#if DEBUG
 				Global.OnProcess?.Invoke($"{this.HelperServices.Count:#,##0} helper service(s) of the API Gateway Controller was disposed");
-#endif
 			}
 
 			try
@@ -529,7 +526,7 @@ namespace net.vieapps.Services.APIGateway
 		/// Stops the API Gateway Controller
 		/// </summary>
 		public void Stop()
-			=> this.StopAsync().Wait(3456);
+			=> this.StopAsync().Wait();
 
 		void PrepareDatabaseSettings()
 		{

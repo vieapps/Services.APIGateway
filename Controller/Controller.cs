@@ -44,7 +44,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		public void Dispose()
-			=> this.DisposeAsync().Wait(3456);
+			=> this.DisposeAsync().Wait();
 
 		~Controller()
 			=> this.Dispose();
@@ -470,7 +470,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					await Task.WhenAll(
 						this.BusinessServices.Keys.ForEachAsync((name, token) => Task.Run(() => this.StopBusinessService(name))),
-						this.Tasks.Values.ForEachAsync((serviceInfo, token) => Task.Run(() => ExternalProcess.Stop(serviceInfo.Instance, null, null, 789)))	
+						this.Tasks.Values.ForEachAsync((serviceInfo, token) => Task.Run(() => ExternalProcess.Stop(serviceInfo.Instance, null, null, 789)))
 					).ConfigureAwait(false);
 				}
 				catch (Exception ex)
@@ -535,8 +535,9 @@ namespace net.vieapps.Services.APIGateway
 			var connectionStrings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 			var dbProviderFactories = new Dictionary<string, XmlNode>(StringComparer.OrdinalIgnoreCase);
 			var dataSources = new Dictionary<string, XmlNode>(StringComparer.OrdinalIgnoreCase);
-			var repositoriesSection = UtilityService.GetAppSetting("Section:Repositories", "net.vieapps.repositories");
+
 			var dbprovidersSection = UtilityService.GetAppSetting("Section:DbProviders", "net.vieapps.dbproviders");
+			var repositoriesSection = UtilityService.GetAppSetting("Section:Repositories", "net.vieapps.repositories");
 
 			// settings of controllers
 			if (ConfigurationManager.ConnectionStrings != null && ConfigurationManager.ConnectionStrings.Count > 0)
@@ -547,13 +548,13 @@ namespace net.vieapps.Services.APIGateway
 						connectionStrings[connectionString.Name] = connectionString.ConnectionString;
 				}
 
-			if (!(ConfigurationManager.GetSection(dbprovidersSection) is AppConfigurationSectionHandler dbProviderFactoriesConfiguration))
-				dbProviderFactoriesConfiguration = ConfigurationManager.GetSection("dbProviderFactories") as AppConfigurationSectionHandler;
-			dbProviderFactoriesConfiguration?.Section.SelectNodes("./add").ToList().ForEach(dbProviderFactoryNode =>
+			if (!(ConfigurationManager.GetSection(dbprovidersSection) is AppConfigurationSectionHandler dbProvidersConfiguration))
+				dbProvidersConfiguration = ConfigurationManager.GetSection("dbProviderFactories") as AppConfigurationSectionHandler;
+			dbProvidersConfiguration?.Section.SelectNodes("./add").ToList().ForEach(dbProviderNode =>
 			{
-				var invariant = dbProviderFactoryNode.Attributes["invariant"]?.Value ?? dbProviderFactoryNode.Attributes["name"]?.Value;
+				var invariant = dbProviderNode.Attributes["invariant"]?.Value ?? dbProviderNode.Attributes["name"]?.Value;
 				if (!string.IsNullOrWhiteSpace(invariant) && !dbProviderFactories.ContainsKey(invariant))
-					dbProviderFactories[invariant] = dbProviderFactoryNode;
+					dbProviderFactories[invariant] = dbProviderNode;
 			});
 
 			if (ConfigurationManager.GetSection(repositoriesSection) is AppConfigurationSectionHandler repositoriesConfiguration)
@@ -614,13 +615,13 @@ namespace net.vieapps.Services.APIGateway
 							connectionStrings[name] = connectionString;
 					});
 
-				if (!(xml.DocumentElement.SelectNodes($"/configuration/{dbprovidersSection}/add") is XmlNodeList dbProviderFactoryNodes))
-					dbProviderFactoryNodes = xml.DocumentElement.SelectNodes("/configuration/dbProviderFactories/add");
-				dbProviderFactoryNodes?.ToList().ForEach(dbProviderFactoryNode =>
+				if (!(xml.DocumentElement.SelectNodes($"/configuration/{dbprovidersSection}/add") is XmlNodeList dbProviderNodes))
+					dbProviderNodes = xml.DocumentElement.SelectNodes("/configuration/dbProviderFactories/add");
+				dbProviderNodes?.ToList().ForEach(dbProviderNode =>
 				{
-					var invariant = dbProviderFactoryNode.Attributes["invariant"]?.Value ?? dbProviderFactoryNode.Attributes["name"]?.Value;
+					var invariant = dbProviderNode.Attributes["invariant"]?.Value ?? dbProviderNode.Attributes["name"]?.Value;
 					if (!string.IsNullOrWhiteSpace(invariant) && !dbProviderFactories.ContainsKey(invariant))
-						dbProviderFactories[invariant] = dbProviderFactoryNode;
+						dbProviderFactories[invariant] = dbProviderNode;
 				});
 
 				if (xml.DocumentElement.SelectSingleNode($"/configuration/{repositoriesSection}") is XmlNode repositoriesConfig)
@@ -1360,6 +1361,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			var arguments = (args?.ToArray(' ') ?? new string[] { }).Where(arg => !arg.IsStartsWith("/controller-id:")).ToArray();
 			var invokeInfo = arguments.FirstOrDefault(a => a.IsStartsWith("/call-user:")) ?? "";
+
 			if (!string.IsNullOrWhiteSpace(invokeInfo))
 			{
 				invokeInfo = invokeInfo.Replace(StringComparison.OrdinalIgnoreCase, "/call-user:", "").UrlDecode();
@@ -1369,15 +1371,20 @@ namespace net.vieapps.Services.APIGateway
 				if (!string.IsNullOrWhiteSpace(host) && !string.IsNullOrWhiteSpace(platform) && !string.IsNullOrWhiteSpace(os))
 					invokeInfo += $" [Host: {host.Replace(StringComparison.OrdinalIgnoreCase, "/call-host:", "").UrlDecode()} - Platform: {platform.Replace(StringComparison.OrdinalIgnoreCase, "/call-platform:", "").UrlDecode()} @ {os.Replace(StringComparison.OrdinalIgnoreCase, "/call-os:", "").UrlDecode()}]";
 			}
-			return this.SendInterCommunicateMessageAsync("Service#Info", new ServiceInfo
-			{
-				Name = name,
-				UniqueName = Extensions.GetUniqueName(name, arguments),
-				ControllerID = this.Info.ID,
-				InvokeInfo = invokeInfo,
-				Available = available,
-				Running = running
-			}.ToJson());
+
+			return this.SendInterCommunicateMessageAsync(
+				"Service#Info",
+				new ServiceInfo
+				{
+					Name = name,
+					UniqueName = Extensions.GetUniqueName(name, arguments),
+					ControllerID = this.Info.ID,
+					InvokeInfo = invokeInfo,
+					Available = available,
+					Running = running
+				}.ToJson(),
+				this.CancellationTokenSource.Token
+			);
 		}
 		#endregion
 

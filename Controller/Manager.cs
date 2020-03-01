@@ -68,7 +68,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		public void Dispose()
-			=> this.DisposeAsync().Wait(2345);
+			=> this.DisposeAsync().Wait();
 
 		~Manager()
 			=> this.Dispose();

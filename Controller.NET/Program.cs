@@ -195,8 +195,9 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static void Stop()
 		{
-			Task.WaitAll(new[] { Program.Manager.DisposeAsync(), Program.Controller.DisposeAsync() }, 3456);
+			Task.WaitAll(Program.Manager.DisposeAsync(), Program.Controller.DisposeAsync());
 			Program.CancellationTokenSource.Cancel();
+			Program.CancellationTokenSource.Dispose();
 		}
 
 		internal static ILoggingService GetLoggingService()

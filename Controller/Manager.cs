@@ -20,7 +20,7 @@ namespace net.vieapps.Services.APIGateway
 		/// </summary>
 		public Manager()
 		{
-			this.OnIncomingChannelEstablished = async (sender, args) =>
+			this.OnIncomingConnectionEstablished = async (sender, args) =>
 			{
 				await (this.Instance != null ? this.Instance.DisposeAsync().AsTask() : Task.CompletedTask).ConfigureAwait(false);
 				this.Instance = await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(this, RegistrationInterceptor.Create()).ConfigureAwait(false);
@@ -34,8 +34,10 @@ namespace net.vieapps.Services.APIGateway
 					);
 			};
 
-			this.OnOutgoingChannelEstablished = async (sender, args) =>
+			this.OnOutgoingConnectionEstablished = async (sender, args) =>
 			{
+				while (Router.IncomingChannel == null || Router.OutgoingChannel == null)
+					await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
 				this.RTUService = Router.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create());
 				await this.SendRequestInfoAsync().ConfigureAwait(false);
 				Global.OnProcess?.Invoke($"Successfully subscribe the manager's communicator");
@@ -99,9 +101,9 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Event handlers
-		public Action<object, WampSessionCreatedEventArgs> OnIncomingChannelEstablished { get; }
+		public Action<object, WampSessionCreatedEventArgs> OnIncomingConnectionEstablished { get; }
 
-		public Action<object, WampSessionCreatedEventArgs> OnOutgoingChannelEstablished { get; }
+		public Action<object, WampSessionCreatedEventArgs> OnOutgoingConnectionEstablished { get; }
 
 		public Action<CommunicateMessage> OnInterCommunicateMessageReceived { get; set; }
 

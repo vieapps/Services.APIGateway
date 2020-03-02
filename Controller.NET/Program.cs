@@ -190,7 +190,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 			};
 			Program.Controller = new Controller(Program.CancellationTokenSource.Token);
-			Program.Controller.Start(args, Program.Manager.OnIncomingChannelEstablished, Program.Manager.OnOutgoingChannelEstablished, next);
+			Program.Controller.Start(args, Program.Manager.OnIncomingConnectionEstablished, Program.Manager.OnOutgoingConnectionEstablished, next);
 		}
 
 		internal static void Stop()

@@ -157,14 +157,14 @@ namespace net.vieapps.Services.APIGateway
 		/// <summary>
 		/// Starts the API Gateway Controller
 		/// </summary>
-		/// <param name="args"></param>
-		/// <param name="onIncomingChannelEstablished"></param>
-		/// <param name="onOutgoingChannelEstablished"></param>
-		/// <param name="next"></param>
+		/// <param name="args">The arguments</param>
+		/// <param name="onIncomingConnectionEstablished">The action to fire when the incomming connection is established</param>
+		/// <param name="onOutgoingConnectionEstablished">The action to fire when the outgoing connection is established</param>
+		/// <param name="next">The next action to run when the controller was started</param>
 		public void Start(
 			string[] args = null,
-			Action<object, WampSessionCreatedEventArgs> onIncomingChannelEstablished = null,
-			Action<object, WampSessionCreatedEventArgs> onOutgoingChannelEstablished = null,
+			Action<object, WampSessionCreatedEventArgs> onIncomingConnectionEstablished = null,
+			Action<object, WampSessionCreatedEventArgs> onOutgoingConnectionEstablished = null,
 			Action<Controller> next = null
 		)
 		{
@@ -350,11 +350,11 @@ namespace net.vieapps.Services.APIGateway
 
 							try
 							{
-								onIncomingChannelEstablished?.Invoke(sender, arguments);
+								onIncomingConnectionEstablished?.Invoke(sender, arguments);
 							}
 							catch (Exception ex)
 							{
-								Global.OnError?.Invoke($"Error occurred while invoking \"{nameof(onIncomingChannelEstablished)}\" => {ex.Message}", ex);
+								Global.OnError?.Invoke($"Error occurred while invoking \"{nameof(onIncomingConnectionEstablished)}\" => {ex.Message}", ex);
 							}
 
 							if (this.State == ServiceState.Ready)
@@ -401,18 +401,22 @@ namespace net.vieapps.Services.APIGateway
 							}
 						},
 						(sender, arguments) => Global.OnError?.Invoke($"Got an unexpected error of the incoming channel to API Gateway Router => {arguments.Exception?.Message}", arguments.Exception),
-						(sender, arguments) =>
+						async (sender, arguments) =>
 						{
 							Global.OnProcess?.Invoke($"The outgoing channel is established - Session ID: {arguments.SessionId}");
 							Router.OutgoingChannel.Update(Router.OutgoingChannelSessionID, "APIGateway", "Outgoing (APIGateway Controller)");
 
+							while (Router.IncomingChannel == null || Router.OutgoingChannel == null)
+								await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
+							this.RTUService = Router.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create());
+
 							try
 							{
-								onOutgoingChannelEstablished?.Invoke(sender, arguments);
+								onOutgoingConnectionEstablished?.Invoke(sender, arguments);
 							}
 							catch (Exception ex)
 							{
-								Global.OnError?.Invoke($"Error occurred while invoking \"{nameof(onOutgoingChannelEstablished)}\" => {ex.Message}", ex);
+								Global.OnError?.Invoke($"Error occurred while invoking \"{nameof(onOutgoingConnectionEstablished)}\" => {ex.Message}", ex);
 							}
 						},
 						(sender, arguments) =>
@@ -960,10 +964,6 @@ namespace net.vieapps.Services.APIGateway
 				this.HelperServices.Add(await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(new MessagingService(), RegistrationInterceptor.Create()).ConfigureAwait(false));
 				Global.OnProcess?.Invoke($"The messaging service was{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
 			}
-
-			while (Router.OutgoingChannel == null)
-				await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
-			this.RTUService = Router.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create());
 
 			Global.OnProcess?.Invoke($"Number of helper services: {this.NumberOfHelperServices:#,##0}");
 		}

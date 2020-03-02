@@ -18,14 +18,13 @@ namespace net.vieapps.Services.APIGateway
 	{
 
 		#region Properties
-		internal static CancellationTokenSource CancellationTokenSource { get; set; }
-		internal static IController ServiceManager { get; set; }
-		internal static ILoggingService LoggingService { get; set; }
-		internal static Manager Manager { get; set; }
-		internal static Controller Controller { get; set; }
-		internal static ILogger Logger { get; set; }
-		internal static bool IsUserInteractive { get; set; }
-		internal static bool IsStopped { get; set; } = false;
+		static CancellationTokenSource CancellationTokenSource { get; set; }
+		static ILoggingService LoggingService { get; set; }
+		static Manager Manager { get; set; }
+		static Controller Controller { get; set; }
+		static ILogger Logger { get; set; }
+		static bool IsUserInteractive { get; set; }
+		static bool IsStopped { get; set; } = false;
 		#endregion
 
 		static void Main(string[] args)
@@ -78,8 +77,29 @@ namespace net.vieapps.Services.APIGateway
 			Program.SetupEventHandlers();
 
 			// prepare hooks
-			AppDomain.CurrentDomain.ProcessExit += (sender, arguments) => Program.Stop("signal exit");
-			Console.CancelKeyPress += (sender, arguments) => Program.Stop("cancel key press");
+			AppDomain.CurrentDomain.ProcessExit += (sender, arguments) => 
+			{
+				if (!Program.IsStopped)
+				{
+					Program.Logger.LogWarning(">>> Terminated by signal of process exit");
+					try
+					{
+						Program.Stop();
+					}
+					catch { }
+				}
+			};
+
+			Console.CancelKeyPress += (sender, arguments) =>
+			{
+				Program.Logger.LogWarning(">>> Terminated by signal of cancel key press");
+				try
+				{
+					Program.Stop();
+				}
+				catch { }
+				Environment.Exit(0);
+			};
 
 			// start
 			Program.Start(args);
@@ -230,13 +250,13 @@ namespace net.vieapps.Services.APIGateway
 						: Console.ReadLine();
 				}
 			}
-				
+
 			// wait until be killed
 			else
 				while (true)
 					Task.Delay(54321).GetAwaiter().GetResult();
 
-			// stop
+			// stop and do clean up
 			Program.Stop();
 		}
 
@@ -299,7 +319,7 @@ namespace net.vieapps.Services.APIGateway
 			};
 		}
 
-		internal static void Start(string[] args, Action<Controller> next = null)
+		static void Start(string[] args, Action<Controller> next = null)
 		{
 			Program.CancellationTokenSource = new CancellationTokenSource();
 			Program.Manager = new Manager();
@@ -307,24 +327,20 @@ namespace net.vieapps.Services.APIGateway
 			Program.Controller.Start(args, Program.Manager.OnIncomingChannelEstablished, Program.Manager.OnOutgoingChannelEstablished, next);
 		}
 
-		internal static void Stop(string mode = null)
+		static async Task StopAsync()
 		{
-			if (!Program.IsStopped)
-				Task.Run(async () => await Task.WhenAll(Program.Manager.DisposeAsync(), Program.Controller.DisposeAsync()).ConfigureAwait(false))
-					.ContinueWith(_ =>
-					{
-						Program.IsStopped = true;
-						Program.CancellationTokenSource.Cancel();
-						Program.CancellationTokenSource.Dispose();
-						Program.Logger.LogInformation($"The API Gateway Controller was terminated{(string.IsNullOrWhiteSpace(mode) ? "" : $" (by \"{mode}\")...")}");
-					}, TaskContinuationOptions.OnlyOnRanToCompletion)
-					.ContinueWith(async _ => await Task.Delay(234).ConfigureAwait(false), TaskContinuationOptions.OnlyOnRanToCompletion)
-					.ConfigureAwait(false)
-					.GetAwaiter()
-					.GetResult();
+			await Task.WhenAll(Program.Manager.DisposeAsync(), Program.Controller.DisposeAsync()).ConfigureAwait(false);
+			Program.IsStopped = true;
+			Program.CancellationTokenSource.Cancel();
+			Program.CancellationTokenSource.Dispose();
+			Program.Logger.LogInformation($"The API Gateway Controller was terminated");
+			await Task.Delay(123).ConfigureAwait(false);
 		}
 
-		internal static ILoggingService GetLoggingService()
+		static void Stop()
+			=> Task.Run(async () => await(Program.IsStopped? Task.CompletedTask : Program.StopAsync()).ConfigureAwait(false)).ConfigureAwait(false).GetAwaiter().GetResult();
+
+		static ILoggingService GetLoggingService()
 			=> Program.LoggingService ?? (Program.LoggingService = Router.OutgoingChannel?.RealmProxy.Services.GetCalleeProxy<ILoggingService>(ProxyInterceptor.Create()));
 	}
 }

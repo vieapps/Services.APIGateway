@@ -38,10 +38,9 @@ namespace net.vieapps.Services.APIGateway
 				this.IsDisposed = true;
 				GC.SuppressFinalize(this);
 				await this.StopAsync().ConfigureAwait(false);
-				await (this.LoggingService != null ? this.LoggingService.FlushAsync() : Task.CompletedTask).ConfigureAwait(false);
 				this.CancellationTokenSource.Dispose();
 				Global.OnProcess?.Invoke($"The API Gateway Controller was disposed");
-				await Task.Delay(234).ConfigureAwait(false);
+				await Task.Delay(123).ConfigureAwait(false);
 			}
 		}
 
@@ -513,6 +512,8 @@ namespace net.vieapps.Services.APIGateway
 
 				this.WebHookSender?.Dispose();
 				WebHookSender.SaveMessages();
+
+				await (this.LoggingService != null ? this.LoggingService.FlushAsync() : Task.CompletedTask).ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{

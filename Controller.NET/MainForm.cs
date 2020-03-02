@@ -21,8 +21,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		void MainForm_Load(object sender, EventArgs args)
-		{
-			Task.Run(async () =>
+			=> Task.Run(async () =>
 			{
 				await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
 				Program.Start(this._args);
@@ -30,9 +29,9 @@ namespace net.vieapps.Services.APIGateway
 				await Program.Manager.SendInterCommunicateMessageAsync("Controller#RequestInfo").ConfigureAwait(false);
 				await Program.Manager.SendInterCommunicateMessageAsync("Service#RequestInfo").ConfigureAwait(false);
 			}).ConfigureAwait(false);
-		}
 
-		private void MainForm_FormClosed(object sender, FormClosedEventArgs args) => Program.Stop();
+		private void MainForm_FormClosed(object sender, FormClosedEventArgs args)
+			=> Program.Stop();
 
 		void ManageServices_Click(object sender, EventArgs args)
 		{
@@ -45,7 +44,8 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		void ClearLogs_Click(object sender, EventArgs args) => this.Logs.Text = "";
+		void ClearLogs_Click(object sender, EventArgs args)
+			=> this.Logs.Text = "";
 
 		public delegate void UpdateLogsDelegator(string logs);
 

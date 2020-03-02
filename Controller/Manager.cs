@@ -57,13 +57,12 @@ namespace net.vieapps.Services.APIGateway
 			if (!this.Disposed)
 			{
 				this.Disposed = true;
+				GC.SuppressFinalize(this);
 				await (this.Instance != null ? this.Instance.DisposeAsync().AsTask() : Task.CompletedTask).ConfigureAwait(false);
 				this.Communicator?.Dispose();
 				this.RequestInfoTimer?.Dispose();
-				GC.SuppressFinalize(this);
-#if DEBUG
+				this.RTUService = null;
 				Global.OnProcess?.Invoke($"The API Gateway Manager was disposed");
-#endif
 			}
 		}
 
@@ -191,7 +190,10 @@ namespace net.vieapps.Services.APIGateway
 						Data = data ?? new JObject()
 					}).ConfigureAwait(false);
 				}
-				catch { }
+				catch (Exception ex)
+				{
+					Global.OnError?.Invoke($"Error occurred while sending an inter-communicate message => {ex.Message}", ex);
+				}
 		}
 
 		void ProcessInterCommunicateMessage(CommunicateMessage message)
@@ -276,9 +278,10 @@ namespace net.vieapps.Services.APIGateway
 			// registered handler
 			this.OnInterCommunicateMessageReceived?.Invoke(message);
 		}
-		#endregion
 
 		Task SendRequestInfoAsync()
 			=> Task.WhenAll(this.SendInterCommunicateMessageAsync("Controller#RequestInfo"), this.SendInterCommunicateMessageAsync("Service#RequestInfo"));
+		#endregion
+
 	}
 }

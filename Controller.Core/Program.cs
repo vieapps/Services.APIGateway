@@ -18,13 +18,14 @@ namespace net.vieapps.Services.APIGateway
 	{
 
 		#region Properties
-		internal static CancellationTokenSource CancellationTokenSource { get; set; } = null;
-		internal static IController ServiceManager { get; set; } = null;
-		internal static ILoggingService LoggingService { get; set; } = null;
-		internal static Manager Manager { get; set; } = null;
-		internal static Controller Controller { get; set; } = null;
+		internal static CancellationTokenSource CancellationTokenSource { get; set; }
+		internal static IController ServiceManager { get; set; }
+		internal static ILoggingService LoggingService { get; set; }
+		internal static Manager Manager { get; set; }
+		internal static Controller Controller { get; set; }
 		internal static ILogger Logger { get; set; }
-		internal static bool IsUserInteractive { get; set; } = false;
+		internal static bool IsUserInteractive { get; set; }
+		internal static bool IsStopped { get; set; } = false;
 		#endregion
 
 		static void Main(string[] args)
@@ -77,12 +78,8 @@ namespace net.vieapps.Services.APIGateway
 			Program.SetupEventHandlers();
 
 			// prepare hooks
-			AppDomain.CurrentDomain.ProcessExit += (sender, arguments) => Program.Stop();
-			Console.CancelKeyPress += (sender, arguments) =>
-			{
-				Program.Stop();
-				Environment.Exit(0);
-			};
+			AppDomain.CurrentDomain.ProcessExit += (sender, arguments) => Program.Stop("signal exit");
+			Console.CancelKeyPress += (sender, arguments) => Program.Stop("cancel key press");
 
 			// start
 			Program.Start(args);
@@ -112,8 +109,8 @@ namespace net.vieapps.Services.APIGateway
 							var info =
 								$"Controller:" + "\r\n\t" +
 								$"- Version: {Assembly.GetExecutingAssembly().GetVersion()}" + "\r\n\t" +
-								$"- Platform: {Extensions.GetRuntimePlatform()}" + "\r\n\t" +
 								$"- Working mode: {(Environment.UserInteractive ? "Interactive app" : "Background service")}" + "\r\n\t" +
+								$"- Environment:\r\n\t\t{Extensions.GetRuntimeEnvironment("\r\n\t\t")}" + "\r\n\t" +
 								$"- API Gateway Router: {new Uri(Router.GetRouterStrInfo()).GetResolvedURI()}" + "\r\n\t" +
 								$"- Incoming channel session identity: {Router.IncomingChannelSessionID}" + "\r\n\t" +
 								$"- Outgoing channel session identity: {Router.OutgoingChannelSessionID}" + "\r\n\t" +
@@ -217,10 +214,7 @@ namespace net.vieapps.Services.APIGateway
 							await Program.Manager.SendInterCommunicateMessageAsync("Service#RequestInfo").ConfigureAwait(false);
 						}).ConfigureAwait(false);
 
-					else if (commands[0].IsEquals("exit"))
-						return;
-
-					else
+					else if (!commands[0].IsEquals("exit"))
 						Program.Logger.LogInformation(
 							"Commands:" + "\r\n\t" +
 							"info [global | controller-id]: show the information of controllers & services" + "\r\n\t" +
@@ -231,7 +225,9 @@ namespace net.vieapps.Services.APIGateway
 							"exit: shutdown & terminate"
 						);
 
-					command = Console.ReadLine();
+					command = commands[0].IsEquals("exit")
+						? null
+						: Console.ReadLine();
 				}
 			}
 				
@@ -311,11 +307,21 @@ namespace net.vieapps.Services.APIGateway
 			Program.Controller.Start(args, Program.Manager.OnIncomingChannelEstablished, Program.Manager.OnOutgoingChannelEstablished, next);
 		}
 
-		internal static void Stop()
+		internal static void Stop(string mode = null)
 		{
-			Task.WaitAll(Program.Manager.DisposeAsync(), Program.Controller.DisposeAsync());
-			Program.CancellationTokenSource.Cancel();
-			Program.CancellationTokenSource.Dispose();
+			if (!Program.IsStopped)
+				Task.Run(async () => await Task.WhenAll(Program.Manager.DisposeAsync(), Program.Controller.DisposeAsync()).ConfigureAwait(false))
+					.ContinueWith(_ =>
+					{
+						Program.IsStopped = true;
+						Program.CancellationTokenSource.Cancel();
+						Program.CancellationTokenSource.Dispose();
+						Program.Logger.LogInformation($"The API Gateway Controller was terminated{(string.IsNullOrWhiteSpace(mode) ? "" : $" (by \"{mode}\")...")}");
+					}, TaskContinuationOptions.OnlyOnRanToCompletion)
+					.ContinueWith(async _ => await Task.Delay(234).ConfigureAwait(false), TaskContinuationOptions.OnlyOnRanToCompletion)
+					.ConfigureAwait(false)
+					.GetAwaiter()
+					.GetResult();
 		}
 
 		internal static ILoggingService GetLoggingService()

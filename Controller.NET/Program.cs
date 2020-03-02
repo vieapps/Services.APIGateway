@@ -17,13 +17,13 @@ namespace net.vieapps.Services.APIGateway
 	{
 
 		#region Properties
-		internal static CancellationTokenSource CancellationTokenSource { get; set; } = null;
-		internal static ILoggingService LoggingService { get; set; } = null;
-		internal static Manager Manager { get; set; } = null;
-		internal static Controller Controller { get; set; } = null;
+		internal static CancellationTokenSource CancellationTokenSource { get; set; }
+		internal static ILoggingService LoggingService { get; set; }
+		internal static Manager Manager { get; set; }
+		internal static Controller Controller { get; set; }
 		internal static ILogger Logger { get; set; }
-		internal static MainForm MainForm { get; set; } = null;
-		internal static ManagementForm ManagementForm { get; set; } = null;
+		internal static MainForm MainForm { get; set; }
+		internal static ManagementForm ManagementForm { get; set; }
 		#endregion
 
 		[STAThread]
@@ -88,14 +88,14 @@ namespace net.vieapps.Services.APIGateway
 			Global.OnProcess = (message) =>
 			{
 				Program.Logger.LogInformation(message);
-				if (Environment.UserInteractive)
+				if (Environment.UserInteractive && Program.Controller != null && !Program.Controller.IsDisposed)
 					Program.MainForm.UpdateLogs(message);
 			};
 
 			Global.OnError = Global.OnSendRTUMessageFailure = (message, exception) =>
 			{
 				Program.Logger.LogError(message, exception);
-				if (Environment.UserInteractive)
+				if (Environment.UserInteractive && Program.Controller != null && !Program.Controller.IsDisposed)
 					Program.MainForm.UpdateLogs(message);
 			};
 
@@ -103,14 +103,14 @@ namespace net.vieapps.Services.APIGateway
 			{
 				if (Program.Logger.IsEnabled(LogLevel.Debug))
 					Program.Logger.LogInformation(message);
-				if (Environment.UserInteractive)
+				if (Environment.UserInteractive && Program.Controller != null && !Program.Controller.IsDisposed)
 					Program.MainForm.UpdateLogs(message);
 			};
 
 			Global.OnSendEmailSuccess = (message) =>
 			{
 				Program.Logger.LogInformation(message);
-				if (Environment.UserInteractive)
+				if (Environment.UserInteractive && Program.Controller != null && !Program.Controller.IsDisposed)
 					Program.MainForm.UpdateLogs(message);
 				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, null, null, "APIGateway", "Emails", message)).ConfigureAwait(false);
 			};
@@ -118,7 +118,7 @@ namespace net.vieapps.Services.APIGateway
 			Global.OnSendWebHookSuccess = (message) =>
 			{
 				Program.Logger.LogInformation(message);
-				if (Environment.UserInteractive)
+				if (Environment.UserInteractive && Program.Controller != null && !Program.Controller.IsDisposed)
 					Program.MainForm.UpdateLogs(message);
 				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, null, null, "APIGateway", "WebHooks", message)).ConfigureAwait(false);
 			};
@@ -126,7 +126,7 @@ namespace net.vieapps.Services.APIGateway
 			Global.OnSendEmailFailure = (message, exception) =>
 			{
 				Program.Logger.LogError(message, exception);
-				if (Environment.UserInteractive)
+				if (Environment.UserInteractive && Program.Controller != null && !Program.Controller.IsDisposed)
 					Program.MainForm.UpdateLogs(message);
 				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, null, null, "APIGateway", "Emails", message, exception.GetStack())).ConfigureAwait(false);
 			};
@@ -134,7 +134,7 @@ namespace net.vieapps.Services.APIGateway
 			Global.OnSendWebHookFailure = (message, exception) =>
 			{
 				Program.Logger.LogError(message, exception);
-				if (Environment.UserInteractive)
+				if (Environment.UserInteractive && Program.Controller != null && !Program.Controller.IsDisposed)
 					Program.MainForm.UpdateLogs(message);
 				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, null, null, "APIGateway", "WebHooks", message, exception.GetStack())).ConfigureAwait(false);
 			};
@@ -142,7 +142,7 @@ namespace net.vieapps.Services.APIGateway
 			Global.OnServiceStarted = (serviceName, message) =>
 			{
 				Program.Logger.LogInformation($"[{serviceName.ToLower()}] => {message}");
-				if (Environment.UserInteractive)
+				if (Environment.UserInteractive && Program.Controller != null && !Program.Controller.IsDisposed)
 				{
 					Program.MainForm.UpdateLogs($"[{serviceName.ToLower()}] => {message}");
 					Program.MainForm.UpdateServicesInfo();
@@ -152,7 +152,7 @@ namespace net.vieapps.Services.APIGateway
 			Global.OnServiceStopped = (serviceName, message) =>
 			{
 				Program.Logger.LogInformation($"[{serviceName.ToLower()}] => {message}");
-				if (Environment.UserInteractive)
+				if (Environment.UserInteractive && Program.Controller != null && !Program.Controller.IsDisposed)
 				{
 					Program.MainForm.UpdateLogs($"[{serviceName.ToLower()}] => {message}");
 					Program.MainForm.UpdateServicesInfo();
@@ -162,7 +162,7 @@ namespace net.vieapps.Services.APIGateway
 			Global.OnGotServiceMessage = (serviceName, message) =>
 			{
 				Program.Logger.LogInformation($"[{serviceName.ToLower()}] => {message}");
-				if (Environment.UserInteractive)
+				if (Environment.UserInteractive && Program.Controller != null && !Program.Controller.IsDisposed)
 					Program.MainForm.UpdateLogs($"[{serviceName.ToLower()}] => {message}");
 			};
 

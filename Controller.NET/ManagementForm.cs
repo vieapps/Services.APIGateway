@@ -23,17 +23,19 @@ namespace net.vieapps.Services.APIGateway
 			this.Services.MultiSelect = false;
 		}
 
-		void ServicesForm_FormClosing(object sender, FormClosingEventArgs e)
+		void ServicesForm_FormClosing(object sender, FormClosingEventArgs args)
 		{
 			this.SetControlsState(false, false);
 			this.Selected = null;
 			this.Hide();
-			e.Cancel = true;
+			args.Cancel = true;
 		}
 
-		void Services_SelectedIndexChanged(object sender, EventArgs e) => this.OnSelected();
+		void Services_SelectedIndexChanged(object sender, EventArgs args)
+			=> this.OnSelected();
 
-		void Change_Click(object sender, EventArgs e) => this.OnChange();
+		void Change_Click(object sender, EventArgs args)
+			=> this.OnChange();
 
 		public delegate void DisplayServicesDelegator();
 
@@ -69,7 +71,7 @@ namespace net.vieapps.Services.APIGateway
 
 						info.ForEach(serviceInfo =>
 						{
-							if (Program.Manager.AvailableControllers.TryGetValue(serviceInfo.ControllerID, out ControllerInfo controller))
+							if (Program.Manager.AvailableControllers.TryGetValue(serviceInfo.ControllerID, out var controller))
 							{
 								var itemOfController = new ListViewItem(new[] { $"  {controller.Host} - {controller.Platform}", serviceInfo.Running ? "Running" : "Stopped", controller.ID, name })
 								{
@@ -83,7 +85,7 @@ namespace net.vieapps.Services.APIGateway
 					else if (info.Count > 0)
 					{
 						var serviceInfo = info[0];
-						if (Program.Manager.AvailableControllers.TryGetValue(serviceInfo.ControllerID, out ControllerInfo controller))
+						if (Program.Manager.AvailableControllers.TryGetValue(serviceInfo.ControllerID, out var controller))
 						{
 							var listItem = new ListViewItem(new[] { $"services.{name}", serviceInfo.Running ? "Running" : "Stopped", controller.ID, name })
 							{

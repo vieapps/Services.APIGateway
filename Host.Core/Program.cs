@@ -1,4 +1,7 @@
-﻿namespace net.vieapps.Services.APIGateway
+﻿using System;
+using System.IO;
+using net.vieapps.Components.Utility;
+namespace net.vieapps.Services.APIGateway
 {
 	class Program
 	{
@@ -10,7 +13,7 @@
 		protected override void PrepareServiceType()
 		{
 			base.PrepareServiceType();
-			this.ServiceType = this.ServiceType ?? Components.Utility.AssemblyLoader.GetType(System.IO.Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, $"{this.ServiceAssemblyName}.dll"), this.ServiceTypeName);
+			this.ServiceType = this.ServiceType ?? AssemblyLoader.GetType(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"{this.ServiceAssemblyName}.dll"), this.ServiceTypeName);
 		}
 	}
 }

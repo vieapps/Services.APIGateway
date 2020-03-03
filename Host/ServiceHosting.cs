@@ -31,8 +31,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-				Console.Error.WriteLine("Error: The service component was got an unexpected error => " + ex.Message);
-				Console.Error.WriteLine(ex.StackTrace);
+				Console.Error.WriteLine($"Error: The service component was got an unexpected error => {ex.Message}\r\n{ex.StackTrace}");
 			}
 		}
 
@@ -223,7 +222,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					service.Stop(args);
 					service.Dispose();
-					logger.LogDebug(message);
+					logger.LogDebug($"{message}\r\n");
 				}
 			}
 
@@ -232,17 +231,15 @@ namespace net.vieapps.Services.APIGateway
 			Console.CancelKeyPress += (sender, arguments) =>
 			{
 				stopService($"The service was terminated (by \"cancel key press\" signal) - Served times: {time.GetElapsedTimes()}");
-				Environment.Exit(0);
+				Environment.ExitCode = 0;
 			};
 
 			// start the service
 			logger.LogInformation($"The service is starting");
-			logger.LogInformation($"Mode: {(isUserInteractive ? "Interactive app" : "Background service")}");
-			logger.LogInformation($"Service name: {service.ServiceName}");
-			logger.LogInformation($"Service version: {this.ServiceType.Assembly.GetVersion()}");
+			logger.LogInformation($"Service info: {service.ServiceName} - v{this.ServiceType.Assembly.GetVersion()}");
+			logger.LogInformation($"Working mode: {(isUserInteractive ? "Interactive app" : "Background service")}");
 			logger.LogInformation($"Starting arguments: {(args != null && args.Length > 0 ? args.Join(" ") : "None")}");
-			logger.LogInformation($"Hosted by: {hostingInfo}");
-			logger.LogInformation($"Environment:\r\n\t{Extensions.GetRuntimeEnvironment()}");
+			logger.LogInformation($"Environment:\r\n\t{Extensions.GetRuntimeEnvironment()}\r\n\t- Powered: {hostingInfo}");
 
 			ServiceBase.ServiceComponent = service as ServiceBase;
 			try
@@ -275,7 +272,7 @@ namespace net.vieapps.Services.APIGateway
 			catch (Exception ex)
 			{
 				eventWaitHandle?.Dispose();
-				logger.LogError($">>>>> Error occurred while starting the service: {ex.Message}", ex);
+				logger.LogError($">>>>> Error occurred while starting the service => {ex.Message}", ex);
 				stopService("The service was terminated because that got error on starting....");
 				return;
 			}

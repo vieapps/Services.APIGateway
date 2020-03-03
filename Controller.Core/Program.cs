@@ -119,7 +119,7 @@ namespace net.vieapps.Services.APIGateway
 						{
 							var controllers = Program.Manager.AvailableControllers;
 							var info = $"Controllers - Total instance(s): {Program.Manager.AvailableControllers.Count:#,##0} - Available instance(s): {Program.Manager.AvailableControllers.Where(kvp => kvp.Value.Available).Count():#,##0}";
-							Program.Manager.AvailableControllers.ForEach(controller => info += "\r\n\t" + $"- ID: {controller.ID} - Status: {(controller.Available ? "Available" : "Unavailable")}  - Working mode: {controller.Mode} - Platform: {controller.Platform}");
+							Program.Manager.AvailableControllers.ForEach(controller => info += "\r\n\t" + $"- ID: {controller.ID} - Status: {(controller.Available ? "Available" : "Unavailable")} - Working mode: {controller.Mode} - Platform: {controller.Platform}");
 							info += "\r\n" + $"Services - Total: {Program.Manager.AvailableServices.Count:#,##0} - Available: {Program.Manager.AvailableServices.Where(kvp => kvp.Value.FirstOrDefault(svc => svc.Available) != null).Count():#,##0} - Running: {Program.Manager.AvailableServices.Where(kvp => kvp.Value.FirstOrDefault(svc => svc.Running) != null).Count():#,##0}";
 							Program.Manager.AvailableServices.OrderBy(kvp => kvp.Key).ForEach(kvp => info += "\r\n\t" + $"- URI: services.{kvp.Key} - Available instance(s): {kvp.Value.Where(svc => svc.Available).Count():#,##0} - Running instance(s): {kvp.Value.Where(svc => svc.Running).Count():#,##0}");
 							Program.Logger.LogInformation(info);

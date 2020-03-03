@@ -316,7 +316,7 @@ namespace net.vieapps.Services.APIGateway
 							{
 								try
 								{
-									await Task.Delay(UtilityService.GetRandomNumber(456, 789)).ConfigureAwait(false);
+									await Task.Delay(UtilityService.GetRandomNumber(456, 789), this.CancellationTokenSource.Token).ConfigureAwait(false);
 									await this.RegisterHelperServicesAsync().ConfigureAwait(false);
 								}
 								catch (Exception ex)
@@ -371,17 +371,17 @@ namespace net.vieapps.Services.APIGateway
 							Global.OnProcess?.Invoke($"The API Gateway Controller was{(this.State == ServiceState.Disconnected ? " re-" : " ")}started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");
 							this.State = ServiceState.Connected;
 
-							if (this.AllowRegisterBusinessServices || this.AllowRegisterHelperServices || this.AllowRegisterHelperTimers)
-							{
-								while (Router.IncomingChannel == null || Router.OutgoingChannel == null)
-									await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
-								await this.SendInterCommunicateMessageAsync("Controller#Info", this.Info.ToJson(), this.CancellationTokenSource.Token).ConfigureAwait(false);
-							}
+							while (Router.IncomingChannel == null || Router.OutgoingChannel == null)
+								await Task.Delay(UtilityService.GetRandomNumber(123, 456), this.CancellationTokenSource.Token).ConfigureAwait(false);
+							this.RTUService = this.RTUService ?? Router.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create());
 
-							await Task.Delay(UtilityService.GetRandomNumber(4567, 5678)).ConfigureAwait(false);
+							if (this.AllowRegisterBusinessServices || this.AllowRegisterHelperServices || this.AllowRegisterHelperTimers)
+								await this.SendInterCommunicateMessageAsync("Controller#Info", this.Info.ToJson(), this.CancellationTokenSource.Token).ConfigureAwait(false);
+
+							await Task.Delay(UtilityService.GetRandomNumber(4567, 5678), this.CancellationTokenSource.Token).ConfigureAwait(false);
 							await Task.WhenAll(
-								this.SendInterCommunicateMessageAsync("Controller#RequestInfo"),
-								this.SendInterCommunicateMessageAsync("Service#RequestInfo")
+								this.SendInterCommunicateMessageAsync("Controller#RequestInfo", null, this.CancellationTokenSource.Token),
+								this.SendInterCommunicateMessageAsync("Service#RequestInfo", null, this.CancellationTokenSource.Token)
 							).ConfigureAwait(false);
 						},
 						(sender, arguments) =>
@@ -407,8 +407,8 @@ namespace net.vieapps.Services.APIGateway
 							Router.OutgoingChannel.Update(Router.OutgoingChannelSessionID, "APIGateway", "Outgoing (APIGateway Controller)");
 
 							while (Router.IncomingChannel == null || Router.OutgoingChannel == null)
-								await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
-							this.RTUService = Router.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create());
+								await Task.Delay(UtilityService.GetRandomNumber(123, 456), this.CancellationTokenSource.Token).ConfigureAwait(false);
+							this.RTUService = this.RTUService ?? Router.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create());
 
 							try
 							{
@@ -438,7 +438,7 @@ namespace net.vieapps.Services.APIGateway
 					Global.OnError?.Invoke($"Error occurred while connecting to API Gateway Router => {ex.Message}", ex);
 					if (attemptingCounter < 13)
 					{
-						await Task.Delay(UtilityService.GetRandomNumber(456, 789)).ConfigureAwait(false);
+						await Task.Delay(UtilityService.GetRandomNumber(456, 789), this.CancellationTokenSource.Token).ConfigureAwait(false);
 						connectRouter();
 					}
 					else
@@ -472,7 +472,7 @@ namespace net.vieapps.Services.APIGateway
 				try
 				{
 					await Task.WhenAll(
-						this.BusinessServices.Keys.ForEachAsync(async (name, cancellationToken) => await Task.Run(() => this.StopBusinessService(name)).ConfigureAwait(false), this.CancellationTokenSource.Token),
+						this.BusinessServices.Keys.ForEachAsync(async (name, cancellationToken) => await Task.Run(() => this.StopBusinessService(name, false, false)).ConfigureAwait(false), this.CancellationTokenSource.Token),
 						this.Tasks.Values.ForEachAsync(async (serviceInfo, cancellationToken) => await Task.Run(() => ExternalProcess.Stop(serviceInfo.Instance, null, null, 789)).ConfigureAwait(false), this.CancellationTokenSource.Token)
 					).ConfigureAwait(false);
 				}
@@ -751,7 +751,7 @@ namespace net.vieapps.Services.APIGateway
 		/// <summary>
 		/// Gets the process information of a business service
 		/// </summary>
-		/// <param name="name"></param>
+		/// <param name="name">The name of a service</param>
 		/// <returns></returns>
 		public ProcessInfo GetServiceProcessInfo(string name)
 			=> !string.IsNullOrWhiteSpace(name) && this.BusinessServices.TryGetValue(name.ToArray('.').Last().ToLower(), out var processInfo) ? processInfo : null;
@@ -772,7 +772,7 @@ namespace net.vieapps.Services.APIGateway
 		/// <summary>
 		/// Gets the state that determines a business service is available or not
 		/// </summary>
-		/// <param name="name"></param>
+		/// <param name="name">The name of a service</param>
 		/// <returns></returns>
 		public bool IsBusinessServiceAvailable(string name)
 		{
@@ -785,7 +785,7 @@ namespace net.vieapps.Services.APIGateway
 		/// <summary>
 		/// Gets the state that determines a business service is running or not
 		/// </summary>
-		/// <param name="name"></param>
+		/// <param name="name">The name of a service</param>
 		/// <returns></returns>
 		public bool IsBusinessServiceRunning(string name)
 		{
@@ -805,8 +805,8 @@ namespace net.vieapps.Services.APIGateway
 		/// <summary>
 		/// Starts a business service
 		/// </summary>
-		/// <param name="name"></param>
-		/// <param name="arguments"></param>
+		/// <param name="name">The name of a service</param>
+		/// <param name="arguments">The starting arguments</param>
 		public void StartBusinessService(string name, string arguments = null)
 		{
 			if (!this.IsBusinessServiceAvailable(name))
@@ -871,8 +871,10 @@ namespace net.vieapps.Services.APIGateway
 		/// <summary>
 		/// Stops a business service
 		/// </summary>
-		/// <param name="name"></param>
-		public void StopBusinessService(string name)
+		/// <param name="name">The name of a service</param>
+		/// <param name="available">The available state</param>
+		/// <param name="sendServiceInfo">true to send service information to API Gateway</param>
+		public void StopBusinessService(string name, bool available, bool sendServiceInfo = true)
 		{
 			name = !string.IsNullOrWhiteSpace(name) ? name.ToArray('.').Last().ToLower() : "unknown";
 			if (!this.BusinessServices.ContainsKey(name))
@@ -895,6 +897,8 @@ namespace net.vieapps.Services.APIGateway
 					{
 						this.BusinessServices[name].Set("State", "Stopped");
 					}
+					if (sendServiceInfo)
+						this.SendServiceInfo(name, processInfo.Instance?.Arguments, available, false);
 				}
 				catch (Exception ex)
 				{
@@ -905,12 +909,18 @@ namespace net.vieapps.Services.APIGateway
 						{ "Error", ex.Message },
 						{ "ErrorStack", ex.StackTrace }
 					});
-					Task.Run(() => this.SendServiceInfoAsync(name, processInfo.Instance?.Arguments, false, false)).ConfigureAwait(false);
+					if (sendServiceInfo)
+						this.SendServiceInfo(name, processInfo.Instance?.Arguments, false, false);
 				}
 			else
 				ExternalProcess.Stop(
 					processInfo.Instance,
-					info => this.BusinessServices[name].Set("State", "Stopped"),
+					info =>
+					{
+						this.BusinessServices[name].Set("State", "Stopped");
+						if (sendServiceInfo)
+							this.SendServiceInfo(name, processInfo.Instance?.Arguments, available, false);
+					},
 					ex =>
 					{
 						Global.OnError?.Invoke($"Error occurred while stopping the service [{name}] => {ex.Message}", ex);
@@ -920,11 +930,19 @@ namespace net.vieapps.Services.APIGateway
 							{ "Error", ex.Message },
 							{ "ErrorStack", ex.StackTrace }
 						});
-						Task.Run(() => this.SendServiceInfoAsync(name, processInfo.Instance?.Arguments, false, false)).ConfigureAwait(false);
+						if (sendServiceInfo)
+							this.SendServiceInfo(name, processInfo.Instance?.Arguments, false, false);
 					},
 					1234
 				);
 		}
+
+		/// <summary>
+		/// Stops a business service
+		/// </summary>
+		/// <param name="name">The name of a service</param>
+		public void StopBusinessService(string name)
+			=> this.StopBusinessService(name, true, true);
 
 		void WatchBusinessServices()
 		{
@@ -1407,6 +1425,9 @@ namespace net.vieapps.Services.APIGateway
 				this.CancellationTokenSource.Token
 			);
 		}
+
+		void SendServiceInfo(string name, string args, bool available, bool running)
+			=> Task.Run(() => this.SendServiceInfoAsync(name, args, available, running)).ConfigureAwait(false);
 		#endregion
 
 	}

@@ -7,6 +7,7 @@ using System.Collections.Concurrent;
 using System.Reactive.Linq;
 using System.Runtime.InteropServices;
 using WampSharp.V2.Realm;
+using WampSharp.V2.Core.Contracts;
 using Newtonsoft.Json.Linq;
 using net.vieapps.Components.Utility;
 #endregion
@@ -182,20 +183,36 @@ namespace net.vieapps.Services.APIGateway
 		#region Process inter-communicate messages
 		public async Task SendInterCommunicateMessageAsync(string type, JToken data = null)
 		{
-			if (this.RTUService != null)
-				try
-				{
-					await this.RTUService.SendInterCommunicateMessageAsync(new CommunicateMessage
+			if (this.RTUService == null)
+				return;
+
+			var message = new CommunicateMessage
+			{
+				ServiceName = "APIGateway",
+				Type = type,
+				Data = data ?? new JObject()
+			};
+
+			try
+			{
+				await this.RTUService.SendInterCommunicateMessageAsync(message).ConfigureAwait(false);
+			}
+			catch (Exception ex)
+			{
+				if (ex is WampException && (ex as WampException).ErrorUri.Equals("wamp.error.no_such_procedure"))
+					try
 					{
-						ServiceName = "APIGateway",
-						Type = type,
-						Data = data ?? new JObject()
-					}).ConfigureAwait(false);
-				}
-				catch (Exception ex)
-				{
+						await Task.Delay(UtilityService.GetRandomNumber(456, 789)).ConfigureAwait(false);
+						this.RTUService = Router.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create());
+						await this.RTUService.SendInterCommunicateMessageAsync(message).ConfigureAwait(false);
+					}
+					catch (Exception exception)
+					{
+						Global.OnError?.Invoke($"Error occurred while sending an inter-communicate message => {exception.Message}", exception);
+					}
+				else
 					Global.OnError?.Invoke($"Error occurred while sending an inter-communicate message => {ex.Message}", ex);
-				}
+			}
 		}
 
 		void ProcessInterCommunicateMessage(CommunicateMessage message)

@@ -137,7 +137,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// check the type of the service component
-			if (!typeof(IServiceComponent).IsAssignableFrom(this.ServiceType) || !typeof(ServiceBase).IsAssignableFrom(this.ServiceType))
+			if (!typeof(ServiceBase).IsAssignableFrom(this.ServiceType))
 			{
 				Console.Error.WriteLine(hostingInfo);
 				Console.Error.WriteLine("");
@@ -148,7 +148,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// initialize the instance of the service
-			var service = this.ServiceType.CreateInstance() as IServiceComponent;
+			var service = this.ServiceType.CreateInstance() as ServiceBase;
 
 			// prepare the signal to start/stop when the service was called from API Gateway
 			EventWaitHandle eventWaitHandle = null;
@@ -213,12 +213,12 @@ namespace net.vieapps.Services.APIGateway
 			else
 				logPath = null;
 
-			var logger = service.Logger = Logger.CreateLogger(this.ServiceType);
+			var logger = (service as IServiceComponent).Logger = Logger.CreateLogger(this.ServiceType);
 
 			// prepare the function to dispose the service when done
 			void disposeService(string message)
 			{
-				if (!(service as ServiceBase).Disposed)
+				if (!service.Disposed)
 				{
 					service.Dispose();
 					logger.LogDebug($"{message}\r\n");
@@ -240,7 +240,7 @@ namespace net.vieapps.Services.APIGateway
 			logger.LogInformation($"Starting arguments: {(args != null && args.Length > 0 ? args.Join(" ") : "None")}");
 			logger.LogInformation($"Environment:\r\n\t{Extensions.GetRuntimeEnvironment()}\r\n\t- Powered: {hostingInfo}");
 
-			ServiceBase.ServiceComponent = service as ServiceBase;
+			ServiceBase.ServiceComponent = service;
 			service.Start(
 				args,
 				"false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", "")) ? false : true,
@@ -255,8 +255,8 @@ namespace net.vieapps.Services.APIGateway
 					logger.LogInformation($"Temporary directory: {UtilityService.GetAppSetting("Path:Temp", "None")}");
 					logger.LogInformation($"Static files directory: {UtilityService.GetAppSetting("Path:StaticFiles", "None")}");
 					logger.LogInformation($"Logging level: {logLevel} - Local rolling log files is {(string.IsNullOrWhiteSpace(logPath) ? "disabled" : $"enabled => {logPath}")}");
-					logger.LogInformation($"Show debugs: {(service as ServiceBase).IsDebugLogEnabled} - Show results: {(service as ServiceBase).IsDebugResultsEnabled} - Show stacks: {(service as ServiceBase).IsDebugStacksEnabled}");
-					logger.LogInformation($"Service URIs:\r\n\t- Round robin: {service.ServiceURI}\r\n\t- Single (unique): {(service as ServiceBase).ServiceUniqueURI}");
+					logger.LogInformation($"Show debugs: {service.IsDebugLogEnabled} - Show results: {service.IsDebugResultsEnabled} - Show stacks: {service.IsDebugStacksEnabled}");
+					logger.LogInformation($"Service URIs:\r\n\t- Round robin: {service.ServiceURI}\r\n\t- Single (unique): {service.ServiceUniqueURI}");
 
 					stopwatch.Stop();
 					logger.LogInformation($"The service was started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");

@@ -36,11 +36,11 @@ namespace net.vieapps.Services.APIGateway
 			if (!this.IsDisposed)
 			{
 				this.IsDisposed = true;
-				GC.SuppressFinalize(this);
 				await this.StopAsync().ConfigureAwait(false);
 				this.CancellationTokenSource.Dispose();
 				Global.OnProcess?.Invoke($"The API Gateway Controller was disposed");
 				await Task.Delay(123).ConfigureAwait(false);
+				GC.SuppressFinalize(this);
 			}
 		}
 
@@ -874,7 +874,7 @@ namespace net.vieapps.Services.APIGateway
 		/// <param name="name">The name of a service</param>
 		/// <param name="available">The available state</param>
 		/// <param name="sendServiceInfo">true to send service information to API Gateway</param>
-		public void StopBusinessService(string name, bool available, bool sendServiceInfo = true)
+		public void StopBusinessService(string name, bool available, bool sendServiceInfo)
 		{
 			name = !string.IsNullOrWhiteSpace(name) ? name.ToArray('.').Last().ToLower() : "unknown";
 			if (!this.BusinessServices.ContainsKey(name))

@@ -103,10 +103,10 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
+				Console.Error.WriteLine(hostingInfo);
+				Console.Error.WriteLine("");
 				if (ex is ReflectionTypeLoadException)
 				{
-					Console.Error.WriteLine(hostingInfo);
-					Console.Error.WriteLine("");
 					Console.Error.WriteLine($"Error: The service component [{this.ServiceTypeName},{this.ServiceAssemblyName}] got an unexpected error while preparing");
 					(ex as ReflectionTypeLoadException).LoaderExceptions.ForEach(exception =>
 					{
@@ -121,8 +121,6 @@ namespace net.vieapps.Services.APIGateway
 				}
 				else
 				{
-					Console.Error.WriteLine(hostingInfo);
-					Console.Error.WriteLine("");
 					Console.Error.WriteLine($"Error: The service component [{this.ServiceTypeName},{this.ServiceAssemblyName}] got an unexpected error while preparing => {ex.Message} [{ex.GetType()}]\r\nStack: {ex.StackTrace}");
 					var inner = ex.InnerException;
 					while (inner != null)
@@ -216,20 +214,21 @@ namespace net.vieapps.Services.APIGateway
 			var logger = (service as IServiceComponent).Logger = Logger.CreateLogger(this.ServiceType);
 
 			// prepare the function to dispose the service when done
-			void disposeService(string message)
+			void disposeService(string message, bool available = true)
 			{
 				if (!service.Disposed)
-				{
-					service.Dispose();
-					logger.LogDebug($"{message}\r\n");
-				}
+					service.Dispose(args, available, _ =>
+					{
+						logger.LogInformation($"{message}");
+						Task.Delay(123).Wait();
+					});
 			}
 
 			// setup hooks
-			AppDomain.CurrentDomain.ProcessExit += (sender, arguments) => disposeService($"The service was terminated (by \"process exit\" signal) - Served times: {time.GetElapsedTimes()}");
+			AppDomain.CurrentDomain.ProcessExit += (sender, arguments) => disposeService($"The service was terminated (by \"process exit\" signal) - Served times: {time.GetElapsedTimes()}", false);
 			Console.CancelKeyPress += (sender, arguments) =>
 			{
-				disposeService($"The service was terminated (by \"cancel key press\" signal) - Served times: {time.GetElapsedTimes()}");
+				disposeService($"The service was terminated (by \"cancel key press\" signal) - Served times: {time.GetElapsedTimes()}", false);
 				Environment.Exit(0);
 			};
 

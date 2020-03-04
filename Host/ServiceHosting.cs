@@ -215,23 +215,22 @@ namespace net.vieapps.Services.APIGateway
 
 			var logger = service.Logger = Logger.CreateLogger(this.ServiceType);
 
-			// setup hooks
-			void stopService(string message)
+			// prepare the function to dispose the service when done
+			void disposeService(string message)
 			{
-				if (!(service as ServiceBase).Stopped)
+				if (!(service as ServiceBase).Disposed)
 				{
-					service.Stop(args);
 					service.Dispose();
 					logger.LogDebug($"{message}\r\n");
 				}
 			}
 
-			AppDomain.CurrentDomain.ProcessExit += (sender, arguments) => stopService($"The service was terminated (by \"process exit\" signal) - Served times: {time.GetElapsedTimes()}");
-
+			// setup hooks
+			AppDomain.CurrentDomain.ProcessExit += (sender, arguments) => disposeService($"The service was terminated (by \"process exit\" signal) - Served times: {time.GetElapsedTimes()}");
 			Console.CancelKeyPress += (sender, arguments) =>
 			{
-				stopService($"The service was terminated (by \"cancel key press\" signal) - Served times: {time.GetElapsedTimes()}");
-				Environment.ExitCode = 0;
+				disposeService($"The service was terminated (by \"cancel key press\" signal) - Served times: {time.GetElapsedTimes()}");
+				Environment.Exit(0);
 			};
 
 			// start the service
@@ -242,40 +241,30 @@ namespace net.vieapps.Services.APIGateway
 			logger.LogInformation($"Environment:\r\n\t{Extensions.GetRuntimeEnvironment()}\r\n\t- Powered: {hostingInfo}");
 
 			ServiceBase.ServiceComponent = service as ServiceBase;
-			try
-			{
-				service.Start(
-					args,
-					"false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", "")) ? false : true,
-					_ =>
-					{
-						logger.LogInformation($"API Gateway Router: {new Uri(Router.GetRouterStrInfo()).GetResolvedURI()}");
-						logger.LogInformation($"API Gateway HTTP service: {UtilityService.GetAppSetting("HttpUri:APIs", "None")}");
-						logger.LogInformation($"Files HTTP service: {UtilityService.GetAppSetting("HttpUri:Files", "None")}");
-						logger.LogInformation($"Portals HTTP service: {UtilityService.GetAppSetting("HttpUri:Portals", "None")}");
-						logger.LogInformation($"Passport HTTP service: {UtilityService.GetAppSetting("HttpUri:Passports", "None")}");
-						logger.LogInformation($"Root (base) directory: {AppDomain.CurrentDomain.BaseDirectory}");
-						logger.LogInformation($"Temporary directory: {UtilityService.GetAppSetting("Path:Temp", "None")}");
-						logger.LogInformation($"Static files directory: {UtilityService.GetAppSetting("Path:StaticFiles", "None")}");
-						logger.LogInformation($"Logging level: {logLevel} - Local rolling log files is {(string.IsNullOrWhiteSpace(logPath) ? "disabled" : $"enabled => {logPath}")}");
-						logger.LogInformation($"Show debugs: {(service as ServiceBase).IsDebugLogEnabled} - Show results: {(service as ServiceBase).IsDebugResultsEnabled} - Show stacks: {(service as ServiceBase).IsDebugStacksEnabled}");
-						logger.LogInformation($"Service URIs:\r\n\t- Round robin: {service.ServiceURI}\r\n\t- Single (unique): {(service as ServiceBase).ServiceUniqueURI}");
+			service.Start(
+				args,
+				"false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", "")) ? false : true,
+				_ =>
+				{
+					logger.LogInformation($"API Gateway Router: {new Uri(Router.GetRouterStrInfo()).GetResolvedURI()}");
+					logger.LogInformation($"API Gateway HTTP service: {UtilityService.GetAppSetting("HttpUri:APIs", "None")}");
+					logger.LogInformation($"Files HTTP service: {UtilityService.GetAppSetting("HttpUri:Files", "None")}");
+					logger.LogInformation($"Portals HTTP service: {UtilityService.GetAppSetting("HttpUri:Portals", "None")}");
+					logger.LogInformation($"Passport HTTP service: {UtilityService.GetAppSetting("HttpUri:Passports", "None")}");
+					logger.LogInformation($"Root (base) directory: {AppDomain.CurrentDomain.BaseDirectory}");
+					logger.LogInformation($"Temporary directory: {UtilityService.GetAppSetting("Path:Temp", "None")}");
+					logger.LogInformation($"Static files directory: {UtilityService.GetAppSetting("Path:StaticFiles", "None")}");
+					logger.LogInformation($"Logging level: {logLevel} - Local rolling log files is {(string.IsNullOrWhiteSpace(logPath) ? "disabled" : $"enabled => {logPath}")}");
+					logger.LogInformation($"Show debugs: {(service as ServiceBase).IsDebugLogEnabled} - Show results: {(service as ServiceBase).IsDebugResultsEnabled} - Show stacks: {(service as ServiceBase).IsDebugStacksEnabled}");
+					logger.LogInformation($"Service URIs:\r\n\t- Round robin: {service.ServiceURI}\r\n\t- Single (unique): {(service as ServiceBase).ServiceUniqueURI}");
 
-						stopwatch.Stop();
-						logger.LogInformation($"The service was started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");
+					stopwatch.Stop();
+					logger.LogInformation($"The service was started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");
 
-						if (isUserInteractive)
-							logger.LogWarning($"=====> Enter \"exit\" to terminate ...............");
-					}
-				);
-			}
-			catch (Exception ex)
-			{
-				eventWaitHandle?.Dispose();
-				logger.LogError($">>>>> Error occurred while starting the service => {ex.Message}", ex);
-				stopService("The service was terminated because that got error on starting....");
-				return;
-			}
+					if (isUserInteractive)
+						logger.LogWarning($"=====> Enter \"exit\" to terminate ...............");
+				}
+			);
 
 			// wait for exit signal
 			if (useEventWaitHandle)
@@ -291,7 +280,7 @@ namespace net.vieapps.Services.APIGateway
 					logger.LogDebug(">>>>> Got \"exit\" command from API Gateway Controller ...............");
 			}
 
-			stopService($"The service was terminated - Served times: {time.GetElapsedTimes()}");
+			disposeService($"The service was terminated - Served times: {time.GetElapsedTimes()}");
 		}
 	}
 }

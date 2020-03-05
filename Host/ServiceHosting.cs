@@ -214,10 +214,10 @@ namespace net.vieapps.Services.APIGateway
 			var logger = (service as IServiceComponent).Logger = Logger.CreateLogger(this.ServiceType);
 
 			// prepare the function to dispose the service when done
-			void disposeService(string message, bool available = true)
+			void disposeService(string message, bool available = true, bool disconnect = true)
 			{
 				if (!service.Disposed)
-					service.Dispose(args, available, _ =>
+					service.Dispose(args, available, disconnect, _ =>
 					{
 						logger.LogInformation($"{message}");
 						Task.Delay(123).Wait();

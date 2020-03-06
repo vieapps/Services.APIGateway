@@ -455,18 +455,6 @@ namespace net.vieapps.Services.APIGateway
 		/// <returns></returns>
 		public async Task StopAsync()
 		{
-			// send info to other managers
-			if (this.AllowRegisterBusinessServices || this.AllowRegisterHelperServices || this.AllowRegisterHelperTimers)
-				try
-				{
-					this.Info.Available = false;
-					await this.SendInterCommunicateMessageAsync("Controller#Disconnect", this.Info.ToJson(), this.CancellationTokenSource.Token).ConfigureAwait(false);
-				}
-				catch (Exception ex)
-				{
-					Global.OnError?.Invoke($"Cannot send the updating information => {ex.Message}", ex);
-				}
-
 			// stop all external processes (services & tasks)
 			if (this.AllowRegisterBusinessServices || this.Tasks.Count > 0)
 				try
@@ -490,6 +478,18 @@ namespace net.vieapps.Services.APIGateway
 			{
 				Global.OnError?.Invoke($"Error occurred while disposing the controllers' timers => {ex.Message}", ex);
 			}
+
+			// send info to other managers
+			if (this.AllowRegisterBusinessServices || this.AllowRegisterHelperServices || this.AllowRegisterHelperTimers)
+				try
+				{
+					this.Info.Available = false;
+					await this.SendInterCommunicateMessageAsync("Controller#Disconnect", this.Info.ToJson(), this.CancellationTokenSource.Token).ConfigureAwait(false);
+				}
+				catch (Exception ex)
+				{
+					Global.OnError?.Invoke($"Cannot send the updating information => {ex.Message}", ex);
+				}
 
 			// dipose all helper services
 			if (this.AllowRegisterHelperServices)

@@ -82,22 +82,14 @@ namespace net.vieapps.Services.APIGateway
 				if (!Program.IsStopped)
 				{
 					Program.Logger.LogWarning(">>> Terminated by signal of process exit");
-					try
-					{
-						Program.Stop();
-					}
-					catch { }
+					Program.Stop();
 				}
 			};
 
 			Console.CancelKeyPress += (sender, arguments) =>
 			{
 				Program.Logger.LogWarning(">>> Terminated by signal of cancel key press");
-				try
-				{
-					Program.Stop();
-				}
-				catch { }
+				Program.Stop();
 				Environment.Exit(0);
 			};
 

@@ -4,6 +4,7 @@
 		<TargetFrameworks>netcoreapp2.1;netcoreapp3.1</TargetFrameworks>
 		<OutputType>Exe</OutputType>
 		<WarningLevel>3</WarningLevel>
+		<AspNetCoreHostingModel>OutOfProcess</AspNetCoreHostingModel>
 		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
 		<StartupObject>net.vieapps.Services.APIGateway.Startup</StartupObject>
 		<AssemblyName>VIEApps.Services.APIGateway</AssemblyName>
@@ -14,7 +15,7 @@
 		<Copyright>© 2020 VIEApps.net</Copyright>
 		<AssemblyVersion>10.3$(ReleaseVersion)</AssemblyVersion>
 		<FileVersion>10.3$(ReleaseVersion)</FileVersion>
-		<InformationalVersion>10.3@$(TargetFramework)-$(ReleaseRevision)</InformationalVersion>
+		<InformationalVersion>10.3.$([System.DateTime]::Now.Year).$([System.DateTime]::Now.Month).$([System.DateTime]::Now.Day)@$(TargetFramework)#$(ReleaseRevision)</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>

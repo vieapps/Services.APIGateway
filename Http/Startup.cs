@@ -46,6 +46,14 @@ namespace net.vieapps.Services.APIGateway
 				.AddLogging(builder => builder.SetMinimumLevel(this.LogLevel))
 				.AddCache(options => this.Configuration.GetSection("Cache").Bind(options))
 				.AddHttpContextAccessor();
+#if !NETCOREAPP2_1
+			if (Global.UseIISInProcess)
+				services.Configure<IISServerOptions>(options => Global.PrepareIISServerOptions(options, _ =>
+				{
+					options.AllowSynchronousIO = true;
+					options.MaxRequestBodySize = 1024 * 1024 * Global.MaxRequestBodySize;
+				}));
+#endif
 		}
 
 		public void Configure(
@@ -151,7 +159,7 @@ namespace net.vieapps.Services.APIGateway
 						}
 						catch (Exception ex)
 						{
-							Global.Logger.LogError($"Cannot load a path mapper ({info.Item2})", ex);
+							Global.Logger.LogError($"Cannot load a path mapper ({info.Item2}) => {ex.Message}", ex);
 						}
 					});
 
@@ -181,7 +189,7 @@ namespace net.vieapps.Services.APIGateway
 				Global.Logger.LogInformation($"Static segments: {Global.StaticSegments.ToString(", ")}");
 				Global.Logger.LogInformation($"Logging level: {this.LogLevel} - Local rolling log files is {(string.IsNullOrWhiteSpace(logPath) ? "disabled" : $"enabled => {logPath}")}");
 				Global.Logger.LogInformation($"Show debugs: {Global.IsDebugLogEnabled} - Show results: {Global.IsDebugResultsEnabled} - Show stacks: {Global.IsDebugStacksEnabled}");
-				Global.Logger.LogInformation($"Request body limit: {UtilityService.GetAppSetting("Limits:Body", "10")} MB");
+				Global.Logger.LogInformation($"Request body limit: {Global.MaxRequestBodySize:###,###,##0} MB");
 
 				stopwatch.Stop();
 				Global.Logger.LogInformation($"The {Global.ServiceName} HTTP service was started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");

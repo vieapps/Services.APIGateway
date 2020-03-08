@@ -35,12 +35,12 @@ namespace net.vieapps.Services.APIGateway
 		{
 			if (!this.IsDisposed)
 			{
+				GC.SuppressFinalize(this);
 				this.IsDisposed = true;
 				await this.StopAsync().ConfigureAwait(false);
 				this.CancellationTokenSource.Dispose();
 				Global.OnProcess?.Invoke($"The API Gateway Controller was disposed");
 				await Task.Delay(123).ConfigureAwait(false);
-				GC.SuppressFinalize(this);
 			}
 		}
 
@@ -280,7 +280,7 @@ namespace net.vieapps.Services.APIGateway
 						async (sender, arguments) =>
 						{
 							Global.OnProcess?.Invoke($"The incoming channel is established - Session ID: {arguments.SessionId}");
-							Router.IncomingChannel.Update(Router.IncomingChannelSessionID, "APIGateway", "Incoming (APIGateway Controller)");
+							Router.IncomingChannel.Update(Router.IncomingChannelSessionID, "APIGateway", "Incoming (API Gateway Controller)");
 							if (this.State == ServiceState.Initializing)
 								this.State = ServiceState.Ready;
 
@@ -404,7 +404,7 @@ namespace net.vieapps.Services.APIGateway
 						async (sender, arguments) =>
 						{
 							Global.OnProcess?.Invoke($"The outgoing channel is established - Session ID: {arguments.SessionId}");
-							Router.OutgoingChannel.Update(Router.OutgoingChannelSessionID, "APIGateway", "Outgoing (APIGateway Controller)");
+							Router.OutgoingChannel.Update(Router.OutgoingChannelSessionID, "APIGateway", "Outgoing (API Gateway Controller)");
 
 							while (Router.IncomingChannel == null || Router.OutgoingChannel == null)
 								await Task.Delay(UtilityService.GetRandomNumber(123, 456), this.CancellationTokenSource.Token).ConfigureAwait(false);

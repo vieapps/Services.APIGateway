@@ -4,7 +4,7 @@
 		<TargetFrameworks>netcoreapp2.1;netcoreapp3.1</TargetFrameworks>
 		<OutputType>Exe</OutputType>
 		<WarningLevel>3</WarningLevel>
-		<AspNetCoreHostingModel>OutOfProcess</AspNetCoreHostingModel>
+		<AspNetCoreHostingModel>OutOfProcess</AspNetCoreHostingModel>		
 		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
 		<StartupObject>net.vieapps.Services.APIGateway.Startup</StartupObject>
 		<AssemblyName>VIEApps.Services.APIGateway</AssemblyName>
@@ -30,8 +30,8 @@
 		<PackageReference Include="Microsoft.AspNetCore" Version="2.2.0" />
 		<PackageReference Include="Microsoft.AspNetCore.ResponseCompression" Version="2.2.0" />
 		<PackageReference Include="Microsoft.AspNetCore.WebSockets" Version="2.2.1" />
-		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.3.2003.3" />
-		<PackageReference Include="VIEApps.Services.Base.Http" Version="10.3.2003.3" />
+		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.3.2003.4" />
+		<PackageReference Include="VIEApps.Services.Base.Http" Version="10.3.2003.4" />
 		<PackageReference Include="WampSharp.AspNetCore.WebSockets.Server" Version="20.1.1" />
 	</ItemGroup>
 

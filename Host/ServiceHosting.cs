@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,11 +24,11 @@ namespace net.vieapps.Services.APIGateway
 		protected virtual void PrepareServiceType()
 			=> this.ServiceType = Type.GetType($"{this.ServiceTypeName},{this.ServiceAssemblyName}");
 
-		public virtual void Run(string[] args)
+		public void Run(string[] args = null)
 		{
 			try
 			{
-				this.RunService(args);
+				this.Run(args?.ToList());
 			}
 			catch (Exception ex)
 			{
@@ -35,7 +36,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		protected virtual void RunService(string[] args)
+		void Run(List<string> args)
 		{
 			// prepare
 			Console.OutputEncoding = System.Text.Encoding.UTF8;
@@ -44,18 +45,18 @@ namespace net.vieapps.Services.APIGateway
 
 			var apiCall = args?.FirstOrDefault(arg => arg.IsStartsWith("/agc:"));
 			var isUserInteractive = Environment.UserInteractive && apiCall == null;
-			var hostingInfo = $"VIEApps NGX API Gateway - Service Hosting {RuntimeInformation.ProcessArchitecture.ToString().ToLower()} {Assembly.GetCallingAssembly().GetVersion()}";
+			var powered = $"VIEApps NGX API Gateway - Service Hosting {RuntimeInformation.ProcessArchitecture.ToString().ToLower()} {Assembly.GetCallingAssembly().GetVersion()}";
 
 			// prepare type name
 			this.ServiceTypeName = args?.FirstOrDefault(arg => arg.IsStartsWith("/svc:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/svc:", "");
 			if (string.IsNullOrWhiteSpace(this.ServiceTypeName) && args?.FirstOrDefault(arg => arg.IsStartsWith("/svn:")) != null)
 			{
-				var configFilename = Path.Combine($"{UtilityService.GetAppSetting("Path:APIGateway:Controller")}", $"VIEApps.Services.APIGateway.{(RuntimeInformation.FrameworkDescription.IsContains(".NET Framework") ? "exe" : "dll")}.config");
-				if (File.Exists(configFilename))
+				var configFilePath = Path.Combine($"{UtilityService.GetAppSetting("Path:APIGateway:Controller")}", $"VIEApps.Services.APIGateway.{(RuntimeInformation.FrameworkDescription.IsContains(".NET Framework") ? "exe" : "dll")}.config");
+				if (File.Exists(configFilePath))
 					try
 					{
 						var xml = new System.Xml.XmlDocument();
-						xml.LoadXml(UtilityService.ReadTextFile(configFilename));
+						xml.LoadXml(UtilityService.ReadTextFile(configFilePath));
 						this.ServiceTypeName = args.First(arg => arg.IsStartsWith("/svn:")).Replace(StringComparison.OrdinalIgnoreCase, "/svn:", "").Trim();
 						var typeNode = xml.SelectSingleNode($"/configuration/{UtilityService.GetAppSetting("Section:Services", "net.vieapps.services")}")?.ChildNodes?.ToList()?.FirstOrDefault(node => this.ServiceTypeName.IsEquals(node.Attributes["name"]?.Value));
 						this.ServiceTypeName = typeNode?.Attributes["type"]?.Value;
@@ -69,7 +70,7 @@ namespace net.vieapps.Services.APIGateway
 			// stop if has no type name of a service component
 			if (string.IsNullOrWhiteSpace(this.ServiceTypeName))
 			{
-				Console.Error.WriteLine(hostingInfo);
+				Console.Error.WriteLine(powered);
 				Console.Error.WriteLine("");
 				Console.Error.WriteLine("Error: The service component is invalid (no type name)");
 				Console.Error.WriteLine("");
@@ -93,7 +94,7 @@ namespace net.vieapps.Services.APIGateway
 				this.PrepareServiceType();
 				if (this.ServiceType == null)
 				{
-					Console.Error.WriteLine(hostingInfo);
+					Console.Error.WriteLine(powered);
 					Console.Error.WriteLine("");
 					Console.Error.WriteLine($"Error: The service component is invalid [{this.ServiceTypeName},{this.ServiceAssemblyName}]");
 					if (isUserInteractive)
@@ -103,7 +104,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-				Console.Error.WriteLine(hostingInfo);
+				Console.Error.WriteLine(powered);
 				Console.Error.WriteLine("");
 				if (ex is ReflectionTypeLoadException)
 				{
@@ -137,7 +138,7 @@ namespace net.vieapps.Services.APIGateway
 			// check the type of the service component
 			if (!typeof(ServiceBase).IsAssignableFrom(this.ServiceType))
 			{
-				Console.Error.WriteLine(hostingInfo);
+				Console.Error.WriteLine(powered);
 				Console.Error.WriteLine("");
 				Console.Error.WriteLine($"Error: The service component is invalid [{this.ServiceTypeName},{this.ServiceAssemblyName}]");
 				if (isUserInteractive)
@@ -213,11 +214,11 @@ namespace net.vieapps.Services.APIGateway
 
 			var logger = (service as IServiceComponent).Logger = Logger.CreateLogger(this.ServiceType);
 
-			// prepare the function to dispose the service when done
-			void disposeService(string message, bool available = true, bool disconnect = true)
+			// prepare the function to terminate the service when got signal
+			void terminate(string message, bool available = true, bool disconnect = true)
 			{
 				if (!service.Disposed)
-					service.Dispose(args, available, disconnect, _ =>
+					service.Dispose(args?.ToArray(), available, disconnect, _ =>
 					{
 						logger.LogInformation($"{message}");
 						Task.Delay(123).Wait();
@@ -225,10 +226,10 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// setup hooks
-			AppDomain.CurrentDomain.ProcessExit += (sender, arguments) => disposeService($"The service was terminated (by \"process exit\" signal) - Served times: {time.GetElapsedTimes()}", false);
+			AppDomain.CurrentDomain.ProcessExit += (sender, arguments) => terminate($"The service was terminated (by \"process exit\" signal) - Served times: {time.GetElapsedTimes()}", false);
 			Console.CancelKeyPress += (sender, arguments) =>
 			{
-				disposeService($"The service was terminated (by \"cancel key press\" signal) - Served times: {time.GetElapsedTimes()}", false);
+				terminate($"The service was terminated (by \"cancel key press\" signal) - Served times: {time.GetElapsedTimes()}", false);
 				Environment.Exit(0);
 			};
 
@@ -236,12 +237,12 @@ namespace net.vieapps.Services.APIGateway
 			logger.LogInformation($"The service is starting");
 			logger.LogInformation($"Service info: {service.ServiceName} - v{this.ServiceType.Assembly.GetVersion()}");
 			logger.LogInformation($"Working mode: {(isUserInteractive ? "Interactive app" : "Background service")}");
-			logger.LogInformation($"Starting arguments: {(args != null && args.Length > 0 ? args.Join(" ") : "None")}");
-			logger.LogInformation($"Environment:\r\n\t{Extensions.GetRuntimeEnvironment()}\r\n\t- Powered: {hostingInfo}");
+			logger.LogInformation($"Starting arguments: {(args != null && args.Count > 0 ? args.Join(" ") : "None")}");
+			logger.LogInformation($"Environment:\r\n\t{Extensions.GetRuntimeEnvironment()}\r\n\t- Powered: {powered}");
 
 			ServiceBase.ServiceComponent = service;
 			service.Start(
-				args,
+				args?.ToArray(),
 				"false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", "")) ? false : true,
 				_ =>
 				{
@@ -279,7 +280,7 @@ namespace net.vieapps.Services.APIGateway
 					logger.LogDebug(">>>>> Got \"exit\" command from API Gateway Controller ...............");
 			}
 
-			disposeService($"The service was terminated - Served times: {time.GetElapsedTimes()}");
+			terminate($"The service was terminated - Served times: {time.GetElapsedTimes()}");
 		}
 	}
 }

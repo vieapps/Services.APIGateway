@@ -59,13 +59,14 @@ namespace net.vieapps.Services.APIGateway
 		{
 			if (!this.Disposed)
 			{
+				GC.SuppressFinalize(this);
 				this.Disposed = true;
 				await (this.Instance != null ? this.Instance.DisposeAsync().AsTask() : Task.CompletedTask).ConfigureAwait(false);
 				this.Communicator?.Dispose();
 				this.RequestInfoTimer?.Dispose();
 				this.RTUService = null;
 				Global.OnProcess?.Invoke($"The API Gateway Manager was disposed");
-				GC.SuppressFinalize(this);
+				await Task.Delay(123).ConfigureAwait(false);
 			}
 		}
 

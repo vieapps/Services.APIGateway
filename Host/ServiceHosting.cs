@@ -214,19 +214,12 @@ namespace net.vieapps.Services.APIGateway
 
 			var logger = (service as IServiceComponent).Logger = Logger.CreateLogger(this.ServiceType);
 
-			// prepare the function to terminate the service when got signal
-			void terminate(string message, bool available = true, bool disconnect = true)
-			{
-				if (!service.Disposed)
-					service.Dispose(args?.ToArray(), available, disconnect, _ =>
-					{
-						logger.LogInformation($"{message}");
-						Task.Delay(123).Wait();
-					});
-			}
-
 			// setup hooks
+			void terminate(string message, bool available = true, bool disconnect = true)
+				=> (service.Disposed ? Task.CompletedTask : service.DisposeAsync(args?.ToArray(), available, disconnect, _ => logger.LogInformation(message)).AsTask()).ContinueWith(async _ => await Task.Delay(123).ConfigureAwait(false), TaskContinuationOptions.OnlyOnRanToCompletion).Wait();
+
 			AppDomain.CurrentDomain.ProcessExit += (sender, arguments) => terminate($"The service was terminated (by \"process exit\" signal) - Served times: {time.GetElapsedTimes()}", false);
+
 			Console.CancelKeyPress += (sender, arguments) =>
 			{
 				terminate($"The service was terminated (by \"cancel key press\" signal) - Served times: {time.GetElapsedTimes()}", false);

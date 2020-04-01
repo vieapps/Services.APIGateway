@@ -28,11 +28,11 @@ namespace net.vieapps.Services.APIGateway
 				message.SmtpUsername = MailSender.EmailSmtpUser;
 				message.SmtpPassword = MailSender.EmailSmtpUserPassword;
 			}
-			return EmailMessage.SaveAsync(message, MailSender.EmailsPath);
+			return EmailMessage.SaveAsync(message, MailSender.EmailsPath, cancellationToken);
 		}
 
 		public Task SendWebHookAsync(WebHookMessage message, CancellationToken cancellationToken = default)
-			=> WebHookMessage.SaveAsync(message, WebHookSender.WebHooksPath);
+			=> WebHookMessage.SaveAsync(message, WebHookSender.WebHooksPath, cancellationToken);
 	}
 
 	// -----------------------------------------------------------
@@ -146,20 +146,20 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Send messages
-		async Task SendMessageAsync(EmailMessage msg, int counter)
+		async Task SendMessageAsync(EmailMessage message, int counter)
 		{
 			try
 			{
-				await Task.Delay(100 + (counter * 10), this.CancellationTokenSource.Token);
-				await MessageService.SendMailAsync(msg.From, msg.ReplyTo, msg.To, msg.Cc, msg.Bcc, msg.Subject, msg.Body, msg.Attachment, msg.Priority, msg.IsHtmlFormat, Encoding.GetEncoding(msg.Encoding), msg.SmtpServer, msg.SmtpServerPort.ToString(), msg.SmtpUsername, msg.SmtpPassword, msg.SmtpServerEnableSsl, this.CancellationTokenSource.Token);
-				MailSender.Messages.Remove(msg.ID);
+				await Task.Delay(100 + (counter * 10), this.CancellationTokenSource.Token).ConfigureAwait(false);
+				await message.SendMessageAsync(this.CancellationTokenSource.Token).ConfigureAwait(false);
+				MailSender.Messages.Remove(message.ID);
 
 				Global.OnSendEmailSuccess?.Invoke(
 					"The email message has been sent" + "\r\n" +
-					$"- ID: {msg.ID}" + "\r\n" +
-					$"- From: {msg.From}" + "\r\n" +
-					$"- To: {msg.To}" + (!msg.Cc.Equals("") ? " / " + msg.Cc : "") + (!msg.Bcc.Equals("") ? " / " + msg.Bcc : "") + "\r\n" +
-					$"- Subject: {msg.Subject}"
+					$"- ID: {message.ID}" + "\r\n" +
+					$"- From: {message.From}" + "\r\n" +
+					$"- To: {message.To}" + (!message.Cc.Equals("") ? " / " + message.Cc : "") + (!message.Bcc.Equals("") ? " / " + message.Bcc : "") + "\r\n" +
+					$"- Subject: {message.Subject}"
 				);
 			}
 			catch (OperationCanceledException) { }
@@ -167,16 +167,16 @@ namespace net.vieapps.Services.APIGateway
 			{
 				var log =
 					"Error occurred while sending an email message" + "\r\n" +
-					$"- ID: {msg.ID}" + "\r\n" +
-					$"- From: {msg.From}" + "\r\n" +
-					$"- To: {msg.To}" + (!msg.Cc.Equals("") ? " / " + msg.Cc : "") + (!msg.Bcc.Equals("") ? " / " + msg.Bcc : "") + "\r\n" +
-					$"- Subject: {msg.Subject}" + "\r\n\r\n" +
+					$"- ID: {message.ID}" + "\r\n" +
+					$"- From: {message.From}" + "\r\n" +
+					$"- To: {message.To}" + (!message.Cc.Equals("") ? " / " + message.Cc : "") + (!message.Bcc.Equals("") ? " / " + message.Bcc : "") + "\r\n" +
+					$"- Subject: {message.Subject}" + "\r\n\r\n" +
 					$"- Error: {ex.Message} [{ex.GetType()}" + "\r\n\r\n";
 
-				var counters = MailSender.Messages[msg.ID].Counters;
+				var counters = MailSender.Messages[message.ID].Counters;
 				if (counters > 4)
 				{
-					MailSender.Messages.Remove(msg.ID);
+					MailSender.Messages.Remove(message.ID);
 					log += "- Status: Remove from queue because its failed too much times";
 				}
 				else
@@ -189,8 +189,8 @@ namespace net.vieapps.Services.APIGateway
 					else if (counters > 2)
 						time = DateTime.Now.AddMinutes(23 + ((counters - 2) * 3));
 
-					MailSender.Messages[msg.ID].Time = time;
-					MailSender.Messages[msg.ID].Counters = counters + 1;
+					MailSender.Messages[message.ID].Time = time;
+					MailSender.Messages[message.ID].Counters = counters + 1;
 
 					log += $"- Status: Update queue to re-send {time.ToDTString()}";
 				}
@@ -310,17 +310,16 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Send messages
-		async Task SendMessageAsync(WebHookMessage msg, Action<string> onSuccess = null, Action<string, Exception> onError = null)
+		async Task SendMessageAsync(WebHookMessage message, Action<string> onSuccess = null, Action<string, Exception> onError = null)
 		{
 			try
 			{
-				var query = string.Join("&", msg.Query.Select(info => info.Key + "=" + info.Value.UrlEncode()));
-				await UtilityService.GetWebResponseAsync("POST", msg.EndpointURL + (!query.Equals("") ? "?" + query : ""), msg.Header, null, msg.Body, "application/json", 45, UtilityService.DesktopUserAgent + " VIEApps NGX WebHook Sender", null, null, null, this.CancellationTokenSource.Token);
-				WebHookSender.Messages.Remove(msg.ID);
+				await message.SendMessageAsync(this.CancellationTokenSource.Token).ConfigureAwait(false);
+				WebHookSender.Messages.Remove(message.ID);
 
 				var log = "The web-hook message has been sent" + "\r\n" +
-					$"- ID: {msg.ID}" + "\r\n" +
-					$"- End-point: {msg.EndpointURL}";
+					$"- ID: {message.ID}" + "\r\n" +
+					$"- End-point: {message.EndpointURL}";
 				onSuccess?.Invoke(log);
 				Global.OnSendWebHookSuccess?.Invoke(log);
 			}
@@ -329,13 +328,13 @@ namespace net.vieapps.Services.APIGateway
 			{
 				var log =
 					"Error occurred while sending a web-hook message" + "\r\n" +
-					$"- ID: {msg.ID}" + "\r\n" +
-					$"- End-point: {msg.EndpointURL}" + "\r\n\r\n";
+					$"- ID: {message.ID}" + "\r\n" +
+					$"- End-point: {message.EndpointURL}" + "\r\n\r\n";
 
-				var counters = WebHookSender.Messages[msg.ID].Counters;
+				var counters = WebHookSender.Messages[message.ID].Counters;
 				if (counters > 4)
 				{
-					WebHookSender.Messages.Remove(msg.ID);
+					WebHookSender.Messages.Remove(message.ID);
 					log += "- Status: Remove from queue because its failed too much times";
 				}
 				else
@@ -348,8 +347,8 @@ namespace net.vieapps.Services.APIGateway
 					else if (counters > 2)
 						time = DateTime.Now.AddMinutes(23 + ((counters - 2) * 3));
 
-					WebHookSender.Messages[msg.ID].Time = time;
-					WebHookSender.Messages[msg.ID].Counters = counters + 1;
+					WebHookSender.Messages[message.ID].Time = time;
+					WebHookSender.Messages[message.ID].Counters = counters + 1;
 
 					log += $"- Status: Update queue to re-send {time.ToDTString()}";
 				}

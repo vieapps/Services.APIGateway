@@ -23,25 +23,39 @@ namespace net.vieapps.Services.APIGateway
 		{
 			this.OnIncomingConnectionEstablished = async (sender, args) =>
 			{
-				await (this.Instance != null ? this.Instance.DisposeAsync().AsTask() : Task.CompletedTask).ConfigureAwait(false);
-				this.Instance = await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(this, RegistrationInterceptor.Create()).ConfigureAwait(false);
+				try
+				{
+					await (this.Instance != null ? this.Instance.DisposeAsync().AsTask() : Task.CompletedTask).ConfigureAwait(false);
+					this.Instance = await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(this, RegistrationInterceptor.Create()).ConfigureAwait(false);
 
-				this.Communicator?.Dispose();
-				this.Communicator = Router.IncomingChannel.RealmProxy.Services
-					.GetSubject<CommunicateMessage>("messages.services.apigateway")
-					.Subscribe(
-						message => this.ProcessInterCommunicateMessage(message),
-						exception => Global.OnError?.Invoke($"Error occurred while fetching inter-communicate message: {exception.Message}", exception)
-					);
+					this.Communicator?.Dispose();
+					this.Communicator = Router.IncomingChannel.RealmProxy.Services
+						.GetSubject<CommunicateMessage>("messages.services.apigateway")
+						.Subscribe(
+							message => this.ProcessInterCommunicateMessage(message),
+							exception => Global.OnError?.Invoke($"Error occurred while fetching inter-communicate message => {exception.Message}", exception)
+						);
+				}
+				catch (Exception ex)
+				{
+					Global.OnError?.Invoke($"Error occurred while initializing the manager => {ex.Message}", ex);
+				}
 			};
 
 			this.OnOutgoingConnectionEstablished = async (sender, args) =>
 			{
-				while (Router.IncomingChannel == null || Router.OutgoingChannel == null)
-					await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
-				this.RTUService = Router.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create());
-				await this.SendRequestInfoAsync().ConfigureAwait(false);
-				Global.OnProcess?.Invoke($"Successfully subscribe the manager's communicator");
+				try
+				{
+					while (Router.IncomingChannel == null || Router.OutgoingChannel == null)
+						await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
+					this.RTUService = Router.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create());
+					await this.SendRequestInfoAsync().ConfigureAwait(false);
+					Global.OnProcess?.Invoke($"Successfully subscribe the manager's communicator");
+				}
+				catch (Exception ex)
+				{
+					Global.OnError?.Invoke($"Error occurred while sending the request info => {ex.Message}", ex);
+				}
 			};
 
 			this.RequestInfoInterval = Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:RequestInfo"), out var requestInterval) ? requestInterval : 15;
@@ -49,7 +63,14 @@ namespace net.vieapps.Services.APIGateway
 			{
 				if ((DateTime.Now - this.RequestTime).TotalMinutes >= this.RequestInfoInterval - 2)
 				{
-					await this.SendRequestInfoAsync().ConfigureAwait(false);
+					try
+					{
+						await this.SendRequestInfoAsync().ConfigureAwait(false);
+					}
+					catch (Exception ex)
+					{
+						Global.OnError?.Invoke($"Error occurred while sending the request info => {ex.Message}", ex);
+					}
 					this.RequestTime = DateTime.Now;
 				}
 			});

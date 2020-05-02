@@ -155,7 +155,7 @@ namespace net.vieapps.Services.APIGateway
 			if (useEventWaitHandle)
 			{
 				// get the flag of the existing instance
-				var name = $"{service.ServiceURI}#{args.Where(arg => !arg.IsStartsWith("/agc:") && !arg.IsStartsWith("/controller-id:")).Join("#").GenerateUUID()}";
+				var name = $"{service.ServiceURI}#{args.Where(arg => arg.IsStartsWith("/run-")).Join("#").GenerateUUID()}";
 				eventWaitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, name, out var createdNew);
 
 				// process the call to stop
@@ -231,7 +231,6 @@ namespace net.vieapps.Services.APIGateway
 			logger.LogInformation($"Service info: {service.ServiceName} - v{this.ServiceType.Assembly.GetVersion()}");
 			logger.LogInformation($"Working mode: {(isUserInteractive ? "Interactive app" : "Background service")}");
 			logger.LogInformation($"Starting arguments: {(args != null && args.Count > 0 ? args.Join(" ") : "None")}");
-			logger.LogInformation($"Environment:\r\n\t{Extensions.GetRuntimeEnvironment()}\r\n\t- Powered: {powered}");
 
 			ServiceBase.ServiceComponent = service;
 			service.Start(
@@ -250,6 +249,7 @@ namespace net.vieapps.Services.APIGateway
 					logger.LogInformation($"Logging level: {logLevel} - Local rolling log files is {(string.IsNullOrWhiteSpace(logPath) ? "disabled" : $"enabled => {logPath}")}");
 					logger.LogInformation($"Show debugs: {service.IsDebugLogEnabled} - Show results: {service.IsDebugResultsEnabled} - Show stacks: {service.IsDebugStacksEnabled}");
 					logger.LogInformation($"Service URIs:\r\n\t- Round robin: {service.ServiceURI}\r\n\t- Single (unique): {service.ServiceUniqueURI}");
+					logger.LogInformation($"Environment:\r\n\t{Extensions.GetRuntimeEnvironment()}\r\n\t- Node ID: {service.NodeID}\r\n\t- Powered: {powered}");
 
 					stopwatch.Stop();
 					logger.LogInformation($"The service was started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");

@@ -968,7 +968,7 @@ namespace net.vieapps.Services.APIGateway
 
 		public static RequestInfo PrepareDefinitionRelated(this RequestInfo requestInfo)
 		{
-			if (!requestInfo.Query.ContainsKey("x-service-name") && !requestInfo.Query.ContainsKey("x-object-name"))
+			if (!requestInfo.Query.ContainsKey("x-service-name") || !requestInfo.Query.ContainsKey("x-object-name"))
 				throw new InvalidRequestException("URI format: /discovery/definitions?x-service-name=<Service Name>&x-object-name=<Object Name>&x-object-identity=<Definition Name>");
 
 			requestInfo.ServiceName = requestInfo.Query["service-name"] = requestInfo.Query["x-service-name"];

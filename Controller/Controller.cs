@@ -173,23 +173,24 @@ namespace net.vieapps.Services.APIGateway
 			this.IsUserInteractive = Environment.UserInteractive && args?.FirstOrDefault(a => a.StartsWith("/daemon")) == null;
 
 			var mode = this.IsUserInteractive ? "Interactive app" : "Background service";
+			var runtimeArguments = Extensions.GetRuntimeArguments();
 			this.Info = new ControllerInfo
 			{
-				ID = $"{Environment.UserName}-{Environment.MachineName}-".ToLower() + $"{Extensions.GetRuntimePlatform()}{mode}".ToLower().GenerateUUID(),
-				User = Environment.UserName.ToLower(),
-				Host = Environment.MachineName.ToLower(),
+				ID = $"{runtimeArguments.Item1}-{runtimeArguments.Item2}-".ToLower() + $"{runtimeArguments.Item3}{runtimeArguments.Item4}{mode}".ToLower().GenerateUUID(),
+				User = runtimeArguments.Item1,
+				Host = runtimeArguments.Item2,
 				Platform = $"{Extensions.GetRuntimePlatform()}",
 				Mode = mode,
 				Available = true
 			};
 
-			if (args?.FirstOrDefault(a => a.StartsWith("/no-helper-services")) != null)
+			if (args?.FirstOrDefault(arg => arg.StartsWith("/no-helper-services")) != null)
 				this.AllowRegisterHelperServices = false;
 
-			if (args?.FirstOrDefault(a => a.StartsWith("/no-helper-timers")) != null)
+			if (args?.FirstOrDefault(arg => arg.StartsWith("/no-helper-timers")) != null)
 				this.AllowRegisterHelperTimers = false;
 
-			if (args?.FirstOrDefault(a => a.StartsWith("/no-business-services")) != null)
+			if (args?.FirstOrDefault(arg => arg.StartsWith("/no-business-services")) != null)
 				this.AllowRegisterBusinessServices = false;
 
 			// prepare directories
@@ -288,7 +289,7 @@ namespace net.vieapps.Services.APIGateway
 							this.InterCommunicator = Router.IncomingChannel.RealmProxy.Services
 								.GetSubject<CommunicateMessage>("messages.services.apigateway")
 								.Subscribe(
-									async message => await this.ProcessInterCommunicateMessageAsync(message).ConfigureAwait(false),
+									async message => await (this.Info.ID.IsEquals(message.ExcludedNodeID) ? Task.CompletedTask : this.ProcessInterCommunicateMessageAsync(message)).ConfigureAwait(false),
 									exception => Global.OnError?.Invoke($"Error occurred while fetching an inter-communicate message of API Gateway => {exception.Message}", this.State == ServiceState.Connected ? exception : null)
 								);
 							Global.OnProcess?.Invoke($"The communicator of API Gateway was{(this.State == ServiceState.Disconnected ? " re-" : " ")}subscribed successful");
@@ -800,7 +801,10 @@ namespace net.vieapps.Services.APIGateway
 		/// </summary>
 		/// <returns></returns>
 		public string GetServiceArguments()
-			=> $"/user:{Environment.UserName.ToLower().UrlEncode()} /host:{Environment.MachineName.ToLower().UrlEncode()} /platform:{RuntimeInformation.FrameworkDescription.UrlEncode()} /os:{Extensions.GetRuntimePlatform(false).UrlEncode()}";
+		{
+			var runtimeArguments = Extensions.GetRuntimeArguments();
+			return $"/user:{runtimeArguments.Item1.UrlEncode()} /host:{runtimeArguments.Item2.UrlEncode()} /platform:{runtimeArguments.Item3.UrlEncode()} /os:{runtimeArguments.Item4.UrlEncode()}";
+		}
 
 		/// <summary>
 		/// Starts a business service
@@ -1350,13 +1354,15 @@ namespace net.vieapps.Services.APIGateway
 				case "Service#RequestInfo":
 					if (this.AllowRegisterBusinessServices)
 					{
-						var args = this.GetServiceArguments().Replace("/", "/call-").ToArray(' ');
-						var osPlatform = Extensions.GetRuntimeOS();
+						var args = this.GetServiceArguments().Replace("/", "/run-").ToArray(' ');
+						var os = Extensions.GetRuntimeOS();
+						var platform = Extensions.GetRuntimePlatform();
 						await Task.WhenAll(this.AvailableBusinessServices.Select(kvp => this.SendServiceInfoAsync(kvp.Key, kvp.Value.Instance?.Arguments, "Error".IsEquals(this.BusinessServices[kvp.Key]?.Get<string>("State")) ? false : true, kvp.Value.Instance != null))
 							.Concat(this.BusinessServices.Select(kvp => this.SendInterCommunicateMessageAsync($"Service#UniqueInfo#{kvp.Key}", new JObject
 							{
-								{ "OSPlatform", osPlatform },
-								{ "Name", Extensions.GetUniqueName(kvp.Key, args) }
+								{ "Name", Extensions.GetUniqueName(kvp.Key, args) },
+								{ "OS", os },
+								{ "Platform", platform }
 							})))
 						).ConfigureAwait(false);
 					}
@@ -1369,8 +1375,9 @@ namespace net.vieapps.Services.APIGateway
 						if (this.AvailableBusinessServices.Keys.FirstOrDefault(n => n.Equals(name)) != null)
 							await this.SendInterCommunicateMessageAsync($"Service#UniqueInfo#{name}", new JObject
 							{
-								{ "OSPlatform", Extensions.GetRuntimeOS() },
-								{ "Name", Extensions.GetUniqueName(name, this.GetServiceArguments().Replace("/", "/call-").ToArray(' ')) }
+								{ "Name", Extensions.GetUniqueName(name, this.GetServiceArguments().Replace("/", "/run-").ToArray(' ')) },
+								{ "OS", Extensions.GetRuntimeOS() },
+								{ "Platform", Extensions.GetRuntimePlatform() }
 							}).ConfigureAwait(false);
 					}
 					break;
@@ -1397,34 +1404,20 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		Task SendServiceInfoAsync(string name, string args, bool available, bool running)
-		{
-			var arguments = (args?.ToArray(' ') ?? new string[] { }).Where(arg => !arg.IsStartsWith("/controller-id:")).ToArray();
-			var invokeInfo = arguments.FirstOrDefault(a => a.IsStartsWith("/call-user:")) ?? "";
-
-			if (!string.IsNullOrWhiteSpace(invokeInfo))
-			{
-				invokeInfo = invokeInfo.Replace(StringComparison.OrdinalIgnoreCase, "/call-user:", "").UrlDecode();
-				var host = arguments.FirstOrDefault(a => a.IsStartsWith("/call-host:"));
-				var platform = arguments.FirstOrDefault(a => a.IsStartsWith("/call-platform:"));
-				var os = arguments.FirstOrDefault(a => a.IsStartsWith("/call-os:"));
-				if (!string.IsNullOrWhiteSpace(host) && !string.IsNullOrWhiteSpace(platform) && !string.IsNullOrWhiteSpace(os))
-					invokeInfo += $" [Host: {host.Replace(StringComparison.OrdinalIgnoreCase, "/call-host:", "").UrlDecode()} - Platform: {platform.Replace(StringComparison.OrdinalIgnoreCase, "/call-platform:", "").UrlDecode()} @ {os.Replace(StringComparison.OrdinalIgnoreCase, "/call-os:", "").UrlDecode()}]";
-			}
-
-			return this.SendInterCommunicateMessageAsync(
+			=> this.SendInterCommunicateMessageAsync
+			(
 				"Service#Info",
 				new ServiceInfo
 				{
 					Name = name,
-					UniqueName = Extensions.GetUniqueName(name, arguments),
+					UniqueName = Extensions.GetUniqueName(name, args?.ToArray(' ')),
 					ControllerID = this.Info.ID,
-					InvokeInfo = invokeInfo,
+					InvokeInfo = Extensions.GetInvokeInfo(args?.ToArray(' ')),
 					Available = available,
 					Running = running
 				}.ToJson(),
 				this.CancellationTokenSource.Token
 			);
-		}
 
 		void SendServiceInfo(string name, string args, bool available, bool running)
 			=> Task.Run(() => this.SendServiceInfoAsync(name, args, available, running)).ConfigureAwait(false);

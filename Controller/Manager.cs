@@ -148,7 +148,7 @@ namespace net.vieapps.Services.APIGateway
 
 		bool IsBusinessServiceAvailable(string controllerID, string name)
 		{
-			if (this.Services.TryGetValue(name, out List<ServiceInfo> services))
+			if (this.Services.TryGetValue(name, out var services))
 			{
 				var svcInfo = services.FirstOrDefault(svc => svc.ControllerID.Equals(controllerID) && svc.Name.Equals(name));
 				return svcInfo != null && svcInfo.Available;
@@ -208,9 +208,8 @@ namespace net.vieapps.Services.APIGateway
 			if (this.RTUService == null)
 				return;
 
-			var message = new CommunicateMessage
+			var message = new CommunicateMessage("APIGateway")
 			{
-				ServiceName = "APIGateway",
 				Type = type,
 				Data = data ?? new JObject()
 			};
@@ -291,7 +290,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				var serviceInfo = message.Data.FromJson<ServiceInfo>();
 
-				if (!this.Services.TryGetValue(serviceInfo.Name.ToLower(), out List<ServiceInfo> services))
+				if (!this.Services.TryGetValue(serviceInfo.Name.ToLower(), out var services))
 				{
 					services = new List<ServiceInfo>();
 					this.Services.TryAdd(serviceInfo.Name.ToLower(), services);

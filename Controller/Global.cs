@@ -159,9 +159,5 @@ namespace net.vieapps.Services.APIGateway
 
 	[Serializable]
 	[Repository]
-	public abstract class Repository<T> : RepositoryBase<T> where T : class
-	{
-		[Newtonsoft.Json.JsonIgnore, System.Xml.Serialization.XmlIgnore, MongoDB.Bson.Serialization.Attributes.BsonIgnore, Ignore]
-		public override string ServiceName => "APIGateway";
-	}
+	public abstract class Repository<T> : RepositoryBase<T> where T : class { }
 }

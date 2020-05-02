@@ -232,7 +232,7 @@ namespace net.vieapps.Services.APIGateway
 		public override string RepositoryID { get; set; }
 
 		[JsonIgnore, BsonIgnore, Ignore]
-		public override string EntityID { get; set; }
+		public override string RepositoryEntityID { get; set; }
 
 		[JsonIgnore, BsonIgnore, Ignore]
 		public override Privileges OriginalPrivileges { get; set; }

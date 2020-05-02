@@ -374,7 +374,7 @@ namespace net.vieapps.Services.APIGateway
 				// update the session with new users' privileges => new access token
 				else if (message.Type.IsEquals("Session#Update"))
 				{
-					session.User = message.Data["User"] == null ? session.User : message.Data.Get<JObject>("User").Copy<User>();
+					session.User = message.Data.Get<JObject>("User")?.Copy<User>() ?? session.User;
 					session.Verified = message.Data.Get<bool>("Verified");
 					await websocket.SendAsync(new UpdateMessage
 					{
@@ -593,7 +593,7 @@ namespace net.vieapps.Services.APIGateway
 				// send the response as an update message
 				await websocket.SendAsync(new UpdateMessage
 				{
-					Type = serviceName.GetCapitalizedFirstLetter() + (string.IsNullOrWhiteSpace(objectName) ? "" : "#" + objectName.GetCapitalizedFirstLetter() + "#" + (!string.IsNullOrWhiteSpace(objectIdentity) && !objectIdentity.IsValidUUID() ? objectIdentity : verb).GetCapitalizedFirstLetter()),
+					Type = serviceName.GetCapitalizedFirstLetter() + (string.IsNullOrWhiteSpace(objectName) ? "" : "#" + objectName.ToList(".", false, false).Select(e => e.GetCapitalizedFirstLetter()).Join(".") + "#" + (!string.IsNullOrWhiteSpace(objectIdentity) && !objectIdentity.IsValidUUID() ? objectIdentity : verb).GetCapitalizedFirstLetter()),
 					Data = response
 				}, requestObj.Get<string>("ID")).ConfigureAwait(false);
 			}

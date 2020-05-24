@@ -41,8 +41,8 @@ namespace net.vieapps.Services.APIGateway
 			var queryString = context.Request.QueryString.ToDictionary(query =>
 			{
 				var pathSegments = context.GetRequestPathSegments();
-				query["service-name"] = pathSegments.Length > 0 && !string.IsNullOrWhiteSpace(pathSegments[0]) ? pathSegments[0].GetANSIUri() : "";
-				query["object-name"] = pathSegments.Length > 1 && !string.IsNullOrWhiteSpace(pathSegments[1]) ? pathSegments[1].GetANSIUri() : "";
+				query["service-name"] = pathSegments.Length > 0 && !string.IsNullOrWhiteSpace(pathSegments[0]) ? pathSegments[0].GetANSIUri(true, true) : "";
+				query["object-name"] = pathSegments.Length > 1 && !string.IsNullOrWhiteSpace(pathSegments[1]) ? pathSegments[1].GetANSIUri(true, true) : "";
 				query["object-identity"] = pathSegments.Length > 2 && !string.IsNullOrWhiteSpace(pathSegments[2]) ? pathSegments[2].GetANSIUri() : "";
 			});
 			var extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -57,8 +57,8 @@ namespace net.vieapps.Services.APIGateway
 			{
 				Session = context.GetSession(),
 				Verb = context.Request.Method,
-				ServiceName = queryString["service-name"],
-				ObjectName = queryString["object-name"],
+				ServiceName = queryString["service-name"].GetCapitalizedFirstLetter(),
+				ObjectName = queryString["object-name"].GetCapitalizedFirstLetter(),
 				Query = queryString,
 				Header = context.Request.Headers.ToDictionary(dictionary => InternalAPIs.ExcludedHeaders.ForEach(name => dictionary.Remove(name))),
 				Extra = extra,
@@ -104,7 +104,7 @@ namespace net.vieapps.Services.APIGateway
 
 				if (!string.IsNullOrWhiteSpace(authenticateToken))
 				{
-					await context.UpdateWithAuthenticateTokenAsync(requestInfo.Session, authenticateToken, null, null, null, InternalAPIs.Logger, "Http.InternalAPIs", requestInfo.CorrelationID).ConfigureAwait(false);
+					await context.UpdateWithAuthenticateTokenAsync(requestInfo.Session, authenticateToken, 0, null, null, null, InternalAPIs.Logger, "Http.InternalAPIs", requestInfo.CorrelationID).ConfigureAwait(false);
 					context.SetSession(requestInfo.Session);
 				}
 				else if (tokenIsRequired)

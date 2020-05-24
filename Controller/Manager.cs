@@ -25,7 +25,11 @@ namespace net.vieapps.Services.APIGateway
 			{
 				try
 				{
-					await (this.Instance != null ? this.Instance.DisposeAsync().AsTask() : Task.CompletedTask).ConfigureAwait(false);
+					try
+					{
+						await (this.Instance != null ? this.Instance.DisposeAsync().AsTask() : Task.CompletedTask).ConfigureAwait(false);
+					}
+					catch { }
 					this.Instance = await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(this, RegistrationInterceptor.Create()).ConfigureAwait(false);
 
 					this.Communicator?.Dispose();
@@ -82,7 +86,18 @@ namespace net.vieapps.Services.APIGateway
 			{
 				GC.SuppressFinalize(this);
 				this.Disposed = true;
-				await (this.Instance != null ? this.Instance.DisposeAsync().AsTask() : Task.CompletedTask).ConfigureAwait(false);
+				try
+				{
+					await (this.Instance != null ? this.Instance.DisposeAsync().AsTask() : Task.CompletedTask).ConfigureAwait(false);
+				}
+				catch (Exception ex)
+				{
+					Global.OnError?.Invoke($"Error occurred while disposing the manager => {ex.Message}", ex);
+				}
+				finally
+				{
+					this.Instance = null;
+				}
 				this.Communicator?.Dispose();
 				this.RequestInfoTimer?.Dispose();
 				this.RTUService = null;

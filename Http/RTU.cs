@@ -356,7 +356,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					var authenticateToken = message.Data.Get<string>("AuthenticateToken");
 					var encryptedSessionID = message.Data.Get<string>("EncryptedID");
-					await Global.UpdateWithAuthenticateTokenAsync(session, authenticateToken, null, null, null, RTU.Logger, "Http.InternalAPIs", correlationID).ConfigureAwait(false);
+					await Global.UpdateWithAuthenticateTokenAsync(session, authenticateToken, 0, null, null, null, RTU.Logger, "Http.InternalAPIs", correlationID).ConfigureAwait(false);
 					if (!await session.IsSessionExistAsync(RTU.Logger, "Http.InternalAPIs", correlationID).ConfigureAwait(false))
 						throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 					else if (!session.SessionID.Equals(session.GetDecryptedID(encryptedSessionID, Global.EncryptionKey, Global.ValidationKey)))
@@ -442,7 +442,7 @@ namespace net.vieapps.Services.APIGateway
 					// authenticate
 					var body = requestObj.Get("Body")?.ToExpandoObject();
 					var appToken = body?.Get<string>("x-app-token");
-					await Global.UpdateWithAuthenticateTokenAsync(session, appToken, null, null, null, RTU.Logger, "Http.InternalAPIs", correlationID).ConfigureAwait(false);
+					await Global.UpdateWithAuthenticateTokenAsync(session, appToken, 0, null, null, null, RTU.Logger, "Http.InternalAPIs", correlationID).ConfigureAwait(false);
 					if (!await session.IsSessionExistAsync(RTU.Logger, "Http.InternalAPIs", correlationID).ConfigureAwait(false))
 						throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 
@@ -516,8 +516,8 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				// prepare the requesting information
-				var serviceName = requestObj.Get("ServiceName", "");
-				var objectName = requestObj.Get("ObjectName", "");
+				var serviceName = requestObj.Get("ServiceName", "").GetANSIUri(true, true);
+				var objectName = requestObj.Get("ObjectName", "").GetANSIUri(true, true);
 				var verb = requestObj.Get("Verb", "GET").ToUpper();
 				var query = new Dictionary<string, string>(requestObj.Get("Query", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase);
 				query.TryGetValue("object-identity", out string objectIdentity);
@@ -533,8 +533,8 @@ namespace net.vieapps.Services.APIGateway
 				var requestInfo = new RequestInfo
 				{
 					Session = session,
-					ServiceName = serviceName,
-					ObjectName = objectName,
+					ServiceName = serviceName.GetCapitalizedFirstLetter(),
+					ObjectName = objectName.GetCapitalizedFirstLetter(),
 					Verb = verb,
 					Query = query,
 					Header = header,
@@ -593,7 +593,7 @@ namespace net.vieapps.Services.APIGateway
 				// send the response as an update message
 				await websocket.SendAsync(new UpdateMessage
 				{
-					Type = serviceName.GetCapitalizedFirstLetter() + (string.IsNullOrWhiteSpace(objectName) ? "" : "#" + objectName.ToList(".", false, false).Select(e => e.GetCapitalizedFirstLetter()).Join(".") + "#" + (!string.IsNullOrWhiteSpace(objectIdentity) && !objectIdentity.IsValidUUID() ? objectIdentity : verb).GetCapitalizedFirstLetter()),
+					Type = serviceName.GetCapitalizedFirstLetter() + (string.IsNullOrWhiteSpace(objectName) ? "" : "#" + objectName.GetCapitalizedFirstLetter() + "#" + (!string.IsNullOrWhiteSpace(objectIdentity) && !objectIdentity.IsValidUUID() ? objectIdentity : verb).GetCapitalizedFirstLetter()),
 					Data = response
 				}, requestObj.Get<string>("ID")).ConfigureAwait(false);
 			}

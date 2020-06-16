@@ -147,12 +147,28 @@ namespace net.vieapps.Services.APIGateway
 
 		static async Task WhenMessageIsReceivedAsync(this ManagedWebSocket websocket, WebSocketReceiveResult result, byte[] data)
 		{
-			// prepare
+			// receive continuous messages
+			object message;
+			if (!result.EndOfMessage)
+			{
+				websocket.Extra["Message"] = websocket.Extra.TryGetValue("Message", out message) ? (message as byte[]).Concat(data) : data;
+				return;
+			}
+
+			// last message or single small message
 			var stopwatch = Stopwatch.StartNew();
 			var correlationID = UtilityService.NewUUID;
 
+			if (websocket.Extra.TryGetValue("Message", out message))
+			{
+				message = (message as byte[]).Concat(data);
+				websocket.Extra.Remove("Message");
+			}
+			else
+				message = data;
+
 			// check message
-			var requestMsg = result.MessageType.Equals(WebSocketMessageType.Text) ? data.GetString() : null;
+			var requestMsg = result.MessageType.Equals(WebSocketMessageType.Text) ? (message as byte[]).GetString() : null;
 			if (string.IsNullOrWhiteSpace(requestMsg))
 				return;
 

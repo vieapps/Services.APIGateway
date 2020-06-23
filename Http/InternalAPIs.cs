@@ -24,7 +24,7 @@ namespace net.vieapps.Services.APIGateway
 		#region Properties
 		public static ILogger Logger { get; set; }
 
-		public static List<string> ExcludedHeaders { get; } = UtilityService.GetAppSetting("ExcludedHeaders", "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,ms-aspnetcore-token,x-forwarded-for,x-forwarded-proto,x-forwarded-port,x-original-for,x-original-proto,x-original-remote-endpoint,x-original-port,cdn-loop,cf-ipcountry,cf-ray,cf-visitor,cf-connecting-ip,sec-fetch-site,sec-fetch-mode,sec-fetch-dest,sec-fetch-user").ToList();
+		public static List<string> ExcludedHeaders { get; } = UtilityService.GetAppSetting("ExcludedHeaders", "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,purpose,ms-aspnetcore-token,x-forwarded-for,x-forwarded-proto,x-forwarded-port,x-original-for,x-original-proto,x-original-remote-endpoint,x-original-port,cdn-loop,cf-ipcountry,cf-ray,cf-visitor,cf-connecting-ip,sec-fetch-site,sec-fetch-mode,sec-fetch-dest,sec-fetch-user").ToList();
 
 		public static HashSet<string> NoTokenRequiredServices { get; } = $"{UtilityService.GetAppSetting("NoTokenRequiredServices", "")}|indexes|discovery|webhooks".ToLower().ToHashSet('|', true);
 
@@ -272,21 +272,25 @@ namespace net.vieapps.Services.APIGateway
 		public static async Task SendSessionStateAsync(this Session session, bool isOnline, string correlationID = null)
 		{
 			if (!string.IsNullOrWhiteSpace(session.User.ID))
-				await new UpdateMessage
+				try
 				{
-					Type = "Users#Session#State",
-					DeviceID = "*",
-					Data = new JObject
+					await new UpdateMessage
 					{
-						{ "SessionID", session.GetEncryptedID(session.SessionID) },
-						{ "UserID", session.User.ID },
-						{ "DeviceID", session.DeviceID },
-						{ "AppName", session.AppName },
-						{ "AppPlatform", session.AppPlatform },
-						{ "Location", await session.GetLocationAsync(correlationID, Global.CancellationTokenSource.Token).ConfigureAwait(false) },
-						{ "IsOnline", isOnline }
-					}
-				}.PublishAsync(RTU.Logger, "Http.InternalAPIs").ConfigureAwait(false);
+						Type = "Users#Session#State",
+						DeviceID = "*",
+						Data = new JObject
+						{
+							{ "SessionID", session.GetEncryptedID(session.SessionID) },
+							{ "UserID", session.User.ID },
+							{ "DeviceID", session.DeviceID },
+							{ "AppName", session.AppName },
+							{ "AppPlatform", session.AppPlatform },
+							{ "Location", await session.GetLocationAsync(correlationID, Global.CancellationTokenSource.Token).ConfigureAwait(false) },
+							{ "IsOnline", isOnline }
+						}
+					}.PublishAsync(RTU.Logger, "Http.InternalAPIs").ConfigureAwait(false);
+				}
+				catch { }
 		}
 		#endregion
 

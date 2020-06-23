@@ -41,10 +41,10 @@ namespace net.vieapps.Services.APIGateway
 			// request of HTTP
 			else
 			{
-				// CORS: allow origin
+				// CORS policy => allow origin
 				context.Response.Headers["Access-Control-Allow-Origin"] = "*";
 
-				// CORS: options
+				// CORS options
 				if (context.Request.Method.IsEquals("OPTIONS"))
 				{
 					var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -53,7 +53,8 @@ namespace net.vieapps.Services.APIGateway
 					};
 					if (context.Request.Headers.TryGetValue("Access-Control-Request-Headers", out var requestHeaders))
 						headers["Access-Control-Allow-Headers"] = requestHeaders;
-					context.SetResponseHeaders((int)HttpStatusCode.OK, headers, true);
+					context.SetResponseHeaders((int)HttpStatusCode.OK, headers);
+					await context.FlushAsync(Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				}
 
 				// load balancing health check

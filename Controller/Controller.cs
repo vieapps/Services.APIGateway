@@ -253,6 +253,9 @@ namespace net.vieapps.Services.APIGateway
 			Global.OnProcess?.Invoke($"Environment:\r\n\t{Extensions.GetRuntimeEnvironment()}");
 			Global.OnProcess?.Invoke($"API Gateway Router: {new Uri(Router.GetRouterStrInfo()).GetResolvedURI()}");
 			Global.OnProcess?.Invoke($"Working directory: {this.WorkingDirectory}");
+			Global.OnProcess?.Invoke($"Temporary directory: {UtilityService.GetAppSetting("Path:Temp", "None")}");
+			Global.OnProcess?.Invoke($"Static files directory: {UtilityService.GetAppSetting("Path:StaticFiles", "None")}");
+			Global.OnProcess?.Invoke($"Status files directory: {UtilityService.GetAppSetting("Path:Status", "None")}");
 			Global.OnProcess?.Invoke($"Number of business services: {this.BusinessServices.Count}");
 			Global.OnProcess?.Invoke($"Number of scheduling tasks: {this.Tasks.Count}");
 
@@ -262,6 +265,29 @@ namespace net.vieapps.Services.APIGateway
 			// prepare logging service
 			if (this.AllowRegisterHelperServices)
 				this.LoggingService = new LoggingService(this.CancellationTokenSource.Token);
+
+			// generate new encryption keys
+			if (args?.FirstOrDefault(arg => arg.StartsWith("/generate-keys")) != null)
+			{
+				var directoryPath = Global.GetPath("Path:Temp", "temp", false);
+				if (Directory.Exists(directoryPath))
+				{
+					var keys = new List<string>();
+					for (var counter = 0; counter < 10; counter++)
+					{
+						using (var rsa = System.Security.Cryptography.RSA.Create())
+						{
+							rsa.KeySize = 2048;
+							keys.Add("RSA: " + rsa.ExportJsonParameters(true).Encrypt());
+						}
+						keys.Add("ECC: " + CryptoService.GenerateRandomKey().Encrypt().ToBase64());
+						keys.Add("-----------------------------------------------------------------------");
+					}
+					var filePath = Path.Combine(directoryPath, "encryption-keys.txt");
+					Global.OnProcess?.Invoke($"New encryption keys were generated => {filePath}");
+					UtilityService.WriteTextFile(filePath, keys, false);
+				}
+			}
 
 			// connect to API Gateway Router
 			var attemptingCounter = 0;
@@ -835,7 +861,7 @@ namespace net.vieapps.Services.APIGateway
 
 				this.BusinessServices[name].Instance = ExternalProcess.Start(
 					serviceHosting,
-					$"/svc:{this.BusinessServices[name].Arguments} /agc:r {this.GetServiceArguments().Replace("/", "/run-")} {arguments ?? ""} /controller-id:{this.Info.ID}".Trim(),
+					$"/svc:{this.BusinessServices[name].Arguments} /agc:r {this.GetServiceArguments().Replace("/", "/call-")} {arguments ?? ""} /controller-id:{this.Info.ID}".Trim(),
 					(sender, args) =>
 					{
 						this.BusinessServices[name].Instance = null;

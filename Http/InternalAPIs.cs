@@ -2,11 +2,12 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Dynamic;
+using System.Diagnostics;
+using System.Reactive.Subjects;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
-using System.Reactive.Subjects;
-using System.Dynamic;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
@@ -137,24 +138,24 @@ namespace net.vieapps.Services.APIGateway
 				requestInfo.Session.SessionID = requestInfo.Session.User.SessionID = UtilityService.NewUUID;
 
 			// request body
-			if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT"))
+			if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT") || requestInfo.Verb.IsEquals("PATCH"))
 				try
 				{
 					requestInfo.Body = await context.ReadTextAsync(Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
-					await context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", "Error occurred while parsing body of the request", ex).ConfigureAwait(false);
+					await context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", $"Error occurred while parsing body of the request => {ex.Message}", ex).ConfigureAwait(false);
 				}
 
-			else if (requestInfo.Verb.IsEquals("GET") && requestInfo.Query.ContainsKey("x-body"))
+			else if (requestInfo.Verb.IsEquals("GET") && requestInfo.Query.Remove("x-body", out var bodyInfo))
 				try
 				{
-					requestInfo.Body = requestInfo.Query["x-body"].Url64Decode();
+					requestInfo.Body = bodyInfo.Url64Decode();
 				}
 				catch (Exception ex)
 				{
-					await context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", "Error occurred while parsing body of the 'x-body' parameter", ex).ConfigureAwait(false);
+					await context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", $"Error occurred while parsing body of the 'x-body' parameter => {ex.Message}", ex).ConfigureAwait(false);
 				}
 			#endregion
 
@@ -242,24 +243,32 @@ namespace net.vieapps.Services.APIGateway
 					// prepare signature when work with accounts
 					if (isAccountProccessed)
 					{
-						if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT"))
-							requestInfo.Extra["Signature"] = requestInfo.Body.GetHMACSHA256(Global.ValidationKey);
-						else if (requestInfo.Header.TryGetValue("x-app-token", out var authenticateToken))
-							requestInfo.Extra["Signature"] = authenticateToken.GetHMACSHA256(Global.ValidationKey);
+						if (!requestInfo.Extra.ContainsKey("Signature"))
+						{
+							if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT"))
+								requestInfo.Extra["Signature"] = requestInfo.Body.GetHMACSHA256(Global.ValidationKey);
+							else if (requestInfo.Header.TryGetValue("x-app-token", out var authenticateToken))
+								requestInfo.Extra["Signature"] = authenticateToken.GetHMACSHA256(Global.ValidationKey);
+						}
 					}
 
 					// prepare signature when work with files
 					else if (requestInfo.ServiceName.IsEquals("files"))
 					{
-						if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT"))
-							requestInfo.Extra["Signature"] = requestInfo.Body.GetHMACSHA256(Global.ValidationKey);
-						else if (requestInfo.Header.TryGetValue("x-app-token", out var authenticateToken))
-							requestInfo.Extra["Signature"] = authenticateToken.GetHMACSHA256(Global.ValidationKey);
-						requestInfo.Extra["SessionID"] = requestInfo.Session.SessionID.GetHMACBLAKE256(Global.ValidationKey);
+						if (!requestInfo.Extra.ContainsKey("Signature"))
+						{
+							if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT"))
+								requestInfo.Extra["Signature"] = requestInfo.Body.GetHMACSHA256(Global.ValidationKey);
+							else if (requestInfo.Header.TryGetValue("x-app-token", out var authenticateToken))
+								requestInfo.Extra["Signature"] = authenticateToken.GetHMACSHA256(Global.ValidationKey);
+							requestInfo.Extra["SessionID"] = requestInfo.Session.SessionID.GetHMACBLAKE256(Global.ValidationKey);
+						}
 					}
 
-					// call the service
-					var response = await context.CallServiceAsync(requestInfo, Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
+					// process the request
+					var response = requestInfo.Verb.IsEquals("PATCH")
+						? await context.SyncAsync(requestInfo).ConfigureAwait(false)
+						: await context.CallServiceAsync(requestInfo, Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
 					await context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 				}
 				catch (Exception ex)
@@ -473,7 +482,6 @@ namespace net.vieapps.Services.APIGateway
 				// call service to perform sign in
 				var body = new JObject
 				{
-					{ "Type", requestInfo.GetBodyExpando().Get("Type", "BuiltIn") },
 					{ "Email", requestInfo.Extra["Email"] },
 					{ "Password", requestInfo.Extra["Password"] },
 				}.ToString(Formatting.None);
@@ -491,9 +499,7 @@ namespace net.vieapps.Services.APIGateway
 				// two-factors authentication
 				var oldSessionID = string.Empty;
 				var oldUserID = string.Empty;
-				var require2FA = response["Require2FA"] != null
-					? response.Get<bool>("Require2FA")
-					: false;
+				var require2FA = response.Get("Require2FA", false);
 
 				if (require2FA)
 					response = new JObject
@@ -797,6 +803,67 @@ namespace net.vieapps.Services.APIGateway
 			catch (Exception ex)
 			{
 				context.WriteError(InternalAPIs.Logger, ex, requestInfo);
+			}
+		}
+		#endregion
+
+		#region Sync
+		static async Task<JToken> SyncAsync(this HttpContext context, RequestInfo requestInfo)
+		{
+			Exception exception = null;
+			var overallWatch = Stopwatch.StartNew();
+			var callingWatch = Stopwatch.StartNew();
+			var developerID = requestInfo.Session?.DeveloperID ?? context.GetSession(requestInfo.Session?.SessionID, requestInfo.Session?.User)?.DeveloperID;
+			var appID = requestInfo.Session?.AppID ?? context.GetSession(requestInfo.Session?.SessionID, requestInfo.Session?.User)?.AppID;
+			try
+			{
+				if (Global.IsDebugResultsEnabled)
+					await context.WriteLogsAsync(developerID, appID, InternalAPIs.Logger, "Http.InternalAPIs", new List<string> { $"Start call service for synchronizing {requestInfo.Verb} {requestInfo.GetURI()} - {requestInfo.Session.AppName} ({requestInfo.Session.AppMode.ToLower()} app) - {requestInfo.Session.AppPlatform} @ {requestInfo.Session.IP}" }, null, Global.ServiceName, LogLevel.Information, requestInfo.CorrelationID);
+
+				callingWatch = Stopwatch.StartNew();
+				var json = await requestInfo.SyncAsync(Global.CancellationTokenSource.Token).ConfigureAwait(false);
+				callingWatch.Stop();
+
+				if (Global.IsDebugResultsEnabled)
+					await context.WriteLogsAsync(developerID, appID, InternalAPIs.Logger, "Http.InternalAPIs", new List<string> { "Call service for synchronizing successful" + "\r\n" +
+						$"- Request: {requestInfo.ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}" + "\r\n" +
+						$"- Response: {json?.ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}" }
+					, null, Global.ServiceName, LogLevel.Information, requestInfo.CorrelationID).ConfigureAwait(false);
+
+				return json;
+			}
+			catch (WampSharp.V2.Client.WampSessionNotEstablishedException)
+			{
+				await Task.Delay(567, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+				try
+				{
+					var json = await requestInfo.SyncAsync(Global.CancellationTokenSource.Token).ConfigureAwait(false);
+					callingWatch.Stop();
+
+					if (Global.IsDebugResultsEnabled)
+						await context.WriteLogsAsync(developerID, appID, InternalAPIs.Logger, "Http.InternalAPIs", new List<string> { "Re-call service for synchronizing successful" + "\r\n" +
+							$"- Request: {requestInfo.ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}" + "\r\n" +
+							$"- Response: {json?.ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}" }
+						, null, Global.ServiceName, LogLevel.Information, requestInfo.CorrelationID).ConfigureAwait(false);
+
+					return json;
+				}
+				catch (Exception)
+				{
+					throw;
+				}
+			}
+			catch (Exception ex)
+			{
+				callingWatch.Stop();
+				exception = ex;
+				throw ex;
+			}
+			finally
+			{
+				overallWatch.Stop();
+				if (Global.IsDebugResultsEnabled)
+					await context.WriteLogsAsync(developerID, appID, InternalAPIs.Logger, "Http.InternalAPIs", new List<string> { $"Call service for synchronizing finished in {callingWatch.GetElapsedTimes()} - Overall: {overallWatch.GetElapsedTimes()}" }, exception, Global.ServiceName, exception == null ? LogLevel.Information : LogLevel.Error, requestInfo.CorrelationID, exception == null ? null : $"Request: {requestInfo.ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}").ConfigureAwait(false);
 			}
 		}
 		#endregion

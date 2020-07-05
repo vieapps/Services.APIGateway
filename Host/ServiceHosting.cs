@@ -155,7 +155,8 @@ namespace net.vieapps.Services.APIGateway
 			if (useEventWaitHandle)
 			{
 				// get the flag of the existing instance
-				var name = $"{service.ServiceURI}#{args.Where(arg => arg.IsStartsWith("/run-")).Join("#").GenerateUUID()}";
+				var runtimeArguments = Extensions.GetRuntimeArguments();
+				var name = $"{service.ServiceURI}#{$"/interactive:{isUserInteractive} /user:{runtimeArguments.Item1} /host:{runtimeArguments.Item2} /platform:{runtimeArguments.Item3} /os:{runtimeArguments.Item4}".GenerateUUID()}";
 				eventWaitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, name, out var createdNew);
 
 				// process the call to stop
@@ -214,6 +215,18 @@ namespace net.vieapps.Services.APIGateway
 
 			var logger = (service as IServiceComponent).Logger = Logger.CreateLogger(this.ServiceType);
 
+			// prepare outgoing proxy
+			var proxy = UtilityService.GetAppSetting("Proxy:Host");
+			if (!string.IsNullOrWhiteSpace(proxy))
+				try
+				{
+					UtilityService.AssignWebProxy(proxy, UtilityService.GetAppSetting("Proxy:Port").CastAs<int>(), UtilityService.GetAppSetting("Proxy:User"), UtilityService.GetAppSetting("Proxy:UserPassword"), UtilityService.GetAppSetting("Proxy:Bypass")?.ToArray(";"));
+				}
+				catch (Exception ex)
+				{
+					logger.LogError($"Error occurred while assigning web-proxy => {ex.Message}", ex);
+				}
+
 			// setup hooks
 			void terminate(string message, bool available = true, bool disconnect = true)
 				=> (service.Disposed ? Task.CompletedTask : service.DisposeAsync(args?.ToArray(), available, disconnect, _ => logger.LogInformation(message)).AsTask()).ContinueWith(async _ => await Task.Delay(123).ConfigureAwait(false), TaskContinuationOptions.OnlyOnRanToCompletion).Wait();
@@ -235,7 +248,7 @@ namespace net.vieapps.Services.APIGateway
 			ServiceBase.ServiceComponent = service;
 			service.Start(
 				args?.ToArray(),
-				"false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", "")) ? false : true,
+				!"false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", "")),
 				_ =>
 				{
 					logger.LogInformation($"API Gateway Router: {new Uri(Router.GetRouterStrInfo()).GetResolvedURI()}");
@@ -246,6 +259,7 @@ namespace net.vieapps.Services.APIGateway
 					logger.LogInformation($"Root (base) directory: {AppDomain.CurrentDomain.BaseDirectory}");
 					logger.LogInformation($"Temporary directory: {UtilityService.GetAppSetting("Path:Temp", "None")}");
 					logger.LogInformation($"Static files directory: {UtilityService.GetAppSetting("Path:StaticFiles", "None")}");
+					logger.LogInformation($"Status files directory: {UtilityService.GetAppSetting("Path:Status", "None")}");
 					logger.LogInformation($"Logging level: {logLevel} - Local rolling log files is {(string.IsNullOrWhiteSpace(logPath) ? "disabled" : $"enabled => {logPath}")}");
 					logger.LogInformation($"Show debugs: {service.IsDebugLogEnabled} - Show results: {service.IsDebugResultsEnabled} - Show stacks: {service.IsDebugStacksEnabled}");
 					logger.LogInformation($"Service URIs:\r\n\t- Round robin: {service.ServiceURI}\r\n\t- Single (unique): {service.ServiceUniqueURI}");

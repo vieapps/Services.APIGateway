@@ -221,7 +221,7 @@ namespace net.vieapps.Services.APIGateway
 						var name = service.Attributes["name"]?.Value?.Trim().ToLower();
 						var type = service.Attributes["type"]?.Value?.Trim().Replace(" ", "");
 						if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(type))
-							this.BusinessServices[name] = new ProcessInfo(name, service.Attributes["executable"]?.Value?.Trim(), type);
+							this.BusinessServices[name] = new ProcessInfo(name, service.Attributes["executable"]?.Value?.Trim(), $"{type} {service.Attributes["arguments"]?.Value}".Trim());
 					});
 			}
 
@@ -1438,7 +1438,7 @@ namespace net.vieapps.Services.APIGateway
 					Name = name,
 					UniqueName = Extensions.GetUniqueName(name, args?.ToArray(' ')),
 					ControllerID = this.Info.ID,
-					InvokeInfo = Extensions.GetInvokeInfo(args?.ToArray(' ')),
+					InvokeInfo = Extensions.GetInvokeInfo(),
 					Available = available,
 					Running = running
 				}.ToJson(),

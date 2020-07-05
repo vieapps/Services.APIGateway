@@ -2,7 +2,7 @@
 	"profiles": {
 		"APIGateway.ServiceHosting": {
 			"commandName": "Project",
-			"commandLineArgs": "/svc:net.vieapps.Services.Portals.ServiceComponent,VIEApps.Services.Portals"
+			"commandLineArgs": ""
 		}
 	}
 }

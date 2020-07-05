@@ -33,12 +33,6 @@ namespace net.vieapps.Services.APIGateway
 			Program.IsUserInteractive = Environment.UserInteractive && args?.FirstOrDefault(a => a.IsStartsWith("/daemon")) == null;
 			Directory.SetCurrentDirectory(AppDomain.CurrentDomain.BaseDirectory);
 			Console.OutputEncoding = System.Text.Encoding.UTF8;
-			JsonConvert.DefaultSettings = () => new JsonSerializerSettings
-			{
-				Formatting = Formatting.None,
-				ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
-				DateTimeZoneHandling = DateTimeZoneHandling.Local
-			};
 
 			// prepare logging
 			var loglevel = args?.FirstOrDefault(a => a.IsStartsWith("/loglevel:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/loglevel:", "");
@@ -72,6 +66,25 @@ namespace net.vieapps.Services.APIGateway
 				logPath = null;
 
 			Program.Logger = Components.Utility.Logger.CreateLogger<Controller>();
+
+			JsonConvert.DefaultSettings = () => new JsonSerializerSettings
+			{
+				Formatting = Formatting.None,
+				ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
+				DateTimeZoneHandling = DateTimeZoneHandling.Local
+			};
+
+			// prepare outgoing proxy
+			var proxy = UtilityService.GetAppSetting("Proxy:Host");
+			if (!string.IsNullOrWhiteSpace(proxy))
+				try
+				{
+					UtilityService.AssignWebProxy(proxy, UtilityService.GetAppSetting("Proxy:Port").CastAs<int>(), UtilityService.GetAppSetting("Proxy:User"), UtilityService.GetAppSetting("Proxy:UserPassword"), UtilityService.GetAppSetting("Proxy:Bypass")?.ToArray(";"));
+				}
+				catch (Exception ex)
+				{
+					Program.Logger.LogError($"Error occurred while assigning web-proxy => {ex.Message}", ex);
+				}
 
 			// prepare event handlers
 			Program.SetupEventHandlers();

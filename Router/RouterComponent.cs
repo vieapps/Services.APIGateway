@@ -11,16 +11,16 @@ using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
-using WampSharp.V2;
-using WampSharp.V2.Realm;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using WampSharp.V2;
+using WampSharp.V2.Realm;
 
 namespace net.vieapps.Services.APIGateway
 {
 	public class RouterComponent
 	{
-		public const string Powered = "WAMP#v20.1.1-SSL+rev:2020.02.19-lts.targets";
+		public const string Powered = "WAMP#v20.1.1-SSL+rev:2020.7.1-lts";
 
 		public IWampHost Host { get; private set; } = null;
 

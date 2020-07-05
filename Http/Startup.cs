@@ -110,6 +110,18 @@ namespace net.vieapps.Services.APIGateway
 				DateTimeZoneHandling = DateTimeZoneHandling.Local
 			};
 
+			// prepare outgoing proxy
+			var proxy = UtilityService.GetAppSetting("Proxy:Host");
+			if (!string.IsNullOrWhiteSpace(proxy))
+				try
+				{
+					UtilityService.AssignWebProxy(proxy, UtilityService.GetAppSetting("Proxy:Port").CastAs<int>(), UtilityService.GetAppSetting("Proxy:User"), UtilityService.GetAppSetting("Proxy:UserPassword"), UtilityService.GetAppSetting("Proxy:Bypass")?.ToArray(";"));
+				}
+				catch (Exception ex)
+				{
+					Global.Logger.LogError($"Error occurred while assigning web-proxy => {ex.Message}", ex);
+				}
+
 			// setup the real-time updater
 			RTU.Initialize();
 

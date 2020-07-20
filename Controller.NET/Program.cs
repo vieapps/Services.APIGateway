@@ -18,12 +18,20 @@ namespace net.vieapps.Services.APIGateway
 
 		#region Properties
 		internal static CancellationTokenSource CancellationTokenSource { get; set; }
+
 		internal static ILoggingService LoggingService { get; set; }
+
 		internal static Manager Manager { get; set; }
+
 		internal static Controller Controller { get; set; }
+
 		internal static ILogger Logger { get; set; }
+
 		internal static MainForm MainForm { get; set; }
+
 		internal static ManagementForm ManagementForm { get; set; }
+
+		internal static string[] Arguments { get; set; }
 		#endregion
 
 		[STAThread]
@@ -31,6 +39,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			// setup environment
 			Directory.SetCurrentDirectory(AppDomain.CurrentDomain.BaseDirectory);
+			Program.Arguments = args;
 
 			// prepare logging
 			var loglevel = args?.FirstOrDefault(a => a.IsStartsWith("/loglevel:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/loglevel:", "");
@@ -87,7 +96,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				Application.EnableVisualStyles();
 				Application.SetCompatibleTextRenderingDefault(false);
-				Program.MainForm = new MainForm(args);
+				Program.MainForm = new MainForm();
 				Application.Run(Program.MainForm);
 			}
 
@@ -186,7 +195,7 @@ namespace net.vieapps.Services.APIGateway
 			};
 		}
 
-		internal static void Start(string[] args, Action<Controller> next = null)
+		internal static void Start(Action<Controller> next = null)
 		{
 			Program.CancellationTokenSource = new CancellationTokenSource();
 			Program.Manager = new Manager
@@ -203,7 +212,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 			};
 			Program.Controller = new Controller(Program.CancellationTokenSource.Token);
-			Program.Controller.Start(args, Program.Manager.OnIncomingConnectionEstablished, Program.Manager.OnOutgoingConnectionEstablished, next);
+			Program.Controller.Start(Program.Arguments, Program.Manager.OnIncomingConnectionEstablished, Program.Manager.OnOutgoingConnectionEstablished, next);
 		}
 
 		internal static void Stop()

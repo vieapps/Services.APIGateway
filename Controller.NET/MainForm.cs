@@ -12,19 +12,14 @@ namespace net.vieapps.Services.APIGateway
 {
 	public partial class MainForm : Form
 	{
-		readonly string[] _args;
-
-		public MainForm(string[] args = null)
-		{
-			this.InitializeComponent();
-			this._args = args;
-		}
+		public MainForm()
+			=> this.InitializeComponent();
 
 		void MainForm_Load(object sender, EventArgs args)
 			=> Task.Run(async () =>
 			{
 				await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
-				Program.Start(this._args);
+				Program.Start();
 				await Task.Delay(UtilityService.GetRandomNumber(3456, 6789)).ConfigureAwait(false);
 				await Program.Manager.SendInterCommunicateMessageAsync("Controller#RequestInfo").ConfigureAwait(false);
 				await Program.Manager.SendInterCommunicateMessageAsync("Service#RequestInfo").ConfigureAwait(false);

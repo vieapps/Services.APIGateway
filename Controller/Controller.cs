@@ -170,7 +170,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			// prepare arguments
 			var stopwatch = Stopwatch.StartNew();
-			this.IsUserInteractive = Environment.UserInteractive && args?.FirstOrDefault(a => a.StartsWith("/daemon")) == null;
+			this.IsUserInteractive = Environment.UserInteractive && args?.FirstOrDefault(a => a.IsStartsWith("/daemon")) == null;
 
 			var mode = this.IsUserInteractive ? "Interactive app" : "Background service";
 			var runtimeArguments = Extensions.GetRuntimeArguments();
@@ -184,13 +184,13 @@ namespace net.vieapps.Services.APIGateway
 				Available = true
 			};
 
-			if (args?.FirstOrDefault(arg => arg.StartsWith("/no-helper-services")) != null)
+			if (args?.FirstOrDefault(arg => arg.IsStartsWith("/no-helper-services")) != null)
 				this.AllowRegisterHelperServices = false;
 
-			if (args?.FirstOrDefault(arg => arg.StartsWith("/no-helper-timers")) != null)
+			if (args?.FirstOrDefault(arg => arg.IsStartsWith("/no-helper-timers")) != null)
 				this.AllowRegisterHelperTimers = false;
 
-			if (args?.FirstOrDefault(arg => arg.StartsWith("/no-business-services")) != null)
+			if (args?.FirstOrDefault(arg => arg.IsStartsWith("/no-business-services")) != null)
 				this.AllowRegisterBusinessServices = false;
 
 			// prepare directories
@@ -226,17 +226,17 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// prepare scheduling tasks
-			if (ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:TaskScheduler", "net.vieapps.task.scheduler")) is AppConfigurationSectionHandler tasksConfiguration && tasksConfiguration.Section.SelectNodes("task") is XmlNodeList tasks)
-				tasks.ToList().ForEach(task =>
+			if (ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:TaskScheduler", "net.vieapps.task.scheduler")) is AppConfigurationSectionHandler taskSchedulerConfiguration && taskSchedulerConfiguration.Section.SelectNodes("task") is XmlNodeList taskSchedulers)
+				taskSchedulers.ToList().ForEach(taskScheduler =>
 				{
-					var executable = task.Attributes["executable"]?.Value.Trim();
+					var executable = taskScheduler.Attributes["executable"]?.Value.Trim();
 					if (!string.IsNullOrWhiteSpace(executable) && File.Exists(executable))
 					{
-						var arguments = (task.Attributes["arguments"]?.Value ?? "").Trim();
+						var arguments = (taskScheduler.Attributes["arguments"]?.Value ?? "").Trim();
 						var id = (executable + " " + arguments).ToLower().GenerateUUID();
 						this.Tasks[id] = new ProcessInfo(id, executable, arguments, new Dictionary<string, object>
 						{
-							{ "Time", Int32.TryParse(task.Attributes["time"]?.Value, out var time) ? time.ToString() : task.Attributes["time"]?.Value ?? "3" }
+							{ "Time", Int32.TryParse(taskScheduler.Attributes["time"]?.Value, out var time) ? time.ToString() : taskScheduler.Attributes["time"]?.Value ?? "3" }
 						});
 					}
 				});
@@ -256,8 +256,11 @@ namespace net.vieapps.Services.APIGateway
 			Global.OnProcess?.Invoke($"Temporary directory: {UtilityService.GetAppSetting("Path:Temp", "None")}");
 			Global.OnProcess?.Invoke($"Static files directory: {UtilityService.GetAppSetting("Path:StaticFiles", "None")}");
 			Global.OnProcess?.Invoke($"Status files directory: {UtilityService.GetAppSetting("Path:Status", "None")}");
-			Global.OnProcess?.Invoke($"Number of business services: {this.BusinessServices.Count}");
-			Global.OnProcess?.Invoke($"Number of scheduling tasks: {this.Tasks.Count}");
+
+			if (!this.AllowRegisterHelperServices)
+				Global.OnProcess?.Invoke($"Number of helper services: None");
+			Global.OnProcess?.Invoke($"Number of business services: {(!this.AllowRegisterBusinessServices ? "None" : this.BusinessServices.Count.ToString())}");
+			Global.OnProcess?.Invoke($"Number of scheduling tasks: {(!this.AllowRegisterHelperTimers ? "None" : this.Tasks.Count.ToString())}");
 
 			// prepare database settings
 			this.PrepareDatabaseSettings();
@@ -267,7 +270,7 @@ namespace net.vieapps.Services.APIGateway
 				this.LoggingService = new LoggingService(this.CancellationTokenSource.Token);
 
 			// generate new encryption keys
-			if (args?.FirstOrDefault(arg => arg.StartsWith("/generate-keys")) != null)
+			if (args?.FirstOrDefault(arg => arg.IsStartsWith("/generate-keys")) != null)
 			{
 				var directoryPath = Global.GetPath("Path:Temp", "temp", false);
 				if (Directory.Exists(directoryPath))
@@ -369,8 +372,7 @@ namespace net.vieapps.Services.APIGateway
 
 								if (this.AllowRegisterBusinessServices)
 								{
-									var svcArgs = this.GetServiceArguments().Replace("/", "/call-");
-									Parallel.ForEach(this.BusinessServices, kvp => this.StartBusinessService(kvp.Key, svcArgs));
+									Parallel.ForEach(this.BusinessServices, kvp => this.StartBusinessService(kvp.Key));
 									this.StartTimer(() => this.WatchBusinessServices(), 30);
 								}
 							}
@@ -521,7 +523,7 @@ namespace net.vieapps.Services.APIGateway
 			// dipose all helper services
 			if (this.AllowRegisterHelperServices)
 			{
-				await this.HelperServices.ForEachAsync(async (service, cancellationToken) =>
+				await this.HelperServices.ForEachAsync(async (service, _) =>
 				{
 					try
 					{
@@ -636,7 +638,7 @@ namespace net.vieapps.Services.APIGateway
 					this.TrashDataSources.Add(name);
 
 				if (repositoriesConfiguration.Section.SelectNodes("./repository") is XmlNodeList repositoryNodes)
-					foreach (XmlNode repository in repositoryNodes)
+					repositoryNodes.ToList().ForEach(repository =>
 					{
 						name = repository.Attributes["versionDataSource"]?.Value;
 						if (!string.IsNullOrWhiteSpace(name) && dataSources.ContainsKey(name) && this.TrashDataSources.IndexOf(name) < 0)
@@ -645,7 +647,7 @@ namespace net.vieapps.Services.APIGateway
 						name = repository.Attributes["trashDataSource"]?.Value;
 						if (!string.IsNullOrWhiteSpace(name) && dataSources.ContainsKey(name) && this.TrashDataSources.IndexOf(name) < 0)
 							this.TrashDataSources.Add(name);
-					}
+					});
 			}
 
 			// settings of services
@@ -704,7 +706,7 @@ namespace net.vieapps.Services.APIGateway
 						this.TrashDataSources.Add(name);
 
 					if (repositoriesConfig.SelectNodes("./repository") is XmlNodeList repositoryNodes)
-						foreach (XmlNode repository in repositoryNodes)
+						repositoryNodes.ToList().ForEach(repository =>
 						{
 							name = repository.Attributes["versionDataSource"]?.Value;
 							if (!string.IsNullOrWhiteSpace(name) && dataSources.ContainsKey(name) && this.TrashDataSources.IndexOf(name) < 0)
@@ -713,7 +715,7 @@ namespace net.vieapps.Services.APIGateway
 							name = repository.Attributes["trashDataSource"]?.Value;
 							if (!string.IsNullOrWhiteSpace(name) && dataSources.ContainsKey(name) && this.TrashDataSources.IndexOf(name) < 0)
 								this.TrashDataSources.Add(name);
-						}
+						});
 				}
 			});
 
@@ -804,9 +806,7 @@ namespace net.vieapps.Services.APIGateway
 		public bool IsBusinessServiceAvailable(string name)
 		{
 			var processInfo = this.GetServiceProcessInfo(name);
-			return processInfo != null
-				? processInfo.Get<string>("NotAvailable") == null
-				: false;
+			return processInfo != null && processInfo.Get<string>("NotAvailable") == null;
 		}
 
 		/// <summary>
@@ -817,9 +817,7 @@ namespace net.vieapps.Services.APIGateway
 		public bool IsBusinessServiceRunning(string name)
 		{
 			var processInfo = this.GetServiceProcessInfo(name);
-			return processInfo != null
-				? processInfo.Instance != null && "Running".IsEquals(processInfo.Get<string>("State"))
-				: false;
+			return processInfo != null && processInfo.Instance != null && "Running".IsEquals(processInfo.Get<string>("State"));
 		}
 
 		/// <summary>

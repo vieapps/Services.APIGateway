@@ -51,6 +51,38 @@
     </None>
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\Books\Service\VIEApps.Services.Books.csproj">
+      <Project>{7781552e-9c60-4a25-a09b-c4cb1d65ffd2}</Project>
+      <Name>VIEApps.Services.Books</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\Files\Service\VIEApps.Services.Files.csproj">
+      <Project>{fef1a776-fb28-40d3-b317-07339977f17f}</Project>
+      <Name>VIEApps.Services.Files</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\Indexes\VIEApps.Services.Indexes.csproj">
+      <Project>{27eaf009-bd1c-4655-a827-a06a12f601f0}</Project>
+      <Name>VIEApps.Services.Indexes</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\IPLocations\VIEApps.Services.IPLocations.csproj">
+      <Project>{bf462020-4246-4c11-9ef1-1e9db657c0f3}</Project>
+      <Name>VIEApps.Services.IPLocations</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\OTPs\Authenticator\VIEApps.Services.OTPs.Authenticator.csproj">
+      <Project>{90b9705a-11cb-409b-ae0a-add1031c131a}</Project>
+      <Name>VIEApps.Services.OTPs.Authenticator</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\Portals\Service\VIEApps.Services.Portals.csproj">
+      <Project>{e3181c8c-8456-4ac6-b7b3-3e03ab7dedbb}</Project>
+      <Name>VIEApps.Services.Portals</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\Users\Service.WindowsAD\VIEApps.Services.Users.WindowsAD.csproj">
+      <Project>{6afc4bf5-20d2-431a-b41e-506bb7e7dfe8}</Project>
+      <Name>VIEApps.Services.Users.WindowsAD</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\Users\Service\VIEApps.Services.Users.csproj">
+      <Project>{0950ce1c-8e96-4ca5-a67f-e09e27ee7788}</Project>
+      <Name>VIEApps.Services.Users</Name>
+    </ProjectReference>
     <ProjectReference Include="..\Host\VIEApps.Services.APIGateway.Host.csproj">
       <Project>{1bc743a3-169d-4d90-ada2-06997ce99c52}</Project>
       <Name>VIEApps.Services.APIGateway.Host</Name>

@@ -8,7 +8,9 @@ namespace net.vieapps.Services.APIGateway
 	static class Program
 	{
 		internal static RouterComponent Router { get; set; } = null;
+
 		internal static EventLog EventLog { get; set; } = null;
+
 		internal static ServicePresenter Form { get; set; } = null;
 
 		static void Main(string[] args)

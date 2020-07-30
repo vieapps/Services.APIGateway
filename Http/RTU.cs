@@ -337,20 +337,20 @@ namespace net.vieapps.Services.APIGateway
 				await websocket.SendAsync(message).ConfigureAwait(false);
 				if (Global.IsDebugLogEnabled)
 					await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs",
-						$"Successfully push a message to the device ({message.DeviceID})" + "\r\n" +
+						$"Successfully push a message to the device ({message?.DeviceID})" + "\r\n" +
 						$"{websocket.GetConnectionInfo(session)}" + "\r\n" +
-						$"- Type: {message.Type}" + "\r\n" +
-						$"- Message: {message.Data.ToString(Formatting.None)}"
+						$"- Type: {message?.Type}" + "\r\n" +
+						$"- Message: {message?.Data?.ToString(InternalAPIs.JsonFormat)}"
 					, null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
 			}
 			catch (ObjectDisposedException) { }
 			catch (Exception ex)
 			{
 				await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs",
-					$"Error occurred while pushing a message to the device ({message.DeviceID}) => {ex.Message}" + "\r\n" +
+					$"Error occurred while pushing a message to the device ({message?.DeviceID}) => {ex.Message}" + "\r\n" +
 					$"{websocket.GetConnectionInfo(session)}" + "\r\n" +
-					$"- Type: {message.Type}" + "\r\n" +
-					$"- Message: {message.ToJson().ToString(InternalAPIs.JsonFormat)}"
+					$"- Type: {message?.Type}" + "\r\n" +
+					$"- Message: {message?.ToJson().ToString(InternalAPIs.JsonFormat)}"
 				, ex, Global.ServiceName, LogLevel.Error, correlationID).ConfigureAwait(false);
 			}
 		}

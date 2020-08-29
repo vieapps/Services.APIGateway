@@ -56,8 +56,7 @@ namespace net.vieapps.Services.APIGateway
 		#region Information
 		static Dictionary<string, MailInfo> Messages = null;
 		static string _EmailsPath = null, _EmailSmtpServer = null, _EmailSmtpServerEnableSsl = null, _EmailSmtpUser = null, _EmailSmtpUserPassword = null, _EmailDefaultSender = null;
-
-		static int? _EmailSmtpServerPort = 0;
+		static int? _EmailSmtpServerPort = null;
 
 		internal static string EmailsPath => MailSender._EmailsPath ?? (MailSender._EmailsPath = Global.GetPath("Path:Emails", "emails"));
 
@@ -158,7 +157,7 @@ namespace net.vieapps.Services.APIGateway
 					"The email message has been sent" + "\r\n" +
 					$"- ID: {message.ID}" + "\r\n" +
 					$"- From: {message.From}" + "\r\n" +
-					$"- To: {message.To}" + (!message.Cc.Equals("") ? " / " + message.Cc : "") + (!message.Bcc.Equals("") ? " / " + message.Bcc : "") + "\r\n" +
+					$"- To: {message.To}" + (!string.IsNullOrWhiteSpace(message.Cc) ? $" / {message.Cc}" : "") + (!string.IsNullOrWhiteSpace(message.Bcc) ? $" / {message.Bcc}" : "") + "\r\n" +
 					$"- Subject: {message.Subject}"
 				);
 			}
@@ -169,9 +168,10 @@ namespace net.vieapps.Services.APIGateway
 					"Error occurred while sending an email message" + "\r\n" +
 					$"- ID: {message.ID}" + "\r\n" +
 					$"- From: {message.From}" + "\r\n" +
-					$"- To: {message.To}" + (!message.Cc.Equals("") ? " / " + message.Cc : "") + (!message.Bcc.Equals("") ? " / " + message.Bcc : "") + "\r\n" +
+					$"- To: {message.To}" + (!string.IsNullOrWhiteSpace(message.Cc) ? $" / {message.Cc}" : "") + (!string.IsNullOrWhiteSpace(message.Bcc) ? $" / {message.Bcc}" : "") + "\r\n" +
 					$"- Subject: {message.Subject}" + "\r\n\r\n" +
-					$"- Error: {ex.Message} [{ex.GetType()}" + "\r\n\r\n";
+					$"- Error: {ex.Message} [{ex.GetType()}]" + "\r\n" +
+					$"- Stack: {ex.StackTrace}" + "\r\n\r\n";
 
 				var counters = MailSender.Messages[message.ID].Counters;
 				if (counters > 4)

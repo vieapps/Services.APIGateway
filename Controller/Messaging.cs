@@ -145,7 +145,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Send messages
-		async Task SendMessageAsync(EmailMessage message, int counter)
+		async Task SendMessageAsync(EmailMessage message, int counter, Action<EmailMessage> onSuccess = null, Action<EmailMessage, Exception, bool> onFailure = null)
 		{
 			try
 			{
@@ -153,6 +153,7 @@ namespace net.vieapps.Services.APIGateway
 				await message.SendMessageAsync(this.CancellationTokenSource.Token).ConfigureAwait(false);
 				MailSender.Messages.Remove(message.ID);
 
+				onSuccess?.Invoke(message);
 				Global.OnSendEmailSuccess?.Invoke(
 					"The email message has been sent" + "\r\n" +
 					$"- ID: {message.ID}" + "\r\n" +
@@ -164,8 +165,7 @@ namespace net.vieapps.Services.APIGateway
 			catch (OperationCanceledException) { }
 			catch (Exception ex)
 			{
-				var log =
-					"Error occurred while sending an email message" + "\r\n" +
+				var log = "Error occurred while sending an email message" + "\r\n" +
 					$"- ID: {message.ID}" + "\r\n" +
 					$"- From: {message.From}" + "\r\n" +
 					$"- To: {message.To}" + (!string.IsNullOrWhiteSpace(message.Cc) ? $" / {message.Cc}" : "") + (!string.IsNullOrWhiteSpace(message.Bcc) ? $" / {message.Bcc}" : "") + "\r\n" +
@@ -178,6 +178,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					MailSender.Messages.Remove(message.ID);
 					log += "- Status: Remove from queue because its failed too much times";
+					onFailure?.Invoke(message, ex, true);
 				}
 				else
 				{
@@ -193,13 +194,14 @@ namespace net.vieapps.Services.APIGateway
 					MailSender.Messages[message.ID].Counters = counters + 1;
 
 					log += $"- Status: Update queue to re-send {time.ToDTString()}";
+					onFailure?.Invoke(message, ex, false);
 				}
 
 				Global.OnSendEmailFailure?.Invoke(log, ex);
 			}
 		}
 
-		public async Task ProcessAsync()
+		public async Task ProcessAsync(Action<EmailMessage> onSuccess = null, Action<EmailMessage, Exception, bool> onFailure = null)
 		{
 			// load messages
 			MailSender.LoadMessages();
@@ -207,7 +209,7 @@ namespace net.vieapps.Services.APIGateway
 			// send messages
 			await MailSender.Messages
 				.Where(kvp => kvp.Value.Time <= DateTime.Now)
-				.ForEachAsync((kvp, index, cancellationToken) => this.SendMessageAsync(kvp.Value.Message, index))
+				.ForEachAsync((kvp, index, cancellationToken) => this.SendMessageAsync(kvp.Value.Message, index, onSuccess, onFailure))
 				.ConfigureAwait(false);
 		}
 		#endregion
@@ -310,24 +312,23 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Send messages
-		async Task SendMessageAsync(WebHookMessage message, Action<string> onSuccess = null, Action<string, Exception> onError = null)
+		async Task SendMessageAsync(WebHookMessage message, Action<WebHookMessage> onSuccess = null, Action<WebHookMessage, Exception, bool> onFailure = null)
 		{
 			try
 			{
 				await message.SendMessageAsync(this.CancellationTokenSource.Token).ConfigureAwait(false);
 				WebHookSender.Messages.Remove(message.ID);
 
+				onSuccess?.Invoke(message);
 				var log = "The web-hook message has been sent" + "\r\n" +
 					$"- ID: {message.ID}" + "\r\n" +
 					$"- End-point: {message.EndpointURL}";
-				onSuccess?.Invoke(log);
 				Global.OnSendWebHookSuccess?.Invoke(log);
 			}
 			catch (OperationCanceledException) { }
 			catch (Exception ex)
 			{
-				var log =
-					"Error occurred while sending a web-hook message" + "\r\n" +
+				var log = "Error occurred while sending a web-hook message" + "\r\n" +
 					$"- ID: {message.ID}" + "\r\n" +
 					$"- End-point: {message.EndpointURL}" + "\r\n\r\n";
 
@@ -336,6 +337,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					WebHookSender.Messages.Remove(message.ID);
 					log += "- Status: Remove from queue because its failed too much times";
+					onFailure?.Invoke(message, ex, true);
 				}
 				else
 				{
@@ -351,14 +353,14 @@ namespace net.vieapps.Services.APIGateway
 					WebHookSender.Messages[message.ID].Counters = counters + 1;
 
 					log += $"- Status: Update queue to re-send {time.ToDTString()}";
+					onFailure?.Invoke(message, ex, false);
 				}
 
-				onError?.Invoke(log, ex);
 				Global.OnSendWebHookFailure?.Invoke(log, ex);
 			}
 		}
 
-		public async Task ProcessAsync()
+		public async Task ProcessAsync(Action<WebHookMessage> onSuccess = null, Action<WebHookMessage, Exception, bool> onFailure = null)
 		{
 			// load messages
 			await WebHookSender.LoadMessagesAsync().ConfigureAwait(false);
@@ -366,7 +368,7 @@ namespace net.vieapps.Services.APIGateway
 			// send messages
 			await WebHookSender.Messages
 				.Where(kvp => kvp.Value.Time <= DateTime.Now)
-				.ForEachAsync((kvp, cancellationToken) => this.SendMessageAsync(kvp.Value.Message))
+				.ForEachAsync((kvp, cancellationToken) => this.SendMessageAsync(kvp.Value.Message, onSuccess, onFailure))
 				.ConfigureAwait(false);
 		}
 		#endregion

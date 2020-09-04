@@ -95,7 +95,9 @@ namespace net.vieapps.Services.APIGateway
 
 		IDisposable UpdateCommunicator { get; set; }
 
-		LoggingService LoggingService { get; set; }
+		LoggingService Logger { get; set; }
+
+		ILoggingService LoggingService { get; set; }
 
 		IRTUService RTUService { get; set; }
 
@@ -199,7 +201,7 @@ namespace net.vieapps.Services.APIGateway
 				new[]
 				{
 					Global.StatusPath,
-					LoggingService.LogsPath,
+					APIGateway.LoggingService.LogsPath,
 					MailSender.EmailsPath,
 					WebHookSender.WebHooksPath
 				}.Where(path => !Directory.Exists(path)).ForEach(path => Directory.CreateDirectory(path));
@@ -267,7 +269,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// prepare logging service
 			if (this.AllowRegisterHelperServices)
-				this.LoggingService = new LoggingService(this.CancellationTokenSource.Token);
+				this.Logger = new LoggingService(this.CancellationTokenSource.Token);
 
 			// generate new encryption keys
 			if (args?.FirstOrDefault(arg => arg.IsStartsWith("/generate-keys")) != null)
@@ -437,6 +439,8 @@ namespace net.vieapps.Services.APIGateway
 
 							while (Router.IncomingChannel == null || Router.OutgoingChannel == null)
 								await Task.Delay(UtilityService.GetRandomNumber(123, 456), this.CancellationTokenSource.Token).ConfigureAwait(false);
+
+							this.LoggingService = this.LoggingService ?? Router.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<ILoggingService>(ProxyInterceptor.Create());
 							this.RTUService = this.RTUService ?? Router.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create());
 
 							try
@@ -546,7 +550,7 @@ namespace net.vieapps.Services.APIGateway
 				this.WebHookSender?.Dispose();
 				WebHookSender.SaveMessages();
 
-				await (this.LoggingService != null ? this.LoggingService.FlushAsync() : Task.CompletedTask).ConfigureAwait(false);
+				await (this.Logger != null ? this.Logger.FlushAsync() : Task.CompletedTask).ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
@@ -1001,7 +1005,7 @@ namespace net.vieapps.Services.APIGateway
 
 			if (this.AllowRegisterHelperServices)
 			{
-				this.HelperServices.Add(await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(this.LoggingService, RegistrationInterceptor.Create()).ConfigureAwait(false));
+				this.HelperServices.Add(await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(this.Logger, RegistrationInterceptor.Create()).ConfigureAwait(false));
 				Global.OnProcess?.Invoke($"The logging service was{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
 
 				this.HelperServices.Add(await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(new RTUService(), RegistrationInterceptor.Create()).ConfigureAwait(false));
@@ -1036,20 +1040,46 @@ namespace net.vieapps.Services.APIGateway
 
 		void RegisterMessagingTimers()
 		{
-			// send email messages (15 seconds)
-			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:Mail", "15"), out var interval))
-				interval = 15;
+			// send email messages (10 seconds)
+			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:Mail", "10"), out var interval))
+				interval = 10;
 			this.StartTimer(async () =>
 			{
 				if (this.MailSender == null)
 					try
 					{
 						this.MailSender = new MailSender(this.CancellationTokenSource.Token);
-						await this.MailSender.ProcessAsync().ConfigureAwait(false);
+						await this.MailSender.ProcessAsync(
+							async message =>
+							{
+								if (this.LoggingService != null)
+								{
+									var log = "The email message has been sent" + "\r\n" +
+									$"- ID: {message.ID}" + "\r\n" +
+									$"- From: {message.From}" + "\r\n" +
+									$"- To: {message.To}" + (!string.IsNullOrWhiteSpace(message.Cc) ? $" / {message.Cc}" : "") + (!string.IsNullOrWhiteSpace(message.Bcc) ? $" / {message.Bcc}" : "") + "\r\n" +
+									$"- Subject: {message.Subject}";
+									await this.LoggingService.WriteLogAsync(message.CorrelationID, null, null, "APIGateway", "Emails", log, null, this.CancellationTokenSource.Token).ConfigureAwait(false);
+								}
+							},
+							async (message, exception, beRemoved) =>
+							{
+								if (this.LoggingService != null)
+								{
+									var log = $"Error occurred while sending an email message => {exception.Message} [{exception.GetType()}]" + "\r\n" +
+									$"- ID: {message.ID}" + "\r\n" +
+									$"- From: {message.From}" + "\r\n" +
+									$"- To: {message.To}" + (!string.IsNullOrWhiteSpace(message.Cc) ? $" / {message.Cc}" : "") + (!string.IsNullOrWhiteSpace(message.Bcc) ? $" / {message.Bcc}" : "") + "\r\n" +
+									$"- Subject: {message.Subject}" +
+									$"{(beRemoved ? "\r\n++ NOTED: The message will  be removed from queue because its failed too much times" : "")}";
+									await this.LoggingService.WriteLogAsync(message.CorrelationID, null, null, "APIGateway", "Emails", log, exception.StackTrace, this.CancellationTokenSource.Token).ConfigureAwait(false);
+								}
+							}
+						).ConfigureAwait(false);
 					}
 					catch (Exception ex)
 					{
-						Global.OnError?.Invoke($"Error occurred while sending email messages: {ex.Message}", ex);
+						Global.OnError?.Invoke($"Error occurred while processing email messages: {ex.Message}", ex);
 					}
 					finally
 					{
@@ -1057,20 +1087,42 @@ namespace net.vieapps.Services.APIGateway
 					}
 			}, interval);
 
-			// send web hook messages (35 seconds)
-			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:WebHook", "35"), out interval))
-				interval = 35;
+			// send web hook messages (25 seconds)
+			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:WebHook", "25"), out interval))
+				interval = 25;
 			this.StartTimer(async () =>
 			{
 				if (this.WebHookSender == null)
 					try
 					{
 						this.WebHookSender = new WebHookSender(this.CancellationTokenSource.Token);
-						await this.WebHookSender.ProcessAsync().ConfigureAwait(false);
+						await this.WebHookSender.ProcessAsync(
+							async message =>
+							{
+								if (this.LoggingService != null)
+								{
+									var log = "The web-hook message has been sent" + "\r\n" +
+									$"- ID: {message.ID}" + "\r\n" +
+									$"- End-point: {message.EndpointURL}";
+									await this.LoggingService.WriteLogAsync(message.CorrelationID, null, null, "APIGateway", "WebHooks", log, null, this.CancellationTokenSource.Token).ConfigureAwait(false);
+								}
+							},
+							async (message, exception, beRemoved) =>
+							{
+								if (this.LoggingService != null)
+								{
+									var log = $"Error occurred while sending a web-hook message => {exception.Message} [{exception.GetType()}]" + "\r\n" +
+									$"- ID: {message.ID}" + "\r\n" +
+									$"- End-point: {message.EndpointURL}" +
+									$"{(beRemoved ? "\r\n++ NOTED: The message will  be removed from queue because its failed too much times" : "")}";
+									await this.LoggingService.WriteLogAsync(message.CorrelationID, null, null, "APIGateway", "WebHooks", log, exception.StackTrace, this.CancellationTokenSource.Token).ConfigureAwait(false);
+								}
+							}
+						).ConfigureAwait(false);
 					}
 					catch (Exception ex)
 					{
-						Global.OnError?.Invoke($"Error occurred while sending web-hook messages: {ex.Message}", ex);
+						Global.OnError?.Invoke($"Error occurred while processing web-hook messages: {ex.Message}", ex);
 					}
 					finally
 					{
@@ -1088,7 +1140,7 @@ namespace net.vieapps.Services.APIGateway
 			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:FlushLogs", "45"), out int interval))
 				interval = 45;
 #endif
-			this.StartTimer(async () => await (this.LoggingService != null ? this.LoggingService.FlushAsync() : Task.CompletedTask).ConfigureAwait(false), interval);
+			this.StartTimer(async () => await (this.Logger != null ? this.Logger.FlushAsync() : Task.CompletedTask).ConfigureAwait(false), interval);
 
 			// house keeper (hourly)
 			this.StartTimer(() => this.RunHouseKeeper(), 60 * 60);
@@ -1148,7 +1200,7 @@ namespace net.vieapps.Services.APIGateway
 			var paths = new HashSet<string>
 			{
 				Global.StatusPath,
-				LoggingService.LogsPath
+				APIGateway.LoggingService.LogsPath
 			};
 			paths.Append(UtilityService.GetAppSetting("HouseKeeper:Folders")?.ToHashSet('|') ?? new HashSet<string>());
 
@@ -1192,7 +1244,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// debug logs
 			remainTime = DateTime.Now.AddHours(0 - 36);
-			UtilityService.GetFiles(LoggingService.LogsPath, "*.*").Where(file => file.LastWriteTime < remainTime).ForEach(file =>
+			UtilityService.GetFiles(APIGateway.LoggingService.LogsPath, "*.*").Where(file => file.LastWriteTime < remainTime).ForEach(file =>
 			{
 				try
 				{

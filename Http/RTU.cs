@@ -32,9 +32,9 @@ namespace net.vieapps.Services.APIGateway
 			RTU.WebSocket = new Components.WebSockets.WebSocket(Components.Utility.Logger.GetLoggerFactory(), Global.CancellationTokenSource.Token)
 			{
 				OnError = async (websocket, exception) => await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"Got an error while processing => {exception.Message} ({websocket?.ID} {websocket?.RemoteEndPoint})", exception).ConfigureAwait(false),
-				OnConnectionEstablished = async websocket => await websocket.WhenConnectionIsEstablishedAsync().ConfigureAwait(false),
-				OnConnectionBroken = async websocket => await websocket.WhenConnectionIsBrokenAsync().ConfigureAwait(false),
-				OnMessageReceived = async (websocket, result, data) => await websocket.WhenMessageIsReceivedAsync(result, data).ConfigureAwait(false),
+				OnConnectionEstablished = async websocket => await (websocket == null ? Task.CompletedTask : websocket.WhenConnectionIsEstablishedAsync()).ConfigureAwait(false),
+				OnConnectionBroken = async websocket => await (websocket == null ? Task.CompletedTask : websocket.WhenConnectionIsBrokenAsync()).ConfigureAwait(false),
+				OnMessageReceived = async (websocket, result, data) => await (websocket == null ? Task.CompletedTask : websocket.WhenMessageIsReceivedAsync(result, data)).ConfigureAwait(false),
 				KeepAliveInterval = TimeSpan.FromSeconds(Int32.TryParse(UtilityService.GetAppSetting("Proxy:KeepAliveInterval", "45"), out var interval) ? interval : 45)
 			};
 			Global.Logger.LogInformation($"WebSocket ({Global.ServiceName} RTU) was initialized - Buffer size: {Components.WebSockets.WebSocket.ReceiveBufferSize:#,##0} bytes - Keep-Alive interval: {RTU.WebSocket.KeepAliveInterval.TotalSeconds} second(s)");

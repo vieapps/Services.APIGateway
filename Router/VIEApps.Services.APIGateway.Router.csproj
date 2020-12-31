@@ -1,18 +1,19 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFrameworks>netstandard2.0;netstandard2.1;netcoreapp2.1;netcoreapp3.1</TargetFrameworks>
+		<TargetFrameworks>net5.0;netcoreapp3.1;netcoreapp2.1;netstandard2.1;netstandard2.0</TargetFrameworks>
 		<WarningLevel>3</WarningLevel>
+		<NoWarn>1573,1591</NoWarn>
 		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
 		<AssemblyName>VIEApps.Services.APIGateway.Router</AssemblyName>
 		<AssemblyTitle>VIEApps NGX API Gateway</AssemblyTitle>
 		<Authors>VIEApps.net</Authors>
 		<Company>VIEApps.net</Company>
 		<Product>VIEApps NGX</Product>
-		<Copyright>© 2020 VIEApps.net</Copyright>
-		<AssemblyVersion>10.3$(ReleaseVersion)</AssemblyVersion>
-		<FileVersion>10.3$(ReleaseVersion)</FileVersion>
-		<InformationalVersion>10.3.$([System.DateTime]::Now.Year).$([System.DateTime]::Now.Month).$([System.DateTime]::Now.Day)@$(TargetFramework)#$(ReleaseRevision)</InformationalVersion>
+		<Copyright>© 2021 VIEApps.net</Copyright>
+		<AssemblyVersion>10.4$(ReleaseVersion)</AssemblyVersion>
+		<FileVersion>10.4$(ReleaseVersion)</FileVersion>
+		<InformationalVersion>10.4.$([System.DateTime]::Now.Year).$([System.DateTime]::Now.Month).$([System.DateTime]::Now.Day)@$(TargetFramework)#$(ReleaseRevision)</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -21,8 +22,8 @@
 
 	<ItemGroup>
 		<PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
-		<PackageReference Include="System.Configuration.ConfigurationManager" Version="4.7.0" />
-		<PackageReference Include="System.Reactive" Version="4.4.1" />
+		<PackageReference Include="System.Configuration.ConfigurationManager" Version="5.0.0" />
+		<PackageReference Include="System.Reactive" Version="5.0.0" />
 		<PackageReference Include="WampSharp.Default.Router" Version="20.1.1" />
 	</ItemGroup>
 

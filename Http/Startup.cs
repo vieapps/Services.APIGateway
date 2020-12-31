@@ -133,7 +133,6 @@ namespace net.vieapps.Services.APIGateway
 				.UseResponseCompression()
 				.UseWebSockets(new WebSocketOptions
 				{
-					ReceiveBufferSize = Components.WebSockets.WebSocket.ReceiveBufferSize,
 					KeepAliveInterval = RTU.WebSocket.KeepAliveInterval
 				});
 

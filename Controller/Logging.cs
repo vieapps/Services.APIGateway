@@ -6,10 +6,9 @@ using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
-
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using MongoDB.Bson.Serialization.Attributes;
-
 using net.vieapps.Components.Utility;
 using net.vieapps.Components.Security;
 using net.vieapps.Components.Repository;
@@ -57,13 +56,14 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		public void Dispose()
-			=> this.CancellationTokenSource.Cancel();
+		{
+			this.CancellationTokenSource.Cancel();
+			this.CancellationTokenSource.Dispose();
+			GC.SuppressFinalize(this);
+		}
 
 		~LoggingService()
-		{
-			this.Dispose();
-			this.CancellationTokenSource.Dispose();
-		}
+			=> this.Dispose();
 
 		public async Task WriteLogsAsync(string correlationID, string developerID, string appID, string serviceName, string objectName, List<string> logs, string stack = null, CancellationToken cancellationToken = default)
 		{
@@ -151,7 +151,7 @@ namespace net.vieapps.Services.APIGateway
 			if (lines.Count > 0)
 				try
 				{
-					var filename = $"{DateTime.Now.ToString("yyyyMMddHH")}_{name}.txt";
+					var filename = $"{DateTime.Now:yyyyMMddHH}_{name}.txt";
 					await UtilityService.WriteTextFileAsync(Path.Combine(LoggingService.LogsPath, filename), lines, true, null, cancellationToken).ConfigureAwait(false);
 				}
 				catch (Exception ex)
@@ -187,6 +187,37 @@ namespace net.vieapps.Services.APIGateway
 			{
 				this.Locker.Release();
 			}
+		}
+
+		public async Task<JToken> FetchLogsAsync(int pageNumber = 1, int pageSize = 100, string correlationID = null, string developerID = null, string appID = null, string serviceName = null, string objectName = null, CancellationToken cancellationToken = default)
+		{
+			var logs = new JArray();
+			long totalRecords = 0;
+			using (var context = new RepositoryContext(false, await this.LoggingDataSource.StartSessionAsync<LoggingItem>(cancellationToken).ConfigureAwait(false)))
+			{
+				var filter = Filters<LoggingItem>.And();
+				if (!string.IsNullOrWhiteSpace(correlationID))
+					filter.Add(Filters<LoggingItem>.Equals("CorrelationID", correlationID));
+				if (!string.IsNullOrWhiteSpace(developerID))
+					filter.Add(Filters<LoggingItem>.Equals("DeveloperID", developerID));
+				if (!string.IsNullOrWhiteSpace(appID))
+					filter.Add(Filters<LoggingItem>.Equals("AppID", appID));
+				if (!string.IsNullOrWhiteSpace(serviceName))
+					filter.Add(Filters<LoggingItem>.Equals("ServiceName", serviceName));
+				if (!string.IsNullOrWhiteSpace(objectName))
+					filter.Add(Filters<LoggingItem>.Equals("ObjectName", objectName));
+
+				totalRecords = await RepositoryMediator.CountAsync(context, this.LoggingDataSource, filter, null, false, null, 0, cancellationToken).ConfigureAwait(false);
+				var loggingItems = await RepositoryMediator.FindAsync(context, this.LoggingDataSource, filter, Sorts<LoggingItem>.Descending("Time"), pageSize, pageNumber, null, false, null, 0, cancellationToken).ConfigureAwait(false);
+				loggingItems?.ForEach(loggingItem => logs.Add(loggingItem.ToJson()));
+			}
+
+			var totalPages = new Tuple<long, int>(totalRecords, pageSize).GetTotalPages();
+			return new JObject
+			{
+				{ "Pagination", new Tuple<long, int, int, int>(totalRecords, totalPages, pageSize, totalPages > 0 && pageNumber > totalPages ? totalPages : pageNumber).GetPagination() },
+				{ "Objects", logs }
+			};
 		}
 	}
 

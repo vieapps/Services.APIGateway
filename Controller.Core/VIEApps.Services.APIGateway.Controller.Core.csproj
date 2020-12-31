@@ -1,9 +1,10 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFrameworks>netcoreapp2.1;netcoreapp3.1</TargetFrameworks>
-		<OutputType>Exe</OutputType>
+		<TargetFrameworks>net5.0;netcoreapp3.1;netcoreapp2.1</TargetFrameworks>
 		<WarningLevel>3</WarningLevel>
+		<NoWarn>1573,1591</NoWarn>
+		<OutputType>Exe</OutputType>
 		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
 		<StartupObject>net.vieapps.Services.APIGateway.Program</StartupObject>
 		<AssemblyName>VIEApps.Services.APIGateway</AssemblyName>
@@ -11,10 +12,10 @@
 		<Authors>VIEApps.net</Authors>
 		<Company>VIEApps.net</Company>
 		<Product>VIEApps NGX</Product>
-		<Copyright>© 2020 VIEApps.net</Copyright>
-		<AssemblyVersion>10.3$(ReleaseVersion)</AssemblyVersion>
-		<FileVersion>10.3$(ReleaseVersion)</FileVersion>
-		<InformationalVersion>10.3.$([System.DateTime]::Now.Year).$([System.DateTime]::Now.Month).$([System.DateTime]::Now.Day)@$(TargetFramework)#$(ReleaseRevision)</InformationalVersion>
+		<Copyright>© 2021 VIEApps.net</Copyright>
+		<AssemblyVersion>10.4$(ReleaseVersion)</AssemblyVersion>
+		<FileVersion>10.4$(ReleaseVersion)</FileVersion>
+		<InformationalVersion>10.4.$([System.DateTime]::Now.Year).$([System.DateTime]::Now.Month).$([System.DateTime]::Now.Day)@$(TargetFramework)#$(ReleaseRevision)</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -31,7 +32,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Microsoft.Extensions.Logging.Console" Version="3.1.8" />
+		<PackageReference Include="Microsoft.Extensions.Logging.Console" Version="5.0.0" />
 		<PackageReference Include="System.Text.Encoding.Extensions" Version="4.3.0" />
 	</ItemGroup>
 

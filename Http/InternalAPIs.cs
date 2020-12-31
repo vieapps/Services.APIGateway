@@ -25,7 +25,7 @@ namespace net.vieapps.Services.APIGateway
 		#region Properties
 		public static ILogger Logger { get; set; }
 
-		public static List<string> ExcludedHeaders { get; } = UtilityService.GetAppSetting("ExcludedHeaders", "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,purpose,ms-aspnetcore-token,x-forwarded-for,x-forwarded-proto,x-forwarded-port,x-original-for,x-original-proto,x-original-remote-endpoint,x-original-port,cdn-loop,cf-ipcountry,cf-ray,cf-visitor,cf-connecting-ip,sec-fetch-site,sec-fetch-mode,sec-fetch-dest,sec-fetch-user").ToList();
+		public static List<string> ExcludedHeaders { get; } = UtilityService.GetAppSetting("ExcludedHeaders", "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,purpose,ms-aspnetcore-token,x-forwarded-for,x-forwarded-proto,x-forwarded-port,x-original-for,x-original-proto,x-original-remote-endpoint,x-original-port,cdn-loop").ToList();
 
 		public static HashSet<string> NoTokenRequiredServices { get; } = $"{UtilityService.GetAppSetting("NoTokenRequiredServices", "")}|indexes|discovery|webhooks".ToLower().ToHashSet('|', true);
 
@@ -61,7 +61,11 @@ namespace net.vieapps.Services.APIGateway
 				ServiceName = queryString["service-name"].GetCapitalizedFirstLetter(),
 				ObjectName = queryString["object-name"].GetCapitalizedFirstLetter(),
 				Query = queryString,
-				Header = context.Request.Headers.ToDictionary(dictionary => InternalAPIs.ExcludedHeaders.ForEach(name => dictionary.Remove(name))),
+				Header = context.Request.Headers.ToDictionary(dictionary =>
+				{
+					InternalAPIs.ExcludedHeaders.ForEach(name => dictionary.Remove(name));
+					dictionary.Keys.Where(name => name.IsStartsWith("cf-") || name.IsStartsWith("sec-")).ToList().ForEach(name => dictionary.Remove(name));
+				}),
 				Extra = extra,
 				CorrelationID = context.GetCorrelationID()
 			};
@@ -230,6 +234,47 @@ namespace net.vieapps.Services.APIGateway
 								? await context.CallServiceAsync(requestInfo.PrepareDefinitionRelated(), Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false)
 								: throw new InvalidRequestException("Unknown request");
 					await context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+				}
+				catch (Exception ex)
+				{
+					context.WriteError(InternalAPIs.Logger, ex, requestInfo);
+				}
+
+			// process request of logs
+			else if (requestInfo.ServiceName.IsEquals("logs"))
+				try
+				{
+					if (requestInfo.Verb.IsEquals("GET"))
+					{
+						var request = requestInfo.GetRequestExpando();
+						var pagination = request.Get<ExpandoObject>("Pagination");
+						var pageNumber = pagination.Get("PageNumber", 1);
+						var pageSize = pagination.Get("PageSize", 100);
+						var filterBy = request.Get<ExpandoObject>("FilterBy");
+						var response = await Global.LoggingService.FetchLogsAsync(pageNumber > 0 ? pageNumber : 1, pageSize > 0 ? pageSize : 100, filterBy.Get<string>("CorrelationID"), filterBy.Get<string>("DeveloperID"), filterBy.Get<string>("AppID"), filterBy.Get<string>("ServiceName"), filterBy.Get<string>("ObjectName"), Global.CancellationTokenSource.Token).ConfigureAwait(false);
+						await context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+					}
+					else
+						throw new MethodNotAllowedException(requestInfo.Verb);
+				}
+				catch (Exception ex)
+				{
+					context.WriteError(InternalAPIs.Logger, ex, requestInfo);
+				}
+
+			// process request to download a temporary file
+			else if (requestInfo.ServiceName.IsEquals("temp.download"))
+				try
+				{
+					if (requestInfo.Verb.IsEquals("GET"))
+					{
+						var fileName = await requestInfo.DownloadTemporaryFileAsync(Global.CancellationTokenSource.Token).ConfigureAwait(false);
+						var fileInfo = new FileInfo(Path.Combine(UtilityService.GetAppSetting("Path:Temp", Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data-files", "temp")), fileName));
+						await context.WriteAsync(fileInfo, fileName.Length > 33 && fileName.Left(32).IsValidUUID() ? fileName.Right(fileName.Length - 33) : fileName, null, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+						return;
+					}
+					else
+						throw new MethodNotAllowedException(requestInfo.Verb);
 				}
 				catch (Exception ex)
 				{
@@ -857,7 +902,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				callingWatch.Stop();
 				exception = ex;
-				throw ex;
+				throw;
 			}
 			finally
 			{

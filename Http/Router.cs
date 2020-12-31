@@ -124,7 +124,6 @@ namespace net.vieapps.Services.APIGateway
 				.UseForwardedHeaders(Global.GetForwardedHeadersOptions())
 				.UseWebSockets(new WebSocketOptions
 				{
-					ReceiveBufferSize = Components.WebSockets.WebSocket.ReceiveBufferSize,
 					KeepAliveInterval = RTU.WebSocket.KeepAliveInterval
 				});
 			Router.Forwarder.RegisterTransport(new WampSharp.AspNetCore.WebSockets.Server.AspNetCoreWebSocketTransport(appBuilder), new JTokenJsonBinding(), new JTokenMessagePackBinding());

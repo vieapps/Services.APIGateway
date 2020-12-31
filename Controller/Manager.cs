@@ -84,7 +84,6 @@ namespace net.vieapps.Services.APIGateway
 		{
 			if (!this.Disposed)
 			{
-				GC.SuppressFinalize(this);
 				this.Disposed = true;
 				try
 				{
@@ -107,7 +106,10 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		public void Dispose()
-			=> this.DisposeAsync().Wait();
+		{
+			this.DisposeAsync().Wait();
+			GC.SuppressFinalize(this);
+		}
 
 		~Manager()
 			=> this.Dispose();

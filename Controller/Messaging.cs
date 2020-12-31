@@ -48,6 +48,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			this.CancellationTokenSource.Cancel();
 			this.CancellationTokenSource.Dispose();
+			GC.SuppressFinalize(this);
 		}
 
 		~MailSender()

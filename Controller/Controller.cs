@@ -35,7 +35,6 @@ namespace net.vieapps.Services.APIGateway
 		{
 			if (!this.IsDisposed)
 			{
-				GC.SuppressFinalize(this);
 				this.IsDisposed = true;
 				await this.StopAsync().ConfigureAwait(false);
 				this.CancellationTokenSource.Dispose();
@@ -45,7 +44,10 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		public void Dispose()
-			=> this.DisposeAsync().Wait();
+		{
+			this.DisposeAsync().Wait();
+			GC.SuppressFinalize(this);
+		}
 
 		~Controller()
 			=> this.Dispose();

@@ -1,15 +1,12 @@
 ﻿#region Related components
 using System;
 using System.IO;
-using System.Text;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
-
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-
 using net.vieapps.Components.Utility;
 #endregion
 
@@ -46,9 +43,9 @@ namespace net.vieapps.Services.APIGateway
 
 		public void Dispose()
 		{
+			GC.SuppressFinalize(this);
 			this.CancellationTokenSource.Cancel();
 			this.CancellationTokenSource.Dispose();
-			GC.SuppressFinalize(this);
 		}
 
 		~MailSender()

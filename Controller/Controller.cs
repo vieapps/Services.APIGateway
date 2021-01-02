@@ -7,7 +7,6 @@ using System.Reactive.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Configuration;
 using System.Reflection;
@@ -45,8 +44,8 @@ namespace net.vieapps.Services.APIGateway
 
 		public void Dispose()
 		{
-			this.DisposeAsync().Wait();
 			GC.SuppressFinalize(this);
+			this.DisposeAsync().Wait();
 		}
 
 		~Controller()
@@ -1202,6 +1201,7 @@ namespace net.vieapps.Services.APIGateway
 			var paths = new HashSet<string>
 			{
 				Global.StatusPath,
+				Global.TempPath,
 				APIGateway.LoggingService.LogsPath
 			};
 			paths.Append(UtilityService.GetAppSetting("HouseKeeper:Folders")?.ToHashSet('|') ?? new HashSet<string>());
@@ -1255,6 +1255,16 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch { }
 			});
+
+			if (this.LoggingService is LoggingService loggingService)
+				Task.Run(async () =>
+				{
+					try
+					{
+						await loggingService.CleanLogsAsync(this.CancellationTokenSource.Token).ConfigureAwait(false);
+					}
+					catch { }
+				}).ConfigureAwait(false);
 
 			// clean recycle-bin contents
 			var logs = this.CleanRecycleBin();

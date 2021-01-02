@@ -2,10 +2,8 @@
 using System;
 using System.IO;
 using System.Collections.Generic;
-
 using WampSharp.V2.Rpc;
 using Newtonsoft.Json.Linq;
-
 using net.vieapps.Components.Utility;
 using net.vieapps.Components.Repository;
 #endregion
@@ -152,9 +150,11 @@ namespace net.vieapps.Services.APIGateway
 			return path;
 		}
 
-		static string _StatusPath = null;
+		static string _StatusPath = null, _TempPath = null;
 
 		internal static string StatusPath => Global._StatusPath ?? (Global._StatusPath = Global.GetPath("Path:Status", "status"));
+
+		internal static string TempPath => Global._TempPath ?? (Global._TempPath = Global.GetPath("Path:Temp", "temp"));
 	}
 
 	[Serializable]

@@ -34,6 +34,8 @@ namespace net.vieapps.Services.APIGateway
 
 		int MaxItems { get; set; } = 13;
 
+		int KeepLogDays { get; set; } = 7;
+
 		SemaphoreSlim Locker { get; } = new SemaphoreSlim(1, 1);
 		#endregion
 
@@ -51,15 +53,23 @@ namespace net.vieapps.Services.APIGateway
 				this.MaxItems = 13;
 			}
 #endif
+			try
+			{
+				this.KeepLogDays = UtilityService.GetAppSetting("Logs:KeepLogDays", "7").CastAs<int>();
+			}
+			catch
+			{
+				this.KeepLogDays = 7;
+			}
 			this.LoggingDataSource = RepositoryMediator.GetDataSource(UtilityService.GetAppSetting("Logs:DataSource"));
 			this.CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 		}
 
 		public void Dispose()
 		{
+			GC.SuppressFinalize(this);
 			this.CancellationTokenSource.Cancel();
 			this.CancellationTokenSource.Dispose();
-			GC.SuppressFinalize(this);
 		}
 
 		~LoggingService()
@@ -218,6 +228,15 @@ namespace net.vieapps.Services.APIGateway
 				{ "Pagination", new Tuple<long, int, int, int>(totalRecords, totalPages, pageSize, totalPages > 0 && pageNumber > totalPages ? totalPages : pageNumber).GetPagination() },
 				{ "Objects", logs }
 			};
+		}
+
+		internal async Task CleanLogsAsync(CancellationToken cancellationToken = default)
+		{
+			using (var context = new RepositoryContext(false, await this.LoggingDataSource.StartSessionAsync<LoggingItem>(cancellationToken).ConfigureAwait(false)))
+			{
+				var filter = Filters<LoggingItem>.LessThan("Time", DateTime.Now.AddDays(0 - this.KeepLogDays));
+				await RepositoryMediator.DeleteManyAsync(context, this.LoggingDataSource, filter, null, cancellationToken).ConfigureAwait(false);
+			}
 		}
 	}
 

@@ -134,7 +134,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		public static void CloseForwarder()
-			=> Task.Run(async () => await Router.ForwardingTokens.Values.ToList().ForEachAsync(async (forwardingToken, cancellationToken) => await forwardingToken.DisposeAsync().ConfigureAwait(false)).ConfigureAwait(false))
+			=> Task.Run(async () => await Router.ForwardingTokens.Values.ToList().ForEachAsync(async forwardingToken => await forwardingToken.DisposeAsync().ConfigureAwait(false)).ConfigureAwait(false))
 				.ContinueWith(_ => Router.Forwarder?.Dispose(), TaskContinuationOptions.OnlyOnRanToCompletion)
 				.ContinueWith(_ => Global.Logger.LogInformation("The forwarder of API Gateway Router was disposed"), TaskContinuationOptions.OnlyOnRanToCompletion)
 				.ConfigureAwait(false)

@@ -51,10 +51,6 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\Users\Service.WindowsAD\VIEApps.Services.Users.WindowsAD.csproj">
-      <Project>{6afc4bf5-20d2-431a-b41e-506bb7e7dfe8}</Project>
-      <Name>VIEApps.Services.Users.WindowsAD</Name>
-    </ProjectReference>
     <ProjectReference Include="..\Host\VIEApps.Services.APIGateway.Host.csproj">
       <Project>{1bc743a3-169d-4d90-ada2-06997ce99c52}</Project>
       <Name>VIEApps.Services.APIGateway.Host</Name>

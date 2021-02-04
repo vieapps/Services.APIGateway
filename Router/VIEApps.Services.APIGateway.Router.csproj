@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFrameworks>net5.0;netcoreapp3.1;netcoreapp2.1;netstandard2.1;netstandard2.0</TargetFrameworks>
+		<TargetFrameworks>net5.0;netstandard2.0</TargetFrameworks>
 		<WarningLevel>3</WarningLevel>
 		<NoWarn>1573,1591</NoWarn>
 		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>

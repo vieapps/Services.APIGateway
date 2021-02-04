@@ -207,7 +207,7 @@ namespace net.vieapps.Services.APIGateway
 			// send messages
 			await MailSender.Messages
 				.Where(kvp => kvp.Value.Time <= DateTime.Now)
-				.ForEachAsync((kvp, index, cancellationToken) => this.SendMessageAsync(kvp.Value.Message, index, onSuccess, onFailure))
+				.ForEachAsync((kvp, index) => this.SendMessageAsync(kvp.Value.Message, index, onSuccess, onFailure))
 				.ConfigureAwait(false);
 		}
 		#endregion
@@ -366,7 +366,7 @@ namespace net.vieapps.Services.APIGateway
 			// send messages
 			await WebHookSender.Messages
 				.Where(kvp => kvp.Value.Time <= DateTime.Now)
-				.ForEachAsync((kvp, cancellationToken) => this.SendMessageAsync(kvp.Value.Message, onSuccess, onFailure))
+				.ForEachAsync(kvp => this.SendMessageAsync(kvp.Value.Message, onSuccess, onFailure))
 				.ConfigureAwait(false);
 		}
 		#endregion

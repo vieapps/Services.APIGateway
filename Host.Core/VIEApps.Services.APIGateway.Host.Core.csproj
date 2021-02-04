@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFrameworks>net5.0;netcoreapp3.1;netcoreapp2.1</TargetFrameworks>
+		<TargetFrameworks>net5.0</TargetFrameworks>
 		<WarningLevel>3</WarningLevel>
 		<NoWarn>1573,1591</NoWarn>
 		<OutputType>Exe</OutputType>
@@ -33,7 +33,7 @@
 
 	<ItemGroup>
 		<PackageReference Include="System.Text.Encoding.Extensions" Version="4.3.0" />
-		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.4.2101.1" />
+		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.4.2102.1" />
 	</ItemGroup>
 
 	<ItemGroup>

@@ -2,23 +2,16 @@
 using System;
 using System.IO;
 using System.Linq;
-using System.Net;
 using System.Text;
 using System.Diagnostics;
 using System.Collections.Generic;
-using System.Threading.Tasks;
-using System.Runtime.InteropServices;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Hosting;
-#if !NETCOREAPP2_1
 using Microsoft.Extensions.Hosting;
-#endif
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Caching.Distributed;
 using Newtonsoft.Json;
 using WampSharp.V2.Realm;
 using net.vieapps.Components.Utility;
@@ -46,26 +39,15 @@ namespace net.vieapps.Services.APIGateway
 				.AddLogging(builder => builder.SetMinimumLevel(this.LogLevel))
 				.AddCache(options => this.Configuration.GetSection("Cache").Bind(options))
 				.AddHttpContextAccessor();
-#if !NETCOREAPP2_1
 			if (Global.UseIISInProcess)
 				services.Configure<IISServerOptions>(options => Global.PrepareIISServerOptions(options, _ =>
 				{
 					options.AllowSynchronousIO = true;
 					options.MaxRequestBodySize = 1024 * 1024 * Global.MaxRequestBodySize;
 				}));
-#endif
 		}
 
-		public void Configure(
-			IApplicationBuilder appBuilder,
-#if !NETCOREAPP2_1
-			IHostApplicationLifetime appLifetime,
-			IWebHostEnvironment environment
-#else
-			IApplicationLifetime appLifetime,
-			IHostingEnvironment environment
-#endif
-		)
+		public void Configure(IApplicationBuilder appBuilder, IHostApplicationLifetime appLifetime, IWebHostEnvironment environment)
 		{
 			// settings
 			var stopwatch = Stopwatch.StartNew();

@@ -4,7 +4,6 @@ using System.Linq;
 using System.Net;
 using System.Net.WebSockets;
 using System.Collections.Generic;
-using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Diagnostics;
@@ -180,7 +179,8 @@ namespace net.vieapps.Services.APIGateway
 			var session = websocket.Get<Session>("Session");
 			if (session == null)
 			{
-				await Task.WhenAll(
+				await Task.WhenAll
+				(
 					Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"No session is attached - Request: {requestMsg}", null, Global.ServiceName, LogLevel.Critical, correlationID),
 					RTU.WebSocket.CloseWebSocketAsync(websocket, WebSocketCloseStatus.PolicyViolation, "No session")
 				).ConfigureAwait(false);
@@ -228,7 +228,8 @@ namespace net.vieapps.Services.APIGateway
 				if ("Authenticated".IsEquals(websocket.GetStatus()))
 					await websocket.ProcessRequestAsync(requestObj, session, correlationID).ConfigureAwait(false);
 				else
-					await Task.WhenAll(
+					await Task.WhenAll
+					(
 						Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs",
 							$"Session is not authenticated" + "\r\n" +
 							$"{websocket.GetConnectionInfo(session)}" + "\r\n" +
@@ -252,65 +253,71 @@ namespace net.vieapps.Services.APIGateway
 
 		static async Task SendAsync(this ManagedWebSocket websocket, Exception exception, string msg = null, string correlationID = null, string identity = null, string additionalMsg = null)
 		{
-			// prepare
 			correlationID = correlationID ?? UtilityService.NewUUID;
-			var wampException = exception is WampException
-				? (exception as WampException).GetDetails()
-				: null;
-
-			msg = msg ?? wampException?.Item2 ?? exception.Message;
-			var type = wampException?.Item3 ?? exception?.GetType().GetTypeName(true);
-			var code = wampException != null ? wampException.Item1 : exception.GetHttpStatusCode();
-
-			var message = new JObject
+			try
 			{
-				{ "Message", msg },
-				{ "Type", type },
-				{ "Code", code },
-				{ "CorrelationID", correlationID }
-			};
+				// prepare
+				var wampException = exception is WampException
+					? (exception as WampException).GetDetails()
+					: null;
 
-			if (Global.IsDebugStacksEnabled)
-			{
-				if (wampException != null)
-					message["Stack"] = wampException.Item4;
+				msg = msg ?? wampException?.Item2 ?? exception.Message;
+				var type = wampException?.Item3 ?? exception?.GetType().GetTypeName(true);
+				var code = wampException != null ? wampException.Item1 : exception.GetHttpStatusCode();
 
-				else
+				var message = new JObject
 				{
-					message["Stack"] = exception.StackTrace;
-					if (exception.InnerException != null)
+					{ "Message", msg },
+					{ "Type", type },
+					{ "Code", code },
+					{ "CorrelationID", correlationID }
+				};
+
+				if (Global.IsDebugStacksEnabled)
+				{
+					if (wampException != null)
+						message["Stack"] = wampException.Item4;
+
+					else
 					{
-						var inners = new JArray();
-						var counter = 1;
-						var inner = exception.InnerException;
-						while (inner != null)
+						message["Stack"] = exception.StackTrace;
+						if (exception.InnerException != null)
 						{
-							inners.Add(new JObject
+							var inners = new JArray();
+							var counter = 1;
+							var inner = exception.InnerException;
+							while (inner != null)
 							{
-								{ "Error", $"({counter}): {inner.Message} [{inner.GetType()}]" },
-								{ "Stack", inner.StackTrace }
-							});
-							counter++;
-							inner = inner.InnerException;
+								inners.Add(new JObject
+								{
+									{ "Error", $"({counter}): {inner.Message} [{inner.GetType()}]" },
+									{ "Stack", inner.StackTrace }
+								});
+								counter++;
+								inner = inner.InnerException;
+							}
+							message["Inners"] = inners;
 						}
-						message["Inners"] = inners;
 					}
 				}
+
+				message = new JObject
+				{
+					{ "Type", "Error" },
+					{ "Data", message }
+				};
+				if (!string.IsNullOrWhiteSpace(identity))
+					message["ID"] = identity;
+
+				// send & write logs
+				await websocket.SendAsync(message, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+				await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", msg ?? exception.Message, exception, Global.ServiceName, LogLevel.Error, correlationID, string.IsNullOrWhiteSpace(additionalMsg) ? null : $"{additionalMsg}\r\nWebSocket Info:\r\n{websocket.GetConnectionInfo()}").ConfigureAwait(false);
 			}
-
-			// send & write logs
-			message = new JObject
+			catch (ObjectDisposedException) { }
+			catch (Exception ex)
 			{
-				{ "Type", "Error" },
-				{ "Data", message }
-			};
-			if (!string.IsNullOrWhiteSpace(identity))
-				message["ID"] = identity;
-
-			await Task.WhenAll(
-				websocket.SendAsync(message, Global.CancellationTokenSource.Token),
-				Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", msg ?? exception.Message, exception, Global.ServiceName, LogLevel.Error, correlationID, string.IsNullOrWhiteSpace(additionalMsg) ? null : $"{additionalMsg}\r\nWebSocket Info:\r\n{websocket.GetConnectionInfo()}")
-			).ConfigureAwait(false);
+				RTU.Logger.LogError($"Error occurred while sending an error message via WebSocket => {ex.Message}", ex);
+			}
 		}
 
 		static Task SendAsync(this ManagedWebSocket websocket, UpdateMessage message, string identity = null)

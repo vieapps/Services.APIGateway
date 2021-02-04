@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFrameworks>net5.0;netcoreapp3.1;netcoreapp2.1;netstandard2.1;netstandard2.0</TargetFrameworks>
+		<TargetFrameworks>net5.0;netstandard2.0</TargetFrameworks>
 		<WarningLevel>3</WarningLevel>
 		<NoWarn>1573,1591</NoWarn>
 		<DocumentationFile>bin/$(Configuration)/$(TargetFramework)/VIEApps.Services.APIGateway.Controller.xml</DocumentationFile>
@@ -27,7 +27,7 @@
 		<PackageReference Include="JavaScriptEngineSwitcher.ChakraCore.Native.osx-x64" Version="3.9.1" Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::OSX)))' == 'true'" />
 		<PackageReference Include="JavaScriptEngineSwitcher.ChakraCore.Native.linux-x64" Version="3.9.1" Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))' == 'true'" />
 		<PackageReference Include="System.Text.Encoding.Extensions" Version="4.3.0" />
-		<PackageReference Include="VIEApps.Services.Base" Version="10.4.2101.1" />
+		<PackageReference Include="VIEApps.Services.Base" Version="10.4.2102.1" />
 	</ItemGroup>
 
 </Project>

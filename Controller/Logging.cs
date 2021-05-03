@@ -24,6 +24,10 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static string LogsPath => LoggingService._LogsPath ?? (LoggingService._LogsPath = Global.GetPath("Path:Logs", "logs"));
 
+		bool IsDisabled => "true".IsEquals(UtilityService.GetAppSetting("Logs:Disabled", "false"));
+
+		bool WriteLogsIntoFiles => "true".IsEquals(UtilityService.GetAppSetting("Logs:WriteFiles", "true"));
+
 		ConcurrentDictionary<string, ConcurrentQueue<string>> Logs { get; } = new ConcurrentDictionary<string, ConcurrentQueue<string>>();
 
 		ConcurrentQueue<LoggingItem> LoggingItems { get; } = new ConcurrentQueue<LoggingItem>();
@@ -77,6 +81,10 @@ namespace net.vieapps.Services.APIGateway
 
 		public async Task WriteLogsAsync(string correlationID, string developerID, string appID, string serviceName, string objectName, List<string> logs, string stack = null, CancellationToken cancellationToken = default)
 		{
+			// disabled
+			if (this.IsDisabled)
+				return;
+
 			// prepare
 			var loggingItem = new LoggingItem
 			{
@@ -133,10 +141,14 @@ namespace net.vieapps.Services.APIGateway
 				await this.Locker.WaitAsync(this.CancellationTokenSource.Token).ConfigureAwait(false);
 				try
 				{
-					await Task.WhenAll(
-						this.FlushIntoFileAsync(name + suffix, logItems, this.CancellationTokenSource.Token),
-						this.LoggingDataSource != null ? this.FlushIntoDatabaseAsync(this.CancellationTokenSource.Token) : Task.CompletedTask
-					).ConfigureAwait(false);
+					if (logItems.Count >= this.MaxItems)
+						using (var timeoutTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(13)))
+						using (var cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(this.CancellationTokenSource.Token, timeoutTokenSource.Token))
+							await Task.WhenAll
+							(
+								this.FlushIntoFileAsync(name + suffix, logItems, cancellationTokenSource.Token),
+								this.LoggingDataSource != null ? this.FlushIntoDatabaseAsync(cancellationTokenSource.Token) : Task.CompletedTask
+							).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -158,7 +170,7 @@ namespace net.vieapps.Services.APIGateway
 			while (logs.TryDequeue(out var log))
 				lines.Add(log);
 
-			if (lines.Count > 0)
+			if (lines.Count > 0 && this.WriteLogsIntoFiles)
 				try
 				{
 					var filename = $"{DateTime.Now:yyyyMMddHH}_{name}.txt";
@@ -184,8 +196,9 @@ namespace net.vieapps.Services.APIGateway
 			await this.Locker.WaitAsync(cancellationToken).ConfigureAwait(false);
 			try
 			{
-				await Task.WhenAll(
-					this.Logs.ForEachAsync((kvp, token) => this.FlushIntoFileAsync(kvp.Key, kvp.Value, token), cancellationToken, true, false),
+				await Task.WhenAll
+				(
+					this.Logs.ForEachAsync(kvp => this.FlushIntoFileAsync(kvp.Key, kvp.Value, cancellationToken), true, false),
 					this.LoggingDataSource != null ? this.FlushIntoDatabaseAsync(cancellationToken) : Task.CompletedTask
 				).ConfigureAwait(false);
 			}

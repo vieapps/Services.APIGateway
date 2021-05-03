@@ -57,7 +57,7 @@ namespace net.vieapps.Services.APIGateway
 			}).BuildServiceProvider().GetService<ILoggerFactory>());
 
 			var logPath = UtilityService.GetAppSetting("Path:Logs");
-			if (logPath != null && Directory.Exists(logPath))
+			if (!string.IsNullOrWhiteSpace(logPath) && Directory.Exists(logPath))
 			{
 				logPath = Path.Combine(logPath, "{Hour}_apigateway.controller.txt");
 				Components.Utility.Logger.GetLoggerFactory().AddFile(logPath, logLevel);
@@ -90,7 +90,7 @@ namespace net.vieapps.Services.APIGateway
 			Program.SetupEventHandlers();
 
 			// prepare hooks
-			AppDomain.CurrentDomain.ProcessExit += (sender, arguments) => 
+			AppDomain.CurrentDomain.ProcessExit += (sender, arguments) =>
 			{
 				if (!Program.IsStopped)
 				{
@@ -302,13 +302,31 @@ namespace net.vieapps.Services.APIGateway
 			Global.OnSendEmailFailure = (message, exception) =>
 			{
 				Program.Logger.LogError(message, exception);
-				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, null, null, "APIGateway", "Emails", message, exception.GetStack())).ConfigureAwait(false);
+				Task.Run(async () =>
+				{
+					try
+					{
+						var loggingService = Program.GetLoggingService();
+						if (loggingService != null)
+							await loggingService.WriteLogAsync(UtilityService.NewUUID, null, null, "APIGateway", "Emails", message, exception.GetStack()).ConfigureAwait(false);
+					}
+					catch { }
+				}).ConfigureAwait(false);
 			};
 
 			Global.OnSendWebHookFailure = (message, exception) =>
 			{
 				Program.Logger.LogError(message, exception);
-				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, null, null, "APIGateway", "WebHooks", message, exception.GetStack())).ConfigureAwait(false);
+				Task.Run(async () =>
+				{
+					try
+					{
+						var loggingService = Program.GetLoggingService();
+						if (loggingService != null)
+							await loggingService.WriteLogAsync(UtilityService.NewUUID, null, null, "APIGateway", "WebHooks", message, exception.GetStack()).ConfigureAwait(false);
+					}
+					catch { }
+				}).ConfigureAwait(false);
 			};
 
 			Global.OnServiceStarted = Global.OnServiceStopped = Global.OnGotServiceMessage = (serviceName, message) =>
@@ -343,7 +361,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		static void Stop()
-			=> Task.Run(async () => await(Program.IsStopped? Task.CompletedTask : Program.StopAsync()).ConfigureAwait(false)).ConfigureAwait(false).GetAwaiter().GetResult();
+			=> Task.Run(async () => await (Program.IsStopped ? Task.CompletedTask : Program.StopAsync()).ConfigureAwait(false)).ConfigureAwait(false).GetAwaiter().GetResult();
 
 		static ILoggingService GetLoggingService()
 			=> Program.LoggingService ?? (Program.LoggingService = Router.OutgoingChannel?.RealmProxy.Services.GetCalleeProxy<ILoggingService>(ProxyInterceptor.Create()));

@@ -157,7 +157,6 @@ namespace net.vieapps.Services.APIGateway
 		internal static string TempPath => Global._TempPath ?? (Global._TempPath = Global.GetPath("Path:Temp", "temp"));
 	}
 
-	[Serializable]
 	[Repository]
 	public abstract class Repository<T> : RepositoryBase<T> where T : class { }
 }

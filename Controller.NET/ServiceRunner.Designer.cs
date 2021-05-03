@@ -2,18 +2,18 @@
 {
 	partial class ServiceRunner
 	{
-		System.ComponentModel.IContainer components = null;
+		System.ComponentModel.IContainer _component = null;
 
 		protected override void Dispose(bool disposing)
 		{
-			if (disposing && (this.components != null))
-				this.components.Dispose();
+			if (disposing && (this._component != null))
+				this._component.Dispose();
 			base.Dispose(disposing);
 		}
 
 		void InitializeComponent()
 		{
-			this.components = new System.ComponentModel.Container();
+			this._component = new System.ComponentModel.Container();
 			this.ServiceName = "VIEApps-APIGateway-Controller";
 		}
 	}

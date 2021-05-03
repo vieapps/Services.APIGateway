@@ -79,8 +79,8 @@ namespace net.vieapps.Services.APIGateway
 				=> items?.ForEach(kvp => this.Set(kvp.Key, kvp.Value));
 
 			public T Get<T>(string name, T @default = default)
-				=> this.Extra.TryGetValue(name, out object value) && value != null && value is T
-					? (T)value
+				=> this.Extra.TryGetValue(name, out object value) && value != null && value is T val
+					? val
 					: @default;
 		}
 		#endregion
@@ -99,8 +99,6 @@ namespace net.vieapps.Services.APIGateway
 		LoggingService Logger { get; set; }
 
 		ILoggingService LoggingService { get; set; }
-
-		IRTUService RTUService { get; set; }
 
 		List<IAsyncDisposable> HelperServices { get; } = new List<IAsyncDisposable>();
 
@@ -187,14 +185,14 @@ namespace net.vieapps.Services.APIGateway
 				Available = true
 			};
 
-			if (args?.FirstOrDefault(arg => arg.IsStartsWith("/no-helper-services")) != null)
+			if (args?.FirstOrDefault(arg => arg.IsStartsWith("/no-business-services")) != null || "false".IsEquals(UtilityService.GetAppSetting("Controller:Services")))
+				this.AllowRegisterBusinessServices = false;
+
+			if (args?.FirstOrDefault(arg => arg.IsStartsWith("/no-helper-services")) != null || "false".IsEquals(UtilityService.GetAppSetting("Controller:Helper:Services")))
 				this.AllowRegisterHelperServices = false;
 
-			if (args?.FirstOrDefault(arg => arg.IsStartsWith("/no-helper-timers")) != null)
+			if (args?.FirstOrDefault(arg => arg.IsStartsWith("/no-helper-timers")) != null || "false".IsEquals(UtilityService.GetAppSetting("Controller:Helper:Timers")))
 				this.AllowRegisterHelperTimers = false;
-
-			if (args?.FirstOrDefault(arg => arg.IsStartsWith("/no-business-services")) != null)
-				this.AllowRegisterBusinessServices = false;
 
 			// prepare directories
 			try
@@ -360,6 +358,7 @@ namespace net.vieapps.Services.APIGateway
 
 							if (this.State == ServiceState.Ready)
 							{
+								// helper services
 								if (this.AllowRegisterHelperTimers)
 									try
 									{
@@ -373,10 +372,11 @@ namespace net.vieapps.Services.APIGateway
 										Global.OnError?.Invoke($"Error occurred while registering background workers & schedulers => {ex.Message}", ex);
 									}
 
+								// business services
 								if (this.AllowRegisterBusinessServices)
 								{
 									Parallel.ForEach(this.BusinessServices, kvp => this.StartBusinessService(kvp.Key));
-									this.StartTimer(() => this.WatchBusinessServices(), 30);
+									this.StartTimer(() => this.WatchBusinessServices(), 5);
 								}
 							}
 
@@ -405,13 +405,13 @@ namespace net.vieapps.Services.APIGateway
 
 							while (Router.IncomingChannel == null || Router.OutgoingChannel == null)
 								await Task.Delay(UtilityService.GetRandomNumber(123, 456), this.CancellationTokenSource.Token).ConfigureAwait(false);
-							this.RTUService = this.RTUService ?? Router.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create());
 
 							if (this.AllowRegisterBusinessServices || this.AllowRegisterHelperServices || this.AllowRegisterHelperTimers)
 								await this.SendInterCommunicateMessageAsync("Controller#Info", this.Info.ToJson(), this.CancellationTokenSource.Token).ConfigureAwait(false);
 
 							await Task.Delay(UtilityService.GetRandomNumber(4567, 5678), this.CancellationTokenSource.Token).ConfigureAwait(false);
-							await Task.WhenAll(
+							await Task.WhenAll
+							(
 								this.SendInterCommunicateMessageAsync("Controller#RequestInfo", null, this.CancellationTokenSource.Token),
 								this.SendInterCommunicateMessageAsync("Service#RequestInfo", null, this.CancellationTokenSource.Token)
 							).ConfigureAwait(false);
@@ -442,7 +442,6 @@ namespace net.vieapps.Services.APIGateway
 								await Task.Delay(UtilityService.GetRandomNumber(123, 456), this.CancellationTokenSource.Token).ConfigureAwait(false);
 
 							this.LoggingService = this.LoggingService ?? Router.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<ILoggingService>(ProxyInterceptor.Create());
-							this.RTUService = this.RTUService ?? Router.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create());
 
 							try
 							{
@@ -493,7 +492,8 @@ namespace net.vieapps.Services.APIGateway
 			if (this.AllowRegisterBusinessServices || this.Tasks.Count > 0)
 				try
 				{
-					await Task.WhenAll(
+					await Task.WhenAll
+					(
 						this.BusinessServices.Keys.ForEachAsync(async (name, cancellationToken) => await Task.Run(() => this.StopBusinessService(name, false, false)).ConfigureAwait(false), this.CancellationTokenSource.Token),
 						this.Tasks.Values.ForEachAsync(async (serviceInfo, cancellationToken) => await Task.Run(() => ExternalProcess.Stop(serviceInfo.Instance, null, null, 789)).ConfigureAwait(false), this.CancellationTokenSource.Token)
 					).ConfigureAwait(false);
@@ -528,7 +528,7 @@ namespace net.vieapps.Services.APIGateway
 			// dipose all helper services
 			if (this.AllowRegisterHelperServices)
 			{
-				await this.HelperServices.ForEachAsync(async (service, _) =>
+				await this.HelperServices.ForEachAsync(async service =>
 				{
 					try
 					{
@@ -538,7 +538,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 						Global.OnError?.Invoke($"Cannot dispose the helper service => {ex.Message}", ex);
 					}
-				}, this.CancellationTokenSource.Token).ConfigureAwait(false);
+				}).ConfigureAwait(false);
 				Global.OnProcess?.Invoke($"{this.HelperServices.Count:#,##0} helper service(s) of the API Gateway Controller was disposed");
 			}
 
@@ -563,13 +563,9 @@ namespace net.vieapps.Services.APIGateway
 			{
 				this.InterCommunicator?.Dispose();
 				this.UpdateCommunicator?.Dispose();
-
-				this.RTUService = null;
 				await Router.DisconnectAsync().ConfigureAwait(false);
-
 				this.State = ServiceState.Disconnected;
 				this.CancellationTokenSource.Cancel();
-
 				Global.OnProcess?.Invoke($"The API Gateway Controller was disconnected");
 			}
 			catch (Exception ex)
@@ -862,7 +858,8 @@ namespace net.vieapps.Services.APIGateway
 				if (!File.Exists(serviceHosting + (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "")))
 					throw new FileNotFoundException($"The service hosting is not found [{serviceHosting + (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "")}]");
 
-				this.BusinessServices[name].Instance = ExternalProcess.Start(
+				this.BusinessServices[name].Instance = ExternalProcess.Start
+				(
 					serviceHosting,
 					$"/svc:{this.BusinessServices[name].Arguments} /agc:r {this.GetServiceArguments().Replace("/", "/call-")} {arguments ?? ""} /controller-id:{this.Info.ID}".Trim(),
 					(sender, args) =>
@@ -946,7 +943,8 @@ namespace net.vieapps.Services.APIGateway
 						this.SendServiceInfo(name, processInfo.Instance?.Arguments, false, false);
 				}
 			else
-				ExternalProcess.Stop(
+				ExternalProcess.Stop
+				(
 					processInfo.Instance,
 					info =>
 					{
@@ -1009,9 +1007,6 @@ namespace net.vieapps.Services.APIGateway
 				this.HelperServices.Add(await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(this.Logger, RegistrationInterceptor.Create()).ConfigureAwait(false));
 				Global.OnProcess?.Invoke($"The logging service was{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
 
-				this.HelperServices.Add(await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(new RTUService(), RegistrationInterceptor.Create()).ConfigureAwait(false));
-				Global.OnProcess?.Invoke($"The real-time update (RTU) service was{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
-
 				this.HelperServices.Add(await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(new MessagingService(), RegistrationInterceptor.Create()).ConfigureAwait(false));
 				Global.OnProcess?.Invoke($"The messaging service was{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
 			}
@@ -1041,16 +1036,15 @@ namespace net.vieapps.Services.APIGateway
 
 		void RegisterMessagingTimers()
 		{
-			// send email messages (10 seconds)
-			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:Mail", "10"), out var interval))
-				interval = 10;
+			// send email messages
 			this.StartTimer(async () =>
 			{
 				if (this.MailSender == null)
 					try
 					{
 						this.MailSender = new MailSender(this.CancellationTokenSource.Token);
-						await this.MailSender.ProcessAsync(
+						await this.MailSender.ProcessAsync
+						(
 							async message =>
 							{
 								if (this.LoggingService != null)
@@ -1084,20 +1078,20 @@ namespace net.vieapps.Services.APIGateway
 					}
 					finally
 					{
+						this.MailSender?.Dispose();
 						this.MailSender = null;
 					}
-			}, interval);
+			}, Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:Mail", "7"), out var emailInterval) && emailInterval > 0 ? emailInterval : 7);
 
-			// send web hook messages (25 seconds)
-			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:WebHook", "25"), out interval))
-				interval = 25;
+			// send web hook messages
 			this.StartTimer(async () =>
 			{
 				if (this.WebHookSender == null)
 					try
 					{
 						this.WebHookSender = new WebHookSender(this.CancellationTokenSource.Token);
-						await this.WebHookSender.ProcessAsync(
+						await this.WebHookSender.ProcessAsync
+						(
 							async message =>
 							{
 								if (this.LoggingService != null)
@@ -1127,9 +1121,10 @@ namespace net.vieapps.Services.APIGateway
 					}
 					finally
 					{
+						this.WebHookSender?.Dispose();
 						this.WebHookSender = null;
 					}
-			}, interval);
+			}, Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:WebHook", "3"), out var webhookInterval) && webhookInterval > 0 ? webhookInterval : 3);
 		}
 
 		void RegisterTaskSchedulingTimers()
@@ -1138,7 +1133,7 @@ namespace net.vieapps.Services.APIGateway
 #if DEBUG
 			var interval = 5;
 #else
-			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:FlushLogs", "45"), out int interval))
+			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:FlushLogs", "45"), out var interval))
 				interval = 45;
 #endif
 			this.StartTimer(async () => await (this.Logger != null ? this.Logger.FlushAsync() : Task.CompletedTask).ConfigureAwait(false), interval);
@@ -1158,14 +1153,15 @@ namespace net.vieapps.Services.APIGateway
 			// ping - default: 2 minutes
 			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:Ping", "120"), out var pingInterval))
 				pingInterval = 120;
+
 			this.StartTimer(() =>
 			{
 				if ((DateTime.Now - this.ClientPingTime).TotalSeconds >= pingInterval)
-					Task.Run(async () => await this.RTUService.SendUpdateMessageAsync(new UpdateMessage
+					Task.Run(async () => await new UpdateMessage
 					{
 						Type = "Ping",
 						DeviceID = "*",
-					}, this.CancellationTokenSource.Token).ConfigureAwait(false))
+					}.SendAsync().ConfigureAwait(false))
 					.ContinueWith(_ => this.ClientPingTime = DateTime.Now, TaskContinuationOptions.OnlyOnRanToCompletion)
 					.ConfigureAwait(false);
 			}, pingInterval + 13);
@@ -1173,14 +1169,15 @@ namespace net.vieapps.Services.APIGateway
 			// scheduler (update online status, signal to run scheduler at client, ...) - default: 15 minutes
 			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:Scheduler", "900"), out var scheduleInterval))
 				scheduleInterval = 900;
+
 			this.StartTimer(() =>
 			{
 				if ((DateTime.Now - this.ClientSchedulingTime).TotalSeconds >= scheduleInterval)
-					Task.Run(async () => await this.RTUService.SendUpdateMessageAsync(new UpdateMessage
+					Task.Run(async () => await new UpdateMessage
 					{
 						Type = "Scheduler",
 						DeviceID = "*",
-					}, this.CancellationTokenSource.Token).ConfigureAwait(false))
+					}.SendAsync().ConfigureAwait(false))
 					.ContinueWith(_ => this.ClientSchedulingTime = DateTime.Now, TaskContinuationOptions.OnlyOnRanToCompletion)
 					.ConfigureAwait(false);
 			}, scheduleInterval + 13);
@@ -1474,16 +1471,13 @@ namespace net.vieapps.Services.APIGateway
 
 		public async Task SendInterCommunicateMessageAsync(string type, JToken data = null, CancellationToken cancellationToken = default)
 		{
-			if (this.RTUService == null && Router.OutgoingChannel != null)
-				this.RTUService = Router.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create());
-
 			try
 			{
-				await this.RTUService.SendInterCommunicateMessageAsync(new CommunicateMessage("APIGateway")
+				await new CommunicateMessage("APIGateway")
 				{
 					Type = type,
 					Data = data ?? new JObject()
-				}, cancellationToken).ConfigureAwait(false);
+				}.SendAsync().ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{

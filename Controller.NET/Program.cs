@@ -59,7 +59,7 @@ namespace net.vieapps.Services.APIGateway
 			Components.Utility.Logger.AssignLoggerFactory(new ServiceCollection().AddLogging(builder => builder.SetMinimumLevel(logLevel)).BuildServiceProvider().GetService<ILoggerFactory>());
 
 			var logPath = UtilityService.GetAppSetting("Path:Logs");
-			if (logPath != null && Directory.Exists(logPath))
+			if (!string.IsNullOrWhiteSpace(logPath) && Directory.Exists(logPath))
 			{
 				logPath = Path.Combine(logPath, "{Hour}_apigateway.controller.txt");
 				Components.Utility.Logger.GetLoggerFactory().AddFile(logPath, logLevel);

@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Reactive.Linq;
-using System.Runtime.InteropServices;
 using WampSharp.V2.Realm;
 using WampSharp.V2.Core.Contracts;
 using Newtonsoft.Json.Linq;
@@ -52,7 +51,6 @@ namespace net.vieapps.Services.APIGateway
 				{
 					while (Router.IncomingChannel == null || Router.OutgoingChannel == null)
 						await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
-					this.RTUService = Router.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create());
 					await this.SendRequestInfoAsync().ConfigureAwait(false);
 					Global.OnProcess?.Invoke($"Successfully subscribe the manager's communicator");
 				}
@@ -99,7 +97,6 @@ namespace net.vieapps.Services.APIGateway
 				}
 				this.Communicator?.Dispose();
 				this.RequestInfoTimer?.Dispose();
-				this.RTUService = null;
 				Global.OnProcess?.Invoke($"The API Gateway Manager was disposed");
 				await Task.Delay(123).ConfigureAwait(false);
 			}
@@ -124,8 +121,6 @@ namespace net.vieapps.Services.APIGateway
 		IAsyncDisposable Instance { get; set; }
 
 		IDisposable Communicator { get; set; }
-
-		IRTUService RTUService { get; set; }
 
 		IDisposable RequestInfoTimer { get; set; }
 
@@ -222,18 +217,14 @@ namespace net.vieapps.Services.APIGateway
 		#region Process inter-communicate messages
 		public async Task SendInterCommunicateMessageAsync(string type, JToken data = null)
 		{
-			if (this.RTUService == null)
-				return;
-
 			var message = new CommunicateMessage("APIGateway")
 			{
 				Type = type,
 				Data = data ?? new JObject()
 			};
-
 			try
 			{
-				await this.RTUService.SendInterCommunicateMessageAsync(message).ConfigureAwait(false);
+				await message.SendAsync().ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
@@ -241,8 +232,7 @@ namespace net.vieapps.Services.APIGateway
 					try
 					{
 						await Task.Delay(UtilityService.GetRandomNumber(456, 789)).ConfigureAwait(false);
-						this.RTUService = Router.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<IRTUService>(ProxyInterceptor.Create());
-						await this.RTUService.SendInterCommunicateMessageAsync(message).ConfigureAwait(false);
+						await message.SendAsync().ConfigureAwait(false);
 					}
 					catch (Exception exception)
 					{

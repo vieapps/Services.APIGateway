@@ -15,6 +15,8 @@ namespace net.vieapps.Services.APIGateway
 {
 	public abstract class ServiceHostingBase
 	{
+		bool WriteLogsIntoFiles => "true".IsEquals(UtilityService.GetAppSetting("Logs:WriteFiles", "true"));
+
 		protected string ServiceTypeName { get; private set; }
 
 		protected string ServiceAssemblyName { get; private set; }
@@ -205,7 +207,7 @@ namespace net.vieapps.Services.APIGateway
 			Components.Caching.Cache.AssignLoggerFactory(Logger.GetLoggerFactory());
 
 			var logPath = UtilityService.GetAppSetting("Path:Logs");
-			if (!string.IsNullOrWhiteSpace(logPath) && Directory.Exists(logPath))
+			if (this.WriteLogsIntoFiles && !string.IsNullOrWhiteSpace(logPath) && Directory.Exists(logPath))
 			{
 				logPath = Path.Combine(logPath, "{Hour}_" + $"{service.ServiceName.ToLower()}.all.txt");
 				Logger.GetLoggerFactory().AddFile(logPath, logLevel);

@@ -27,7 +27,7 @@ namespace net.vieapps.Services.APIGateway
 
 		public static List<string> ExcludedHeaders { get; } = UtilityService.GetAppSetting("ExcludedHeaders", "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,purpose,ms-aspnetcore-token,x-forwarded-for,x-forwarded-proto,x-forwarded-port,x-original-for,x-original-proto,x-original-remote-endpoint,x-original-port,cdn-loop").ToList();
 
-		public static HashSet<string> NoTokenRequiredServices { get; } = $"{UtilityService.GetAppSetting("NoTokenRequiredServices", "")}|indexes|discovery|webhooks".ToLower().ToHashSet('|', true);
+		public static HashSet<string> NoTokenRequiredServices { get; } = $"{UtilityService.GetAppSetting("NoTokenRequiredServices", "")}|indexes|discovery|webhook|webhooks".ToLower().ToHashSet('|', true);
 
 		public static ConcurrentDictionary<string, JObject> Controllers { get; } = new ConcurrentDictionary<string, JObject>();
 
@@ -42,9 +42,23 @@ namespace net.vieapps.Services.APIGateway
 			var queryString = context.Request.QueryString.ToDictionary(query =>
 			{
 				var pathSegments = context.GetRequestPathSegments();
-				query["service-name"] = pathSegments.Length > 0 && !string.IsNullOrWhiteSpace(pathSegments[0]) ? pathSegments[0].GetANSIUri(true, true) : "";
-				query["object-name"] = pathSegments.Length > 1 && !string.IsNullOrWhiteSpace(pathSegments[1]) ? pathSegments[1].GetANSIUri(true, true) : "";
-				query["object-identity"] = pathSegments.Length > 2 && !string.IsNullOrWhiteSpace(pathSegments[2]) ? pathSegments[2].GetANSIUri() : "";
+				var serviceName = pathSegments.Length > 0 && !string.IsNullOrWhiteSpace(pathSegments[0])
+					? pathSegments[0].GetANSIUri(true, true)
+					: context.GetHeaderParameter("ServiceName") ?? "";
+				var objectName = pathSegments.Length > 1 && !string.IsNullOrWhiteSpace(pathSegments[1])
+					? pathSegments[1].GetANSIUri(true, true)
+					: context.GetHeaderParameter("ObjectName") ?? "";
+				var objectIdentity = pathSegments.Length > 2 && !string.IsNullOrWhiteSpace(pathSegments[2])
+					? pathSegments[2].GetANSIUri()
+					: context.GetHeaderParameter("ObjectIdentity") ?? "";
+				if (serviceName.IsEquals("webhook") || serviceName.IsEquals("webhooks"))
+				{
+					objectName = context.GetHeaderParameter("ServiceName") ?? objectName;
+					objectIdentity = context.GetHeaderParameter("ObjectName") ?? objectIdentity;
+				}
+				query["service-name"] = serviceName;
+				query["object-name"] = objectName;
+				query["object-identity"] = objectIdentity;
 			});
 			var extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 			if (queryString.Remove("x-request-extra", out var extraInfo) && !string.IsNullOrWhiteSpace(extraInfo))
@@ -103,9 +117,9 @@ namespace net.vieapps.Services.APIGateway
 				}
 
 				// parse and update information from token
-				var tokenIsRequired = isActivationProccessed || (isSessionInitialized && (requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.IsSystemAccount) && !requestInfo.Query.ContainsKey("register"))
-					? false
-					: !InternalAPIs.NoTokenRequiredServices.Contains(requestInfo.ServiceName);
+				var tokenIsRequired = !isActivationProccessed 
+					&& (!isSessionInitialized || !requestInfo.Session.User.ID.Equals("") && !requestInfo.Session.User.IsSystemAccount || requestInfo.Query.ContainsKey("register"))
+					&& !InternalAPIs.NoTokenRequiredServices.Contains(requestInfo.ServiceName);
 
 				if (!string.IsNullOrWhiteSpace(authenticateToken))
 				{
@@ -271,7 +285,26 @@ namespace net.vieapps.Services.APIGateway
 						var fileName = await requestInfo.DownloadTemporaryFileAsync(Global.CancellationTokenSource.Token).ConfigureAwait(false);
 						var fileInfo = new FileInfo(Path.Combine(UtilityService.GetAppSetting("Path:Temp", Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data-files", "temp")), fileName));
 						await context.WriteAsync(fileInfo, fileName.Length > 33 && fileName.Left(32).IsValidUUID() ? fileName.Right(fileName.Length - 33) : fileName, null, Global.CancellationTokenSource.Token).ConfigureAwait(false);
-						return;
+					}
+					else
+						throw new MethodNotAllowedException(requestInfo.Verb);
+				}
+				catch (Exception ex)
+				{
+					context.WriteError(InternalAPIs.Logger, ex, requestInfo);
+				}
+
+			// process request of web-hook messages 
+			else if (requestInfo.ServiceName.IsEquals("webhook") || requestInfo.ServiceName.IsEquals("webhooks"))
+				try
+				{
+					if (requestInfo.Verb.IsEquals("POST"))
+					{
+						requestInfo.ServiceName = requestInfo.Query["service-name"] = requestInfo.ObjectName;
+						requestInfo.ObjectName = requestInfo.Query["object-name"] = requestInfo.GetObjectIdentity();
+						requestInfo.Query.Remove("object-identity");
+						await net.vieapps.Services.Router.GetService(requestInfo.ServiceName).ProcessWebHookMessageAsync(requestInfo, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+						await context.WriteAsync("OK", "text/plain", requestInfo.CorrelationID, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 					}
 					else
 						throw new MethodNotAllowedException(requestInfo.Verb);

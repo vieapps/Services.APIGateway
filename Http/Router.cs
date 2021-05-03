@@ -77,7 +77,8 @@ namespace net.vieapps.Services.APIGateway
 						}
 					});
 
-					await Task.WhenAll(
+					await Task.WhenAll
+					(
 						Global.RegisterServiceAsync("Http.InternalAPIs"),
 						Task.Delay(UtilityService.GetRandomNumber(234, 567), Global.CancellationTokenSource.Token)
 					).ConfigureAwait(false);
@@ -85,7 +86,8 @@ namespace net.vieapps.Services.APIGateway
 					while (Services.Router.IncomingChannel == null)
 						await Task.Delay(UtilityService.GetRandomNumber(234, 567), Global.CancellationTokenSource.Token).ConfigureAwait(false);
 
-					await Task.WhenAll(
+					await Task.WhenAll
+					(
 						new CommunicateMessage("APIGateway")
 						{
 							Type = "Controller#RequestInfo"

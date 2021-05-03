@@ -207,7 +207,9 @@ namespace net.vieapps.Services.APIGateway
 			// send messages
 			await MailSender.Messages
 				.Where(kvp => kvp.Value.Time <= DateTime.Now)
-				.ForEachAsync((kvp, index) => this.SendMessageAsync(kvp.Value.Message, index, onSuccess, onFailure))
+				.Select(kvp => kvp.Value.Message)
+				.ToList()
+				.ForEachAsync((message, index) => this.SendMessageAsync(message, index, onSuccess, onFailure))
 				.ConfigureAwait(false);
 		}
 		#endregion
@@ -225,6 +227,7 @@ namespace net.vieapps.Services.APIGateway
 
 		public void Dispose()
 		{
+			GC.SuppressFinalize(this);
 			this.CancellationTokenSource.Cancel();
 			this.CancellationTokenSource.Dispose();
 		}
@@ -233,7 +236,7 @@ namespace net.vieapps.Services.APIGateway
 			=> this.Dispose();
 
 		#region Information
-		static Dictionary<string, WebHookInfo> Messages = null;
+		static Dictionary<string, WebHookInfo> Messages { get; } = new Dictionary<string, WebHookInfo>();
 		static string _WebHooksPath = null;
 		internal static string WebHooksPath => WebHookSender._WebHooksPath ?? (WebHookSender._WebHooksPath = Global.GetPath("Path:WebHooks", "web-hooks"));
 
@@ -255,10 +258,8 @@ namespace net.vieapps.Services.APIGateway
 		#region Load & Save messages
 		internal static async Task LoadMessagesAsync()
 		{
-			WebHookSender.Messages = WebHookSender.Messages ?? new Dictionary<string, WebHookInfo>();
-
 			// previous messages
-			var filePath = Path.Combine(Global.StatusPath, "webhooks.json");
+			var filePath = Path.Combine(Global.StatusPath, "web-hooks.json");
 			if (File.Exists(filePath))
 				try
 				{
@@ -281,7 +282,7 @@ namespace net.vieapps.Services.APIGateway
 			// new messages
 			if (Directory.Exists(WebHookSender.WebHooksPath))
 				await UtilityService.GetFiles(WebHookSender.WebHooksPath, "*.msg")
-					.ForEachAsync(async (file, token) =>
+					.ForEachAsync(async file =>
 					{
 						try
 						{
@@ -293,24 +294,24 @@ namespace net.vieapps.Services.APIGateway
 							Global.OnError?.Invoke($"Error occurred while loading web-hook messages: {ex.Message}", ex);
 						}
 						file.Delete();
-					}, CancellationToken.None, true, false);
+					}, true, false)
+					.ConfigureAwait(false);
 		}
 
 		internal static void SaveMessages()
 		{
-			if (WebHookSender.Messages != null && WebHookSender.Messages.Count > 0)
-				UtilityService.WriteTextFile(Path.Combine(Global.StatusPath, "webhooks.json"), WebHookSender.Messages.ToJArray(info => new JObject()
+			if (WebHookSender.Messages.Count > 0)
+				UtilityService.WriteTextFile(Path.Combine(Global.StatusPath, "web-hooks.json"), WebHookSender.Messages.ToJArray(info => new JObject
 				{
 					{ "Time", info.Time },
 					{ "Counters", info.Counters },
 					{ "Message", info.Message.Encrypted }
 				}).ToString(Formatting.Indented));
-			WebHookSender.Messages = null;
 		}
 		#endregion
 
 		#region Send messages
-		async Task SendMessageAsync(WebHookMessage message, Action<WebHookMessage> onSuccess = null, Action<WebHookMessage, Exception, bool> onFailure = null)
+		async Task SendMessageAsync(WebHookMessage message, Action<WebHookMessage> onSuccess, Action<WebHookMessage, Exception, bool> onFailure)
 		{
 			try
 			{
@@ -366,7 +367,9 @@ namespace net.vieapps.Services.APIGateway
 			// send messages
 			await WebHookSender.Messages
 				.Where(kvp => kvp.Value.Time <= DateTime.Now)
-				.ForEachAsync(kvp => this.SendMessageAsync(kvp.Value.Message, onSuccess, onFailure))
+				.Select(kvp => kvp.Value.Message)
+				.ToList()
+				.ForEachAsync(message => this.SendMessageAsync(message, onSuccess, onFailure))
 				.ConfigureAwait(false);
 		}
 		#endregion

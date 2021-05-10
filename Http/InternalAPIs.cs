@@ -260,12 +260,8 @@ namespace net.vieapps.Services.APIGateway
 				{
 					if (requestInfo.Verb.IsEquals("GET"))
 					{
-						var request = requestInfo.GetRequestExpando();
-						var pagination = request.Get<ExpandoObject>("Pagination");
-						var pageNumber = pagination.Get("PageNumber", 1);
-						var pageSize = pagination.Get("PageSize", 100);
-						var filterBy = request.Get<ExpandoObject>("FilterBy");
-						var response = await Global.LoggingService.FetchLogsAsync(pageNumber > 0 ? pageNumber : 1, pageSize > 0 ? pageSize : 100, filterBy.Get<string>("CorrelationID"), filterBy.Get<string>("DeveloperID"), filterBy.Get<string>("AppID"), filterBy.Get<string>("ServiceName"), filterBy.Get<string>("ObjectName"), Global.CancellationToken).ConfigureAwait(false);
+						requestInfo.ObjectName = "service";
+						var response = await Global.CallServiceAsync(requestInfo, Global.CancellationToken).ConfigureAwait(false);
 						await context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationToken).ConfigureAwait(false);
 					}
 					else

@@ -1027,13 +1027,9 @@ namespace net.vieapps.Services.APIGateway
 			else
 				try
 				{
-					this.LoggingService = ExternalProcess.Start
-					(
-						this.ServiceHosting,
-						$"/svc:{UtilityService.GetAppSetting("Logs", "net.vieapps.Services.Logs.ServiceComponent,VIEApps.Services.Logs")} /agc:r {this.GetServiceArguments().Replace("/", "/call-")} /controller-id:{this.Info.ID}".Trim(),
-						(_, __) => Global.OnProcess?.Invoke("The logging service was stopped"),
-						null
-					);
+					var svcComponent = UtilityService.GetAppSetting("Logs:Service:Component", "net.vieapps.Services.Logs.ServiceComponent,VIEApps.Services.Logs");
+					var svcArguments = $"/svc:{svcComponent} /agc:r {this.GetServiceArguments().Replace("/", "/call-")} {UtilityService.GetAppSetting("Logs:Service:Arguments", "")} /controller-id:{this.Info.ID}".Trim();
+					this.LoggingService = ExternalProcess.Start(this.ServiceHosting, svcArguments, (_, __) => Global.OnProcess?.Invoke("The logging service was stopped"), null);
 					Global.OnProcess?.Invoke("The logging service was started");
 				}
 				catch (Exception ex)

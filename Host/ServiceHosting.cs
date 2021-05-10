@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
 using net.vieapps.Components.Utility;
+
 namespace net.vieapps.Services.APIGateway
 {
 	public abstract class ServiceHostingBase
@@ -209,7 +210,7 @@ namespace net.vieapps.Services.APIGateway
 			var logPath = UtilityService.GetAppSetting("Path:Logs");
 			if (this.WriteLogsIntoFiles && !string.IsNullOrWhiteSpace(logPath) && Directory.Exists(logPath))
 			{
-				logPath = Path.Combine(logPath, "{Hour}_" + $"{service.ServiceName.ToLower()}.all.txt");
+				logPath = Path.Combine(logPath, "{Hour}_" + $"{service.ServiceName.ToLower()}.txt");
 				Logger.GetLoggerFactory().AddFile(logPath, logLevel);
 			}
 			else
@@ -260,8 +261,8 @@ namespace net.vieapps.Services.APIGateway
 					logger.LogInformation($"Passport HTTP service: {UtilityService.GetAppSetting("HttpUri:Passports", "None")}");
 					logger.LogInformation($"Root (base) directory: {AppDomain.CurrentDomain.BaseDirectory}");
 					logger.LogInformation($"Temporary directory: {UtilityService.GetAppSetting("Path:Temp", "None")}");
-					logger.LogInformation($"Static files directory: {UtilityService.GetAppSetting("Path:StaticFiles", "None")}");
 					logger.LogInformation($"Status files directory: {UtilityService.GetAppSetting("Path:Status", "None")}");
+					logger.LogInformation($"Static files directory: {UtilityService.GetAppSetting("Path:Statics", "None")}");
 					logger.LogInformation($"Logging level: {logLevel} - Local rolling log files is {(string.IsNullOrWhiteSpace(logPath) ? "disabled" : $"enabled => {logPath}")}");
 					logger.LogInformation($"Show debugs: {service.IsDebugLogEnabled} - Show results: {service.IsDebugResultsEnabled} - Show stacks: {service.IsDebugStacksEnabled}");
 					logger.LogInformation($"Service URIs:\r\n\t- Round robin: {service.ServiceURI}\r\n\t- Single (unique): {service.ServiceUniqueURI}");

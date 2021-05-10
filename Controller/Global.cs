@@ -2,6 +2,8 @@
 using System;
 using System.IO;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using WampSharp.V2.Rpc;
 using Newtonsoft.Json.Linq;
 using net.vieapps.Components.Utility;
@@ -116,16 +118,6 @@ namespace net.vieapps.Services.APIGateway
 		public static Action<string, string> OnLogsUpdated { get; set; } = (serviceName, logs) => { };
 
 		/// <summary>
-		/// Gets or sets the action to run when a message has been sent successful
-		/// </summary>
-		public static Action<string> OnSendRTUMessageSuccess { get; set; } = (message) => { };
-
-		/// <summary>
-		/// Gets or sets the action to run when a message has been failure sending
-		/// </summary>
-		public static Action<string, Exception> OnSendRTUMessageFailure { get; set; } = (message, exception) => { };
-
-		/// <summary>
 		/// Gets or sets the action to run when a business is started
 		/// </summary>
 		public static Action<string, string> OnServiceStarted { get; set; } = (serviceName, message) => { };
@@ -150,13 +142,33 @@ namespace net.vieapps.Services.APIGateway
 			return path;
 		}
 
-		static string _StatusPath = null, _TempPath = null;
+		static string _StatusPath = null, _TempPath = null, _LogsPath = null;
 
 		internal static string StatusPath => Global._StatusPath ?? (Global._StatusPath = Global.GetPath("Path:Status", "status"));
 
 		internal static string TempPath => Global._TempPath ?? (Global._TempPath = Global.GetPath("Path:Temp", "temp"));
-	}
 
-	[Repository]
-	public abstract class Repository<T> : RepositoryBase<T> where T : class { }
+		internal static string LogsPath => Global._LogsPath ?? (Global._LogsPath = Global.GetPath("Path:Logs", "logs"));
+
+		static ILoggingService LoggingService { get; set; }
+
+		public static Task WriteLogAsync(string correlationID, string serviceName, string objectName, string log, string stack = null, CancellationToken cancellationToken = default)
+		{
+			Global.LoggingService = Global.LoggingService ?? Router.OutgoingChannel?.RealmProxy.Services.GetCalleeProxy<ILoggingService>(ProxyInterceptor.Create());
+			return Global.LoggingService != null
+				? Global.LoggingService.WriteLogAsync(correlationID ?? UtilityService.NewUUID, null, null, serviceName, objectName, log, stack, cancellationToken)
+				: Task.CompletedTask;
+		}
+
+		public static void WriteLog(string correlationID, string serviceName, string objectName, string log, string stack = null)
+		{
+			Task.Run(async () => await Global.WriteLogAsync(correlationID, serviceName, objectName, log, stack).ConfigureAwait(false))
+			.ContinueWith(task =>
+			{
+				if (task.Exception != null)
+					Global.OnError?.Invoke(task.Exception.Message, task.Exception);
+			}, TaskContinuationOptions.OnlyOnRanToCompletion)
+			.ConfigureAwait(false);
+		}
+	}
 }

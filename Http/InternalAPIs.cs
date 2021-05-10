@@ -159,7 +159,7 @@ namespace net.vieapps.Services.APIGateway
 			if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT") || requestInfo.Verb.IsEquals("PATCH"))
 				try
 				{
-					requestInfo.Body = await context.ReadTextAsync(Global.CancellationTokenSource.Token).ConfigureAwait(false);
+					requestInfo.Body = await context.ReadTextAsync(Global.CancellationToken).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -245,9 +245,9 @@ namespace net.vieapps.Services.APIGateway
 						: requestInfo.ObjectName.IsEquals("services")
 							? InternalAPIs.GetServices()
 							: requestInfo.ObjectName.IsEquals("definitions")
-								? await context.CallServiceAsync(requestInfo.PrepareDefinitionRelated(), Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false)
+								? await context.CallServiceAsync(requestInfo.PrepareDefinitionRelated(), Global.CancellationToken, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false)
 								: throw new InvalidRequestException("Unknown request");
-					await context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+					await context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationToken).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -265,8 +265,8 @@ namespace net.vieapps.Services.APIGateway
 						var pageNumber = pagination.Get("PageNumber", 1);
 						var pageSize = pagination.Get("PageSize", 100);
 						var filterBy = request.Get<ExpandoObject>("FilterBy");
-						var response = await Global.LoggingService.FetchLogsAsync(pageNumber > 0 ? pageNumber : 1, pageSize > 0 ? pageSize : 100, filterBy.Get<string>("CorrelationID"), filterBy.Get<string>("DeveloperID"), filterBy.Get<string>("AppID"), filterBy.Get<string>("ServiceName"), filterBy.Get<string>("ObjectName"), Global.CancellationTokenSource.Token).ConfigureAwait(false);
-						await context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+						var response = await Global.LoggingService.FetchLogsAsync(pageNumber > 0 ? pageNumber : 1, pageSize > 0 ? pageSize : 100, filterBy.Get<string>("CorrelationID"), filterBy.Get<string>("DeveloperID"), filterBy.Get<string>("AppID"), filterBy.Get<string>("ServiceName"), filterBy.Get<string>("ObjectName"), Global.CancellationToken).ConfigureAwait(false);
+						await context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationToken).ConfigureAwait(false);
 					}
 					else
 						throw new MethodNotAllowedException(requestInfo.Verb);
@@ -282,9 +282,9 @@ namespace net.vieapps.Services.APIGateway
 				{
 					if (requestInfo.Verb.IsEquals("GET"))
 					{
-						var fileName = await requestInfo.DownloadTemporaryFileAsync(Global.CancellationTokenSource.Token).ConfigureAwait(false);
+						var fileName = await requestInfo.DownloadTemporaryFileAsync(Global.CancellationToken).ConfigureAwait(false);
 						var fileInfo = new FileInfo(Path.Combine(UtilityService.GetAppSetting("Path:Temp", Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data-files", "temp")), fileName));
-						await context.WriteAsync(fileInfo, fileName.Length > 33 && fileName.Left(32).IsValidUUID() ? fileName.Right(fileName.Length - 33) : fileName, null, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+						await context.WriteAsync(fileInfo, fileName.Length > 33 && fileName.Left(32).IsValidUUID() ? fileName.Right(fileName.Length - 33) : fileName, null, Global.CancellationToken).ConfigureAwait(false);
 					}
 					else
 						throw new MethodNotAllowedException(requestInfo.Verb);
@@ -303,8 +303,8 @@ namespace net.vieapps.Services.APIGateway
 						requestInfo.ServiceName = requestInfo.Query["service-name"] = requestInfo.ObjectName;
 						requestInfo.ObjectName = requestInfo.Query["object-name"] = requestInfo.GetObjectIdentity();
 						requestInfo.Query.Remove("object-identity");
-						await net.vieapps.Services.Router.GetService(requestInfo.ServiceName).ProcessWebHookMessageAsync(requestInfo, Global.CancellationTokenSource.Token).ConfigureAwait(false);
-						await context.WriteAsync("OK", "text/plain", requestInfo.CorrelationID, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+						await net.vieapps.Services.Router.GetService(requestInfo.ServiceName).ProcessWebHookMessageAsync(requestInfo, Global.CancellationToken).ConfigureAwait(false);
+						await context.WriteAsync("OK", "text/plain", requestInfo.CorrelationID, Global.CancellationToken).ConfigureAwait(false);
 					}
 					else
 						throw new MethodNotAllowedException(requestInfo.Verb);
@@ -346,8 +346,8 @@ namespace net.vieapps.Services.APIGateway
 					// process the request
 					var response = requestInfo.Verb.IsEquals("PATCH")
 						? await context.SyncAsync(requestInfo).ConfigureAwait(false)
-						: await context.CallServiceAsync(requestInfo, Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
-					await context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+						: await context.CallServiceAsync(requestInfo, Global.CancellationToken, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
+					await context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationToken).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -372,7 +372,7 @@ namespace net.vieapps.Services.APIGateway
 							{ "DeviceID", session.DeviceID },
 							{ "AppName", session.AppName },
 							{ "AppPlatform", session.AppPlatform },
-							{ "Location", await session.GetLocationAsync(correlationID, Global.CancellationTokenSource.Token).ConfigureAwait(false) },
+							{ "Location", await session.GetLocationAsync(correlationID, Global.CancellationToken).ConfigureAwait(false) },
 							{ "IsOnline", isOnline }
 						}
 					}.PublishAsync(RTU.Logger, "Http.InternalAPIs").ConfigureAwait(false);
@@ -411,7 +411,7 @@ namespace net.vieapps.Services.APIGateway
 					{ "Signature", body.GetHMACSHA256(Global.ValidationKey) }
 				},
 				CorrelationID = requestInfo.CorrelationID
-			}, Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
+			}, Global.CancellationToken, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
 
 			// update session state
 			if (sendSessionState)
@@ -446,7 +446,7 @@ namespace net.vieapps.Services.APIGateway
 							requestInfo.Session.DeviceID = (requestInfo.Session.AppName + "/" + requestInfo.Session.AppPlatform + "@" + (requestInfo.Session.AppAgent ?? "N/A")).GetHMACBLAKE128(requestInfo.Session.SessionID, true) + "@pwa";
 
 						// store identity into cache for further use
-						await Global.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.GetEncryptedID(), 13, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+						await Global.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.GetEncryptedID(), 13, Global.CancellationToken).ConfigureAwait(false);
 					}
 
 					// register session
@@ -474,14 +474,14 @@ namespace net.vieapps.Services.APIGateway
 						// register the new session
 						await Task.WhenAll(
 							context.CreateOrRenewSessionAsync(requestInfo),
-							Global.Cache.RemoveAsync($"Session#{requestInfo.Session.SessionID}", Global.CancellationTokenSource.Token)
+							Global.Cache.RemoveAsync($"Session#{requestInfo.Session.SessionID}", Global.CancellationToken)
 						).ConfigureAwait(false);
 					}
 
 					// response
 					var response = requestInfo.Session.GetSessionJson();
 					await Task.WhenAll(
-						context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
+						context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationToken),
 						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
 						{
 							$"Successfully process request of session (registration of anonymous user)",
@@ -508,7 +508,7 @@ namespace net.vieapps.Services.APIGateway
 							{ "Signature", requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey) }
 						},
 						CorrelationID = requestInfo.CorrelationID
-					}, Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
+					}, Global.CancellationToken, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
 
 					// check
 					if (session == null)
@@ -531,7 +531,7 @@ namespace net.vieapps.Services.APIGateway
 					// response
 					var response = requestInfo.Session.GetSessionJson();
 					await Task.WhenAll(
-						context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
+						context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationToken),
 						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
 						{
 							$"Successfully process request of session (registration of authenticated user)",
@@ -572,7 +572,7 @@ namespace net.vieapps.Services.APIGateway
 						{ "Signature", body.GetHMACSHA256(Global.ValidationKey) }
 					},
 					CorrelationID = requestInfo.CorrelationID
-				}, Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
+				}, Global.CancellationToken, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
 
 				// two-factors authentication
 				var oldSessionID = string.Empty;
@@ -617,8 +617,8 @@ namespace net.vieapps.Services.APIGateway
 
 				// response
 				await Task.WhenAll(
-					context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
-					Global.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token),
+					context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationToken),
+					Global.Cache.RemoveAsync("Attempt#" + requestInfo.Session.IP, Global.CancellationToken),
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (sign-in)",
@@ -644,12 +644,12 @@ namespace net.vieapps.Services.APIGateway
 			catch (Exception ex)
 			{
 				// wait
-				var attempt = await Global.Cache.ExistsAsync("APIs:Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token).ConfigureAwait(false)
-					? await Global.Cache.GetAsync<int>("APIs:Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token).ConfigureAwait(false) + 1
+				var attempt = await Global.Cache.ExistsAsync("APIs:Attempt#" + requestInfo.Session.IP, Global.CancellationToken).ConfigureAwait(false)
+					? await Global.Cache.GetAsync<int>("APIs:Attempt#" + requestInfo.Session.IP, Global.CancellationToken).ConfigureAwait(false) + 1
 					: 1;
 				await Task.WhenAll(
 					Task.Delay(567 + ((attempt - 1) * 5678)),
-					Global.Cache.SetAsync("APIs:Attempt#" + requestInfo.Session.IP, attempt, 13, Global.CancellationTokenSource.Token)
+					Global.Cache.SetAsync("APIs:Attempt#" + requestInfo.Session.IP, attempt, 13, Global.CancellationToken)
 				).ConfigureAwait(false);
 
 				// show error
@@ -694,7 +694,7 @@ namespace net.vieapps.Services.APIGateway
 						{ "Info", info.Encrypt(Global.EncryptionKey) }
 					}.ToString(Formatting.None),
 					CorrelationID = requestInfo.CorrelationID
-				}, Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
+				}, Global.CancellationToken, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
 
 				// update status of old session
 				await requestInfo.Session.SendSessionStateAsync(false, requestInfo.CorrelationID).ConfigureAwait(false);
@@ -724,8 +724,8 @@ namespace net.vieapps.Services.APIGateway
 
 				// response
 				await Task.WhenAll(
-					context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
-					Global.Cache.RemoveAsync("APIs:Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token),
+					context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationToken),
+					Global.Cache.RemoveAsync("APIs:Attempt#" + requestInfo.Session.IP, Global.CancellationToken),
 					Global.IsDebugResultsEnabled ? context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (OTP validation)",
@@ -750,12 +750,12 @@ namespace net.vieapps.Services.APIGateway
 			catch (Exception ex)
 			{
 				// wait
-				var attempt = await Global.Cache.ExistsAsync("APIs:Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token).ConfigureAwait(false)
-					? await Global.Cache.GetAsync<int>("APIs:Attempt#" + requestInfo.Session.IP, Global.CancellationTokenSource.Token).ConfigureAwait(false) + 1
+				var attempt = await Global.Cache.ExistsAsync("APIs:Attempt#" + requestInfo.Session.IP, Global.CancellationToken).ConfigureAwait(false)
+					? await Global.Cache.GetAsync<int>("APIs:Attempt#" + requestInfo.Session.IP, Global.CancellationToken).ConfigureAwait(false) + 1
 					: 1;
 				await Task.WhenAll(
 					Task.Delay(567 + ((attempt - 1) * 5678)),
-					Global.Cache.SetAsync("APIs:Attempt#" + requestInfo.Session.IP, attempt, 13, Global.CancellationTokenSource.Token)
+					Global.Cache.SetAsync("APIs:Attempt#" + requestInfo.Session.IP, attempt, 13, Global.CancellationToken)
 				).ConfigureAwait(false);
 
 				// show error
@@ -781,7 +781,7 @@ namespace net.vieapps.Services.APIGateway
 						["Signature"] = requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey)
 					},
 					CorrelationID = requestInfo.CorrelationID
-				}, Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
+				}, Global.CancellationToken, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
 
 				// update status of old session
 				await requestInfo.Session.SendSessionStateAsync(false, requestInfo.CorrelationID).ConfigureAwait(false);
@@ -794,7 +794,7 @@ namespace net.vieapps.Services.APIGateway
 				requestInfo.Session.Verified = false;
 				await Task.WhenAll(
 					context.CreateOrRenewSessionAsync(requestInfo, null, false),
-					Global.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.GetEncryptedID(), 13, Global.CancellationTokenSource.Token)
+					Global.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.GetEncryptedID(), 13, Global.CancellationToken)
 				).ConfigureAwait(false);
 
 				// prepare response
@@ -814,7 +814,7 @@ namespace net.vieapps.Services.APIGateway
 
 				// response
 				await Task.WhenAll(
-					context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
+					context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationToken),
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (sign-out)",
@@ -858,7 +858,7 @@ namespace net.vieapps.Services.APIGateway
 					ServiceName = "Users",
 					ObjectName = "Activate",
 					Verb = "GET"
-				}, Global.CancellationTokenSource.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
+				}, Global.CancellationToken, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
 
 				// get user information & register the session
 				requestInfo.Session.User = response.Copy<User>();
@@ -868,7 +868,7 @@ namespace net.vieapps.Services.APIGateway
 				// response
 				response = requestInfo.Session.GetSessionJson();
 				await Task.WhenAll(
-					context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationTokenSource.Token),
+					context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationToken),
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(InternalAPIs.Logger, "Http.InternalAPIs", new List<string>
 					{
 						$"Successfully process request of session (activation)",
@@ -899,7 +899,7 @@ namespace net.vieapps.Services.APIGateway
 					await context.WriteLogsAsync(developerID, appID, InternalAPIs.Logger, "Http.InternalAPIs", new List<string> { $"Start call service for synchronizing {requestInfo.Verb} {requestInfo.GetURI()} - {requestInfo.Session.AppName} ({requestInfo.Session.AppMode.ToLower()} app) - {requestInfo.Session.AppPlatform} @ {requestInfo.Session.IP}" }, null, Global.ServiceName, LogLevel.Information, requestInfo.CorrelationID);
 
 				callingWatch = Stopwatch.StartNew();
-				var json = await requestInfo.SyncAsync(Global.CancellationTokenSource.Token).ConfigureAwait(false);
+				var json = await requestInfo.SyncAsync(Global.CancellationToken).ConfigureAwait(false);
 				callingWatch.Stop();
 
 				if (Global.IsDebugResultsEnabled)
@@ -912,10 +912,10 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (WampSharp.V2.Client.WampSessionNotEstablishedException)
 			{
-				await Task.Delay(567, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+				await Task.Delay(567, Global.CancellationToken).ConfigureAwait(false);
 				try
 				{
-					var json = await requestInfo.SyncAsync(Global.CancellationTokenSource.Token).ConfigureAwait(false);
+					var json = await requestInfo.SyncAsync(Global.CancellationToken).ConfigureAwait(false);
 					callingWatch.Stop();
 
 					if (Global.IsDebugResultsEnabled)

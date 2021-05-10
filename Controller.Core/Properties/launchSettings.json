@@ -2,7 +2,7 @@
 	"profiles": {
 		"APIGateway.Controller": {
 			"commandName": "Project",
-			"commandLineArgs": ""
+			"commandLineArgs": "/no-business-services"
 		}
 	}
 }

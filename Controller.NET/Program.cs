@@ -19,8 +19,6 @@ namespace net.vieapps.Services.APIGateway
 		#region Properties
 		internal static CancellationTokenSource CancellationTokenSource { get; set; }
 
-		internal static ILoggingService LoggingService { get; set; }
-
 		internal static Manager Manager { get; set; }
 
 		internal static Controller Controller { get; set; }
@@ -114,17 +112,9 @@ namespace net.vieapps.Services.APIGateway
 					Program.MainForm.UpdateLogs(message);
 			};
 
-			Global.OnError = Global.OnSendRTUMessageFailure = (message, exception) =>
+			Global.OnError = (message, exception) =>
 			{
 				Program.Logger.LogError(message, exception);
-				if (Environment.UserInteractive && Program.Controller != null && !Program.Controller.IsDisposed)
-					Program.MainForm.UpdateLogs(message);
-			};
-
-			Global.OnSendRTUMessageSuccess = (message) =>
-			{
-				if (Program.Logger.IsEnabled(LogLevel.Debug))
-					Program.Logger.LogInformation(message);
 				if (Environment.UserInteractive && Program.Controller != null && !Program.Controller.IsDisposed)
 					Program.MainForm.UpdateLogs(message);
 			};
@@ -132,33 +122,33 @@ namespace net.vieapps.Services.APIGateway
 			Global.OnSendEmailSuccess = (message) =>
 			{
 				Program.Logger.LogInformation(message);
+				Global.WriteLog(null, "APIGateway", "Emails", message);
 				if (Environment.UserInteractive && Program.Controller != null && !Program.Controller.IsDisposed)
 					Program.MainForm.UpdateLogs(message);
-				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, null, null, "APIGateway", "Emails", message)).ConfigureAwait(false);
 			};
 
 			Global.OnSendWebHookSuccess = (message) =>
 			{
 				Program.Logger.LogInformation(message);
+				Global.WriteLog(null, "APIGateway", "WebHooks", message);
 				if (Environment.UserInteractive && Program.Controller != null && !Program.Controller.IsDisposed)
 					Program.MainForm.UpdateLogs(message);
-				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, null, null, "APIGateway", "WebHooks", message)).ConfigureAwait(false);
 			};
 
 			Global.OnSendEmailFailure = (message, exception) =>
 			{
 				Program.Logger.LogError(message, exception);
+				Global.WriteLog(null, "APIGateway", "Emails", message, exception.GetStack());
 				if (Environment.UserInteractive && Program.Controller != null && !Program.Controller.IsDisposed)
 					Program.MainForm.UpdateLogs(message);
-				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, null, null, "APIGateway", "Emails", message, exception.GetStack())).ConfigureAwait(false);
 			};
 
 			Global.OnSendWebHookFailure = (message, exception) =>
 			{
 				Program.Logger.LogError(message, exception);
+				Global.WriteLog(null, "APIGateway", "WebHooks", message, exception.GetStack());
 				if (Environment.UserInteractive && Program.Controller != null && !Program.Controller.IsDisposed)
 					Program.MainForm.UpdateLogs(message);
-				Task.Run(() => Program.GetLoggingService()?.WriteLogAsync(UtilityService.NewUUID, null, null, "APIGateway", "WebHooks", message, exception.GetStack())).ConfigureAwait(false);
 			};
 
 			Global.OnServiceStarted = (serviceName, message) =>
@@ -221,8 +211,5 @@ namespace net.vieapps.Services.APIGateway
 			Program.CancellationTokenSource.Cancel();
 			Program.CancellationTokenSource.Dispose();
 		}
-
-		internal static ILoggingService GetLoggingService()
-			=> Program.LoggingService ?? (Program.LoggingService = Router.OutgoingChannel?.RealmProxy.Services.GetCalleeProxy<ILoggingService>(ProxyInterceptor.Create()));
 	}
 }

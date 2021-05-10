@@ -55,12 +55,12 @@ namespace net.vieapps.Services.APIGateway
 					if (context.Request.Headers.TryGetValue("Access-Control-Request-Headers", out var requestHeaders))
 						headers["Access-Control-Allow-Headers"] = requestHeaders;
 					context.SetResponseHeaders((int)HttpStatusCode.OK, headers);
-					await context.FlushAsync(Global.CancellationTokenSource.Token).ConfigureAwait(false);
+					await context.FlushAsync(Global.CancellationToken).ConfigureAwait(false);
 				}
 
 				// load balancing health check
 				else if (context.Request.Path.Value.IsEquals(this.LoadBalancingHealthCheckUrl))
-					await context.WriteAsync("OK", "text/plain", null, 0, null, TimeSpan.Zero, null, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+					await context.WriteAsync("OK", "text/plain", null, 0, null, TimeSpan.Zero, null, Global.CancellationToken).ConfigureAwait(false);
 
 				// APIs
 				else

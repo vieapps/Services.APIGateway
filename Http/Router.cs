@@ -11,15 +11,10 @@ using WampSharp.Core.Serialization;
 using WampSharp.V2;
 using WampSharp.V2.Core;
 using WampSharp.V2.Core.Contracts;
-using WampSharp.V2.Authentication;
 using WampSharp.V2.Realm;
 using WampSharp.V2.PubSub;
 using WampSharp.V2.Rpc;
 using WampSharp.V2.Client;
-using WampSharp.V2.Transports;
-using WampSharp.V2.Binding;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using net.vieapps.Components.Utility;
 #endregion
 
@@ -80,11 +75,11 @@ namespace net.vieapps.Services.APIGateway
 					await Task.WhenAll
 					(
 						Global.RegisterServiceAsync("Http.InternalAPIs"),
-						Task.Delay(UtilityService.GetRandomNumber(234, 567), Global.CancellationTokenSource.Token)
+						Task.Delay(UtilityService.GetRandomNumber(234, 567), Global.CancellationToken)
 					).ConfigureAwait(false);
 
 					while (Services.Router.IncomingChannel == null)
-						await Task.Delay(UtilityService.GetRandomNumber(234, 567), Global.CancellationTokenSource.Token).ConfigureAwait(false);
+						await Task.Delay(UtilityService.GetRandomNumber(234, 567), Global.CancellationToken).ConfigureAwait(false);
 
 					await Task.WhenAll
 					(

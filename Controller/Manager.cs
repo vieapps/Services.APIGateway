@@ -29,7 +29,7 @@ namespace net.vieapps.Services.APIGateway
 						await (this.Instance != null ? this.Instance.DisposeAsync().AsTask() : Task.CompletedTask).ConfigureAwait(false);
 					}
 					catch { }
-					this.Instance = await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(this, RegistrationInterceptor.Create()).ConfigureAwait(false);
+					this.Instance = await Router.IncomingChannel.RealmProxy.Services.RegisterCallee<IManager>(() => this, RegistrationInterceptor.Create()).ConfigureAwait(false);
 
 					this.Communicator?.Dispose();
 					this.Communicator = Router.IncomingChannel.RealmProxy.Services
@@ -104,8 +104,15 @@ namespace net.vieapps.Services.APIGateway
 
 		public void Dispose()
 		{
-			this.DisposeAsync().Wait();
 			GC.SuppressFinalize(this);
+			this.DisposeAsync()
+#if NETSTANDARD2_0
+				.Wait();
+#else
+				.ConfigureAwait(false)
+				.GetAwaiter()
+				.GetResult();
+#endif
 		}
 
 		~Manager()
@@ -228,7 +235,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-				if (ex is WampException && (ex as WampException).ErrorUri.Equals("wamp.error.no_such_procedure"))
+				if (ex is WampException)
 					try
 					{
 						await Task.Delay(UtilityService.GetRandomNumber(456, 789)).ConfigureAwait(false);

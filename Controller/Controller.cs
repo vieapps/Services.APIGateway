@@ -45,7 +45,14 @@ namespace net.vieapps.Services.APIGateway
 		public void Dispose()
 		{
 			GC.SuppressFinalize(this);
-			this.DisposeAsync().Wait();
+			this.DisposeAsync()
+#if NETSTANDARD2_0
+				.Wait();
+#else
+				.ConfigureAwait(false)
+				.GetAwaiter()
+				.GetResult();
+#endif
 		}
 
 		~Controller()
@@ -96,11 +103,11 @@ namespace net.vieapps.Services.APIGateway
 
 		IDisposable UpdateCommunicator { get; set; }
 
-		LoggingService Logger { get; set; }
+		IAsyncDisposable ManagingService { get; set; }
 
-		ILoggingService LoggingService { get; set; }
+		ExternalProcess.Info LoggingService { get; set; }
 
-		List<IAsyncDisposable> HelperServices { get; } = new List<IAsyncDisposable>();
+		IAsyncDisposable MessagingService { get; set; }
 
 		List<IDisposable> Timers { get; } = new List<IDisposable>();
 
@@ -137,11 +144,6 @@ namespace net.vieapps.Services.APIGateway
 		List<string> VersionDataSources { get; } = new List<string>();
 
 		List<string> TrashDataSources { get; } = new List<string>();
-
-		/// <summary>
-		/// Gets the number of registered helper serivces
-		/// </summary>
-		public int NumberOfHelperServices => this.HelperServices.Count - 1;
 
 		/// <summary>
 		/// Gets the number of scheduling tasks
@@ -200,7 +202,8 @@ namespace net.vieapps.Services.APIGateway
 				new[]
 				{
 					Global.StatusPath,
-					APIGateway.LoggingService.LogsPath,
+					Global.LogsPath,
+					Global.TempPath,
 					MailSender.EmailsPath,
 					WebHookSender.WebHooksPath
 				}.Where(path => !Directory.Exists(path)).ForEach(path => Directory.CreateDirectory(path));
@@ -255,20 +258,13 @@ namespace net.vieapps.Services.APIGateway
 			Global.OnProcess?.Invoke($"API Gateway Router: {new Uri(Router.GetRouterStrInfo()).GetResolvedURI()}");
 			Global.OnProcess?.Invoke($"Working directory: {this.WorkingDirectory}");
 			Global.OnProcess?.Invoke($"Temporary directory: {UtilityService.GetAppSetting("Path:Temp", "None")}");
-			Global.OnProcess?.Invoke($"Static files directory: {UtilityService.GetAppSetting("Path:StaticFiles", "None")}");
+			Global.OnProcess?.Invoke($"Static files directory: {UtilityService.GetAppSetting("Path:Statics", "None")}");
 			Global.OnProcess?.Invoke($"Status files directory: {UtilityService.GetAppSetting("Path:Status", "None")}");
-
-			if (!this.AllowRegisterHelperServices)
-				Global.OnProcess?.Invoke($"Number of helper services: None");
 			Global.OnProcess?.Invoke($"Number of business services: {(!this.AllowRegisterBusinessServices ? "None" : this.BusinessServices.Count.ToString())}");
 			Global.OnProcess?.Invoke($"Number of scheduling tasks: {(!this.AllowRegisterHelperTimers ? "None" : this.Tasks.Count.ToString())}");
 
 			// prepare database settings
 			this.PrepareDatabaseSettings();
-
-			// prepare logging service
-			if (this.AllowRegisterHelperServices)
-				this.Logger = new LoggingService(this.CancellationTokenSource.Token);
 
 			// generate new encryption keys
 			if (args?.FirstOrDefault(arg => arg.IsStartsWith("/generate-keys")) != null)
@@ -298,7 +294,19 @@ namespace net.vieapps.Services.APIGateway
 
 			void connectRouter()
 			{
-				Task.Run(() => connectRouterAsync()).ConfigureAwait(false);
+				Task.Run(async () => await connectRouterAsync().ConfigureAwait(false))
+					.ContinueWith(task =>
+					{
+						if (task.Exception != null)
+							Global.OnError?.Invoke($"Error occurred while connecting to the API Gateway Router => {task.Exception.Message}", task.Exception);
+					}, TaskContinuationOptions.OnlyOnRanToCompletion)
+#if NETSTANDARD2_0
+					.Wait();
+#else
+					.ConfigureAwait(false)
+					.GetAwaiter()
+					.GetResult();
+#endif
 			}
 
 			async Task connectRouterAsync()
@@ -310,7 +318,7 @@ namespace net.vieapps.Services.APIGateway
 					await Router.ConnectAsync(
 						async (sender, arguments) =>
 						{
-							Global.OnProcess?.Invoke($"The incoming channel is established - Session ID: {arguments.SessionId}");
+							Global.OnProcess?.Invoke($"The incoming channel to API Gateway Router is established - Session ID: {arguments.SessionId}");
 							Router.IncomingChannel.Update(Router.IncomingChannelSessionID, "APIGateway", "Incoming (API Gateway Controller)");
 							if (this.State == ServiceState.Initializing)
 								this.State = ServiceState.Ready;
@@ -362,9 +370,7 @@ namespace net.vieapps.Services.APIGateway
 								if (this.AllowRegisterHelperTimers)
 									try
 									{
-										this.RegisterMessagingTimers();
-										this.RegisterTaskSchedulingTimers();
-										this.RegisterClientIntervalTimers();
+										this.RegisterTimers();
 										Global.OnProcess?.Invoke($"The background workers & schedulers are registered - Number of scheduling timers: {this.NumberOfTimers:#,##0} - Number of scheduling tasks: {this.NumberOfTasks:#,##0}");
 									}
 									catch (Exception ex)
@@ -424,8 +430,8 @@ namespace net.vieapps.Services.APIGateway
 								this.State = ServiceState.Disconnected;
 							}
 
-							if (Router.ChannelsAreClosedBySystem || arguments.CloseType.Equals(SessionCloseType.Goodbye))
-								Global.OnProcess?.Invoke($"The incoming channel is closed - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
+							if (Router.ChannelsAreClosedBySystem || (arguments.CloseType.Equals(SessionCloseType.Goodbye) && "wamp.close.normal".IsEquals(arguments.Reason)))
+								Global.OnProcess?.Invoke($"The incoming channel to API Gateway Router is closed - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
 							else if (Router.IncomingChannel != null)
 							{
 								Global.OnProcess?.Invoke($"The incoming channel to API Gateway Router is broken - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
@@ -435,13 +441,11 @@ namespace net.vieapps.Services.APIGateway
 						(sender, arguments) => Global.OnError?.Invoke($"Got an unexpected error of the incoming channel to API Gateway Router => {arguments.Exception?.Message}", arguments.Exception),
 						async (sender, arguments) =>
 						{
-							Global.OnProcess?.Invoke($"The outgoing channel is established - Session ID: {arguments.SessionId}");
+							Global.OnProcess?.Invoke($"The outgoing channel to API Gateway Router is established - Session ID: {arguments.SessionId}");
 							Router.OutgoingChannel.Update(Router.OutgoingChannelSessionID, "APIGateway", "Outgoing (API Gateway Controller)");
 
 							while (Router.IncomingChannel == null || Router.OutgoingChannel == null)
 								await Task.Delay(UtilityService.GetRandomNumber(123, 456), this.CancellationTokenSource.Token).ConfigureAwait(false);
-
-							this.LoggingService = this.LoggingService ?? Router.OutgoingChannel.RealmProxy.Services.GetCalleeProxy<ILoggingService>(ProxyInterceptor.Create());
 
 							try
 							{
@@ -454,8 +458,8 @@ namespace net.vieapps.Services.APIGateway
 						},
 						(sender, arguments) =>
 						{
-							if (Router.ChannelsAreClosedBySystem || arguments.CloseType.Equals(SessionCloseType.Goodbye))
-								Global.OnProcess?.Invoke($"The outgoing channel is closed - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
+							if (Router.ChannelsAreClosedBySystem || (arguments.CloseType.Equals(SessionCloseType.Goodbye) && "wamp.close.normal".IsEquals(arguments.Reason)))
+								Global.OnProcess?.Invoke($"The outgoing channel to API Gateway Router is closed - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
 							else if (Router.OutgoingChannel != null)
 							{
 								Global.OnProcess?.Invoke($"The outgoing channel to API Gateway Router is broken - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
@@ -480,6 +484,13 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			connectRouter();
+
+			// logging service
+			if (this.AllowRegisterHelperServices)
+			{
+				this.StartLoggingService();
+				this.StartTimer(() => this.RestartLoggingService(), 3);
+			}
 		}
 
 		/// <summary>
@@ -526,20 +537,36 @@ namespace net.vieapps.Services.APIGateway
 				}
 
 			// dipose all helper services
+			if (this.ManagingService != null)
+				try
+				{
+					await this.ManagingService.DisposeAsync().ConfigureAwait(false);
+				}
+				catch (Exception ex)
+				{
+					Global.OnError?.Invoke($"Cannot dispose the managing service => {ex.Message}", ex);
+				}
+				finally
+				{
+					this.ManagingService = null;
+				}
+
 			if (this.AllowRegisterHelperServices)
 			{
-				await this.HelperServices.ForEachAsync(async service =>
-				{
+				this.StopLoggingService();
+				if (this.MessagingService != null)
 					try
 					{
-						await service.DisposeAsync().ConfigureAwait(false);
+						await this.MessagingService.DisposeAsync().ConfigureAwait(false);
 					}
 					catch (Exception ex)
 					{
-						Global.OnError?.Invoke($"Cannot dispose the helper service => {ex.Message}", ex);
+						Global.OnError?.Invoke($"Cannot dispose the messaging service => {ex.Message}", ex);
 					}
-				}).ConfigureAwait(false);
-				Global.OnProcess?.Invoke($"{this.HelperServices.Count:#,##0} helper service(s) of the API Gateway Controller was disposed");
+					finally
+					{
+						this.MessagingService = null;
+					}
 			}
 
 			// do clean-up tasks
@@ -550,8 +577,6 @@ namespace net.vieapps.Services.APIGateway
 
 				this.WebHookSender?.Dispose();
 				WebHookSender.SaveMessages();
-
-				await (this.Logger != null ? this.Logger.FlushAsync() : Task.CompletedTask).ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
@@ -581,7 +606,14 @@ namespace net.vieapps.Services.APIGateway
 		/// Stops the API Gateway Controller
 		/// </summary>
 		public void Stop()
-			=> this.StopAsync().Wait();
+			=> this.StopAsync()
+#if NETSTANDARD2_0
+				.Wait();
+#else
+				.ConfigureAwait(false)
+				.GetAwaiter()
+				.GetResult();
+#endif
 
 		void PrepareDatabaseSettings()
 		{
@@ -740,40 +772,6 @@ namespace net.vieapps.Services.APIGateway
 
 			Global.OnProcess?.Invoke($"{this.VersionDataSources.Count:#,##0} data source(s) of version content: {this.VersionDataSources.Join(", ")}");
 			Global.OnProcess?.Invoke($"{this.TrashDataSources.Count:#,##0} data source(s) of trash content: {this.TrashDataSources.Join(", ")}");
-
-			var loggingDataSource = RepositoryMediator.GetDataSource(UtilityService.GetAppSetting("Logs:DataSource"));
-			if (this.AllowRegisterHelperServices && loggingDataSource != null)
-				Task.Run(() =>
-				{
-					Global.OnProcess?.Invoke($"Initialize the entity (LoggingItem) for storing logs into database with data source: {loggingDataSource.Name}");
-					RepositoryStarter.Initialize(this.GetType().Assembly, (msg, ex) =>
-					{
-						if (ex != null)
-							Global.OnError?.Invoke(msg, ex);
-						else
-							Global.OnProcess?.Invoke(msg);
-					});
-				})
-				.ContinueWith(async _ =>
-				{
-					if (loggingDataSource.Mode.Equals(RepositoryMode.SQL))
-						await RepositoryStarter.EnsureSqlSchemasAsync(RepositoryMediator.GetEntityDefinition<LoggingItem>(), loggingDataSource, (msg, ex) =>
-						{
-							if (ex != null)
-								Global.OnError?.Invoke(msg, ex);
-							else
-								Global.OnProcess?.Invoke(msg);
-						}).ConfigureAwait(false);
-					else if (loggingDataSource.Mode.Equals(RepositoryMode.NoSQL))
-						await RepositoryStarter.EnsureNoSqlIndexesAsync(RepositoryMediator.GetEntityDefinition<LoggingItem>(), loggingDataSource, (msg, ex) =>
-						{
-							if (ex != null)
-								Global.OnError?.Invoke(msg, ex);
-							else
-								Global.OnProcess?.Invoke(msg);
-						}).ConfigureAwait(false);
-				}, TaskContinuationOptions.OnlyOnRanToCompletion)
-				.ConfigureAwait(false);
 		}
 		#endregion
 
@@ -865,7 +863,7 @@ namespace net.vieapps.Services.APIGateway
 					(sender, args) =>
 					{
 						this.BusinessServices[name].Instance = null;
-						Global.OnServiceStopped?.Invoke(name, $"The sevice was stopped{("Error".IsEquals(this.BusinessServices[name].Get<string>("State")) ? $" ({this.BusinessServices[name].Get<string>("Error")})" : "")}");
+						Global.OnServiceStopped?.Invoke(name, $"The service was stopped{("Error".IsEquals(this.BusinessServices[name].Get<string>("State")) ? $" ({this.BusinessServices[name].Get<string>("Error")})" : "")}");
 					},
 					(sender, args) =>
 					{
@@ -990,7 +988,9 @@ namespace net.vieapps.Services.APIGateway
 		{
 			try
 			{
-				this.HelperServices.Add(await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(this, RegistrationInterceptor.Create(this.Info.ID, WampInvokePolicy.Single)).ConfigureAwait(false));
+				if (this.ManagingService != null)
+					await this.ManagingService.DisposeAsync().ConfigureAwait(false);
+				this.ManagingService = await Router.IncomingChannel.RealmProxy.Services.RegisterCallee<IController>(() => this, RegistrationInterceptor.Create(this.Info.ID, WampInvokePolicy.Single)).ConfigureAwait(false);
 				Global.OnProcess?.Invoke($"The managing service was{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
 			}
 			catch (WampSessionNotEstablishedException)
@@ -999,19 +999,92 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-				Global.OnError?.Invoke($"Error occurred while{(this.State == ServiceState.Disconnected ? " re-" : " ")}registering the managing service: {ex.Message}", ex);
+				Global.OnError?.Invoke($"Error occurred while{(this.State == ServiceState.Disconnected ? " re-" : " ")}registering the managing service => {ex.Message}", ex);
 			}
 
 			if (this.AllowRegisterHelperServices)
+				try
+				{
+					if (this.MessagingService != null)
+						await this.MessagingService.DisposeAsync().ConfigureAwait(false);
+					this.MessagingService = await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(new MessagingService(), RegistrationInterceptor.Create()).ConfigureAwait(false);
+					Global.OnProcess?.Invoke($"The messaging service was{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
+				}
+				catch (WampSessionNotEstablishedException)
+				{
+					throw;
+				}
+				catch (Exception ex)
+				{
+					Global.OnError?.Invoke($"Error occurred while{(this.State == ServiceState.Disconnected ? " re-" : " ")}registering the messaging service => {ex.Message}", ex);
+				}
+		}
+
+		internal void StartLoggingService()
+		{
+			if (string.IsNullOrWhiteSpace(this.ServiceHosting) || !File.Exists($"{this.ServiceHosting}{(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "")}"))
+				Global.OnError?.Invoke($"The hosting [{this.ServiceHosting}{(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "")}] is not found", null);
+			else
+				try
+				{
+					this.LoggingService = ExternalProcess.Start
+					(
+						this.ServiceHosting,
+						$"/svc:{UtilityService.GetAppSetting("Logs", "net.vieapps.Services.Logs.ServiceComponent,VIEApps.Services.Logs")} /agc:r {this.GetServiceArguments().Replace("/", "/call-")} /controller-id:{this.Info.ID}".Trim(),
+						(_, __) => Global.OnProcess?.Invoke("The logging service was stopped"),
+						null
+					);
+					Global.OnProcess?.Invoke("The logging service was started");
+				}
+				catch (Exception ex)
+				{
+					Global.OnError?.Invoke($"Error occurred while starting the logging service => {ex.Message}", ex);
+				}
+		}
+
+		internal void RestartLoggingService()
+		{
+			if (this.LoggingService == null)
+				this.StartLoggingService();
+		}
+
+		internal void StopLoggingService()
+		{
+			if (this.LoggingService != null)
 			{
-				this.HelperServices.Add(await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(this.Logger, RegistrationInterceptor.Create()).ConfigureAwait(false));
-				Global.OnProcess?.Invoke($"The logging service was{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
-
-				this.HelperServices.Add(await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(new MessagingService(), RegistrationInterceptor.Create()).ConfigureAwait(false));
-				Global.OnProcess?.Invoke($"The messaging service was{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
+				if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+					try
+					{
+						ExternalProcess.Start(this.LoggingService.FilePath, this.LoggingService.Arguments.Replace("/agc:r", "/agc:s"), "").Process.Dispose();
+						Global.OnProcess?.Invoke("The logging service was stopped");
+					}
+					catch (Exception ex)
+					{
+						Global.OnError?.Invoke($"Error occurred while stopping the logging service => {ex.Message}", ex);
+						ExternalProcess.Kill(this.LoggingService?.Process);
+					}
+					finally
+					{
+						this.LoggingService = null;
+					}
+				else
+					ExternalProcess.Stop
+					(
+						this.LoggingService,
+						_ =>
+						{
+							Global.OnProcess?.Invoke($"The logging service was stopped");
+							this.LoggingService = null;
+						},
+						ex =>
+						{
+							Global.OnError?.Invoke($"Error occurred while stopping the logging service => {ex.Message}", ex);
+							ExternalProcess.Kill(this.LoggingService?.Process);
+							this.LoggingService = null;
+						},
+						1234
+					);
 			}
-
-			Global.OnProcess?.Invoke($"Number of helper services: {this.NumberOfHelperServices:#,##0}");
 		}
 		#endregion
 
@@ -1027,14 +1100,14 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (Exception ex)
 				{
-					Global.OnError?.Invoke($"Error occurred while running timer => {ex.Message}", ex);
+					Global.OnError?.Invoke($"Error occurred while running a timer => {ex.Message}", ex);
 				}
 			});
 			this.Timers.Add(timer);
 			return timer;
 		}
 
-		void RegisterMessagingTimers()
+		void RegisterTimers()
 		{
 			// send email messages
 			this.StartTimer(async () =>
@@ -1047,28 +1120,22 @@ namespace net.vieapps.Services.APIGateway
 						(
 							async message =>
 							{
-								if (this.LoggingService != null)
-								{
-									var log = "The email message has been sent" + "\r\n" +
-									$"- ID: {message.ID}" + "\r\n" +
-									$"- From: {message.From}" + "\r\n" +
-									$"- To: {message.To}" + (!string.IsNullOrWhiteSpace(message.Cc) ? $" / {message.Cc}" : "") + (!string.IsNullOrWhiteSpace(message.Bcc) ? $" / {message.Bcc}" : "") + "\r\n" +
-									$"- Subject: {message.Subject}";
-									await this.LoggingService.WriteLogAsync(message.CorrelationID, null, null, "APIGateway", "Emails", log, null, this.CancellationTokenSource.Token).ConfigureAwait(false);
-								}
+								var log = "The email message has been sent" + "\r\n" +
+								$"- ID: {message.ID}" + "\r\n" +
+								$"- From: {message.From}" + "\r\n" +
+								$"- To: {message.To}" + (!string.IsNullOrWhiteSpace(message.Cc) ? $" / {message.Cc}" : "") + (!string.IsNullOrWhiteSpace(message.Bcc) ? $" / {message.Bcc}" : "") + "\r\n" +
+								$"- Subject: {message.Subject}";
+								await Global.WriteLogAsync(message.CorrelationID, "APIGateway", "Emails", log, null, this.CancellationTokenSource.Token).ConfigureAwait(false);
 							},
 							async (message, exception, beRemoved) =>
 							{
-								if (this.LoggingService != null)
-								{
-									var log = $"Error occurred while sending an email message => {exception.Message} [{exception.GetType()}]" + "\r\n" +
-									$"- ID: {message.ID}" + "\r\n" +
-									$"- From: {message.From}" + "\r\n" +
-									$"- To: {message.To}" + (!string.IsNullOrWhiteSpace(message.Cc) ? $" / {message.Cc}" : "") + (!string.IsNullOrWhiteSpace(message.Bcc) ? $" / {message.Bcc}" : "") + "\r\n" +
-									$"- Subject: {message.Subject}" +
-									$"{(beRemoved ? "\r\n++ NOTED: The message will  be removed from queue because its failed too much times" : "")}";
-									await this.LoggingService.WriteLogAsync(message.CorrelationID, null, null, "APIGateway", "Emails", log, exception.StackTrace, this.CancellationTokenSource.Token).ConfigureAwait(false);
-								}
+								var log = $"Error occurred while sending an email message => {exception.Message} [{exception.GetType()}]" + "\r\n" +
+								$"- ID: {message.ID}" + "\r\n" +
+								$"- From: {message.From}" + "\r\n" +
+								$"- To: {message.To}" + (!string.IsNullOrWhiteSpace(message.Cc) ? $" / {message.Cc}" : "") + (!string.IsNullOrWhiteSpace(message.Bcc) ? $" / {message.Bcc}" : "") + "\r\n" +
+								$"- Subject: {message.Subject}" +
+								$"{(beRemoved ? "\r\n++ NOTED: The message will  be removed from queue because its failed too much times" : "")}";
+								await Global.WriteLogAsync(message.CorrelationID, "APIGateway", "Emails", log, exception.StackTrace, this.CancellationTokenSource.Token).ConfigureAwait(false);
 							}
 						).ConfigureAwait(false);
 					}
@@ -1081,7 +1148,7 @@ namespace net.vieapps.Services.APIGateway
 						this.MailSender?.Dispose();
 						this.MailSender = null;
 					}
-			}, Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:Mail", "7"), out var emailInterval) && emailInterval > 0 ? emailInterval : 7);
+			}, Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:Mail", "7"), out var emailInterval) && emailInterval > 0 ? emailInterval : 5);
 
 			// send web hook messages
 			this.StartTimer(async () =>
@@ -1094,24 +1161,18 @@ namespace net.vieapps.Services.APIGateway
 						(
 							async message =>
 							{
-								if (this.LoggingService != null)
-								{
-									var log = "The web-hook message has been sent" + "\r\n" +
-									$"- ID: {message.ID}" + "\r\n" +
-									$"- End-point: {message.EndpointURL}";
-									await this.LoggingService.WriteLogAsync(message.CorrelationID, null, null, "APIGateway", "WebHooks", log, null, this.CancellationTokenSource.Token).ConfigureAwait(false);
-								}
+								var log = "The web-hook message has been sent" + "\r\n" +
+								$"- ID: {message.ID}" + "\r\n" +
+								$"- End-point: {message.EndpointURL}";
+								await Global.WriteLogAsync(message.CorrelationID, "APIGateway", "WebHooks", log, null, this.CancellationTokenSource.Token).ConfigureAwait(false);
 							},
 							async (message, exception, beRemoved) =>
 							{
-								if (this.LoggingService != null)
-								{
-									var log = $"Error occurred while sending a web-hook message => {exception.Message} [{exception.GetType()}]" + "\r\n" +
-									$"- ID: {message.ID}" + "\r\n" +
-									$"- End-point: {message.EndpointURL}" +
-									$"{(beRemoved ? "\r\n++ NOTED: The message will  be removed from queue because its failed too much times" : "")}";
-									await this.LoggingService.WriteLogAsync(message.CorrelationID, null, null, "APIGateway", "WebHooks", log, exception.StackTrace, this.CancellationTokenSource.Token).ConfigureAwait(false);
-								}
+								var log = $"Error occurred while sending a web-hook message => {exception.Message} [{exception.GetType()}]" + "\r\n" +
+								$"- ID: {message.ID}" + "\r\n" +
+								$"- End-point: {message.EndpointURL}" +
+								$"{(beRemoved ? "\r\n++ NOTED: The message will  be removed from queue because its failed too much times" : "")}";
+								await Global.WriteLogAsync(message.CorrelationID, "APIGateway", "WebHooks", log, exception.StackTrace, this.CancellationTokenSource.Token).ConfigureAwait(false);
 							}
 						).ConfigureAwait(false);
 					}
@@ -1125,18 +1186,12 @@ namespace net.vieapps.Services.APIGateway
 						this.WebHookSender = null;
 					}
 			}, Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:WebHook", "3"), out var webhookInterval) && webhookInterval > 0 ? webhookInterval : 3);
-		}
 
-		void RegisterTaskSchedulingTimers()
-		{
-			// flush logs (DEBUG: 5 seconds - Other: 45 seconds)
-#if DEBUG
-			var interval = 5;
-#else
-			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:FlushLogs", "45"), out var interval))
-				interval = 45;
-#endif
-			this.StartTimer(async () => await (this.Logger != null ? this.Logger.FlushAsync() : Task.CompletedTask).ConfigureAwait(false), interval);
+			// flush logs
+			this.StartTimer(() => new CommunicateMessage("Logs")
+			{
+				Type = "Flush"
+			}.Send(), Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:FlushLogs", "13"), out var flushLogsInterval) && flushLogsInterval > 0 ? flushLogsInterval : 13);
 
 			// house keeper (hourly)
 			this.StartTimer(() => this.RunHouseKeeper(), 60 * 60);
@@ -1146,10 +1201,7 @@ namespace net.vieapps.Services.APIGateway
 			if (ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:TaskScheduler", "net.vieapps.task.scheduler")) is AppConfigurationSectionHandler config)
 				runTaskSchedulerOnFirstLoad = "true".IsEquals(config.Section.Attributes["runOnFirstLoad"]?.Value);
 			this.StartTimer(async () => await this.RunTaskSchedulerAsync().ConfigureAwait(false), 65 * 60, runTaskSchedulerOnFirstLoad ? 5678 : 0);
-		}
 
-		void RegisterClientIntervalTimers()
-		{
 			// ping - default: 2 minutes
 			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:Ping", "120"), out var pingInterval))
 				pingInterval = 120;
@@ -1157,13 +1209,11 @@ namespace net.vieapps.Services.APIGateway
 			this.StartTimer(() =>
 			{
 				if ((DateTime.Now - this.ClientPingTime).TotalSeconds >= pingInterval)
-					Task.Run(async () => await new UpdateMessage
+					new UpdateMessage
 					{
 						Type = "Ping",
 						DeviceID = "*",
-					}.SendAsync().ConfigureAwait(false))
-					.ContinueWith(_ => this.ClientPingTime = DateTime.Now, TaskContinuationOptions.OnlyOnRanToCompletion)
-					.ConfigureAwait(false);
+					}.Send();
 			}, pingInterval + 13);
 
 			// scheduler (update online status, signal to run scheduler at client, ...) - default: 15 minutes
@@ -1173,13 +1223,11 @@ namespace net.vieapps.Services.APIGateway
 			this.StartTimer(() =>
 			{
 				if ((DateTime.Now - this.ClientSchedulingTime).TotalSeconds >= scheduleInterval)
-					Task.Run(async () => await new UpdateMessage
+					new UpdateMessage
 					{
 						Type = "Scheduler",
 						DeviceID = "*",
-					}.SendAsync().ConfigureAwait(false))
-					.ContinueWith(_ => this.ClientSchedulingTime = DateTime.Now, TaskContinuationOptions.OnlyOnRanToCompletion)
-					.ConfigureAwait(false);
+					}.Send();
 			}, scheduleInterval + 13);
 		}
 		#endregion
@@ -1199,7 +1247,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				Global.StatusPath,
 				Global.TempPath,
-				APIGateway.LoggingService.LogsPath
+				Global.LogsPath
 			};
 			paths.Append(UtilityService.GetAppSetting("HouseKeeper:Folders")?.ToHashSet('|') ?? new HashSet<string>());
 
@@ -1241,9 +1289,9 @@ namespace net.vieapps.Services.APIGateway
 					});
 			});
 
-			// debug logs
+			// clean service logs
 			remainTime = DateTime.Now.AddHours(0 - 36);
-			UtilityService.GetFiles(APIGateway.LoggingService.LogsPath, "*.*").Where(file => file.LastWriteTime < remainTime).ForEach(file =>
+			UtilityService.GetFiles(Global.LogsPath, "*.*").Where(file => file.LastWriteTime < remainTime).ForEach(file =>
 			{
 				try
 				{
@@ -1253,22 +1301,18 @@ namespace net.vieapps.Services.APIGateway
 				catch { }
 			});
 
-			if (this.LoggingService is LoggingService loggingService)
-				Task.Run(async () =>
-				{
-					try
-					{
-						await loggingService.CleanLogsAsync(this.CancellationTokenSource.Token).ConfigureAwait(false);
-					}
-					catch { }
-				}).ConfigureAwait(false);
+			new CommunicateMessage("Logs")
+			{
+				Type = "Clean"
+			}.Send();
 
 			// clean recycle-bin contents
 			var logs = this.CleanRecycleBin();
 
 			// done
 			stopwatch.Stop();
-			Global.OnProcess?.Invoke(
+			Global.OnProcess?.Invoke
+			(
 				"The house keeper is complete the working..." + "\r\n\r\nPaths\r\n=> " + paths.ToString("\r\n=> ") + "\r\n\r\n" +
 				$"- Total of cleaned files: {counter:#,##0}" + "\r\n\r\n" +
 				$"- Recycle-Bin\r\n\t" + logs.ToString("\r\n\t") + "\r\n\r\n" +
@@ -1377,7 +1421,8 @@ namespace net.vieapps.Services.APIGateway
 								else if (arguments[pos].IsStartsWith("/password:"))
 									arguments[pos] = "/password:***";
 							}
-							Global.OnProcess?.Invoke(
+							Global.OnProcess?.Invoke
+							(
 								"The task is completed" + "\r\n" +
 								$"- Execution times: {((sender as Process).ExitTime - (sender as Process).StartTime).TotalMilliseconds.CastAs<long>().GetElapsedTimes()}" + "\r\n" +
 								$"- Command: [{task.Executable + " " + arguments.Join(" ")}]" + "\r\n" +
@@ -1417,7 +1462,8 @@ namespace net.vieapps.Services.APIGateway
 
 			// stop
 			stopwatch.Stop();
-			Global.OnProcess?.Invoke(
+			Global.OnProcess?.Invoke
+			(
 				"The task scheduler was completed with all tasks" + "\r\n" +
 				$"- Number of tasks: {tasks.Count}" + "\r\n" +
 				$"- Execution times: {stopwatch.GetElapsedTimes()}"
@@ -1502,7 +1548,7 @@ namespace net.vieapps.Services.APIGateway
 			);
 
 		void SendServiceInfo(string name, string args, bool available, bool running)
-			=> Task.Run(() => this.SendServiceInfoAsync(name, args, available, running)).ConfigureAwait(false);
+			=> Task.Run(async () => await this.SendServiceInfoAsync(name, args, available, running).ConfigureAwait(false)).ConfigureAwait(false);
 		#endregion
 
 	}

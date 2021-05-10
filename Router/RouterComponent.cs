@@ -20,7 +20,7 @@ namespace net.vieapps.Services.APIGateway
 {
 	public class RouterComponent
 	{
-		public const string Powered = "WAMP#v20.1.1-SSL+rev:2020.7.1-lts";
+		public const string Powered = "WAMP#v20.1.1-SSL+rev:2021.07.04";
 
 		public IWampHost Host { get; private set; } = null;
 
@@ -100,10 +100,8 @@ namespace net.vieapps.Services.APIGateway
 			{
 				try
 				{
-					this.Host = this.SslCertificate != null
-						? new DefaultWampHost(this.Address.Replace("ws://", "wss://"), null, null, null, this.SslCertificate, () => this.SslProtocol)
-						: new DefaultWampHost(this.Address.Replace("wss://", "ws://"));
-
+					this.Address = this.SslCertificate != null ? this.Address.Replace("ws://", "wss://") : this.Address.Replace("wss://", "ws://");
+					this.Host = new DefaultWampHost(this.Address, null, null, null, this.SslCertificate, () => this.SslProtocol);
 					this.HostedRealm = this.Host.RealmContainer.GetRealmByName(this.Realm);
 					this.HostedRealm.SessionCreated += (sender, arguments) =>
 					{
@@ -256,7 +254,7 @@ namespace net.vieapps.Services.APIGateway
 			{ "ProcessID", $"{Process.GetCurrentProcess().Id}" },
 			{ "WorkingMode", this.IsUserInteractive ? "Interactive app" : "Background service" },
 			{ "UseSecuredConnections", $"{this.SslCertificate != null}".ToLower() + (this.SslCertificate != null ? $" (Issued by {this.SslCertificate.GetNameInfo(X509NameType.DnsName, true)})" : "") },
-			{ "ListeningURI", $"{(this.SslCertificate != null ? this.Address.Replace("ws://", "wss://") : this.Address.Replace("wss://", "ws://"))}{this.Realm}" },
+			{ "ListeningURI", $"{this.Address}{this.Realm}" },
 			{ "HostedRealmSessionID", $"{this.HostedRealm.SessionId}" },
 			{ "StatisticsServer", $"{this.StatisticsServer != null}".ToLower() },
 			{ "StatisticsServerPort", this.StatisticsServer != null ? this.StatisticsServer.Port : 56429 },
@@ -307,7 +305,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					info += "\r\n" + "Details:";
 					foreach (JObject session in sessions)
-						info += "\r\n\t" + $"Session ID: {session.Value<long>("SessionID")} - Connection Info: {session.Value<string>("ConnectionID")} - {session.Value<string>("EndPoint")})";
+						info += "\r\n\t" + $"Session ID: {session.Value<long>("SessionID")} - Connection Info: {session.Value<string>("ConnectionID")} - {session.Value<string>("EndPoint")}";
 				}
 				return info;
 			}

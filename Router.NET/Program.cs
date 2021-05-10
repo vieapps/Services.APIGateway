@@ -52,12 +52,12 @@ namespace net.vieapps.Services.APIGateway
 				OnSessionCreated = info =>
 				{
 					if (Environment.UserInteractive)
-						Program.WriteLog("\r\n" + $"A session was opened - Session ID: {info.SessionID} - Connection Info: {info.ConnectionID} - {info.EndPoint})");
+						Program.WriteLog("\r\n" + $"A session was opened - Session ID: {info.SessionID} - Connection Info: {info.ConnectionID} - {info.EndPoint}");
 				},
 				OnSessionClosed = info =>
 				{
 					if (Environment.UserInteractive)
-						Program.WriteLog("\r\n" + $"A session was closed - Type: {info?.CloseType} ({info?.CloseReason ?? "N/A"}) - Session ID: {info?.SessionID} - Connection Info: {info?.ConnectionID} - {info?.EndPoint})");
+						Program.WriteLog("\r\n" + $"A session was closed - Type: {info?.CloseType} ({info?.CloseReason ?? "N/A"}) - Session ID: {info?.SessionID} - Connection Info: {info?.ConnectionID} - {info?.EndPoint}");
 				}
 			};
 			Program.Router.Start(args);

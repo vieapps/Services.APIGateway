@@ -28,7 +28,7 @@ namespace net.vieapps.Services.APIGateway
 
 		public static void Initialize()
 		{
-			RTU.WebSocket = new Components.WebSockets.WebSocket(Components.Utility.Logger.GetLoggerFactory(), Global.CancellationTokenSource.Token)
+			RTU.WebSocket = new Components.WebSockets.WebSocket(Components.Utility.Logger.GetLoggerFactory(), Global.CancellationToken)
 			{
 				OnError = async (websocket, exception) => await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"Got an error while processing => {exception.Message} ({websocket?.ID} {websocket?.RemoteEndPoint})", exception).ConfigureAwait(false),
 				OnConnectionEstablished = async websocket => await (websocket == null ? Task.CompletedTask : websocket.WhenConnectionIsEstablishedAsync()).ConfigureAwait(false),
@@ -69,13 +69,13 @@ namespace net.vieapps.Services.APIGateway
 
 				// update session
 				websocket.Set("Session", session);
-				await websocket.PrepareConnectionInfoAsync(correlationID, session, Global.CancellationTokenSource.Token, RTU.Logger).ConfigureAwait(false);
+				await websocket.PrepareConnectionInfoAsync(correlationID, session, Global.CancellationToken, RTU.Logger).ConfigureAwait(false);
 
 				// wait for few times before connecting to API Gateway Router because RxNET needs that
 				if (query.ContainsKey("x-restart"))
 					await Task.WhenAll(
 						websocket.SendAsync(new UpdateMessage { Type = "Knock" }),
-						Task.Delay(345, Global.CancellationTokenSource.Token)
+						Task.Delay(345, Global.CancellationToken)
 					).ConfigureAwait(false);
 			}
 			catch (Exception ex)
@@ -173,7 +173,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// wait for the initializing process is completed
 			while ("Initializing".IsEquals(websocket.GetStatus()))
-				await Task.Delay(UtilityService.GetRandomNumber(123, 456), Global.CancellationTokenSource.Token).ConfigureAwait(false);
+				await Task.Delay(UtilityService.GetRandomNumber(123, 456), Global.CancellationToken).ConfigureAwait(false);
 
 			// check session
 			var session = websocket.Get<Session>("Session");
@@ -217,7 +217,7 @@ namespace net.vieapps.Services.APIGateway
 						while (!cts.IsCancellationRequested)
 							try
 							{
-								await Task.Delay(UtilityService.GetRandomNumber(123, 456), Global.CancellationTokenSource.Token).ConfigureAwait(false);
+								await Task.Delay(UtilityService.GetRandomNumber(123, 456), Global.CancellationToken).ConfigureAwait(false);
 								if ("Authenticated".IsEquals(websocket.GetStatus()))
 									cts.Cancel();
 							}
@@ -310,7 +310,7 @@ namespace net.vieapps.Services.APIGateway
 					message["ID"] = identity;
 
 				// send & write logs
-				await websocket.SendAsync(message, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+				await websocket.SendAsync(message, Global.CancellationToken).ConfigureAwait(false);
 				await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", msg ?? exception.Message, exception, Global.ServiceName, LogLevel.Error, correlationID, string.IsNullOrWhiteSpace(additionalMsg) ? null : $"{additionalMsg}\r\nWebSocket Info:\r\n{websocket.GetConnectionInfo()}").ConfigureAwait(false);
 			}
 			catch (ObjectDisposedException) { }
@@ -321,7 +321,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		static Task SendAsync(this ManagedWebSocket websocket, UpdateMessage message, string identity = null)
-			=> websocket.SendAsync(message, Global.CancellationTokenSource.Token, json =>
+			=> websocket.SendAsync(message, Global.CancellationToken, json =>
 			{
 				(json as JObject).Remove("DeviceID");
 				(json as JObject).Remove("ExcludedDeviceID");
@@ -384,7 +384,7 @@ namespace net.vieapps.Services.APIGateway
 						throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 					else if (!session.SessionID.Equals(session.GetDecryptedID(encryptedSessionID, Global.EncryptionKey, Global.ValidationKey)))
 						throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
-					await websocket.PrepareConnectionInfoAsync(correlationID, session, Global.CancellationTokenSource.Token, RTU.Logger).ConfigureAwait(false);
+					await websocket.PrepareConnectionInfoAsync(correlationID, session, Global.CancellationToken, RTU.Logger).ConfigureAwait(false);
 					if (Global.IsDebugLogEnabled)
 						await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs",
 							$"Successfully process an inter-communicate message (patch session - {message.Data.Get<string>("SessionID")} => {session.SessionID})" + "\r\n" +
@@ -482,7 +482,7 @@ namespace net.vieapps.Services.APIGateway
 					// update session
 					session.AppName = body?.Get<string>("x-app-name") ?? session.AppName;
 					session.AppPlatform = body?.Get<string>("x-app-platform") ?? session.AppPlatform;
-					await websocket.PrepareConnectionInfoAsync(correlationID, session, Global.CancellationTokenSource.Token, RTU.Logger).ConfigureAwait(false);
+					await websocket.PrepareConnectionInfoAsync(correlationID, session, Global.CancellationToken, RTU.Logger).ConfigureAwait(false);
 
 					// update status
 					websocket.SetStatus("Authenticated");
@@ -609,9 +609,9 @@ namespace net.vieapps.Services.APIGateway
 							: requestInfo.ObjectName.IsEquals("services")
 								? InternalAPIs.GetServices()
 								: requestInfo.ObjectName.IsEquals("definitions")
-									? await Global.CallServiceAsync(requestInfo.PrepareDefinitionRelated(), Global.CancellationTokenSource.Token, RTU.Logger, "Http.InternalAPIs").ConfigureAwait(false)
+									? await Global.CallServiceAsync(requestInfo.PrepareDefinitionRelated(), Global.CancellationToken, RTU.Logger, "Http.InternalAPIs").ConfigureAwait(false)
 									: throw new InvalidRequestException("Unknown request")
-						: await Global.CallServiceAsync(requestInfo, Global.CancellationTokenSource.Token, RTU.Logger, "Http.InternalAPIs").ConfigureAwait(false);
+						: await Global.CallServiceAsync(requestInfo, Global.CancellationToken, RTU.Logger, "Http.InternalAPIs").ConfigureAwait(false);
 
 				// send the response as an update message
 				await websocket.SendAsync(new UpdateMessage

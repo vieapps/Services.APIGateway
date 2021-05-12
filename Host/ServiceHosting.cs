@@ -47,8 +47,9 @@ namespace net.vieapps.Services.APIGateway
 			var stopwatch = Stopwatch.StartNew();
 
 			var apiCall = args?.FirstOrDefault(arg => arg.IsStartsWith("/agc:"));
-			var doSyncWork = args?.FirstOrDefault(arg => arg.IsStartsWith("/do-sync-work")) != null;
 			var isUserInteractive = Environment.UserInteractive && apiCall == null;
+			var doSyncWork = args?.FirstOrDefault(arg => arg.IsStartsWith("/do-sync-work")) != null;
+			var startBeforeDoingSyncWork = doSyncWork && args?.FirstOrDefault(arg => arg.IsStartsWith("/start-before-sync-work")) != null;
 			var powered = $"VIEApps NGX API Gateway - Service Hosting {RuntimeInformation.ProcessArchitecture.ToString().ToLower()} {Assembly.GetCallingAssembly().GetVersion()}";
 
 			// prepare type name
@@ -255,19 +256,9 @@ namespace net.vieapps.Services.APIGateway
 			ServiceBase.ServiceComponent = service;
 			var initializeRepository = !"false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", ""));
 
-			// do the synchronous work
-			if (doSyncWork)
+			// start the service
+			if (!doSyncWork || startBeforeDoingSyncWork)
 			{
-				logger.LogInformation($"The service is running with synchronous work - PID: {Process.GetCurrentProcess().Id}");
-				if (initializeRepository)
-					service.InitializeRepository();
-				service.DoWork(args?.ToArray());
-			}
-
-			// run as background service
-			else
-			{
-				// start the service
 				logger.LogInformation($"The service is starting");
 				logger.LogInformation($"Service info: {service.ServiceName} - v{this.ServiceType.Assembly.GetVersion()}");
 				logger.LogInformation($"Working mode: {(isUserInteractive ? "Interactive app" : "Background service")}");
@@ -292,11 +283,32 @@ namespace net.vieapps.Services.APIGateway
 					stopwatch.Stop();
 					logger.LogInformation($"The service was started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");
 
-					if (isUserInteractive)
+					if (isUserInteractive && !doSyncWork)
 						logger.LogWarning($"=====> Enter \"exit\" to terminate ...............");
 				});
+			}
 
-				// wait for exit signal
+			// do the synchronous work
+			if (doSyncWork)
+			{
+				logger.LogInformation($"The service is running with synchronous work - PID: {Process.GetCurrentProcess().Id}");
+				if (startBeforeDoingSyncWork)
+					Task.Run(async () => await Task.Delay(1234).ConfigureAwait(false))
+#if NETSTANDARD2_0
+						.Wait();
+#else
+						.ConfigureAwait(false)
+						.GetAwaiter()
+						.GetResult();
+#endif
+				else if (initializeRepository)
+					service.InitializeRepository();
+				service.DoWork(args?.ToArray());
+			}
+
+			// wait for exit signal
+			else
+			{
 				if (useEventWaitHandle)
 				{
 					eventWaitHandle.WaitOne();

@@ -41,7 +41,7 @@ namespace net.vieapps.Services.APIGateway
 					});
 
 					Global.PrimaryInterCommunicateMessageUpdater?.Dispose();
-					Global.PrimaryInterCommunicateMessageUpdater = Services.Router.IncomingChannel.RealmProxy.Services
+					Global.PrimaryInterCommunicateMessageUpdater = Services.Router.IncomingChannel?.RealmProxy.Services
 						.GetSubject<CommunicateMessage>("messages.services.apigateway")
 						.Subscribe(
 							async message =>

@@ -47,6 +47,7 @@ namespace net.vieapps.Services.APIGateway
 			var stopwatch = Stopwatch.StartNew();
 
 			var apiCall = args?.FirstOrDefault(arg => arg.IsStartsWith("/agc:"));
+			var doSyncWork = args?.FirstOrDefault(arg => arg.IsStartsWith("/do-sync-work")) != null;
 			var isUserInteractive = Environment.UserInteractive && apiCall == null;
 			var powered = $"VIEApps NGX API Gateway - Service Hosting {RuntimeInformation.ProcessArchitecture.ToString().ToLower()} {Assembly.GetCallingAssembly().GetVersion()}";
 
@@ -154,7 +155,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// prepare the signal to start/stop when the service was called from API Gateway
 			EventWaitHandle eventWaitHandle = null;
-			var useEventWaitHandle = !isUserInteractive && RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+			var useEventWaitHandle = !isUserInteractive && !doSyncWork && RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 			if (useEventWaitHandle)
 			{
 				// get the flag of the existing instance
@@ -232,7 +233,15 @@ namespace net.vieapps.Services.APIGateway
 
 			// setup hooks
 			void terminate(string message, bool available = true, bool disconnect = true)
-				=> (service.Disposed ? Task.CompletedTask : service.DisposeAsync(args?.ToArray(), available, disconnect, _ => logger.LogInformation(message)).AsTask()).ContinueWith(async _ => await Task.Delay(123).ConfigureAwait(false), TaskContinuationOptions.OnlyOnRanToCompletion).Wait();
+				=> (service.Disposed ? Task.CompletedTask : service.DisposeAsync(args?.ToArray(), available, disconnect, _ => logger.LogInformation(message)).AsTask())
+				.ContinueWith(async _ => await Task.Delay(123).ConfigureAwait(false), TaskContinuationOptions.OnlyOnRanToCompletion)
+#if NETSTANDARD2_0
+				.Wait();
+#else
+				.ConfigureAwait(false)
+				.GetAwaiter()
+				.GetResult();
+#endif
 
 			AppDomain.CurrentDomain.ProcessExit += (sender, arguments) => terminate($"The service was terminated (by \"process exit\" signal) - Served times: {time.GetElapsedTimes()}", false);
 
@@ -242,17 +251,29 @@ namespace net.vieapps.Services.APIGateway
 				Environment.Exit(0);
 			};
 
-			// start the service
-			logger.LogInformation($"The service is starting");
-			logger.LogInformation($"Service info: {service.ServiceName} - v{this.ServiceType.Assembly.GetVersion()}");
-			logger.LogInformation($"Working mode: {(isUserInteractive ? "Interactive app" : "Background service")}");
-			logger.LogInformation($"Starting arguments: {(args != null && args.Count > 0 ? args.Join(" ") : "None")}");
-
+			// prepare
 			ServiceBase.ServiceComponent = service;
-			service.Start(
-				args?.ToArray(),
-				!"false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", "")),
-				_ =>
+			var initializeRepository = !"false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", ""));
+
+			// do the synchronous work
+			if (doSyncWork)
+			{
+				logger.LogInformation($"The service is running with synchronous work - PID: {Process.GetCurrentProcess().Id}");
+				if (initializeRepository)
+					service.InitializeRepository();
+				service.DoWork(args?.ToArray());
+			}
+
+			// run as background service
+			else
+			{
+				// start the service
+				logger.LogInformation($"The service is starting");
+				logger.LogInformation($"Service info: {service.ServiceName} - v{this.ServiceType.Assembly.GetVersion()}");
+				logger.LogInformation($"Working mode: {(isUserInteractive ? "Interactive app" : "Background service")}");
+				logger.LogInformation($"Starting arguments: {(args != null && args.Count > 0 ? args.Join(" ") : "None")}");
+
+				service.Start(args?.ToArray(), initializeRepository, _ =>
 				{
 					logger.LogInformation($"API Gateway Router: {new Uri(Router.GetRouterStrInfo()).GetResolvedURI()}");
 					logger.LogInformation($"API Gateway HTTP service: {UtilityService.GetAppSetting("HttpUri:APIs", "None")}");
@@ -273,21 +294,21 @@ namespace net.vieapps.Services.APIGateway
 
 					if (isUserInteractive)
 						logger.LogWarning($"=====> Enter \"exit\" to terminate ...............");
-				}
-			);
+				});
 
-			// wait for exit signal
-			if (useEventWaitHandle)
-			{
-				eventWaitHandle.WaitOne();
-				eventWaitHandle.Dispose();
-				logger.LogDebug(">>>>> Got \"stop\" call from API Gateway Controller ...............");
-			}
-			else
-			{
-				while (Console.ReadLine() != "exit") { }
-				if (!isUserInteractive)
-					logger.LogDebug(">>>>> Got \"exit\" command from API Gateway Controller ...............");
+				// wait for exit signal
+				if (useEventWaitHandle)
+				{
+					eventWaitHandle.WaitOne();
+					eventWaitHandle.Dispose();
+					logger.LogDebug(">>>>> Got \"stop\" call from API Gateway Controller ...............");
+				}
+				else
+				{
+					while (Console.ReadLine() != "exit") { }
+					if (!isUserInteractive)
+						logger.LogDebug(">>>>> Got \"exit\" command from API Gateway Controller ...............");
+				}
 			}
 
 			terminate($"The service was terminated - Served times: {time.GetElapsedTimes()}");

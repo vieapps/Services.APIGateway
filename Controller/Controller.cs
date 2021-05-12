@@ -485,12 +485,14 @@ namespace net.vieapps.Services.APIGateway
 
 			connectRouter();
 
-			// logging service
-			if (this.AllowRegisterHelperServices)
+			// logging service			
+			if (this.AllowRegisterHelperServices && !"true".IsEquals(UtilityService.GetAppSetting("Logs:Service:Disabled")))
 			{
 				this.StartLoggingService();
 				this.StartTimer(() => this.RestartLoggingService(), 3);
 			}
+			else
+				this.StartTimer(() => this.CallLoggingService(), 13);
 		}
 
 		/// <summary>
@@ -859,7 +861,7 @@ namespace net.vieapps.Services.APIGateway
 				this.BusinessServices[name].Instance = ExternalProcess.Start
 				(
 					serviceHosting,
-					$"/svc:{this.BusinessServices[name].Arguments} /agc:r {this.GetServiceArguments().Replace("/", "/call-")} {arguments ?? ""} /controller-id:{this.Info.ID}".Trim(),
+					$"/svc:{this.BusinessServices[name].Arguments} {arguments ?? ""} /agc:r {this.GetServiceArguments().Replace("/", "/call-")} /controller-id:{this.Info.ID}".Trim(),
 					(sender, args) =>
 					{
 						this.BusinessServices[name].Instance = null;
@@ -990,6 +992,10 @@ namespace net.vieapps.Services.APIGateway
 			{
 				if (this.ManagingService != null)
 					await this.ManagingService.DisposeAsync().ConfigureAwait(false);
+			}
+			catch { }
+			try
+			{
 				this.ManagingService = await Router.IncomingChannel.RealmProxy.Services.RegisterCallee<IController>(() => this, RegistrationInterceptor.Create(this.Info.ID, WampInvokePolicy.Single)).ConfigureAwait(false);
 				Global.OnProcess?.Invoke($"The managing service was{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
 			}
@@ -1002,12 +1008,16 @@ namespace net.vieapps.Services.APIGateway
 				Global.OnError?.Invoke($"Error occurred while{(this.State == ServiceState.Disconnected ? " re-" : " ")}registering the managing service => {ex.Message}", ex);
 			}
 
+			try
+			{
+				if (this.MessagingService != null)
+					await this.MessagingService.DisposeAsync().ConfigureAwait(false);
+			}
+			catch { }
 			if (this.AllowRegisterHelperServices)
 				try
 				{
-					if (this.MessagingService != null)
-						await this.MessagingService.DisposeAsync().ConfigureAwait(false);
-					this.MessagingService = await Router.IncomingChannel.RealmProxy.Services.RegisterCallee(new MessagingService(), RegistrationInterceptor.Create()).ConfigureAwait(false);
+					this.MessagingService = await Router.IncomingChannel.RealmProxy.Services.RegisterCallee<IMessagingService>(() => new MessagingService(), RegistrationInterceptor.Create()).ConfigureAwait(false);
 					Global.OnProcess?.Invoke($"The messaging service was{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
 				}
 				catch (WampSessionNotEstablishedException)
@@ -1020,7 +1030,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 		}
 
-		internal void StartLoggingService()
+		void StartLoggingService(string arguments = null)
 		{
 			if (string.IsNullOrWhiteSpace(this.ServiceHosting) || !File.Exists($"{this.ServiceHosting}{(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "")}"))
 				Global.OnError?.Invoke($"The hosting [{this.ServiceHosting}{(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "")}] is not found", null);
@@ -1028,9 +1038,15 @@ namespace net.vieapps.Services.APIGateway
 				try
 				{
 					var svcComponent = UtilityService.GetAppSetting("Logs:Service:Component", "net.vieapps.Services.Logs.ServiceComponent,VIEApps.Services.Logs");
-					var svcArguments = $"/svc:{svcComponent} /agc:r {this.GetServiceArguments().Replace("/", "/call-")} {UtilityService.GetAppSetting("Logs:Service:Arguments", "")} /controller-id:{this.Info.ID}".Trim();
-					this.LoggingService = ExternalProcess.Start(this.ServiceHosting, svcArguments, (_, __) => Global.OnProcess?.Invoke("The logging service was stopped"), null);
-					Global.OnProcess?.Invoke("The logging service was started");
+					var svcArguments = $"/svc:{svcComponent} {UtilityService.GetAppSetting("Logs:Service:Arguments", "")} {arguments ?? ""} /agc:r {this.GetServiceArguments().Replace("/", "/call-")} /controller-id:{this.Info.ID}".Trim();
+					this.LoggingService = ExternalProcess.Start(this.ServiceHosting, svcArguments, (_, __) =>
+					{
+						if (string.IsNullOrWhiteSpace(arguments))
+							Global.OnProcess?.Invoke("The logging service was stopped");
+						this.LoggingService = null;
+					}, null);
+					if (string.IsNullOrWhiteSpace(arguments))
+						Global.OnProcess?.Invoke("The logging service was started");
 				}
 				catch (Exception ex)
 				{
@@ -1038,13 +1054,13 @@ namespace net.vieapps.Services.APIGateway
 				}
 		}
 
-		internal void RestartLoggingService()
+		void RestartLoggingService()
 		{
 			if (this.LoggingService == null)
 				this.StartLoggingService();
 		}
 
-		internal void StopLoggingService()
+		void StopLoggingService()
 		{
 			if (this.LoggingService != null)
 			{
@@ -1081,6 +1097,12 @@ namespace net.vieapps.Services.APIGateway
 						1234
 					);
 			}
+		}
+
+		void CallLoggingService()
+		{
+			if (this.LoggingService == null)
+				this.StartLoggingService("/do-sync-work /flush /clean");
 		}
 		#endregion
 
@@ -1184,10 +1206,17 @@ namespace net.vieapps.Services.APIGateway
 			}, Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:WebHook", "3"), out var webhookInterval) && webhookInterval > 0 ? webhookInterval : 3);
 
 			// flush logs
-			this.StartTimer(() => new CommunicateMessage("Logs")
+			this.StartTimer(() =>
 			{
-				Type = "Flush"
-			}.Send(), Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:FlushLogs", "13"), out var flushLogsInterval) && flushLogsInterval > 0 ? flushLogsInterval : 13);
+				try
+				{
+					new CommunicateMessage("Logs")
+					{
+						Type = "Flush"
+					}.Send();
+				}
+				catch { }
+			}, Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:FlushLogs", "13"), out var flushLogsInterval) && flushLogsInterval > 0 ? flushLogsInterval : 13);
 
 			// house keeper (hourly)
 			this.StartTimer(() => this.RunHouseKeeper(), 60 * 60);
@@ -1205,11 +1234,15 @@ namespace net.vieapps.Services.APIGateway
 			this.StartTimer(() =>
 			{
 				if ((DateTime.Now - this.ClientPingTime).TotalSeconds >= pingInterval)
-					new UpdateMessage
+					try
 					{
-						Type = "Ping",
-						DeviceID = "*",
-					}.Send();
+						new UpdateMessage
+						{
+							Type = "Ping",
+							DeviceID = "*",
+						}.Send();
+					}
+					catch { }
 			}, pingInterval + 13);
 
 			// scheduler (update online status, signal to run scheduler at client, ...) - default: 15 minutes
@@ -1219,11 +1252,15 @@ namespace net.vieapps.Services.APIGateway
 			this.StartTimer(() =>
 			{
 				if ((DateTime.Now - this.ClientSchedulingTime).TotalSeconds >= scheduleInterval)
-					new UpdateMessage
+					try
 					{
-						Type = "Scheduler",
-						DeviceID = "*",
-					}.Send();
+						new UpdateMessage
+						{
+							Type = "Scheduler",
+							DeviceID = "*",
+						}.Send();
+					}
+					catch { }
 			}, scheduleInterval + 13);
 		}
 		#endregion
@@ -1519,7 +1556,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					Type = type,
 					Data = data ?? new JObject()
-				}.SendAsync().ConfigureAwait(false);
+				}.SendAsync(cancellationToken).ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{

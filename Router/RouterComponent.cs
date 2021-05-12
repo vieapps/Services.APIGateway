@@ -20,7 +20,7 @@ namespace net.vieapps.Services.APIGateway
 {
 	public class RouterComponent
 	{
-		public const string Powered = "WAMP#v20.1.1-SSL+rev:2021.07.04";
+		public const string Powered = "WAMP#v20.1.1-Fleck#v1.2.0-SSL+rev:2021.05.10";
 
 		public IWampHost Host { get; private set; } = null;
 
@@ -337,13 +337,17 @@ namespace net.vieapps.Services.APIGateway
 
 		public string CloseReason { get; internal set; }
 
-		internal JObject ToJson() => new JObject
-		{
-			{ "SessionID", this.SessionID },
-			{ "ConnectionID", $"{this.ConnectionID}" },
-			{ "EndPoint", $"{this.EndPoint}" },
-			{ "Name", this.Name },
-			{ "Description", this.Description }
-		};
+		internal JObject ToJson()
+			=> new JObject
+			{
+				{ "SessionID", this.SessionID },
+				{ "ConnectionID", $"{this.ConnectionID}" },
+				{ "EndPoint", $"{this.EndPoint}" },
+				{ "Name", this.Name },
+				{ "Description", this.Description }
+			};
+
+		public override string ToString()
+			=> this.ToJson().ToString(Formatting.Indented);
 	}
 }

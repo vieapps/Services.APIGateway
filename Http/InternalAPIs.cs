@@ -2,9 +2,8 @@
 using System;
 using System.IO;
 using System.Linq;
-using System.Dynamic;
 using System.Diagnostics;
-using System.Reactive.Subjects;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
@@ -34,6 +33,8 @@ namespace net.vieapps.Services.APIGateway
 		public static ConcurrentDictionary<string, List<JObject>> Services { get; } = new ConcurrentDictionary<string, List<JObject>>();
 
 		public static Formatting JsonFormat { get; } = Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None;
+
+		public static int RequestTimeout { get; } = Int32.TryParse(UtilityService.GetAppSetting("Portals:RequestTimeout", "13"), out var timeout) && timeout > 0 ? timeout : 13;
 		#endregion
 
 		public static async Task ProcessRequestAsync(HttpContext context)
@@ -340,10 +341,12 @@ namespace net.vieapps.Services.APIGateway
 					}
 
 					// process the request
+					using var timeoutCTS = new CancellationTokenSource(TimeSpan.FromSeconds(InternalAPIs.RequestTimeout));
+					using var requestCTS = CancellationTokenSource.CreateLinkedTokenSource(Global.CancellationToken, timeoutCTS.Token, context.RequestAborted);
 					var response = requestInfo.Verb.IsEquals("PATCH")
 						? await context.SyncAsync(requestInfo).ConfigureAwait(false)
-						: await context.CallServiceAsync(requestInfo, Global.CancellationToken, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
-					await context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationToken).ConfigureAwait(false);
+						: await context.CallServiceAsync(requestInfo, requestCTS.Token, InternalAPIs.Logger, "Http.InternalAPIs").ConfigureAwait(false);
+					await context.WriteAsync(response, InternalAPIs.JsonFormat, requestInfo.CorrelationID, requestCTS.Token).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{

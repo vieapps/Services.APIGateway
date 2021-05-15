@@ -16,7 +16,7 @@ namespace net.vieapps.Services.APIGateway
 {
 	public abstract class ServiceHostingBase
 	{
-		bool WriteLogsIntoFiles => "true".IsEquals(UtilityService.GetAppSetting("Logs:WriteFiles", "true"));
+		protected bool WriteLogsIntoFiles => "true".IsEquals(UtilityService.GetAppSetting("Logs:WriteFiles", "true"));
 
 		protected string ServiceTypeName { get; private set; }
 
@@ -156,7 +156,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// prepare the signal to start/stop when the service was called from API Gateway
 			EventWaitHandle eventWaitHandle = null;
-			var useEventWaitHandle = !isUserInteractive && !doSyncWork && RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+			var useEventWaitHandle = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && !isUserInteractive && !doSyncWork;
 			if (useEventWaitHandle)
 			{
 				// get the flag of the existing instance

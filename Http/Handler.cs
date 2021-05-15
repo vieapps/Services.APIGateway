@@ -22,12 +22,9 @@ namespace net.vieapps.Services.APIGateway
 {
 	public class Handler
 	{
-		RequestDelegate Next { get; }
-
 		string LoadBalancingHealthCheckUrl { get; } = UtilityService.GetAppSetting("HealthCheckUrl", "/load-balancing-health-check");
 
-		public Handler(RequestDelegate next)
-			=> this.Next = next;
+		public Handler(RequestDelegate _) { }
 
 		public async Task Invoke(HttpContext context)
 		{
@@ -64,21 +61,7 @@ namespace net.vieapps.Services.APIGateway
 
 				// APIs
 				else
-				{
-					// process
 					await this.ProcessRequestAsync(context).ConfigureAwait(false);
-
-					// invoke next middleware
-					try
-					{
-						await this.Next.Invoke(context).ConfigureAwait(false);
-					}
-					catch (InvalidOperationException) { }
-					catch (Exception ex)
-					{
-						Global.Logger.LogCritical($"Error occurred while invoking the next middleware => {ex.Message}", ex);
-					}
-				}
 			}
 		}
 

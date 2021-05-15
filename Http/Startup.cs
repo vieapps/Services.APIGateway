@@ -40,11 +40,7 @@ namespace net.vieapps.Services.APIGateway
 				.AddCache(options => this.Configuration.GetSection("Cache").Bind(options))
 				.AddHttpContextAccessor();
 			if (Global.UseIISInProcess)
-				services.Configure<IISServerOptions>(options => Global.PrepareIISServerOptions(options, _ =>
-				{
-					options.AllowSynchronousIO = true;
-					options.MaxRequestBodySize = 1024 * 1024 * Global.MaxRequestBodySize;
-				}));
+				services.Configure<IISServerOptions>(options => Global.PrepareIISServerOptions(options, _ => options.MaxRequestBodySize = 1024 * 1024 * Global.MaxRequestBodySize));
 		}
 
 		public void Configure(IApplicationBuilder appBuilder, IHostApplicationLifetime appLifetime, IWebHostEnvironment environment)

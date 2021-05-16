@@ -485,14 +485,12 @@ namespace net.vieapps.Services.APIGateway
 
 			connectRouter();
 
-			// logging service			
-			if (this.AllowRegisterHelperServices && !"true".IsEquals(UtilityService.GetAppSetting("Logs:Service:Disabled")))
+			// flush logs
+			this.StartTimer(() =>
 			{
-				this.StartLoggingService();
-				this.StartTimer(() => this.RestartLoggingService(), 3);
-			}
-			else
-				this.StartTimer(() => this.CallLoggingService(), 13);
+				if (this.LoggingService == null)
+					this.StartLoggingService("/do-sync-work /flush");
+			}, Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:FlushLogs", "13"), out var interval) && interval > 0 ? interval : 13);
 		}
 
 		/// <summary>
@@ -1054,12 +1052,6 @@ namespace net.vieapps.Services.APIGateway
 				}
 		}
 
-		void RestartLoggingService()
-		{
-			if (this.LoggingService == null)
-				this.StartLoggingService();
-		}
-
 		void StopLoggingService()
 		{
 			if (this.LoggingService != null)
@@ -1097,12 +1089,6 @@ namespace net.vieapps.Services.APIGateway
 						1234
 					);
 			}
-		}
-
-		void CallLoggingService()
-		{
-			if (this.LoggingService == null)
-				this.StartLoggingService("/do-sync-work /flush /clean");
 		}
 		#endregion
 
@@ -1166,7 +1152,7 @@ namespace net.vieapps.Services.APIGateway
 						this.MailSender?.Dispose();
 						this.MailSender = null;
 					}
-			}, Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:Mail", "7"), out var emailInterval) && emailInterval > 0 ? emailInterval : 5);
+			}, Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:Mail", "5"), out var emailInterval) && emailInterval > 0 ? emailInterval : 5);
 
 			// send web hook messages
 			this.StartTimer(async () =>
@@ -1204,19 +1190,6 @@ namespace net.vieapps.Services.APIGateway
 						this.WebHookSender = null;
 					}
 			}, Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:WebHook", "3"), out var webhookInterval) && webhookInterval > 0 ? webhookInterval : 3);
-
-			// flush logs
-			this.StartTimer(() =>
-			{
-				try
-				{
-					new CommunicateMessage("Logs")
-					{
-						Type = "Flush"
-					}.Send();
-				}
-				catch { }
-			}, Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:FlushLogs", "13"), out var flushLogsInterval) && flushLogsInterval > 0 ? flushLogsInterval : 13);
 
 			// house keeper (hourly)
 			this.StartTimer(() => this.RunHouseKeeper(), 60 * 60);

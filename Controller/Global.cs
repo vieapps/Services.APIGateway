@@ -150,18 +150,14 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static string LogsPath => Global._LogsPath ?? (Global._LogsPath = Global.GetPath("Path:Logs", "logs"));
 
-		static ILoggingService LoggingService { get; set; }
-
-		static bool IsLoggingServiceAvailable { get; set; } = true;
-
-		static async Task WriteLogAsync(DateTime time, string correlationID, string serviceName, string objectName, string log, string stack, CancellationToken cancellationToken)
+		public static async Task WriteLogAsync(string correlationID, string serviceName, string objectName, string log, string stack = null, CancellationToken cancellationToken = default)
 		{
 			try
 			{
 				var filePath = Path.Combine(Global.LogsPath, $"logs.services.{DateTime.Now:yyyyMMddHHmmss}.{UtilityService.NewUUID}.json");
 				await UtilityService.WriteTextFileAsync(filePath, new JObject
 				{
-					{ "Time", time },
+					{ "Time", DateTime.Now },
 					{ "CorrelationID", correlationID },
 					{ "DeveloperID", null },
 					{ "AppID", null },
@@ -172,23 +168,6 @@ namespace net.vieapps.Services.APIGateway
 				}.ToString(Formatting.Indented), false, null, cancellationToken).ConfigureAwait(false);
 			}
 			catch { }
-		}
-
-		public static async Task WriteLogAsync(string correlationID, string serviceName, string objectName, string log, string stack = null, CancellationToken cancellationToken = default)
-		{
-			if (Global.IsLoggingServiceAvailable)
-				try
-				{
-					Global.LoggingService = Global.LoggingService ?? Router.OutgoingChannel?.RealmProxy.Services.GetCalleeProxy<ILoggingService>(ProxyInterceptor.Create());
-					await (Global.LoggingService != null ? Global.LoggingService.WriteLogAsync(correlationID ?? UtilityService.NewUUID, null, null, serviceName, objectName, log, stack, cancellationToken) : Task.CompletedTask).ConfigureAwait(false);
-				}
-				catch
-				{
-					Global.IsLoggingServiceAvailable = false;
-					await Global.WriteLogAsync(DateTime.Now, correlationID, serviceName, objectName, log, stack, cancellationToken).ConfigureAwait(false);
-				}
-			else
-				await Global.WriteLogAsync(DateTime.Now, correlationID, serviceName, objectName, log, stack, cancellationToken).ConfigureAwait(false);
 		}
 
 		public static void WriteLog(string correlationID, string serviceName, string objectName, string log, string stack = null)

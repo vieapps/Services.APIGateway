@@ -15,7 +15,6 @@ using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
 using WampSharp.V2.Realm;
 using net.vieapps.Components.Utility;
-using net.vieapps.Components.Caching;
 #endregion
 
 namespace net.vieapps.Services.APIGateway
@@ -23,7 +22,7 @@ namespace net.vieapps.Services.APIGateway
 	public class Startup
 	{
 		public static void Main(string[] args)
-			=> WebHost.CreateDefaultBuilder(args).Run<Startup>(args, 8024);
+			=> WebHost.CreateDefaultBuilder(args).Run<Startup>(args);
 
 		public Startup(IConfiguration configuration)
 			=> this.Configuration = configuration;
@@ -49,8 +48,7 @@ namespace net.vieapps.Services.APIGateway
 			var stopwatch = Stopwatch.StartNew();
 			Console.OutputEncoding = Encoding.UTF8;
 			Global.ServiceName = "APIGateway";
-			AspNetCoreUtilityService.ServerName = UtilityService.GetAppSetting("ServerName", "VIEApps NGX");
-			Components.WebSockets.WebSocket.AgentName = $"{AspNetCoreUtilityService.ServerName} WebSockets";
+			Components.WebSockets.WebSocket.AgentName = $"{UtilityService.GetAppSetting("ServerName", "VIEApps NGX")} WebSockets";
 
 			var loggerFactory = appBuilder.ApplicationServices.GetService<ILoggerFactory>();
 			var logPath = UtilityService.GetAppSetting("Path:Logs");
@@ -154,9 +152,6 @@ namespace net.vieapps.Services.APIGateway
 
 			// setup the handler for all requests
 			appBuilder.UseMiddleware<Handler>();
-
-			// setup the caching storage
-			Global.Cache = appBuilder.ApplicationServices.GetService<ICache>();
 
 			// connect to API Gateway Router
 			Router.Connect(onIncomingConnectionEstablished, onOutgoingConnectionEstablished);

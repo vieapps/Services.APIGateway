@@ -81,17 +81,8 @@ namespace net.vieapps.Services.APIGateway
 					while (Services.Router.IncomingChannel == null)
 						await Task.Delay(UtilityService.GetRandomNumber(234, 567), Global.CancellationToken).ConfigureAwait(false);
 
-					await Task.WhenAll
-					(
-						new CommunicateMessage("APIGateway")
-						{
-							Type = "Controller#RequestInfo"
-						}.PublishAsync(Global.Logger, "Http.InternalAPIs"),
-						new CommunicateMessage("APIGateway")
-						{
-							Type = "Service#RequestInfo"
-						}.PublishAsync(Global.Logger, "Http.InternalAPIs")
-					).ConfigureAwait(false);
+					new CommunicateMessage("APIGateway") { Type = "Controller#RequestInfo" }.Send();
+					new CommunicateMessage("APIGateway") { Type = "Service#RequestInfo" }.Send();
 				},
 				waitingTimes,
 				exception => Global.Logger.LogError($"Cannot connect to API Gateway Router in period of times => {exception.Message}", exception),
@@ -121,7 +112,7 @@ namespace net.vieapps.Services.APIGateway
 				.UseForwardedHeaders(Global.GetForwardedHeadersOptions())
 				.UseWebSockets(new WebSocketOptions
 				{
-					KeepAliveInterval = RTU.WebSocket.KeepAliveInterval
+					KeepAliveInterval = RTU.KeepAliveInterval
 				});
 			Router.Forwarder.RegisterTransport(new WampSharp.AspNetCore.WebSockets.Server.AspNetCoreWebSocketTransport(appBuilder), new JTokenJsonBinding(), new JTokenMessagePackBinding());
 			Global.Logger.LogInformation("The transport of forwarder of API Gateway Router was registered (ASP.NET Core WebSocket)");

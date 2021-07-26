@@ -22,9 +22,11 @@ namespace net.vieapps.Services.APIGateway
 {
 	internal static class RTU
 	{
-		public static Components.WebSockets.WebSocket WebSocket { get; private set; }
+		static Components.WebSockets.WebSocket WebSocket { get; set; }
 
 		public static ILogger Logger { get; set; }
+
+		public static TimeSpan KeepAliveInterval => RTU.WebSocket.KeepAliveInterval;
 
 		public static void Initialize()
 		{
@@ -43,6 +45,43 @@ namespace net.vieapps.Services.APIGateway
 		{
 			RTU.WebSocket.Dispose();
 			Global.Logger.LogInformation($"WebSocket ({Global.ServiceName} RTU) was disposed");
+		}
+
+		public static Task WrapAsync(HttpContext context, Func<HttpContext, Task> whenIsNotWebSocketRequestAsync = null)
+			=> RTU.WebSocket.WrapAsync(context, whenIsNotWebSocketRequestAsync);
+
+		public static async Task BroadcastAsync(UpdateMessage message)
+		{
+			try
+			{
+				await RTU.WebSocket.SendAsync(websocket =>
+				{
+					if ("Disconnected".IsEquals(websocket.GetStatus()))
+						return false;
+
+					var session = websocket.Get<Session>("Session");
+					if (session == null || session.DeviceID.IsEquals(message.ExcludedDeviceID) || (!"*".Equals(message.DeviceID) && !session.DeviceID.IsEquals(message.DeviceID)))
+						return false;
+
+					return true;
+				}, message.ToJson().ToString(Formatting.None).ToBytes(), true, Global.CancellationToken).ConfigureAwait(false);
+				if (Global.IsDebugLogEnabled)
+					await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs",
+						$"Successfully broadcast a message to all connected devices" + "\r\n" +
+						$"- Type: {message.Type}" + "\r\n" +
+						$"- Message: {message.Data?.ToString(InternalAPIs.JsonFormat)}"
+					, null, Global.ServiceName, LogLevel.Debug).ConfigureAwait(false);
+			}
+			catch (OperationCanceledException) { }
+			catch (ObjectDisposedException) { }
+			catch (Exception ex)
+			{
+				await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs",
+					$"Error occurred while broadcasting a message to all connected devices => {ex.Message}" + "\r\n" +
+					$"- Type: {message.Type}" + "\r\n" +
+					$"- Message: {message.ToJson().ToString(InternalAPIs.JsonFormat)}"
+				, ex, Global.ServiceName, LogLevel.Error).ConfigureAwait(false);
+			}
 		}
 
 		static async Task WhenConnectionIsEstablishedAsync(this ManagedWebSocket websocket)
@@ -338,7 +377,6 @@ namespace net.vieapps.Services.APIGateway
 			if (session == null || session.DeviceID.IsEquals(message.ExcludedDeviceID) || (!"*".Equals(message.DeviceID) && !session.DeviceID.IsEquals(message.DeviceID)))
 				return;
 
-			var correlationID = UtilityService.NewUUID;
 			try
 			{
 				await websocket.SendAsync(message).ConfigureAwait(false);
@@ -346,9 +384,9 @@ namespace net.vieapps.Services.APIGateway
 					await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs",
 						$"Successfully push a message to the device ({message?.DeviceID})" + "\r\n" +
 						$"{websocket.GetConnectionInfo(session)}" + "\r\n" +
-						$"- Type: {message?.Type}" + "\r\n" +
-						$"- Message: {message?.Data?.ToString(InternalAPIs.JsonFormat)}"
-					, null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
+						$"- Type: {message.Type}" + "\r\n" +
+						$"- Message: {message.Data?.ToString(InternalAPIs.JsonFormat)}"
+					, null, Global.ServiceName, LogLevel.Information).ConfigureAwait(false);
 			}
 			catch (ObjectDisposedException) { }
 			catch (Exception ex)
@@ -356,9 +394,9 @@ namespace net.vieapps.Services.APIGateway
 				await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs",
 					$"Error occurred while pushing a message to the device ({message?.DeviceID}) => {ex.Message}" + "\r\n" +
 					$"{websocket.GetConnectionInfo(session)}" + "\r\n" +
-					$"- Type: {message?.Type}" + "\r\n" +
-					$"- Message: {message?.ToJson().ToString(InternalAPIs.JsonFormat)}"
-				, ex, Global.ServiceName, LogLevel.Error, correlationID).ConfigureAwait(false);
+					$"- Type: {message.Type}" + "\r\n" +
+					$"- Message: {message.ToJson().ToString(InternalAPIs.JsonFormat)}"
+				, ex, Global.ServiceName, LogLevel.Error).ConfigureAwait(false);
 			}
 		}
 
@@ -464,19 +502,17 @@ namespace net.vieapps.Services.APIGateway
 
 					// authenticate
 					var body = requestObj.Get("Body")?.ToExpandoObject();
-					var appToken = body?.Get<string>("x-app-token");
-					await Global.UpdateWithAuthenticateTokenAsync(session, appToken, 0, null, null, null, RTU.Logger, "Http.InternalAPIs", correlationID).ConfigureAwait(false);
+					var appToken = body?.Get<string>("x-app-token") ?? "";
+					await Global.UpdateWithAuthenticateTokenAsync(session, appToken, InternalAPIs.ExpiresAfter, null, null, null, RTU.Logger, "Http.InternalAPIs", correlationID).ConfigureAwait(false);
 					if (!await session.IsSessionExistAsync(RTU.Logger, "Http.InternalAPIs", correlationID).ConfigureAwait(false))
 						throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 
 					// verify identity of session and device
+					var header = new Dictionary<string, string>(requestObj.Get("Header", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase);
 					var encryptionKey = session.GetEncryptionKey(Global.EncryptionKey);
 					var encryptionIV = session.GetEncryptionIV(Global.EncryptionKey);
-					var header = new Dictionary<string, string>(requestObj.Get("Header", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase);
-					if (!header.TryGetValue("x-session-id", out var sessionID)
-						|| !session.SessionID.Equals(session.GetDecryptedID(sessionID.Decrypt(encryptionKey, encryptionIV), Global.EncryptionKey, Global.ValidationKey))
-						|| !header.TryGetValue("x-device-id", out var deviceID)
-						|| !session.DeviceID.Equals(deviceID.Decrypt(encryptionKey, encryptionIV)))
+					if (!header.TryGetValue("x-session-id", out var sessionID) || !sessionID.Decrypt(encryptionKey, encryptionIV).Equals(session.GetEncryptedID())
+						|| !header.TryGetValue("x-device-id", out var deviceID) || !deviceID.Decrypt(encryptionKey, encryptionIV).Equals(session.DeviceID))
 						throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 
 					// update session
@@ -487,7 +523,8 @@ namespace net.vieapps.Services.APIGateway
 					// update status
 					websocket.SetStatus("Authenticated");
 					websocket.Set("Token", JSONWebToken.DecodeAsJson(appToken, Global.JWTKey));
-					await Task.WhenAll(
+					await Task.WhenAll
+					(
 						session.SendSessionStateAsync(true, correlationID),
 						Global.IsVisitLogEnabled ? Global.WriteLogsAsync(RTU.Logger, "Http.Visits", $"The real-time updater (RTU) is authenticated" + "\r\n" + websocket.GetConnectionInfo(session) + "\r\n" + $"- Status: {websocket.GetStatus()}", null, Global.ServiceName, LogLevel.Information, correlationID) : Task.CompletedTask,
 						Global.IsDebugLogEnabled ? Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"Successfully authenticate the session" + "\r\n" + $"{websocket.GetConnectionInfo(session)}" + "\r\n" + $"- Request: {requestObj.ToJson().ToString(Formatting.None)}" + "\r\n" + $"- Session: {session.ToJson().ToString(Formatting.None)}", null, Global.ServiceName, LogLevel.Information, correlationID) : Task.CompletedTask
@@ -496,7 +533,8 @@ namespace net.vieapps.Services.APIGateway
 
 				// response to a heartbeat => refresh the session
 				else if ("PONG".IsEquals(verb))
-					await Task.WhenAll(
+					await Task.WhenAll
+					(
 						new CommunicateMessage("Users")
 						{
 							Type = "Session#State",
@@ -516,7 +554,8 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-				await Task.WhenAll(
+				await Task.WhenAll
+				(
 					websocket.SendAsync(ex, null, correlationID, requestObj.Get<string>("ID")),
 					Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs",
 						$"Error occurred while processing the session" + "\r\n" +
@@ -536,6 +575,13 @@ namespace net.vieapps.Services.APIGateway
 		{
 			session = session ?? websocket.Get<Session>("Session");
 			correlationID = correlationID ?? UtilityService.NewUUID;
+
+			var requestInfo = new RequestInfo
+			{
+				Session = session,
+				CorrelationID = correlationID
+			};
+
 			try
 			{
 				// prepare the requesting information
@@ -543,7 +589,7 @@ namespace net.vieapps.Services.APIGateway
 				var objectName = requestObj.Get("ObjectName", "").GetANSIUri(true, true);
 				var verb = requestObj.Get("Verb", "GET").ToUpper();
 				var query = new Dictionary<string, string>(requestObj.Get("Query", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase);
-				query.TryGetValue("object-identity", out string objectIdentity);
+				query.TryGetValue("object-identity", out var objectIdentity);
 				var header = new Dictionary<string, string>(requestObj.Get("Header", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase);
 				if (!header.ContainsKey("x-app-token"))
 				{
@@ -551,9 +597,18 @@ namespace net.vieapps.Services.APIGateway
 					token["iat"] = DateTime.Now.ToUnixTimestamp();
 					header["x-app-token"] = JSONWebToken.Encode(token, Global.JWTKey);
 				}
-				var extra = new Dictionary<string, string>(requestObj.Get("Extra", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase);
 				var body = requestObj.Get("Body");
-				var requestInfo = new RequestInfo
+				if (verb.IsEquals("GET") && query.Remove("x-body", out var requestBody))
+					try
+					{
+						body = requestBody.Url64Decode();
+					}
+					catch (Exception ex)
+					{
+						await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"Error occurred while parsing body of the 'x-body' parameter => {ex.Message}", ex).ConfigureAwait(false);
+					}
+				var extra = new Dictionary<string, string>(requestObj.Get("Extra", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase);
+				requestInfo = new RequestInfo
 				{
 					Session = session,
 					ServiceName = serviceName.GetCapitalizedFirstLetter(),
@@ -571,17 +626,14 @@ namespace net.vieapps.Services.APIGateway
 				{
 					// stop process when request to work with users' sessions
 					if ("session".IsEquals(requestInfo.ObjectName))
-						throw new InvalidRequestException("Please change to use REST APIs for working with users' sessions");
+						throw new InvalidRequestException("Please change to use RESTful APIs for working with users' sessions");
 
 					// prepare related information
-					if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT"))
-					{
-						requestInfo.CaptchaIsValid();
-						if ("account".IsEquals(requestInfo.ObjectName) || "otp".IsEquals(requestInfo.ObjectName))
-							requestInfo.PrepareAccountRelated(async (msg, ex) => await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", msg, ex, Global.ServiceName, LogLevel.Error, correlationID).ConfigureAwait(false));
-					}
-					else if ("otp".IsEquals(requestInfo.ObjectName) && requestInfo.Verb.IsEquals("DELETE"))
+					if ("account".IsEquals(requestInfo.ObjectName) || "otp".IsEquals(requestInfo.ObjectName))
 						requestInfo.PrepareAccountRelated(async (msg, ex) => await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", msg, ex, Global.ServiceName, LogLevel.Error, correlationID).ConfigureAwait(false));
+
+					// validate captcha
+					requestInfo.CaptchaIsValid();
 
 					// prepare signature
 					requestInfo.Extra["Signature"] = requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT")
@@ -611,7 +663,9 @@ namespace net.vieapps.Services.APIGateway
 								: requestInfo.ObjectName.IsEquals("definitions")
 									? await Global.CallServiceAsync(requestInfo.PrepareDefinitionRelated(), Global.CancellationToken, RTU.Logger, "Http.InternalAPIs").ConfigureAwait(false)
 									: throw new InvalidRequestException("Unknown request")
-						: await Global.CallServiceAsync(requestInfo, Global.CancellationToken, RTU.Logger, "Http.InternalAPIs").ConfigureAwait(false);
+						: InternalAPIs.ServiceForwarders.ContainsKey(requestInfo.ServiceName.ToLower())
+							? await requestInfo.ForwardRequestAsync(Global.CancellationToken).ConfigureAwait(false)
+							: await Global.CallServiceAsync(requestInfo, Global.CancellationToken, RTU.Logger, "Http.InternalAPIs").ConfigureAwait(false);
 
 				// send the response as an update message
 				await websocket.SendAsync(new UpdateMessage
@@ -619,6 +673,24 @@ namespace net.vieapps.Services.APIGateway
 					Type = serviceName.GetCapitalizedFirstLetter() + (string.IsNullOrWhiteSpace(objectName) ? "" : "#" + objectName.GetCapitalizedFirstLetter() + "#" + (!string.IsNullOrWhiteSpace(objectIdentity) && !objectIdentity.IsValidUUID() ? objectIdentity : verb).GetCapitalizedFirstLetter()),
 					Data = response
 				}, requestObj.Get<string>("ID")).ConfigureAwait(false);
+			}
+			catch (RemoteServerErrorException ex)
+			{
+				var error = requestInfo.GetForwardingRequestError(ex);
+				try
+				{
+					await websocket.SendAsync(new JObject
+					{
+						{ "ID", requestObj.Get<string>("ID") },
+						{ "Type", "Error" },
+						{ "Data", error.Item2 }
+					}, Global.CancellationToken).ConfigureAwait(false);
+				}
+				catch (Exception e)
+				{
+					RTU.Logger.LogError($"Error occurred while sending an error message via WebSocket => {e.Message}", e);
+				}
+				await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", error.Item2.Get<string>("Message"), ex, Global.ServiceName, LogLevel.Error, correlationID, $"Request: {requestObj.ToJson().ToString(InternalAPIs.JsonFormat)}\r\nWebSocket Info:\r\n{websocket.GetConnectionInfo()}").ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{

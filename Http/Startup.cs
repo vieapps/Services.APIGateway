@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Diagnostics;
 using System.Collections.Generic;
+using System.Configuration;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -98,6 +99,27 @@ namespace net.vieapps.Services.APIGateway
 					Global.Logger.LogError($"Error occurred while assigning web-proxy => {ex.Message}", ex);
 				}
 
+			// setup the service forwarders
+			if (ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:Forwarders", "net.vieapps.services.apigateway.http.forwarders")) is AppConfigurationSectionHandler cfgForwarders && cfgForwarders.Section.SelectNodes("forwarder") is System.Xml.XmlNodeList forwarders)
+				forwarders.ToList()
+					.Select(info => new Tuple<string, string, string>(info.Attributes["name"]?.Value?.ToLower()?.Trim(), info.Attributes["type"]?.Value, info.Attributes["url"]?.Value))
+					.Where(info => !string.IsNullOrEmpty(info.Item1) && !string.IsNullOrEmpty(info.Item2) && !string.IsNullOrEmpty(info.Item2))
+					.Select(info => new Tuple<string, string, string>(info.Item1.GetANSIUri(), info.Item2, info.Item3))
+					.Where(info => !info.Item1.IsEquals("router") && !info.Item1.IsEquals("pusher"))
+					.ForEach(info =>
+					{
+						try
+						{
+							var type = AssemblyLoader.GetType(info.Item2);
+							if (type != null && type.CreateInstance() is ServiceForwarder)
+								InternalAPIs.ServiceForwarders[info.Item1] = new Tuple<Type, string>(type, info.Item3);
+						}
+						catch (Exception ex)
+						{
+							Global.Logger.LogError($"Cannot load a service forwarder ({info.Item2}) => {ex.Message}", ex);
+						}
+					});
+
 			// setup the real-time updater
 			RTU.Initialize();
 
@@ -109,7 +131,7 @@ namespace net.vieapps.Services.APIGateway
 				.UseResponseCompression()
 				.UseWebSockets(new WebSocketOptions
 				{
-					KeepAliveInterval = RTU.WebSocket.KeepAliveInterval
+					KeepAliveInterval = RTU.KeepAliveInterval
 				});
 
 			// setup the forwarder of API Gateway Router
@@ -120,7 +142,7 @@ namespace net.vieapps.Services.APIGateway
 			// setup the path mappers
 			var onIncomingConnectionEstablished = new List<Action<object, WampSessionCreatedEventArgs>>();
 			var onOutgoingConnectionEstablished = new List<Action<object, WampSessionCreatedEventArgs>>();
-			if (System.Configuration.ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:Maps", "net.vieapps.services.apigateway.http.maps")) is AppConfigurationSectionHandler config && config.Section.SelectNodes("map") is System.Xml.XmlNodeList maps)
+			if (ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:Maps", "net.vieapps.services.apigateway.http.maps")) is AppConfigurationSectionHandler cfgMaps && cfgMaps.Section.SelectNodes("map") is System.Xml.XmlNodeList maps)
 				maps.ToList()
 					.Select(info => new Tuple<string, string>(info.Attributes["path"]?.Value?.ToLower()?.Trim(), info.Attributes["type"]?.Value))
 					.Where(info => !string.IsNullOrEmpty(info.Item1) && !string.IsNullOrEmpty(info.Item2))
@@ -166,7 +188,6 @@ namespace net.vieapps.Services.APIGateway
 				Global.Logger.LogInformation($"API Gateway HTTP service: {UtilityService.GetAppSetting("HttpUri:APIs", "None")}");
 				Global.Logger.LogInformation($"Files HTTP service: {UtilityService.GetAppSetting("HttpUri:Files", "None")}");
 				Global.Logger.LogInformation($"Portals HTTP service: {UtilityService.GetAppSetting("HttpUri:Portals", "None")}");
-				Global.Logger.LogInformation($"Passports HTTP service: {UtilityService.GetAppSetting("HttpUri:Passports", "None")}");
 				Global.Logger.LogInformation($"Root (base) directory: {Global.RootPath}");
 				Global.Logger.LogInformation($"Temporary directory: {UtilityService.GetAppSetting("Path:Temp", "None")}");
 				Global.Logger.LogInformation($"Status files directory: {UtilityService.GetAppSetting("Path:Status", "None")}");
@@ -175,9 +196,10 @@ namespace net.vieapps.Services.APIGateway
 				Global.Logger.LogInformation($"Logging level: {this.LogLevel} - Local rolling log files is {(string.IsNullOrWhiteSpace(logPath) ? "disabled" : $"enabled => {logPath}")}");
 				Global.Logger.LogInformation($"Show debugs: {Global.IsDebugLogEnabled} - Show results: {Global.IsDebugResultsEnabled} - Show stacks: {Global.IsDebugStacksEnabled}");
 				Global.Logger.LogInformation($"Request body limit: {Global.MaxRequestBodySize:###,###,##0} MB");
+				Global.Logger.LogInformation($"Service forwarders: {(InternalAPIs.ServiceForwarders.Any() ? InternalAPIs.ServiceForwarders.Keys.ToString(", ") : "None")}");
 
 				stopwatch.Stop();
-				Global.Logger.LogInformation($"The {Global.ServiceName} HTTP service was started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");
+				Global.Logger.LogInformation($"The {Global.ServiceName} HTTP service was started - PID: {Environment.ProcessId} - Execution times: {stopwatch.GetElapsedTimes()}");
 				Global.Logger = loggerFactory.CreateLogger<Handler>();
 			});
 

@@ -45,14 +45,7 @@ namespace net.vieapps.Services.APIGateway
 		public void Dispose()
 		{
 			GC.SuppressFinalize(this);
-			this.DisposeAsync()
-#if NETSTANDARD2_0
-				.Wait();
-#else
-				.ConfigureAwait(false)
-				.GetAwaiter()
-				.GetResult();
-#endif
+			this.DisposeAsync().Run(true);
 		}
 
 		~Controller()
@@ -300,13 +293,7 @@ namespace net.vieapps.Services.APIGateway
 						if (task.Exception != null)
 							Global.OnError?.Invoke($"Error occurred while connecting to the API Gateway Router => {task.Exception.Message}", task.Exception);
 					}, TaskContinuationOptions.OnlyOnRanToCompletion)
-#if NETSTANDARD2_0
-					.Wait();
-#else
-					.ConfigureAwait(false)
-					.GetAwaiter()
-					.GetResult();
-#endif
+					.Run(true);
 			}
 
 			async Task connectRouterAsync()
@@ -319,14 +306,15 @@ namespace net.vieapps.Services.APIGateway
 						async (sender, arguments) =>
 						{
 							Global.OnProcess?.Invoke($"The incoming channel to API Gateway Router is established - Session ID: {arguments.SessionId}");
-							Router.IncomingChannel.Update(Router.IncomingChannelSessionID, "APIGateway", "Incoming (API Gateway Controller)");
+							await Router.IncomingChannel.UpdateAsync(Router.IncomingChannelSessionID, "APIGateway", "Incoming (API Gateway Controller)").ConfigureAwait(false);
 							if (this.State == ServiceState.Initializing)
 								this.State = ServiceState.Ready;
 
 							this.InterCommunicator?.Dispose();
 							this.InterCommunicator = Router.IncomingChannel.RealmProxy.Services
 								.GetSubject<CommunicateMessage>("messages.services.apigateway")
-								.Subscribe(
+								.Subscribe
+								(
 									async message => await (this.Info.ID.IsEquals(message.ExcludedNodeID) ? Task.CompletedTask : this.ProcessInterCommunicateMessageAsync(message)).ConfigureAwait(false),
 									exception => Global.OnError?.Invoke($"Error occurred while fetching an inter-communicate message of API Gateway => {exception.Message}", this.State == ServiceState.Connected ? exception : null)
 								);
@@ -335,7 +323,8 @@ namespace net.vieapps.Services.APIGateway
 							this.UpdateCommunicator?.Dispose();
 							this.UpdateCommunicator = Router.IncomingChannel.RealmProxy.Services
 								.GetSubject<UpdateMessage>("messages.update")
-								.Subscribe(
+								.Subscribe
+								(
 									message =>
 									{
 										if (message.Type.IsEquals("Ping"))
@@ -442,7 +431,7 @@ namespace net.vieapps.Services.APIGateway
 						async (sender, arguments) =>
 						{
 							Global.OnProcess?.Invoke($"The outgoing channel to API Gateway Router is established - Session ID: {arguments.SessionId}");
-							Router.OutgoingChannel.Update(Router.OutgoingChannelSessionID, "APIGateway", "Outgoing (API Gateway Controller)");
+							await Router.OutgoingChannel.UpdateAsync(Router.OutgoingChannelSessionID, "APIGateway", "Outgoing (API Gateway Controller)").ConfigureAwait(false);
 
 							while (Router.IncomingChannel == null || Router.OutgoingChannel == null)
 								await Task.Delay(UtilityService.GetRandomNumber(123, 456), this.CancellationTokenSource.Token).ConfigureAwait(false);
@@ -606,14 +595,7 @@ namespace net.vieapps.Services.APIGateway
 		/// Stops the API Gateway Controller
 		/// </summary>
 		public void Stop()
-			=> this.StopAsync()
-#if NETSTANDARD2_0
-				.Wait();
-#else
-				.ConfigureAwait(false)
-				.GetAwaiter()
-				.GetResult();
-#endif
+			=> this.StopAsync().Run(true);
 
 		void PrepareDatabaseSettings()
 		{

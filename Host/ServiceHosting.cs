@@ -268,11 +268,10 @@ namespace net.vieapps.Services.APIGateway
 					logger.LogInformation($"API Gateway HTTP service: {UtilityService.GetAppSetting("HttpUri:APIs", "None")}");
 					logger.LogInformation($"Files HTTP service: {UtilityService.GetAppSetting("HttpUri:Files", "None")}");
 					logger.LogInformation($"Portals HTTP service: {UtilityService.GetAppSetting("HttpUri:Portals", "None")}");
-					logger.LogInformation($"Passport HTTP service: {UtilityService.GetAppSetting("HttpUri:Passports", "None")}");
 					logger.LogInformation($"Root (base) directory: {AppDomain.CurrentDomain.BaseDirectory}");
-					logger.LogInformation($"Temporary directory: {UtilityService.GetAppSetting("Path:Temp", "None")}");
 					logger.LogInformation($"Status files directory: {UtilityService.GetAppSetting("Path:Status", "None")}");
 					logger.LogInformation($"Static files directory: {UtilityService.GetAppSetting("Path:Statics", "None")}");
+					logger.LogInformation($"Temporary directory: {UtilityService.GetAppSetting("Path:Temp", "None")}");
 					logger.LogInformation($"Logging level: {logLevel} - Local rolling log files is {(string.IsNullOrWhiteSpace(logPath) ? "disabled" : $"enabled => {logPath}")}");
 					logger.LogInformation($"Show debugs: {service.IsDebugLogEnabled} - Show results: {service.IsDebugResultsEnabled} - Show stacks: {service.IsDebugStacksEnabled}");
 					logger.LogInformation($"Service URIs:\r\n\t- Round robin: {service.ServiceURI}\r\n\t- Single (unique): {service.ServiceUniqueURI}");
@@ -291,14 +290,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				logger.LogInformation($"The service is running with synchronous work - PID: {Process.GetCurrentProcess().Id}");
 				if (startBeforeDoingSyncWork)
-					Task.Run(async () => await Task.Delay(1234).ConfigureAwait(false))
-#if NETSTANDARD2_0
-						.Wait();
-#else
-						.ConfigureAwait(false)
-						.GetAwaiter()
-						.GetResult();
-#endif
+					Task.Run(async () => await Task.Delay(1234).ConfigureAwait(false)).Run(true);
 				else if (initializeRepository)
 					service.InitializeRepository();
 				service.DoWork(args?.ToArray());

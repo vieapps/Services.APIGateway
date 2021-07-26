@@ -5,6 +5,9 @@
 		<WarningLevel>3</WarningLevel>
 		<NoWarn>1573,1591</NoWarn>
 		<OutputType>Exe</OutputType>
+		<ServerGarbageCollection>false</ServerGarbageCollection>
+		<ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+		<InvariantGlobalization>false</InvariantGlobalization>
 		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
 		<StartupObject>net.vieapps.Services.APIGateway.Program</StartupObject>
 		<AssemblyName>VIEApps.Services.APIGateway</AssemblyName>
@@ -33,11 +36,11 @@
 
 	<ItemGroup>
 		<PackageReference Include="System.Text.Encoding.Extensions" Version="4.3.0" />
-		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.4.2105.1" />
+		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.4.2107.2" />
 	</ItemGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\..\Portals\Service\VIEApps.Services.Portals.csproj" />
+		<!--ProjectReference Include="..\..\Portals\Service\VIEApps.Services.Portals.csproj" /-->
 		<ProjectReference Include="..\Host\VIEApps.Services.APIGateway.Host.csproj" />
 	</ItemGroup>
 

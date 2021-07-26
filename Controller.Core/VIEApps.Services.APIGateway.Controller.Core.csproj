@@ -5,6 +5,8 @@
 		<WarningLevel>3</WarningLevel>
 		<NoWarn>1573,1591</NoWarn>
 		<OutputType>Exe</OutputType>
+		<ServerGarbageCollection>true</ServerGarbageCollection>
+		<InvariantGlobalization>false</InvariantGlobalization>
 		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
 		<StartupObject>net.vieapps.Services.APIGateway.Program</StartupObject>
 		<AssemblyName>VIEApps.Services.APIGateway</AssemblyName>

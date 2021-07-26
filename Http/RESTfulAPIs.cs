@@ -40,6 +40,10 @@ namespace net.vieapps.Services.APIGateway
 		public static Formatting JsonFormat { get; } = Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None;
 
 		public static int ExpiresAfter { get; } = Int32.TryParse(UtilityService.GetAppSetting("APIs:ExpiresAfter", "0"), out var expiresAfter) && expiresAfter > -1 ? expiresAfter : 0;
+
+		public static int ServiceForwardersTimeout { get; } = Int32.TryParse(UtilityService.GetAppSetting("APIs:ServiceForwarders:Timeout", "180"), out var timeout) && timeout > 0 ? timeout : 180;
+
+		public static bool ServiceForwardersAutoRedirect { get; } = "true".IsEquals(UtilityService.GetAppSetting("APIs:ServiceForwarders:AutoRedirect"));
 		#endregion
 
 		public static async Task ProcessRequestAsync(HttpContext context)
@@ -986,11 +990,12 @@ namespace net.vieapps.Services.APIGateway
 			await forwarder.PrepareAsync(requestInfo, info.Item2, out var endpointURL, cancellationToken).ConfigureAwait(false);
 
 			var headers = requestInfo.Header.Where(kvp => !kvp.Key.IsStartsWith("Host") && !kvp.Key.IsStartsWith("Connection")).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+			headers["AllowAutoRedirect"] = RESTfulAPIs.ServiceForwardersAutoRedirect.ToString();
 			var body = requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT") || requestInfo.Verb.IsEquals("PATCH") ? requestInfo.Body : null;
 			if (Global.IsDebugLogEnabled)
 				await Global.WriteLogsAsync("Http.APIs", $"Forward the request to a remote service [{requestInfo.Verb}: {endpointURL}]\r\n- IP: {requestInfo.Session.IP}\r\n- Agent: {requestInfo.Session.AppAgent}\r\n- Headers:\r\n\t{headers.ToString("\r\n\t", kvp => $"{kvp.Key}: {kvp.Value}")}\r\n- Body: {body ?? "None"}").ConfigureAwait(false);
 			
-			var webResponse = await new Uri(endpointURL).SendHttpRequestAsync(requestInfo.Verb, headers, body, 180, cancellationToken).ConfigureAwait(false);
+			var webResponse = await new Uri(endpointURL).SendHttpRequestAsync(requestInfo.Verb, headers, body, RESTfulAPIs.ServiceForwardersTimeout, cancellationToken).ConfigureAwait(false);
 			using var stream = webResponse.GetResponseStream();
 			body = await stream.ReadAllAsync(cancellationToken).ConfigureAwait(false);
 

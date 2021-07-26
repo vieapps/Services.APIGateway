@@ -31,8 +31,8 @@
 		<PackageReference Include="Microsoft.AspNetCore" Version="2.2.0" />
 		<PackageReference Include="Microsoft.AspNetCore.ResponseCompression" Version="2.2.0" />
 		<PackageReference Include="Microsoft.AspNetCore.WebSockets" Version="2.2.1" />
-		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.4.2107.2" />
-		<PackageReference Include="VIEApps.Services.Base.Http" Version="10.4.2107.2" />
+		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.4.2108.1" />
+		<PackageReference Include="VIEApps.Services.Base.Http" Version="10.4.2108.1" />
 		<PackageReference Include="WampSharp.AspNetCore.WebSockets.Server" Version="20.1.1" />
 	</ItemGroup>
 

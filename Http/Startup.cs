@@ -63,8 +63,8 @@ namespace net.vieapps.Services.APIGateway
 
 			Logger.AssignLoggerFactory(loggerFactory);
 			Global.Logger = loggerFactory.CreateLogger<Startup>();
-			InternalAPIs.Logger = loggerFactory.CreateLogger<Handler.InternalAPIs>();
-			RTU.Logger = loggerFactory.CreateLogger<Handler.RTU>();
+			RESTfulAPIs.Logger = loggerFactory.CreateLogger<Handler.RESTfulAPIs>();
+			WebSocketAPIs.Logger = loggerFactory.CreateLogger<Handler.WebSocketAPIs>();
 
 			Global.Logger.LogInformation($"The {Global.ServiceName} HTTP service is starting");
 			Global.Logger.LogInformation($"Version: {typeof(Startup).Assembly.GetVersion()}");
@@ -112,7 +112,7 @@ namespace net.vieapps.Services.APIGateway
 						{
 							var type = AssemblyLoader.GetType(info.Item2);
 							if (type != null && type.CreateInstance() is ServiceForwarder)
-								InternalAPIs.ServiceForwarders[info.Item1] = new Tuple<Type, string>(type, info.Item3);
+								RESTfulAPIs.ServiceForwarders[info.Item1] = new Tuple<Type, string>(type, info.Item3);
 						}
 						catch (Exception ex)
 						{
@@ -121,7 +121,7 @@ namespace net.vieapps.Services.APIGateway
 					});
 
 			// setup the real-time updater
-			RTU.Initialize();
+			WebSocketAPIs.Initialize();
 
 			// setup the middlewares
 			appBuilder
@@ -131,7 +131,7 @@ namespace net.vieapps.Services.APIGateway
 				.UseResponseCompression()
 				.UseWebSockets(new WebSocketOptions
 				{
-					KeepAliveInterval = RTU.KeepAliveInterval
+					KeepAliveInterval = WebSocketAPIs.KeepAliveInterval
 				});
 
 			// setup the forwarder of API Gateway Router
@@ -142,6 +142,7 @@ namespace net.vieapps.Services.APIGateway
 			// setup the path mappers
 			var onIncomingConnectionEstablished = new List<Action<object, WampSessionCreatedEventArgs>>();
 			var onOutgoingConnectionEstablished = new List<Action<object, WampSessionCreatedEventArgs>>();
+			var pathMappers = new List<string>();
 			if (ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:Maps", "net.vieapps.services.apigateway.http.maps")) is AppConfigurationSectionHandler cfgMaps && cfgMaps.Section.SelectNodes("map") is System.Xml.XmlNodeList maps)
 				maps.ToList()
 					.Select(info => new Tuple<string, string>(info.Attributes["path"]?.Value?.ToLower()?.Trim(), info.Attributes["type"]?.Value))
@@ -164,6 +165,7 @@ namespace net.vieapps.Services.APIGateway
 							{
 								appBuilder.Map($"/{info.Item1}", builder => mapper.Map(builder, appLifetime, onIncomingConnectionEstablished, onOutgoingConnectionEstablished));
 								Global.Logger.LogInformation($"Successfully branch the request to a specified path: /{info.Item1} => {mapper.GetTypeName()}");
+								pathMappers.Add($"/{info.Item1} => {mapper.GetTypeName()}");
 							}
 						}
 						catch (Exception ex)
@@ -196,7 +198,9 @@ namespace net.vieapps.Services.APIGateway
 				Global.Logger.LogInformation($"Logging level: {this.LogLevel} - Local rolling log files is {(string.IsNullOrWhiteSpace(logPath) ? "disabled" : $"enabled => {logPath}")}");
 				Global.Logger.LogInformation($"Show debugs: {Global.IsDebugLogEnabled} - Show results: {Global.IsDebugResultsEnabled} - Show stacks: {Global.IsDebugStacksEnabled}");
 				Global.Logger.LogInformation($"Request body limit: {Global.MaxRequestBodySize:###,###,##0} MB");
-				Global.Logger.LogInformation($"Service forwarders: {(InternalAPIs.ServiceForwarders.Any() ? InternalAPIs.ServiceForwarders.Keys.ToString(", ") : "None")}");
+
+				Global.Logger.LogInformation($"Path mappers: {(pathMappers.Any() ? "\r\n\t" + pathMappers.ToString("\r\n\t") : "None")}");
+				Global.Logger.LogInformation($"Service forwarders: {(RESTfulAPIs.ServiceForwarders.Any() ? "\r\n\t" + RESTfulAPIs.ServiceForwarders.ToString("\r\n\t", kvp => $"/{kvp.Key} => {kvp.Value.Item2} [{kvp.Value.Item1}]") : "None")}");
 
 				stopwatch.Stop();
 				Global.Logger.LogInformation($"The {Global.ServiceName} HTTP service was started - PID: {Environment.ProcessId} - Execution times: {stopwatch.GetElapsedTimes()}");
@@ -207,7 +211,7 @@ namespace net.vieapps.Services.APIGateway
 			appLifetime.ApplicationStopping.Register(() =>
 			{
 				Global.Logger = loggerFactory.CreateLogger<Startup>();
-				RTU.Dispose();
+				WebSocketAPIs.Dispose();
 				Global.RSA.Dispose();
 				if (enableForwarder)
 					Router.CloseForwarder();

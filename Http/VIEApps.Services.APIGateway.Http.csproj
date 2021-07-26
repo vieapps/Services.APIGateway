@@ -3,7 +3,7 @@
 	<PropertyGroup>
 		<TargetFrameworks>net5.0</TargetFrameworks>
 		<WarningLevel>3</WarningLevel>
-		<NoWarn>1573,1591,IDE0054</NoWarn>
+		<NoWarn>1573,1591,IDE0054,IDE0090,CA1822</NoWarn>
 		<OutputType>Exe</OutputType>
 		<InvariantGlobalization>true</InvariantGlobalization>
 		<AspNetCoreHostingModel>OutOfProcess</AspNetCoreHostingModel>		

@@ -48,14 +48,14 @@ namespace net.vieapps.Services.APIGateway
 							{
 								try
 								{
-									await InternalAPIs.ProcessInterCommunicateMessageAsync(message).ConfigureAwait(false);
+									await RESTfulAPIs.ProcessInterCommunicateMessageAsync(message).ConfigureAwait(false);
 								}
 								catch (Exception ex)
 								{
-									await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"{ex.Message} => {message?.ToJson().ToString(InternalAPIs.JsonFormat)}", ex).ConfigureAwait(false);
+									await Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.APIs", $"{ex.Message} => {message?.ToJson().ToString(RESTfulAPIs.JsonFormat)}", ex).ConfigureAwait(false);
 								}
 							},
-							async exception => await Global.WriteLogsAsync(RTU.Logger, "Http.InternalAPIs", $"Error occurred while fetching an inter-communicating message => {exception.Message}", exception).ConfigureAwait(false)
+							async exception => await Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.APIs", $"Error occurred while fetching an inter-communicating message => {exception.Message}", exception).ConfigureAwait(false)
 						);
 				},
 				async (sender, arguments) =>
@@ -74,7 +74,7 @@ namespace net.vieapps.Services.APIGateway
 
 					await Task.WhenAll
 					(
-						Global.RegisterServiceAsync("Http.InternalAPIs"),
+						Global.RegisterServiceAsync("Http.APIs"),
 						Task.Delay(UtilityService.GetRandomNumber(234, 567), Global.CancellationToken)
 					).ConfigureAwait(false);
 
@@ -92,7 +92,7 @@ namespace net.vieapps.Services.APIGateway
 
 		public static void Disconnect(int waitingTimes = 1234)
 		{
-			Global.UnregisterService("Http.InternalAPIs", waitingTimes);
+			Global.UnregisterService("Http.APIs", waitingTimes);
 			Global.PrimaryInterCommunicateMessageUpdater?.Dispose();
 			Global.SecondaryInterCommunicateMessageUpdater?.Dispose();
 			Global.Disconnect(waitingTimes);
@@ -112,7 +112,7 @@ namespace net.vieapps.Services.APIGateway
 				.UseForwardedHeaders(Global.GetForwardedHeadersOptions())
 				.UseWebSockets(new WebSocketOptions
 				{
-					KeepAliveInterval = RTU.KeepAliveInterval
+					KeepAliveInterval = WebSocketAPIs.KeepAliveInterval
 				});
 			Router.Forwarder.RegisterTransport(new WampSharp.AspNetCore.WebSockets.Server.AspNetCoreWebSocketTransport(appBuilder), new JTokenJsonBinding(), new JTokenMessagePackBinding());
 			Global.Logger.LogInformation("The transport of forwarder of API Gateway Router was registered (ASP.NET Core WebSocket)");
@@ -169,6 +169,7 @@ namespace net.vieapps.Services.APIGateway
 
 		public void Dispose()
 		{
+			GC.SuppressFinalize(this);
 			Task.Run(() => this.UnregisterForwardingTokenAsync()).ConfigureAwait(false);
 			this._localToken.Dispose();
 		}

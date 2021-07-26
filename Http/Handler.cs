@@ -6,15 +6,7 @@ using System.Linq;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Collections.Generic;
-using System.Runtime.InteropServices;
-
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.StaticFiles;
-using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-
 using net.vieapps.Components.Utility;
 #endregion
 
@@ -33,7 +25,7 @@ namespace net.vieapps.Services.APIGateway
 				await Task.WhenAll
 				(
 					Global.IsVisitLogEnabled ? context.WriteLogsAsync(Global.Logger, "Http.Visits", $"Wrap a WebSocket connection successful\r\n- Endpoint: {context.Connection.RemoteIpAddress}:{context.Connection.RemotePort}\r\n- URI: {context.GetRequestUri()}{(Global.IsDebugLogEnabled ? $"\r\n- Headers:\r\n\t{context.Request.Headers.Select(kvp => $"{kvp.Key}: {kvp.Value}").Join("\r\n\t")}" : "")}") : Task.CompletedTask,
-					APIGateway.RTU.WrapAsync(context)
+					APIGateway.WebSocketAPIs.WrapWebSocketAsync(context)
 				).ConfigureAwait(false);
 
 			// request of HTTP
@@ -86,23 +78,17 @@ namespace net.vieapps.Services.APIGateway
 			else if (Global.StaticSegments.Contains(requestPath))
 				await context.ProcessStaticFileRequestAsync().ConfigureAwait(false);
 
-			// request to external APIs
-			else if (APIGateway.ExternalAPIs.APIs.ContainsKey(requestPath))
-				await APIGateway.ExternalAPIs.ProcessRequestAsync(context).ConfigureAwait(false);
-
-			// request to internal APIs
+			// request to services
 			else
-				await APIGateway.InternalAPIs.ProcessRequestAsync(context).ConfigureAwait(false);
+				await APIGateway.RESTfulAPIs.ProcessRequestAsync(context).ConfigureAwait(false);
 
 			if (Global.IsVisitLogEnabled)
 				await context.WriteVisitFinishingLogAsync().ConfigureAwait(false);
 		}
 
-		#region classes for logging
-		public class RTU { }
-		public class InternalAPIs { }
-		public class ExternalAPIs { }
-		#endregion
+		public class RESTfulAPIs { }
+
+		public class WebSocketAPIs { }
 
 	}
 }

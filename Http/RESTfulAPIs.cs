@@ -31,7 +31,7 @@ namespace net.vieapps.Services.APIGateway
 
 		public static string PrivateToken { get; } = UtilityService.GetAppSetting("APIs:PrivateToken", UtilityService.NewUUID);
 
-		public static ConcurrentDictionary<string, Tuple<Type, string>> ServiceForwarders { get; } = new ConcurrentDictionary<string, Tuple<Type, string>>();
+		public static ConcurrentDictionary<string, Tuple<Type, string, string>> ServiceForwarders { get; } = new ConcurrentDictionary<string, Tuple<Type, string, string>>();
 
 		public static ConcurrentDictionary<string, JObject> Controllers { get; } = new ConcurrentDictionary<string, JObject>();
 
@@ -43,7 +43,7 @@ namespace net.vieapps.Services.APIGateway
 
 		public static int ServiceForwardersTimeout { get; } = Int32.TryParse(UtilityService.GetAppSetting("APIs:ServiceForwarders:Timeout", "180"), out var timeout) && timeout > 0 ? timeout : 180;
 
-		public static bool ServiceForwardersAutoRedirect { get; } = "true".IsEquals(UtilityService.GetAppSetting("APIs:ServiceForwarders:AutoRedirect"));
+		public static bool ServiceForwardersAutoRedirect { get; } = "true".IsEquals(UtilityService.GetAppSetting("APIs:ServiceForwarders:AutoRedirect", "true"));
 		#endregion
 
 		public static async Task ProcessRequestAsync(HttpContext context)
@@ -53,13 +53,13 @@ namespace net.vieapps.Services.APIGateway
 			{
 				var pathSegments = context.GetRequestPathSegments();
 				var serviceName = pathSegments.Length > 0 && !string.IsNullOrWhiteSpace(pathSegments[0])
-					? pathSegments[0].GetANSIUri(true, true)
+					? pathSegments[0].GetANSIUri(false, true)
 					: context.GetHeaderParameter("ServiceName") ?? "";
 				var objectName = pathSegments.Length > 1 && !string.IsNullOrWhiteSpace(pathSegments[1])
-					? pathSegments[1].GetANSIUri(true, true)
+					? pathSegments[1].GetANSIUri(false, true)
 					: context.GetHeaderParameter("ObjectName") ?? "";
 				var objectIdentity = pathSegments.Length > 2 && !string.IsNullOrWhiteSpace(pathSegments[2])
-					? pathSegments[2].GetANSIUri()
+					? pathSegments[2].GetANSIUri(false)
 					: context.GetHeaderParameter("ObjectIdentity") ?? "";
 				if (serviceName.IsEquals("webhook") || serviceName.IsEquals("webhooks"))
 				{
@@ -356,10 +356,7 @@ namespace net.vieapps.Services.APIGateway
 				catch (RemoteServerErrorException ex)
 				{
 					var error = requestInfo.GetForwardingRequestError(ex);
-					context.SetItem("StatusCode", error.Item1);
-					context.SetItem("ContentType", "application/json");
-					context.SetItem("Body", error.Item2.ToString(RESTfulAPIs.JsonFormat));
-					context.Response.StatusCode = error.Item1;
+					context.WriteHttpError(error.Item1, error.Item2);
 				}
 				catch (Exception ex)
 				{
@@ -987,7 +984,9 @@ namespace net.vieapps.Services.APIGateway
 			var stopwatch = Stopwatch.StartNew();
 			var info = RESTfulAPIs.ServiceForwarders[requestInfo.ServiceName.ToLower()];
 			var forwarder = info.Item1.CreateInstance() as ServiceForwarder;
-			await forwarder.PrepareAsync(requestInfo, info.Item2, out var endpointURL, cancellationToken).ConfigureAwait(false);
+			var endpointURL = await forwarder.PrepareAsync(requestInfo, info.Item2, info.Item3, cancellationToken).ConfigureAwait(false);
+			if (string.IsNullOrWhiteSpace(endpointURL) || (!endpointURL.IsStartsWith("https://") && !endpointURL.IsStartsWith("http://")))
+				throw new InformationInvalidException($"End-point URL is invalid [{info.Item2}] => {endpointURL ?? "(null)"}");
 
 			var headers = requestInfo.Header.Where(kvp => !kvp.Key.IsStartsWith("Host") && !kvp.Key.IsStartsWith("Connection")).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
 			headers["AllowAutoRedirect"] = RESTfulAPIs.ServiceForwardersAutoRedirect.ToString();
@@ -999,8 +998,7 @@ namespace net.vieapps.Services.APIGateway
 			using var stream = webResponse.GetResponseStream();
 			body = await stream.ReadAllAsync(cancellationToken).ConfigureAwait(false);
 
-			var response = body.ToJson();
-			await forwarder.NormalizeAsync(requestInfo, response, cancellationToken).ConfigureAwait(false);
+			var response = await forwarder.NormalizeAsync(requestInfo, body.ToJson(), cancellationToken).ConfigureAwait(false);
 			if (Global.IsDebugLogEnabled)
 				await Global.WriteLogsAsync("Http.APIs", $"Forwarding request is completed - Execution times: {stopwatch.GetElapsedTimes()}\r\n- Response: {response.ToString(RESTfulAPIs.JsonFormat)}").ConfigureAwait(false);
 			return response;
@@ -1014,47 +1012,64 @@ namespace net.vieapps.Services.APIGateway
 
 			if (exception is RemoteServerErrorException remoteException && innerException != null && innerException is WebException webException)
 			{
-				var webResponse = webException.Response as HttpWebResponse;
-				statusCode = (int)webResponse.StatusCode;
-				body = webException.Status.Equals(WebExceptionStatus.ProtocolError)
-					? remoteException.ResponseBody.ToJson()
-					: new JObject
+				statusCode = (int)(webException.Response as HttpWebResponse).StatusCode;
+				body = new JObject
+				{
+					["Code"] = statusCode,
+					["Message"] = statusCode.Equals((int)HttpStatusCode.NotFound) ? "Not found" : remoteException.Message,
+					["Type"] = statusCode.Equals((int)HttpStatusCode.NotFound) ? "InformationNotFoundException" : remoteException.GetTypeName(true),
+					["StackTrace"] = remoteException.GetStacks()
+				};
+				if (webException.Status.Equals(WebExceptionStatus.ProtocolError))
+					try
 					{
-						["Code"] = statusCode,
-						["Message"] = webException.Message,
-						["Type"] = webException.GetTypeName(true),
-						["Stack"] = webException.GetStack()
-					};
+						body = remoteException.ResponseBody.ToJson();
+						var stacks = body.Get<JArray>("StackTrace") ?? body.Get<JArray>("Stack");
+						if (stacks == null)
+						{
+							stacks = remoteException.GetStacks();
+							body["StackTrace"] = stacks;
+						}
+						if (innerException != null)
+						{
+							var inner = innerException;
+							while (inner != null)
+							{
+								stacks.Add($"{inner.Message} [{inner.GetType()}] {inner.StackTrace}");
+								inner = inner.InnerException;
+							}
+						}
+					}
+					catch { }
 			}
 			else
 			{
 				var ex = innerException ?? exception;
 				statusCode = ex.GetHttpStatusCode();
+				var type = ex.GetTypeName(true);
+				var message = ex.Message;
+				var stacks = ex.GetStacks();
+				if (ex is WampSharp.V2.Core.Contracts.WampException wampException)
+				{
+					var wampDetails = wampException.GetDetails(requestInfo);
+					statusCode = wampDetails.Item1;
+					message = wampDetails.Item2;
+					type = wampDetails.Item3;
+					stacks = new JArray { wampDetails.Item4 };
+					var inner = wampDetails.Item6;
+					while (inner != null)
+					{
+						stacks.Add($"{inner.Get<string>("Message")} [{inner.Get<string>("Type")}] {inner.Get<string>("StackTrace")}");
+						inner = inner.Get<JObject>("InnerException");
+					}
+				}
 				body = new JObject
 				{
 					["Code"] = statusCode,
-					["Type"] = ex.GetTypeName(true),
-					["Message"] = ex.Message,
-					["Stack"] = ex.GetStack()
+					["Type"] = type,
+					["Message"] = message,
+					["StackTrace"] = stacks
 				};
-			}
-
-			if (innerException != null)
-			{
-				var inners = new JArray();
-				var counter = 1;
-				var inner = innerException;
-				while (inner != null)
-				{
-					inners.Add(new JObject
-					{
-						{ "Error", $"({counter}): {inner.Message} [{inner.GetType()}]" },
-						{ "Stack", inner.StackTrace }
-					});
-					counter++;
-					inner = inner.InnerException;
-				}
-				body["Inners"] = inners;
 			}
 
 			body["CorrelationID"] = requestInfo.CorrelationID;

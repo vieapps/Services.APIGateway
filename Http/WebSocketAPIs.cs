@@ -296,60 +296,48 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				// prepare
-				var wampException = exception is WampException
+				var wampDetails = exception != null  && exception is WampException
 					? (exception as WampException).GetDetails()
 					: null;
 
-				msg = msg ?? wampException?.Item2 ?? exception.Message;
-				var type = wampException?.Item3 ?? exception?.GetType().GetTypeName(true);
-				var code = wampException != null ? wampException.Item1 : exception.GetHttpStatusCode();
+				msg = msg ?? wampDetails?.Item2 ?? exception.Message ?? "Unknown error";
+				var type = wampDetails?.Item3 ?? exception?.GetType().GetTypeName(true) ?? "UnknownException";
+				var code = wampDetails != null ? wampDetails.Item1 : exception != null ? exception.GetHttpStatusCode() : 500;
 
 				var message = new JObject
 				{
 					{ "Message", msg },
 					{ "Type", type },
-					{ "Code", code },
-					{ "CorrelationID", correlationID }
+					{ "Code", code }
 				};
 
 				if (Global.IsDebugStacksEnabled)
 				{
-					if (wampException != null)
-						message["Stack"] = wampException.Item4;
+					if (wampDetails != null)
+					{
+						var stacks = new JArray { wampDetails.Item4 };
+						var inner = wampDetails.Item6;
+						while (inner != null)
+						{
+							stacks.Add($"{inner.Get<string>("Message")} [{inner.Get<string>("Type")}] {inner.Get<string>("StackTrace")}");
+							inner = inner.Get<JObject>("InnerException");
+						}
+						message["StackTrace"] = stacks;
+					}
 
 					else
-					{
-						message["Stack"] = exception.StackTrace;
-						if (exception.InnerException != null)
-						{
-							var inners = new JArray();
-							var counter = 1;
-							var inner = exception.InnerException;
-							while (inner != null)
-							{
-								inners.Add(new JObject
-								{
-									{ "Error", $"({counter}): {inner.Message} [{inner.GetType()}]" },
-									{ "Stack", inner.StackTrace }
-								});
-								counter++;
-								inner = inner.InnerException;
-							}
-							message["Inners"] = inners;
-						}
-					}
+						message["StackTrace"] = exception?.GetStacks();
 				}
 
-				message = new JObject
-				{
-					{ "Type", "Error" },
-					{ "Data", message }
-				};
-				if (!string.IsNullOrWhiteSpace(identity))
-					message["ID"] = identity;
+				message["CorrelationID"] = correlationID;
 
 				// send & write logs
-				await websocket.SendAsync(message, Global.CancellationToken).ConfigureAwait(false);
+				await websocket.SendAsync(new JObject
+				{
+					{ "ID", identity },
+					{ "Type", "Error" },
+					{ "Data", message }
+				}, Global.CancellationToken).ConfigureAwait(false);
 				await Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.APIs", msg ?? exception.Message, exception, Global.ServiceName, LogLevel.Error, correlationID, string.IsNullOrWhiteSpace(additionalMsg) ? null : $"{additionalMsg}\r\nWebSocket Info:\r\n{websocket.GetConnectionInfo()}").ConfigureAwait(false);
 			}
 			catch (ObjectDisposedException) { }
@@ -364,8 +352,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				(json as JObject).Remove("DeviceID");
 				(json as JObject).Remove("ExcludedDeviceID");
-				if (!string.IsNullOrWhiteSpace(identity))
-					json["ID"] = identity;
+				json["ID"] = identity;
 			});
 
 		static async Task PushAsync(this ManagedWebSocket websocket, UpdateMessage message)

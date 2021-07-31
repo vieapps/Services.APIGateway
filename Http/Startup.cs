@@ -15,6 +15,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
 using WampSharp.V2.Realm;
+using net.vieapps.Components.Repository;
 using net.vieapps.Components.Utility;
 #endregion
 
@@ -99,27 +100,6 @@ namespace net.vieapps.Services.APIGateway
 					Global.Logger.LogError($"Error occurred while assigning web-proxy => {ex.Message}", ex);
 				}
 
-			// setup the service forwarders
-			if (ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:Forwarders", "net.vieapps.services.apigateway.http.forwarders")) is AppConfigurationSectionHandler cfgForwarders && cfgForwarders.Section.SelectNodes("forwarder") is System.Xml.XmlNodeList forwarders)
-				forwarders.ToList()
-					.Select(info => new Tuple<string, string, string>(info.Attributes["name"]?.Value?.ToLower()?.Trim(), info.Attributes["type"]?.Value, info.Attributes["url"]?.Value))
-					.Where(info => !string.IsNullOrEmpty(info.Item1) && !string.IsNullOrEmpty(info.Item2) && !string.IsNullOrEmpty(info.Item2))
-					.Select(info => new Tuple<string, string, string>(info.Item1.GetANSIUri(), info.Item2, info.Item3))
-					.Where(info => !info.Item1.IsEquals("router") && !info.Item1.IsEquals("pusher"))
-					.ForEach(info =>
-					{
-						try
-						{
-							var type = AssemblyLoader.GetType(info.Item2);
-							if (type != null && type.CreateInstance() is ServiceForwarder)
-								RESTfulAPIs.ServiceForwarders[info.Item1] = new Tuple<Type, string>(type, info.Item3);
-						}
-						catch (Exception ex)
-						{
-							Global.Logger.LogError($"Cannot load a service forwarder ({info.Item2}) => {ex.Message}", ex);
-						}
-					});
-
 			// setup the real-time updater
 			WebSocketAPIs.Initialize();
 
@@ -180,6 +160,84 @@ namespace net.vieapps.Services.APIGateway
 			// connect to API Gateway Router
 			Router.Connect(onIncomingConnectionEstablished, onOutgoingConnectionEstablished);
 
+			// setup the service forwarders
+			if (ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:Forwarders", "net.vieapps.services.apigateway.http.forwarders")) is AppConfigurationSectionHandler cfgForwarders && cfgForwarders.Section.SelectNodes("forwarder") is System.Xml.XmlNodeList forwarders)
+				forwarders.ToList()
+					.Select(info => new Tuple<string, string, string, string>(info.Attributes["name"]?.Value?.ToLower()?.Trim(), info.Attributes["type"]?.Value, info.Attributes["endpointURL"]?.Value, info.Attributes["dataSource"]?.Value))
+					.Where(info => !string.IsNullOrEmpty(info.Item1) && !string.IsNullOrEmpty(info.Item2) && !string.IsNullOrEmpty(info.Item2))
+					.Select(info => new Tuple<string, string, string, string>(info.Item1.GetANSIUri(), info.Item2, info.Item3, info.Item4))
+					.Where(info => !info.Item1.IsEquals("router") && !info.Item1.IsEquals("pusher"))
+					.ForEach(info =>
+					{
+						try
+						{
+							var type = AssemblyLoader.GetType(info.Item2);
+							if (type != null && type.CreateInstance() is ServiceForwarder)
+								RESTfulAPIs.ServiceForwarders[info.Item1] = new Tuple<Type, string, string>(type, info.Item3, info.Item4);
+						}
+						catch (Exception ex)
+						{
+							Global.Logger.LogError($"Cannot load a service forwarder ({info.Item2}) => {ex.Message}", ex);
+						}
+					});
+
+			// construct data-sources and connection strings
+			if (RESTfulAPIs.ServiceForwarders.Any())
+			{
+				var dbProviderFactories = new Dictionary<string, System.Xml.XmlNode>(StringComparer.OrdinalIgnoreCase);
+				var dbprovidersSection = UtilityService.GetAppSetting("Section:DbProviders", "net.vieapps.dbproviders");
+				if (ConfigurationManager.GetSection(dbprovidersSection) is not AppConfigurationSectionHandler dbProvidersConfiguration)
+					dbProvidersConfiguration = ConfigurationManager.GetSection("dbProviderFactories") as AppConfigurationSectionHandler;
+				dbProvidersConfiguration?.Section.SelectNodes("./add").ToList().ForEach(dbProviderNode =>
+				{
+					var invariant = dbProviderNode.Attributes["invariant"]?.Value ?? dbProviderNode.Attributes["name"]?.Value;
+					if (!string.IsNullOrWhiteSpace(invariant) && !dbProviderFactories.ContainsKey(invariant))
+						dbProviderFactories[invariant] = dbProviderNode;
+				});
+				RepositoryStarter.ConstructDbProviderFactories(dbProviderFactories.Values.ToList(), (msg, ex) =>
+				{
+					if (ex != null)
+						Global.Logger.LogError(msg, ex);
+					else
+						Global.Logger.LogInformation(msg);
+				});
+
+				var connectionStrings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+				if (ConfigurationManager.ConnectionStrings != null && ConfigurationManager.ConnectionStrings.Count > 0)
+					for (var index = 0; index < ConfigurationManager.ConnectionStrings.Count; index++)
+					{
+						var connectionString = ConfigurationManager.ConnectionStrings[index];
+						if (!connectionStrings.ContainsKey(connectionString.Name))
+							connectionStrings[connectionString.Name] = connectionString.ConnectionString;
+					}
+
+				var dataSourcesSection = UtilityService.GetAppSetting("Section:DataSources", "net.vieapps.data.sources");
+				var dataSources = new Dictionary<string, System.Xml.XmlNode>(StringComparer.OrdinalIgnoreCase);
+				if (ConfigurationManager.GetSection(dataSourcesSection) is AppConfigurationSectionHandler dataSourcesConfiguration)
+					dataSourcesConfiguration.Section.SelectNodes("./add").ToList().ForEach(dataSourceNode =>
+					{
+						var dataSourceName = dataSourceNode.Attributes["name"]?.Value;
+						if (!string.IsNullOrWhiteSpace(dataSourceName) && !dataSources.ContainsKey(dataSourceName))
+						{
+							var connectionStringName = dataSourceNode.Attributes["connectionStringName"]?.Value;
+							if (!string.IsNullOrWhiteSpace(connectionStringName) && connectionStrings.ContainsKey(connectionStringName))
+							{
+								var attribute = dataSourceNode.OwnerDocument.CreateAttribute("connectionString");
+								attribute.Value = connectionStrings[connectionStringName];
+								dataSourceNode.Attributes.Append(attribute);
+								dataSources[dataSourceName] = dataSourceNode;
+							}
+						}
+					});
+				RepositoryStarter.ConstructDataSources(dataSources.Values.ToList(), (msg, ex) =>
+				{
+					if (ex != null)
+						Global.Logger.LogError(msg, ex);
+					else
+						Global.Logger.LogInformation(msg);
+				});
+			}
+
 			// assign app event handler => on started
 			appLifetime.ApplicationStarted.Register(() =>
 			{
@@ -200,7 +258,7 @@ namespace net.vieapps.Services.APIGateway
 				Global.Logger.LogInformation($"Request body limit: {Global.MaxRequestBodySize:###,###,##0} MB");
 
 				Global.Logger.LogInformation($"Path mappers: {(pathMappers.Any() ? "\r\n\t" + pathMappers.ToString("\r\n\t") : "None")}");
-				Global.Logger.LogInformation($"Service forwarders: {(RESTfulAPIs.ServiceForwarders.Any() ? "\r\n\t" + RESTfulAPIs.ServiceForwarders.ToString("\r\n\t", kvp => $"/{kvp.Key} => {kvp.Value.Item2} [{kvp.Value.Item1}]") : "None")}");
+				Global.Logger.LogInformation($"Service forwarders: {(RESTfulAPIs.ServiceForwarders.Any() ? "\r\n\t" + RESTfulAPIs.ServiceForwarders.ToString("\r\n\t", kvp => $"/{kvp.Key} => {kvp.Value.Item2} [{kvp.Value.Item1.GetTypeName()}]") : "None")}");
 
 				stopwatch.Stop();
 				Global.Logger.LogInformation($"The {Global.ServiceName} HTTP service was started - PID: {Environment.ProcessId} - Execution times: {stopwatch.GetElapsedTimes()}");

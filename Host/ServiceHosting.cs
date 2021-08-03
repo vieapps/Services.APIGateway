@@ -88,8 +88,8 @@ namespace net.vieapps.Services.APIGateway
 
 			// prepare type name & assembly name of the service component
 			var serviceTypeInfo = this.ServiceTypeName.ToArray();
-			this.ServiceTypeName = serviceTypeInfo[0];
-			this.ServiceAssemblyName = serviceTypeInfo.Length > 1 ? serviceTypeInfo[1] : "Unknown";
+			this.ServiceTypeName = serviceTypeInfo.First();
+			this.ServiceAssemblyName = serviceTypeInfo.Last();
 
 			// prepare the type of the service component
 			try
@@ -109,10 +109,10 @@ namespace net.vieapps.Services.APIGateway
 			{
 				Console.Error.WriteLine(powered);
 				Console.Error.WriteLine("");
-				if (ex is ReflectionTypeLoadException)
+				if (ex is ReflectionTypeLoadException reflectionException)
 				{
 					Console.Error.WriteLine($"Error: The service component [{this.ServiceTypeName},{this.ServiceAssemblyName}] got an unexpected error while preparing");
-					(ex as ReflectionTypeLoadException).LoaderExceptions.ForEach(exception =>
+					reflectionException.LoaderExceptions.ForEach(exception =>
 					{
 						Console.Error.WriteLine($"{exception.Message} [{exception.GetType()}]\r\nStack: {exception.StackTrace}");
 						var inner = exception.InnerException;
@@ -143,7 +143,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				Console.Error.WriteLine(powered);
 				Console.Error.WriteLine("");
-				Console.Error.WriteLine($"Error: The service component is invalid [{this.ServiceTypeName},{this.ServiceAssemblyName}]");
+				Console.Error.WriteLine($"Error: The service component is invalid [{this.ServiceTypeName},{this.ServiceAssemblyName}] - not assignable");
 				if (isUserInteractive)
 					Console.ReadLine();
 				return;
@@ -233,14 +233,8 @@ namespace net.vieapps.Services.APIGateway
 			// setup hooks
 			void terminate(string message, bool available = true, bool disconnect = true)
 				=> (service.Disposed ? Task.CompletedTask : service.DisposeAsync(args?.ToArray(), available, disconnect, _ => logger.LogInformation(message)).AsTask())
-				.ContinueWith(async _ => await Task.Delay(123).ConfigureAwait(false), TaskContinuationOptions.OnlyOnRanToCompletion)
-#if NETSTANDARD2_0
-				.Wait();
-#else
-				.ConfigureAwait(false)
-				.GetAwaiter()
-				.GetResult();
-#endif
+					.ContinueWith(async _ => await Task.Delay(123).ConfigureAwait(false), TaskContinuationOptions.OnlyOnRanToCompletion)
+					.Run(true);
 
 			AppDomain.CurrentDomain.ProcessExit += (sender, arguments) => terminate($"The service was terminated (by \"process exit\" signal) - Served times: {time.GetElapsedTimes()}", false);
 

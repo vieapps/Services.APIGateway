@@ -52,10 +52,10 @@ namespace net.vieapps.Services.APIGateway
 								}
 								catch (Exception ex)
 								{
-									await Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.APIs", $"{ex.Message} => {message?.ToJson().ToString(RESTfulAPIs.JsonFormat)}", ex).ConfigureAwait(false);
+									await Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.Updates", $"{ex.Message} => {message?.ToJson().ToString(RESTfulAPIs.JsonFormat)}", ex).ConfigureAwait(false);
 								}
 							},
-							async exception => await Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.APIs", $"Error occurred while fetching an inter-communicating message => {exception.Message}", exception).ConfigureAwait(false)
+							async exception => await Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.Updates", $"Error occurred while fetching an inter-communicating message => {exception.Message}", exception).ConfigureAwait(false)
 						);
 				},
 				async (sender, arguments) =>

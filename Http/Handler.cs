@@ -72,7 +72,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// request to robots.txt file
 			else if (requestPath.Equals("robots.txt"))
-				context.WriteHttpError((int)HttpStatusCode.NotFound, "Not Found", "FileNotFoundException", context.GetCorrelationID());
+				context.WriteError((int)HttpStatusCode.NotFound, "Not Found", "FileNotFoundException", context.GetCorrelationID());
 
 			// request to static segments
 			else if (Global.StaticSegments.Contains(requestPath))

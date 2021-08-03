@@ -290,7 +290,7 @@ namespace net.vieapps.Services.APIGateway
 		static string GetStatus(this ManagedWebSocket websocket)
 			=> websocket.Get<string>("Status");
 
-		static async Task SendAsync(this ManagedWebSocket websocket, Exception exception, string msg = null, string correlationID = null, string identity = null, string additionalMsg = null)
+		static async Task SendAsync(this ManagedWebSocket websocket, Exception exception, string correlationID = null, string identity = null, string additionalMsg = null)
 		{
 			correlationID = correlationID ?? UtilityService.NewUUID;
 			try
@@ -300,7 +300,7 @@ namespace net.vieapps.Services.APIGateway
 					? (exception as WampException).GetDetails()
 					: null;
 
-				msg = msg ?? wampDetails?.Item2 ?? exception.Message ?? "Unknown error";
+				var msg = wampDetails?.Item2 ?? exception.Message ?? "Unknown error";
 				var type = wampDetails?.Item3 ?? exception?.GetType().GetTypeName(true) ?? "UnknownException";
 				var code = wampDetails != null ? wampDetails.Item1 : exception != null ? exception.GetHttpStatusCode() : 500;
 
@@ -543,7 +543,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				await Task.WhenAll
 				(
-					websocket.SendAsync(ex, null, correlationID, requestObj.Get<string>("ID")),
+					websocket.SendAsync(ex, correlationID, requestObj.Get<string>("ID")),
 					Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.APIs",
 						$"Error occurred while processing the session" + "\r\n" +
 						$"{websocket.GetConnectionInfo(session)}" + "\r\n" +
@@ -595,6 +595,12 @@ namespace net.vieapps.Services.APIGateway
 						await Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.APIs", $"Error occurred while parsing body of the 'x-body' parameter => {ex.Message}", ex).ConfigureAwait(false);
 					}
 				var extra = new Dictionary<string, string>(requestObj.Get("Extra", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase);
+				if (verb.IsEquals("GET") && query.Remove("x-request-extra", out var extraInfo) && !string.IsNullOrWhiteSpace(extraInfo))
+					try
+					{
+						extra = extraInfo.Url64Decode().ToExpandoObject().ToDictionary(kvp => kvp.Key, kvp => kvp.Value?.ToString(), StringComparer.OrdinalIgnoreCase);
+					}
+					catch { }
 				requestInfo = new RequestInfo
 				{
 					Session = session,
@@ -681,7 +687,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (Exception ex)
 			{
-				await websocket.SendAsync(ex, null, correlationID, requestObj.Get<string>("ID"), $"Request: {requestObj.ToJson().ToString(RESTfulAPIs.JsonFormat)}").ConfigureAwait(false);
+				await websocket.SendAsync(ex, correlationID, requestObj.Get<string>("ID"), $"Request: {requestObj.ToJson().ToString(RESTfulAPIs.JsonFormat)}").ConfigureAwait(false);
 			}
 		}
 	}

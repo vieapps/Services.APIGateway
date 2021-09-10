@@ -36,7 +36,7 @@
 
 	<ItemGroup>
 		<PackageReference Include="System.Text.Encoding.Extensions" Version="4.3.0" />
-		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.4.2108.3" />
+		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.4.2109.1" />
 	</ItemGroup>
 
 	<ItemGroup>

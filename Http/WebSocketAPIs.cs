@@ -296,7 +296,7 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				// prepare
-				var wampDetails = exception != null  && exception is WampException
+				var wampDetails = exception != null && exception is WampException
 					? (exception as WampException).GetDetails()
 					: null;
 
@@ -330,14 +330,16 @@ namespace net.vieapps.Services.APIGateway
 				}
 
 				message["CorrelationID"] = correlationID;
-
-				// send & write logs
-				await websocket.SendAsync(new JObject
+				message = new JObject
 				{
-					{ "ID", identity },
 					{ "Type", "Error" },
 					{ "Data", message }
-				}, Global.CancellationToken).ConfigureAwait(false);
+				};
+				if (!string.IsNullOrWhiteSpace(identity))
+					message["ID"] = identity;
+
+				// send & write logs
+				await websocket.SendAsync(message, Global.CancellationToken).ConfigureAwait(false);
 				await Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.APIs", msg ?? exception.Message, exception, Global.ServiceName, LogLevel.Error, correlationID, string.IsNullOrWhiteSpace(additionalMsg) ? null : $"{additionalMsg}\r\nWebSocket Info:\r\n{websocket.GetConnectionInfo()}").ConfigureAwait(false);
 			}
 			catch (ObjectDisposedException) { }
@@ -352,7 +354,8 @@ namespace net.vieapps.Services.APIGateway
 			{
 				(json as JObject).Remove("DeviceID");
 				(json as JObject).Remove("ExcludedDeviceID");
-				json["ID"] = identity;
+				if (!string.IsNullOrWhiteSpace(identity))
+					json["ID"] = identity;
 			});
 
 		static async Task PushAsync(this ManagedWebSocket websocket, UpdateMessage message)

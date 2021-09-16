@@ -228,8 +228,8 @@ namespace net.vieapps.Services.APIGateway
 
 			// prepare
 			var requestObj = requestMsg.ToExpandoObject();
-			var serviceName = requestObj.Get("ServiceName", "");
-			var objectName = requestObj.Get("ObjectName", "");
+			var serviceName = requestObj.Get("ServiceName", "").GetCapitalizedFirstLetter();
+			var objectName = requestObj.Get("ObjectName", "").GetCapitalizedFirstLetter();
 			var verb = requestObj.Get("Verb", "GET").ToUpper();
 			var query = new Dictionary<string, string>(requestObj.Get("Query", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase);
 			query.TryGetValue("object-identity", out var objectIdentity);
@@ -237,7 +237,7 @@ namespace net.vieapps.Services.APIGateway
 			// visit logs
 			if (Global.IsVisitLogEnabled)
 				await Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.Visits",
-					$"Request starting {verb} " + $"/{serviceName}{(string.IsNullOrWhiteSpace(objectName) ? "" : $"/{objectName}")}{(string.IsNullOrWhiteSpace(objectIdentity) ? "" : $"/{objectIdentity}")}".ToLower() + (query.TryGetValue("x-request", out var xrequest) ? $"?x-request={xrequest}" : "") + " HTTPWS/1.1" + " \r\n" +
+					$"Request starting {verb} " + $"/{serviceName.ToLower()}{(string.IsNullOrWhiteSpace(objectName) ? "" : $"/{objectName.ToLower()}")}{(string.IsNullOrWhiteSpace(objectIdentity) ? "" : $"/{objectIdentity}")}".ToLower() + (query.TryGetValue("x-request", out var xrequest) ? $"?x-request={xrequest}" : "") + " HTTPWS/1.1" + " \r\n" +
 					$"- App: {session.AppName ?? "Unknown"} @ {session.AppPlatform ?? "Unknown"} [{session.AppAgent ?? "Unknown"}]" + " \r\n" +
 					$"- WebSocket: {websocket.ID} @ {websocket.RemoteEndPoint}"
 				, null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
@@ -604,14 +604,9 @@ namespace net.vieapps.Services.APIGateway
 						extra = extraInfo.Url64Decode().ToExpandoObject().ToDictionary(kvp => kvp.Key, kvp => kvp.Value?.ToString(), StringComparer.OrdinalIgnoreCase);
 					}
 					catch { }
-				requestInfo = new RequestInfo
+
+				requestInfo = new RequestInfo(session, serviceName, objectName, verb, query, header)
 				{
-					Session = session,
-					ServiceName = serviceName.GetCapitalizedFirstLetter(),
-					ObjectName = objectName.GetCapitalizedFirstLetter(),
-					Verb = verb,
-					Query = query,
-					Header = header,
 					Body = body == null ? "" : body is string ? body as string : body.ToJson().ToString(Formatting.None),
 					Extra = extra,
 					CorrelationID = correlationID
@@ -666,7 +661,7 @@ namespace net.vieapps.Services.APIGateway
 				// send the response as an update message
 				await websocket.SendAsync(new UpdateMessage
 				{
-					Type = serviceName.GetCapitalizedFirstLetter() + (string.IsNullOrWhiteSpace(objectName) ? "" : "#" + objectName.GetCapitalizedFirstLetter() + "#" + (!string.IsNullOrWhiteSpace(objectIdentity) && !objectIdentity.IsValidUUID() ? objectIdentity : verb).GetCapitalizedFirstLetter()),
+					Type = requestInfo.ServiceName + (string.IsNullOrWhiteSpace(requestInfo.ObjectName) ? "" : "#" + requestInfo.ObjectName + "#" + (!string.IsNullOrWhiteSpace(objectIdentity) && !objectIdentity.IsValidUUID() ? objectIdentity : verb).GetCapitalizedFirstLetter()),
 					Data = response
 				}, requestObj.Get<string>("ID")).ConfigureAwait(false);
 			}

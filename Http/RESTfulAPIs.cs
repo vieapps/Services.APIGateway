@@ -78,13 +78,8 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch { }
 
-			var requestInfo = new RequestInfo
+			var requestInfo = new RequestInfo(context.GetSession(), queryString["service-name"], queryString["object-name"], context.Request.Method, queryString)
 			{
-				Session = context.GetSession(),
-				Verb = context.Request.Method,
-				ServiceName = queryString["service-name"].GetCapitalizedFirstLetter(),
-				ObjectName = queryString["object-name"].GetCapitalizedFirstLetter(),
-				Query = queryString,
 				Header = context.Request.Headers.ToDictionary(dictionary =>
 				{
 					RESTfulAPIs.ExcludedHeaders.ForEach(name => dictionary.Remove(name));
@@ -269,14 +264,15 @@ namespace net.vieapps.Services.APIGateway
 			else if (requestInfo.ServiceName.IsEquals("logs"))
 				try
 				{
-					if (requestInfo.Verb.IsEquals("GET"))
-					{
-						requestInfo.ObjectName = "service";
-						var response = await Global.CallServiceAsync(requestInfo, Global.CancellationToken).ConfigureAwait(false);
-						await context.WriteAsync(response, RESTfulAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationToken).ConfigureAwait(false);
-					}
-					else
+					if (!context.IsAuthenticated())
+						throw new AccessDeniedException();
+
+					if (!requestInfo.Verb.IsEquals("GET"))
 						throw new MethodNotAllowedException(requestInfo.Verb);
+
+					requestInfo.ObjectName = "service";
+					var response = await Global.CallServiceAsync(requestInfo, Global.CancellationToken).ConfigureAwait(false);
+					await context.WriteAsync(response, RESTfulAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationToken).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{

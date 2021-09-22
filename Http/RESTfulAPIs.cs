@@ -1273,8 +1273,15 @@ namespace net.vieapps.Services.APIGateway
 			{
 				if (!requestInfo.Header.ContainsKey("x-captcha"))
 					throw new InvalidRequestException("Captcha code is invalid");
-				if (string.IsNullOrWhiteSpace(email))
+				if (string.IsNullOrWhiteSpace(account) && string.IsNullOrWhiteSpace(email))
 					throw new InvalidRequestException("Request is invalid (email is null or empty)");
+			}
+
+			// prepare to reew password via phone
+			else if ("renew".IsEquals(objectIdentity))
+			{
+				if (string.IsNullOrWhiteSpace(account))
+					throw new InvalidRequestException("Request is invalid (account is null or empty)");
 			}
 
 			// prepare to update password

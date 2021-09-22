@@ -4,6 +4,7 @@
 		<TargetFrameworks>net5.0;netstandard2.0</TargetFrameworks>
 		<WarningLevel>3</WarningLevel>
 		<NoWarn>1573,1591</NoWarn>
+		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
 		<AssemblyName>VIEApps.Services.APIGateway.Router</AssemblyName>
 		<AssemblyTitle>VIEApps NGX API Gateway</AssemblyTitle>

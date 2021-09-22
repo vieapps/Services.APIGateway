@@ -4,6 +4,7 @@
 		<TargetFrameworks>net5.0;netstandard2.0</TargetFrameworks>
 		<WarningLevel>3</WarningLevel>
 		<NoWarn>CA1416,1573,1591</NoWarn>
+		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
 		<AssemblyName>VIEApps.Services.APIGateway.Watcher</AssemblyName>
 		<AssemblyTitle>VIEApps NGX API Gateway</AssemblyTitle>
@@ -27,7 +28,7 @@
 		<PackageReference Include="System.ServiceProcess.ServiceController" Version="5.0.0" />
 		<PackageReference Include="System.Reactive" Version="5.0.0" />
 		<PackageReference Include="System.Text.Encoding.Extensions" Version="4.3.0" />
-		<PackageReference Include="VIEApps.Components.Utility" Version="10.4.2109.3" />
+		<PackageReference Include="VIEApps.Components.Utility" Version="10.4.2109.7" />
 	</ItemGroup>
 
 </Project>

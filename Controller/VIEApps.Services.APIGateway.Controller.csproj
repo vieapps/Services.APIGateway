@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFrameworks>net5.0;netstandard2.0</TargetFrameworks>
+		<TargetFrameworks>net6.0;net5.0;netstandard2.0</TargetFrameworks>
 		<WarningLevel>3</WarningLevel>
 		<NoWarn>1573,1591</NoWarn>
 		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
@@ -12,10 +12,10 @@
 		<Authors>VIEApps.net</Authors>
 		<Company>VIEApps.net</Company>
 		<Product>VIEApps NGX</Product>
-		<Copyright>© 2021 VIEApps.net</Copyright>
-		<AssemblyVersion>10.4$(ReleaseVersion)</AssemblyVersion>
-		<FileVersion>10.4$(ReleaseVersion)</FileVersion>
-		<InformationalVersion>10.4.$([System.DateTime]::Now.Year).$([System.DateTime]::Now.Month).$([System.DateTime]::Now.Day)@$(TargetFramework)#$(ReleaseRevision)</InformationalVersion>
+		<Copyright>© $([System.DateTime]::Now.Year) VIEApps.net</Copyright>
+		<AssemblyVersion>10.5$(ReleaseVersion)</AssemblyVersion>
+		<FileVersion>10.5$(ReleaseVersion)</FileVersion>
+		<InformationalVersion>10.5.$([System.DateTime]::Now.Year).$([System.DateTime]::Now.Month).$([System.DateTime]::Now.Day)@$(TargetFramework)#$(ReleaseRevision)</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -23,11 +23,11 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="JavaScriptEngineSwitcher.ChakraCore.Native.win-x64" Version="3.12.6" Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))|$(Platform)' == 'true|AnyCPU'" />
-		<PackageReference Include="JavaScriptEngineSwitcher.ChakraCore.Native.osx-x64" Version="3.12.6" Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::OSX)))' == 'true'" />
-		<PackageReference Include="JavaScriptEngineSwitcher.ChakraCore.Native.linux-x64" Version="3.12.6" Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))' == 'true'" />
+		<PackageReference Include="JavaScriptEngineSwitcher.ChakraCore.Native.win-x64" Version="3.16.0" Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))|$(Platform)' == 'true|AnyCPU'" />
+		<PackageReference Include="JavaScriptEngineSwitcher.ChakraCore.Native.osx-x64" Version="3.16.0" Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::OSX)))' == 'true'" />
+		<PackageReference Include="JavaScriptEngineSwitcher.ChakraCore.Native.linux-x64" Version="3.16.0" Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))' == 'true'" />
 		<PackageReference Include="System.Text.Encoding.Extensions" Version="4.3.0" />
-		<PackageReference Include="VIEApps.Services.Base" Version="10.4.2109.7" />
+		<PackageReference Include="VIEApps.Services.Base" Version="10.5.2201.2" />
 	</ItemGroup>
 
 </Project>

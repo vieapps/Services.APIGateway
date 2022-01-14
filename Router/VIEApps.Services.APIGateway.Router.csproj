@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFrameworks>net5.0;netstandard2.0</TargetFrameworks>
+		<TargetFrameworks>net6.0;net5.0;netstandard2.0</TargetFrameworks>
 		<WarningLevel>3</WarningLevel>
 		<NoWarn>1573,1591</NoWarn>
 		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
@@ -11,10 +11,10 @@
 		<Authors>VIEApps.net</Authors>
 		<Company>VIEApps.net</Company>
 		<Product>VIEApps NGX</Product>
-		<Copyright>© 2021 VIEApps.net</Copyright>
-		<AssemblyVersion>10.4$(ReleaseVersion)</AssemblyVersion>
-		<FileVersion>10.4$(ReleaseVersion)</FileVersion>
-		<InformationalVersion>10.4.$([System.DateTime]::Now.Year).$([System.DateTime]::Now.Month).$([System.DateTime]::Now.Day)@$(TargetFramework)#$(ReleaseRevision)</InformationalVersion>
+		<Copyright>© $([System.DateTime]::Now.Year) VIEApps.net</Copyright>
+		<AssemblyVersion>10.5$(ReleaseVersion)</AssemblyVersion>
+		<FileVersion>10.5$(ReleaseVersion)</FileVersion>
+		<InformationalVersion>10.5.$([System.DateTime]::Now.Year).$([System.DateTime]::Now.Month).$([System.DateTime]::Now.Day)@$(TargetFramework)#$(ReleaseRevision)</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -23,9 +23,9 @@
 
 	<ItemGroup>
 		<PackageReference Include="Fleck" Version="1.2.0" />
-		<PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="5.0.0" Condition="'$(TargetFramework)' == 'netstandard2.0'" />
+		<PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="6.0.0" Condition="'$(TargetFramework)' == 'netstandard2.0'" />
 		<PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
-		<PackageReference Include="System.Configuration.ConfigurationManager" Version="5.0.0" />
+		<PackageReference Include="System.Configuration.ConfigurationManager" Version="6.0.0" />
 		<PackageReference Include="System.Reactive" Version="5.0.0" />
 		<PackageReference Include="WampSharp.Default.Router" Version="20.1.1" />
 	</ItemGroup>

@@ -5,7 +5,6 @@ using System.Linq;
 using System.Text;
 using System.Diagnostics;
 using System.Collections.Generic;
-using System.Configuration;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -93,7 +92,7 @@ namespace net.vieapps.Services.APIGateway
 			if (!string.IsNullOrWhiteSpace(proxy))
 				try
 				{
-					UtilityService.AssignWebProxy(proxy, UtilityService.GetAppSetting("Proxy:Port").CastAs<int>(), UtilityService.GetAppSetting("Proxy:User"), UtilityService.GetAppSetting("Proxy:UserPassword"), UtilityService.GetAppSetting("Proxy:Bypass")?.ToArray(";"));
+					UtilityService.AssignWebProxy(proxy, UtilityService.GetAppSetting("Proxy:Port").As<int>(), UtilityService.GetAppSetting("Proxy:User"), UtilityService.GetAppSetting("Proxy:UserPassword"), UtilityService.GetAppSetting("Proxy:Bypass")?.ToArray(";"));
 				}
 				catch (Exception ex)
 				{
@@ -123,7 +122,7 @@ namespace net.vieapps.Services.APIGateway
 			var onIncomingConnectionEstablished = new List<Action<object, WampSessionCreatedEventArgs>>();
 			var onOutgoingConnectionEstablished = new List<Action<object, WampSessionCreatedEventArgs>>();
 			var pathMappers = new List<string>();
-			if (ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:Maps", "net.vieapps.services.apigateway.http.maps")) is AppConfigurationSectionHandler cfgMaps && cfgMaps.Section.SelectNodes("map") is System.Xml.XmlNodeList maps)
+			if (System.Configuration.ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:Maps", "net.vieapps.services.apigateway.http.maps")) is AppConfigurationSectionHandler cfgMaps && cfgMaps.Section.SelectNodes("map") is System.Xml.XmlNodeList maps)
 				maps.ToList()
 					.Select(info => new Tuple<string, string>(info.Attributes["path"]?.Value?.ToLower()?.Trim(), info.Attributes["type"]?.Value))
 					.Where(info => !string.IsNullOrEmpty(info.Item1) && !string.IsNullOrEmpty(info.Item2))
@@ -161,7 +160,7 @@ namespace net.vieapps.Services.APIGateway
 			Router.Connect(onIncomingConnectionEstablished, onOutgoingConnectionEstablished);
 
 			// setup the service forwarders
-			if (ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:Forwarders", "net.vieapps.services.apigateway.http.forwarders")) is AppConfigurationSectionHandler cfgForwarders && cfgForwarders.Section.SelectNodes("forwarder") is System.Xml.XmlNodeList forwarders)
+			if (System.Configuration.ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:Forwarders", "net.vieapps.services.apigateway.http.forwarders")) is AppConfigurationSectionHandler cfgForwarders && cfgForwarders.Section.SelectNodes("forwarder") is System.Xml.XmlNodeList forwarders)
 				forwarders.ToList()
 					.Select(info => new Tuple<string, string, string, string>(info.Attributes["name"]?.Value?.ToLower()?.Trim(), info.Attributes["type"]?.Value, info.Attributes["endpointURL"]?.Value, info.Attributes["dataSource"]?.Value))
 					.Where(info => !string.IsNullOrEmpty(info.Item1) && !string.IsNullOrEmpty(info.Item2) && !string.IsNullOrEmpty(info.Item2))
@@ -186,8 +185,8 @@ namespace net.vieapps.Services.APIGateway
 			{
 				var dbProviderFactories = new Dictionary<string, System.Xml.XmlNode>(StringComparer.OrdinalIgnoreCase);
 				var dbprovidersSection = UtilityService.GetAppSetting("Section:DbProviders", "net.vieapps.dbproviders");
-				if (ConfigurationManager.GetSection(dbprovidersSection) is not AppConfigurationSectionHandler dbProvidersConfiguration)
-					dbProvidersConfiguration = ConfigurationManager.GetSection("dbProviderFactories") as AppConfigurationSectionHandler;
+				if (System.Configuration.ConfigurationManager.GetSection(dbprovidersSection) is not AppConfigurationSectionHandler dbProvidersConfiguration)
+					dbProvidersConfiguration = System.Configuration.ConfigurationManager.GetSection("dbProviderFactories") as AppConfigurationSectionHandler;
 				dbProvidersConfiguration?.Section.SelectNodes("./add").ToList().ForEach(dbProviderNode =>
 				{
 					var invariant = dbProviderNode.Attributes["invariant"]?.Value ?? dbProviderNode.Attributes["name"]?.Value;
@@ -203,17 +202,17 @@ namespace net.vieapps.Services.APIGateway
 				});
 
 				var connectionStrings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-				if (ConfigurationManager.ConnectionStrings != null && ConfigurationManager.ConnectionStrings.Count > 0)
-					for (var index = 0; index < ConfigurationManager.ConnectionStrings.Count; index++)
+				if (System.Configuration.ConfigurationManager.ConnectionStrings != null && System.Configuration.ConfigurationManager.ConnectionStrings.Count > 0)
+					for (var index = 0; index < System.Configuration.ConfigurationManager.ConnectionStrings.Count; index++)
 					{
-						var connectionString = ConfigurationManager.ConnectionStrings[index];
+						var connectionString = System.Configuration.ConfigurationManager.ConnectionStrings[index];
 						if (!connectionStrings.ContainsKey(connectionString.Name))
 							connectionStrings[connectionString.Name] = connectionString.ConnectionString;
 					}
 
 				var dataSourcesSection = UtilityService.GetAppSetting("Section:DataSources", "net.vieapps.data.sources");
 				var dataSources = new Dictionary<string, System.Xml.XmlNode>(StringComparer.OrdinalIgnoreCase);
-				if (ConfigurationManager.GetSection(dataSourcesSection) is AppConfigurationSectionHandler dataSourcesConfiguration)
+				if (System.Configuration.ConfigurationManager.GetSection(dataSourcesSection) is AppConfigurationSectionHandler dataSourcesConfiguration)
 					dataSourcesConfiguration.Section.SelectNodes("./add").ToList().ForEach(dataSourceNode =>
 					{
 						var dataSourceName = dataSourceNode.Attributes["name"]?.Value;

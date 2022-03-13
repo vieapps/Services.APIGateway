@@ -1,6 +1,4 @@
 ﻿using System;
-using System.IO;
-using net.vieapps.Components.Utility;
 namespace net.vieapps.Services.APIGateway
 {
 	class Program
@@ -10,10 +8,7 @@ namespace net.vieapps.Services.APIGateway
 
 	class ServiceHosting : ServiceHostingBase
 	{
-		protected override void PrepareServiceType()
-		{
-			base.PrepareServiceType();
-			this.ServiceType = this.ServiceType ?? AssemblyLoader.GetType(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"{this.ServiceAssemblyName}.dll"), this.ServiceTypeName);
-		}
+		protected override void PrepareServiceType(Action<ServiceHostingBase> onCompleted = null)
+			=> base.PrepareServiceType(_ => this.ServiceType ??= Components.Utility.AssemblyLoader.GetType(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"{this.ServiceAssemblyName}.dll"), this.ServiceTypeName));
 	}
 }

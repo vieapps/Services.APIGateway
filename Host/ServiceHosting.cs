@@ -22,8 +22,11 @@ namespace net.vieapps.Services.APIGateway
 
 		protected Type ServiceType { get; set; }
 
-		protected virtual void PrepareServiceType()
-			=> this.ServiceType = Type.GetType($"{this.ServiceTypeName},{this.ServiceAssemblyName}");
+		protected virtual void PrepareServiceType(Action<ServiceHostingBase> onCompleted = null)
+		{
+			this.ServiceType = Type.GetType($"{this.ServiceTypeName},{this.ServiceAssemblyName}");
+			onCompleted?.Invoke(this);
+		}
 
 		public void Run(string[] args = null)
 		{
@@ -54,12 +57,12 @@ namespace net.vieapps.Services.APIGateway
 			this.ServiceTypeName = args?.FirstOrDefault(arg => arg.IsStartsWith("/svc:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/svc:", "");
 			if (string.IsNullOrWhiteSpace(this.ServiceTypeName) && args?.FirstOrDefault(arg => arg.IsStartsWith("/svn:")) != null)
 			{
-				var configFilePath = Path.Combine($"{UtilityService.GetAppSetting("Path:APIGateway:Controller")}", $"VIEApps.Services.APIGateway.{(RuntimeInformation.FrameworkDescription.IsContains(".NET Framework") ? "exe" : "dll")}.config");
-				if (File.Exists(configFilePath))
+				var fileInfo = new FileInfo(Path.Combine($"{UtilityService.GetAppSetting("Path:APIGateway:Controller")}", $"VIEApps.Services.APIGateway.{(RuntimeInformation.FrameworkDescription.IsContains(".NET Framework") ? "exe" : "dll")}.config"));
+				if (fileInfo.Exists)
 					try
 					{
 						var xml = new System.Xml.XmlDocument();
-						xml.LoadXml(new FileInfo(configFilePath).ReadAsText());
+						xml.LoadXml(fileInfo.ReadAsText());
 						this.ServiceTypeName = args.First(arg => arg.IsStartsWith("/svn:")).Replace(StringComparison.OrdinalIgnoreCase, "/svn:", "").Trim();
 						var typeNode = xml.SelectSingleNode($"/configuration/{UtilityService.GetAppSetting("Section:Services", "net.vieapps.services")}")?.ChildNodes?.ToList()?.FirstOrDefault(node => this.ServiceTypeName.IsEquals(node.Attributes["name"]?.Value));
 						this.ServiceTypeName = typeNode?.Attributes["type"]?.Value;

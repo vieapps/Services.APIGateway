@@ -18,7 +18,7 @@ namespace net.vieapps.Services.APIGateway
 				Password = null
 			});
 
-			this.Installers.Add(new System.ServiceProcess.ServiceInstaller()
+			this.Installers.Add(new System.ServiceProcess.ServiceInstaller
 			{
 				StartType = ServiceStartMode.Automatic,
 				ServiceName = "VIEApps-APIGateway-Controller",
@@ -31,9 +31,7 @@ namespace net.vieapps.Services.APIGateway
 				try
 				{
 					using (var serviceController = new ServiceController("VIEApps-APIGateway-Controller"))
-					{
 						serviceController.Start();
-					}
 				}
 				catch { }
 			};

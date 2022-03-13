@@ -29,7 +29,7 @@ namespace net.vieapps.Services.APIGateway
 					try
 					{
 						var xml = new XmlDocument();
-						xml.LoadXml(UtilityService.ReadTextFile(configFilePath));
+						xml.LoadXml(new FileInfo(configFilePath).ReadAsText());
 						svcNodes = xml.DocumentElement.SelectNodes("net.vieapps.services.bundles/service")?.ToList();
 					}
 					catch { }

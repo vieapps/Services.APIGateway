@@ -315,7 +315,7 @@ namespace net.vieapps.Services.APIGateway
 
 			Global.OnLogsUpdated = (serviceName, message) =>
 			{
-				if (!"APIGateway".IsEquals(serviceName) ? true : !message.IsContains("email message") && !message.IsContains("web-hook message"))
+				if (!"APIGateway".IsEquals(serviceName) || !message.IsContains("email message") && !message.IsContains("web-hook message"))
 					Program.Logger.LogInformation($"[{serviceName.ToLower()}] => {message}");
 			};
 		}
@@ -339,6 +339,6 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		static void Stop()
-			=> Task.Run(async () => await (Program.IsStopped ? Task.CompletedTask : Program.StopAsync()).ConfigureAwait(false)).ConfigureAwait(false).GetAwaiter().GetResult();
+			=> Program.StopAsync().Run(true);
 	}
 }

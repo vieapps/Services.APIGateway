@@ -112,7 +112,8 @@ namespace net.vieapps.Services.APIGateway
 
 				// wait for few times before connecting to API Gateway Router because RxNET needs that
 				if (query.ContainsKey("x-restart"))
-					await Task.WhenAll(
+					await Task.WhenAll
+					(
 						websocket.SendAsync(new UpdateMessage { Type = "Knock" }),
 						Task.Delay(345, Global.CancellationToken)
 					).ConfigureAwait(false);
@@ -126,7 +127,8 @@ namespace net.vieapps.Services.APIGateway
 			// subscribe an updater to push messages to client device
 			websocket.Set("Updater", Services.Router.IncomingChannel.RealmProxy.Services
 				.GetSubject<UpdateMessage>("messages.update")
-				.Subscribe(
+				.Subscribe
+				(
 					async message => await websocket.PushAsync(message).ConfigureAwait(false),
 					async exception => await Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.APIs", $"Error occurred while fetching an updating message => {exception.Message}", exception).ConfigureAwait(false)
 				)
@@ -135,7 +137,8 @@ namespace net.vieapps.Services.APIGateway
 			// subscribe a communicator to update related information
 			websocket.Set("Communicator", Services.Router.IncomingChannel.RealmProxy.Services
 				.GetSubject<CommunicateMessage>("messages.services.apigateway")
-				.Subscribe(
+				.Subscribe
+				(
 					async message => await websocket.CommunicateAsync(message).ConfigureAwait(false),
 					async exception => await Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.APIs", $"Error occurred while fetching an inter-communicating message => {exception.Message}", exception).ConfigureAwait(false)
 				)
@@ -177,7 +180,8 @@ namespace net.vieapps.Services.APIGateway
 				}
 
 			// update the session state
-			await Task.WhenAll(
+			await Task.WhenAll
+			(
 				session != null ? session.SendSessionStateAsync(false, correlationID) : Task.CompletedTask,
 				Global.IsVisitLogEnabled ? Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.Visits", $"The connection of the WebSocket APIs was stopped" + "\r\n" + websocket.GetConnectionInfo(session) + "\r\n" + $"- Served times: {websocket.Timestamp.GetElapsedTimes()}", null, Global.ServiceName, LogLevel.Information, correlationID) : Task.CompletedTask
 			).ConfigureAwait(false);
@@ -448,7 +452,8 @@ namespace net.vieapps.Services.APIGateway
 					session.SessionID = UtilityService.NewUUID;
 					session.User = new User("", session.SessionID, new List<string> { SystemRole.All.ToString() }, new List<Privilege>());
 					session.Verified = false;
-					await Task.WhenAll(
+					await Task.WhenAll
+					(
 						Global.Cache.SetAsync($"Session#{session.SessionID}", session.GetEncryptedID(), 13),
 						websocket.SendAsync(new UpdateMessage
 						{
@@ -665,7 +670,7 @@ namespace net.vieapps.Services.APIGateway
 					Data = response
 				}, requestObj.Get<string>("ID")).ConfigureAwait(false);
 			}
-			catch (RemoteServerErrorException ex)
+			catch (RemoteServerException ex)
 			{
 				var error = requestInfo.GetForwardingRequestError(ex);
 				try

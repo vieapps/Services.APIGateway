@@ -86,18 +86,17 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Load & Save messages
-		internal static void LoadMessages()
+		internal static async Task LoadMessagesAsync()
 		{
 			MailSender.Messages = MailSender.Messages ?? new Dictionary<string, MailInfo>();
 
 			// previous messages
-			var filePath = Path.Combine(Global.StatusPath, "mails.json");
-			if (File.Exists(filePath))
+			var fileInfo = new FileInfo(Path.Combine(Global.StatusPath, "mails.json"));
+			if (fileInfo.Exists)
 				try
 				{
-					var msgs = JArray.Parse(UtilityService.ReadTextFile(filePath));
-					File.Delete(filePath);
-
+					var msgs = JArray.Parse(await fileInfo.ReadAsTextAsync().ConfigureAwait(false));
+					fileInfo.Delete();
 					foreach (JObject msg in msgs)
 					{
 						var message = new EmailMessage(msg.Get<string>("Message"));
@@ -113,31 +112,30 @@ namespace net.vieapps.Services.APIGateway
 
 			// new messages
 			if (Directory.Exists(MailSender.EmailsPath))
-				UtilityService.GetFiles(MailSender.EmailsPath, "*.msg")
-					.ForEach(file =>
+				await UtilityService.GetFiles(MailSender.EmailsPath, "*.msg").ForEachAsync(async file =>
+				{
+					try
 					{
-						try
-						{
-							var msg = EmailMessage.Load(file.FullName);
-							MailSender.Messages.Add(msg.ID, new MailInfo { Message = msg, Time = msg.SendingTime, Counters = 0 });
-						}
-						catch (Exception ex)
-						{
-							Global.OnError?.Invoke($"Error occurred while loading email messages: {ex.Message}", ex);
-						}
-						file.Delete();
-					});
+						var msg = await EmailMessage.LoadAsync(file.FullName).ConfigureAwait(false);
+						MailSender.Messages.Add(msg.ID, new MailInfo { Message = msg, Time = msg.SendingTime, Counters = 0 });
+					}
+					catch (Exception ex)
+					{
+						Global.OnError?.Invoke($"Error occurred while loading email messages: {ex.Message}", ex);
+					}
+					file.Delete();
+				}, true, false).ConfigureAwait(false);
 		}
 
-		internal static void SaveMessages()
+		internal static async Task SaveMessagesAsync()
 		{
-			if (MailSender.Messages != null && MailSender.Messages.Count > 0)
-				UtilityService.WriteTextFile(Path.Combine(Global.StatusPath, "mails.json"), MailSender.Messages.ToJArray(info => new JObject
+			if (MailSender.Messages != null && MailSender.Messages.Any())
+				await MailSender.Messages.ToJArray(info => new JObject
 				{
 					{ "Time", info.Time },
 					{ "Counters", info.Counters },
 					{ "Message", info.Message.Encrypted }
-				}).ToString(Formatting.Indented));
+				}).ToString(Formatting.Indented).ToBytes().SaveAsTextAsync(Path.Combine(Global.StatusPath, "mails.json")).ConfigureAwait(false);
 			MailSender.Messages = null;
 		}
 		#endregion
@@ -202,7 +200,7 @@ namespace net.vieapps.Services.APIGateway
 		public async Task ProcessAsync(Action<EmailMessage> onSuccess = null, Action<EmailMessage, Exception, bool> onFailure = null)
 		{
 			// load messages
-			MailSender.LoadMessages();
+			await MailSender.LoadMessagesAsync().ConfigureAwait(false);
 
 			// send messages
 			await MailSender.Messages
@@ -259,13 +257,12 @@ namespace net.vieapps.Services.APIGateway
 		internal static async Task LoadMessagesAsync()
 		{
 			// previous messages
-			var filePath = Path.Combine(Global.StatusPath, "web-hooks.json");
-			if (File.Exists(filePath))
+			var fileInfo = new FileInfo(Path.Combine(Global.StatusPath, "web-hooks.json"));
+			if (fileInfo.Exists)
 				try
 				{
-					var msgs = JArray.Parse(await UtilityService.ReadTextFileAsync(filePath).ConfigureAwait(false));
-					File.Delete(filePath);
-
+					var msgs = JArray.Parse(await fileInfo.ReadAsTextAsync().ConfigureAwait(false));
+					fileInfo.Delete();
 					foreach (JObject msg in msgs)
 					{
 						var message = new WebHookMessage(msg.Get<string>("Message"));
@@ -281,32 +278,30 @@ namespace net.vieapps.Services.APIGateway
 
 			// new messages
 			if (Directory.Exists(WebHookSender.WebHooksPath))
-				await UtilityService.GetFiles(WebHookSender.WebHooksPath, "*.msg")
-					.ForEachAsync(async file =>
+				await UtilityService.GetFiles(WebHookSender.WebHooksPath, "*.msg").ForEachAsync(async file =>
+				{
+					try
 					{
-						try
-						{
-							var msg = await WebHookMessage.LoadAsync(file.FullName).ConfigureAwait(false);
-							WebHookSender.Messages.Add(msg.ID, new WebHookInfo { Message = msg, Time = msg.SendingTime, Counters = 0 });
-						}
-						catch (Exception ex)
-						{
-							Global.OnError?.Invoke($"Error occurred while loading web-hook messages: {ex.Message}", ex);
-						}
-						file.Delete();
-					}, true, false)
-					.ConfigureAwait(false);
+						var msg = await WebHookMessage.LoadAsync(file.FullName).ConfigureAwait(false);
+						WebHookSender.Messages.Add(msg.ID, new WebHookInfo { Message = msg, Time = msg.SendingTime, Counters = 0 });
+					}
+					catch (Exception ex)
+					{
+						Global.OnError?.Invoke($"Error occurred while loading web-hook messages: {ex.Message}", ex);
+					}
+					file.Delete();
+				}, true, false).ConfigureAwait(false);
 		}
 
-		internal static void SaveMessages()
+		internal static async Task SaveMessagesAsync()
 		{
 			if (WebHookSender.Messages.Count > 0)
-				UtilityService.WriteTextFile(Path.Combine(Global.StatusPath, "web-hooks.json"), WebHookSender.Messages.ToJArray(info => new JObject
+				await WebHookSender.Messages.ToJArray(info => new JObject
 				{
 					{ "Time", info.Time },
 					{ "Counters", info.Counters },
 					{ "Message", info.Message.Encrypted }
-				}).ToString(Formatting.Indented));
+				}).ToString(Formatting.Indented).ToBytes().ToMemoryStream().SaveAsTextAsync(Path.Combine(Global.StatusPath, "web-hooks.json")).ConfigureAwait(false);
 		}
 		#endregion
 
@@ -315,9 +310,8 @@ namespace net.vieapps.Services.APIGateway
 		{
 			try
 			{
-				await message.SendMessageAsync(this.CancellationTokenSource.Token).ConfigureAwait(false);
-				WebHookSender.Messages.Remove(message.ID);
-
+				using (var response = await message.SendMessageAsync(this.CancellationTokenSource.Token).ConfigureAwait(false))
+					WebHookSender.Messages.Remove(message.ID);
 				onSuccess?.Invoke(message);
 				var log = "The web-hook message has been sent" + "\r\n" +
 					$"- ID: {message.ID}" + "\r\n" +

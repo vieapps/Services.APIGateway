@@ -80,11 +80,7 @@ namespace net.vieapps.Services.APIGateway
 
 			var requestInfo = new RequestInfo(context.GetSession(), queryString["service-name"], queryString["object-name"], context.Request.Method, queryString)
 			{
-				Header = context.Request.Headers.ToDictionary(dictionary =>
-				{
-					RESTfulAPIs.ExcludedHeaders.ForEach(name => dictionary.Remove(name));
-					dictionary.Keys.Where(name => name.IsStartsWith("cf-") || name.IsStartsWith("sec-")).ToList().ForEach(name => dictionary.Remove(name));
-				}),
+				Header = context.Request.Headers.ToDictionary().Copy(RESTfulAPIs.ExcludedHeaders.Concat(context.Request.Headers.Keys.Where(name => name.IsStartsWith("cf-") || name.IsStartsWith("sec-")))),
 				Extra = extra,
 				CorrelationID = context.GetCorrelationID()
 			};
@@ -346,7 +342,7 @@ namespace net.vieapps.Services.APIGateway
 					var response = await requestInfo.ForwardRequestAsync(cts.Token).ConfigureAwait(false);
 					await context.WriteAsync(response, RESTfulAPIs.JsonFormat, requestInfo.CorrelationID, cts.Token).ConfigureAwait(false);
 				}
-				catch (RemoteServerErrorException ex)
+				catch (RemoteServerException ex)
 				{
 					var error = requestInfo.GetForwardingRequestError(ex);
 					if (Global.IsDebugLogEnabled)
@@ -982,8 +978,8 @@ namespace net.vieapps.Services.APIGateway
 			{
 				ServiceName = requestInfo.ObjectName,
 				ObjectName = requestInfo.GetObjectIdentity(),
+				Query = requestInfo.Query.Copy(new[] { "service-name", "object-name", "object-identity" })
 			};
-			new[] { "service-name", "object-name", "object-identity" }.ForEach(key => webhook.Query.Remove(key));
 			try
 			{
 				net.vieapps.Services.Router.GetService(webhook.ServiceName).ProcessWebHookMessageAsync(webhook, Global.CancellationToken).Run(async ex => await Global.WriteLogsAsync(Global.Logger, "Http.WebHooks", $"Error occurred while processing a web-hook message => {ex.Message}\r\nRequest: {webhook.ToString(RESTfulAPIs.JsonFormat)}", ex, webhook.ServiceName, LogLevel.Error, webhook.CorrelationID).ConfigureAwait(false));
@@ -1003,16 +999,17 @@ namespace net.vieapps.Services.APIGateway
 			if (string.IsNullOrWhiteSpace(endpointURL) || (!endpointURL.IsStartsWith("https://") && !endpointURL.IsStartsWith("http://")))
 				throw new InformationInvalidException($"End-point URL is invalid [{info.Item2}] => {endpointURL ?? "(null)"}");
 
-			var headers = requestInfo.Header.Where(kvp => !kvp.Key.IsEquals("Host") && !kvp.Key.IsEquals("Connection")).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
-			headers["AllowAutoRedirect"] = RESTfulAPIs.ServiceForwardersAutoRedirect.ToString();
-			headers["User-Agent"] = requestInfo.GetAppAgent();
+			var headers = requestInfo.Header.Copy(new[] { "Host", "Connection" }, dictionary =>
+			{
+				dictionary["AllowAutoRedirect"] = RESTfulAPIs.ServiceForwardersAutoRedirect.ToString();
+				dictionary["User-Agent"] = requestInfo.GetAppAgent();
+			});
 			var body = requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT") || requestInfo.Verb.IsEquals("PATCH") ? requestInfo.Body : null;
 			if (Global.IsDebugLogEnabled)
 				await Global.WriteLogsAsync("Http.Forwards", $"Forward the request to a remote service [{requestInfo.Verb}: {endpointURL}]\r\n- IP: {requestInfo.Session.IP}\r\n- Headers:\r\n\t{headers.ToString("\r\n\t", kvp => $"{kvp.Key}: {kvp.Value}")}\r\n- Body: {body ?? "None"}").ConfigureAwait(false);
 
 			using var webResponse = await new Uri(endpointURL).SendHttpRequestAsync(requestInfo.Verb, headers, body, RESTfulAPIs.ServiceForwardersTimeout, cancellationToken).ConfigureAwait(false);
-			using var webStream = webResponse.GetResponseStream();
-			body = await webStream.ReadAllAsync(cancellationToken).ConfigureAwait(false);
+			body = await webResponse.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
 			var response = await forwarder.NormalizeAsync(requestInfo, body.ToJson(), cancellationToken).ConfigureAwait(false);
 			if (Global.IsDebugLogEnabled)
@@ -1020,10 +1017,11 @@ namespace net.vieapps.Services.APIGateway
 			return response;
 		}
 
-		public static Tuple<int, JToken, Dictionary<string, string>> GetForwardingRequestError(this RequestInfo requestInfo, RemoteServerErrorException exception)
+		public static Tuple<int, JToken, Dictionary<string, string>> GetForwardingRequestError(this RequestInfo requestInfo, RemoteServerException exception)
 		{
-			var statusCode = exception.ResponseCode;
-			var headers = exception.ResponseHeaders.Where(kvp => !kvp.Key.IsEquals("Content-Type") && !kvp.Key.IsEquals("Connection") && !kvp.Key.IsEquals("Transfer-Encoding")).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+			var statusCode = exception.StatusCode;
+			var headers = requestInfo.Header.Copy(new[] { "Host", "Connection", "Content-Type", "Content-Encoding", "Transfer-Encoding" });
+
 			var body = new JObject
 			{
 				["Message"] = statusCode == HttpStatusCode.NotFound ? "Not found" : exception.Message,
@@ -1032,10 +1030,10 @@ namespace net.vieapps.Services.APIGateway
 				["Verb"] = requestInfo.Verb,
 				["StackTrace"] = exception.GetStacks()
 			};
-			if (exception.ResponseStatus == WebExceptionStatus.ProtocolError)
+			if (exception.Body != null)
 				try
 				{
-					body = (exception.ResponseBody ?? "{}").ToJson() as JObject;
+					body = (exception.Body ?? "{}").ToJson() as JObject;
 					var stacks = body.Get<JArray>("StackTrace");
 					if (stacks == null)
 						body["StackTrace"] = exception.GetStacks();
@@ -1051,7 +1049,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch
 				{
-					body.Get<JArray>("StackTrace").Add(UtilityService.RemoveHTMLWhitespaces(exception.ResponseBody));
+					body.Get<JArray>("StackTrace").Add(UtilityService.RemoveHTMLWhitespaces(exception.Body));
 				}
 			body["CorrelationID"] = requestInfo.CorrelationID;
 			return new Tuple<int, JToken, Dictionary<string, string>>((int)statusCode, body, headers);

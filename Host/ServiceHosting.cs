@@ -59,7 +59,7 @@ namespace net.vieapps.Services.APIGateway
 					try
 					{
 						var xml = new System.Xml.XmlDocument();
-						xml.LoadXml(UtilityService.ReadTextFile(configFilePath));
+						xml.LoadXml(new FileInfo(configFilePath).ReadAsText());
 						this.ServiceTypeName = args.First(arg => arg.IsStartsWith("/svn:")).Replace(StringComparison.OrdinalIgnoreCase, "/svn:", "").Trim();
 						var typeNode = xml.SelectSingleNode($"/configuration/{UtilityService.GetAppSetting("Section:Services", "net.vieapps.services")}")?.ChildNodes?.ToList()?.FirstOrDefault(node => this.ServiceTypeName.IsEquals(node.Attributes["name"]?.Value));
 						this.ServiceTypeName = typeNode?.Attributes["type"]?.Value;

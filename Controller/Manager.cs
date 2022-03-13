@@ -34,7 +34,8 @@ namespace net.vieapps.Services.APIGateway
 					this.Communicator?.Dispose();
 					this.Communicator = Router.IncomingChannel.RealmProxy.Services
 						.GetSubject<CommunicateMessage>("messages.services.apigateway")
-						.Subscribe(
+						.Subscribe
+						(
 							message => this.ProcessInterCommunicateMessage(message),
 							exception => Global.OnError?.Invoke($"Error occurred while fetching inter-communicate message => {exception.Message}", exception)
 						);
@@ -83,18 +84,19 @@ namespace net.vieapps.Services.APIGateway
 			if (!this.Disposed)
 			{
 				this.Disposed = true;
-				try
-				{
-					await (this.Instance != null ? this.Instance.DisposeAsync().AsTask() : Task.CompletedTask).ConfigureAwait(false);
-				}
-				catch (Exception ex)
-				{
-					Global.OnError?.Invoke($"Error occurred while disposing the manager => {ex.Message}", ex);
-				}
-				finally
-				{
-					this.Instance = null;
-				}
+				if (this.Instance != null)
+					try
+					{
+						await this.Instance.DisposeAsync().ConfigureAwait(false);
+					}
+					catch (Exception ex)
+					{
+						Global.OnError?.Invoke($"Error occurred while disposing the manager => {ex.Message}", ex);
+					}
+					finally
+					{
+						this.Instance = null;
+					}
 				this.Communicator?.Dispose();
 				this.RequestInfoTimer?.Dispose();
 				Global.OnProcess?.Invoke($"The API Gateway Manager was disposed");
@@ -105,14 +107,7 @@ namespace net.vieapps.Services.APIGateway
 		public void Dispose()
 		{
 			GC.SuppressFinalize(this);
-			this.DisposeAsync()
-#if NETSTANDARD2_0
-				.Wait();
-#else
-				.ConfigureAwait(false)
-				.GetAwaiter()
-				.GetResult();
-#endif
+			this.DisposeAsync().Run(true);
 		}
 
 		~Manager()

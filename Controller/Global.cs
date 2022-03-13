@@ -155,7 +155,7 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				var filePath = Path.Combine(Global.LogsPath, $"logs.services.{DateTime.Now:yyyyMMddHHmmss}.{UtilityService.NewUUID}.json");
-				await UtilityService.WriteTextFileAsync(filePath, new JObject
+				await new JObject
 				{
 					{ "Time", DateTime.Now },
 					{ "CorrelationID", correlationID },
@@ -165,7 +165,7 @@ namespace net.vieapps.Services.APIGateway
 					{ "ObjectName", objectName },
 					{ "Logs", log },
 					{ "Stack", stack }
-				}.ToString(Formatting.Indented), false, null, cancellationToken).ConfigureAwait(false);
+				}.ToString(Formatting.Indented).ToBytes().SaveAsTextAsync(filePath, cancellationToken).ConfigureAwait(false);
 			}
 			catch { }
 		}

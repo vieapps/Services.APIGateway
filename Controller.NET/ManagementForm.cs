@@ -133,7 +133,7 @@ namespace net.vieapps.Services.APIGateway
 
 		internal ListViewItem Selected { get; set; } = null;
 
-		bool IsSelectAllControllers => this.Selected != null ? this.Selected.SubItems[2].Text.Equals("") : false;
+		bool IsSelectAllControllers => this.Selected != null && this.Selected.SubItems[2].Text.Equals("");
 
 		public delegate void DisplaySelectedServiceDelegator();
 
@@ -146,7 +146,7 @@ namespace net.vieapps.Services.APIGateway
 				var name = this.Selected.SubItems[3].Text;
 				var isSelectAllControllers = this.IsSelectAllControllers;
 				var isRunning = isSelectAllControllers
-					? Program.Manager.AvailableServices[name].Where(svc => svc.Running).Count() > 0
+					? Program.Manager.AvailableServices[name].Where(svc => svc.Running).Any()
 					: this.Selected.SubItems[1].Text.Equals("Running");
 
 				this.SetControlsState(true);
@@ -176,10 +176,10 @@ namespace net.vieapps.Services.APIGateway
 				else
 					Task.Run(() => Program.Manager.StartBusinessService(controllerID, name, Program.Controller.GetServiceArguments().Replace("/", "/call-"))).ConfigureAwait(false);
 			}
-			else if (MessageBox.Show($"Are you sure you want to {(Program.Manager.AvailableServices[name].Where(svc => svc.Running).Count() > 0 ? "stop" : "start")} all instances of the \"{name}\" service?", "Service", MessageBoxButtons.YesNo) == DialogResult.Yes)
+			else if (MessageBox.Show($"Are you sure you want to {(Program.Manager.AvailableServices[name].Where(svc => svc.Running).Any() ? "stop" : "start")} all instances of the \"{name}\" service?", "Service", MessageBoxButtons.YesNo) == DialogResult.Yes)
 			{
 				this.SetControlsState(false);
-				if (Program.Manager.AvailableServices[name].Where(svc => svc.Running).Count() > 0)
+				if (Program.Manager.AvailableServices[name].Where(svc => svc.Running).Any())
 					Program.Manager.AvailableControllers.Keys.ForEach(controllerID => Task.Run(() => Program.Manager.StopBusinessService(controllerID, name)).ConfigureAwait(false));
 				else
 				{

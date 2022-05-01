@@ -61,8 +61,7 @@ namespace net.vieapps.Services.APIGateway
 				if (fileInfo.Exists)
 					try
 					{
-						var xml = new System.Xml.XmlDocument();
-						xml.LoadXml(fileInfo.ReadAsText());
+						var xml = fileInfo.ReadAsXml();
 						this.ServiceTypeName = args.First(arg => arg.IsStartsWith("/svn:")).Replace(StringComparison.OrdinalIgnoreCase, "/svn:", "").Trim();
 						var typeNode = xml.SelectSingleNode($"/configuration/{UtilityService.GetAppSetting("Section:Services", "net.vieapps.services")}")?.ChildNodes?.ToList()?.FirstOrDefault(node => this.ServiceTypeName.IsEquals(node.Attributes["name"]?.Value));
 						this.ServiceTypeName = typeNode?.Attributes["type"]?.Value;
@@ -153,7 +152,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// initialize the instance of the service
-			var service = this.ServiceType.CreateInstance() as ServiceBase;
+			var service = this.ServiceType.CreateInstance<ServiceBase>();
 
 			// prepare the signal to start/stop when the service was called from API Gateway
 			EventWaitHandle eventWaitHandle = null;
@@ -257,7 +256,7 @@ namespace net.vieapps.Services.APIGateway
 				logger.LogInformation($"The service is starting");
 				logger.LogInformation($"Service info: {service.ServiceName} - v{this.ServiceType.Assembly.GetVersion()}");
 				logger.LogInformation($"Working mode: {(isUserInteractive ? "Interactive app" : "Background service")}");
-				logger.LogInformation($"Starting arguments: {(args != null && args.Count > 0 ? args.Join(" ") : "None")}");
+				logger.LogInformation($"Starting arguments: {(args != null && args.Any() ? args.Join(" ") : "None")}");
 
 				service.Start(args?.ToArray(), initializeRepository, _ =>
 				{
@@ -265,6 +264,7 @@ namespace net.vieapps.Services.APIGateway
 					logger.LogInformation($"API Gateway HTTP service: {UtilityService.GetAppSetting("HttpUri:APIs", "None")}");
 					logger.LogInformation($"Files HTTP service: {UtilityService.GetAppSetting("HttpUri:Files", "None")}");
 					logger.LogInformation($"Portals HTTP service: {UtilityService.GetAppSetting("HttpUri:Portals", "None")}");
+					logger.LogInformation($"CMSPortals HTTP service: {UtilityService.GetAppSetting("HttpUri:CMSPortals", "None")}");
 					logger.LogInformation($"Root (base) directory: {AppDomain.CurrentDomain.BaseDirectory}");
 					logger.LogInformation($"Status files directory: {UtilityService.GetAppSetting("Path:Status", "None")}");
 					logger.LogInformation($"Static files directory: {UtilityService.GetAppSetting("Path:Statics", "None")}");
@@ -287,7 +287,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				logger.LogInformation($"The service is running with synchronous work - PID: {Process.GetCurrentProcess().Id}");
 				if (startBeforeDoingSyncWork)
-					Task.Run(async () => await Task.Delay(1234).ConfigureAwait(false)).Run(true);
+					Task.Delay(1234).Run(true);
 				else if (initializeRepository)
 					service.InitializeRepository();
 				service.DoWork(args?.ToArray());

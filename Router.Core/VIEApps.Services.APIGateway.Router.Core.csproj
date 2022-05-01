@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFrameworks>net6.0;net5.0</TargetFrameworks>
+		<TargetFrameworks>net6.0</TargetFrameworks>
 		<WarningLevel>3</WarningLevel>
 		<NoWarn>1573,1591</NoWarn>
 		<OutputType>Exe</OutputType>

@@ -312,6 +312,38 @@ namespace net.vieapps.Services.APIGateway
 					context.WriteError(RESTfulAPIs.Logger, ex, requestInfo);
 				}
 
+			// process request of email email
+			else if ((requestInfo.ServiceName.IsEquals("email") || requestInfo.ServiceName.IsEquals("emails")) && "test".IsEquals(requestInfo.ObjectName))
+				try
+				{
+					if (requestInfo.Verb.IsEquals("POST"))
+					{
+						using var cts = CancellationTokenSource.CreateLinkedTokenSource(Global.CancellationToken, context.RequestAborted);
+						var data = requestInfo.BodyAsExpandoObject;
+						await new EmailMessage
+						{
+							ID = requestInfo.CorrelationID,
+							From = data.Get<string>("Sender") ?? data.Get<string>("Smtp.User"),
+							To = data.Get<string>("To"),
+							Subject = data.Get("Subject", $"Testing email from {requestInfo.Session.IP}"),
+							Body = data.Get("Body", $"Testing email from {requestInfo.Session.IP}"),
+							Footer = data.Get<string>("Signature"),
+							SmtpServer = data.Get<string>("Smtp.Host"),
+							SmtpServerPort = data.Get("Smtp.Port", 25),
+							SmtpServerEnableSsl = data.Get("Smtp.EnableSsl", false),
+							SmtpUsername = data.Get<string>("Smtp.User"),
+							SmtpPassword = data.Get<string>("Smtp.UserPassword")
+						}.SendMessageAsync(cts.Token).ConfigureAwait(false);
+						await context.WriteAsync(new JObject { ["Status"] = "Success" }, RESTfulAPIs.JsonFormat, requestInfo.CorrelationID, cts.Token).ConfigureAwait(false);
+					}
+					else
+						throw new MethodNotAllowedException(requestInfo.Verb);
+				}
+				catch (Exception ex)
+				{
+					context.WriteError(RESTfulAPIs.Logger, ex, requestInfo);
+				}
+
 			// process requests of pushers (broadcast message to clients)
 			else if (requestInfo.ServiceName.IsEquals("pusher"))
 				try
@@ -321,7 +353,7 @@ namespace net.vieapps.Services.APIGateway
 						new CommunicateMessage("APIGateway")
 						{
 							Type = "Broadcast#Client",
-							Data = requestInfo.GetBodyJson().FromJson<UpdateMessage>().ToJson()
+							Data = requestInfo.GetBodyJson().As<UpdateMessage>().ToJson()
 						}.Send();
 						using var cts = CancellationTokenSource.CreateLinkedTokenSource(Global.CancellationToken, context.RequestAborted);
 						await context.WriteAsync(new JObject { ["Status"] = "Success" }, RESTfulAPIs.JsonFormat, requestInfo.CorrelationID, cts.Token).ConfigureAwait(false);
@@ -654,7 +686,7 @@ namespace net.vieapps.Services.APIGateway
 				await Task.WhenAll
 				(
 					context.WriteAsync(response, RESTfulAPIs.JsonFormat, requestInfo.CorrelationID, cts.Token),
-					Global.Cache.RemoveAsync($"Attempt#{context.Connection.RemoteIpAddress}", cts.Token),
+					Global.Cache.RemoveAsync($"Attempt#{context.GetRemoteIPAddress()}", cts.Token),
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(RESTfulAPIs.Logger, "Http.Authentications", new List<string>
 					{
 						$"Successfully process request of session (sign-in)",
@@ -755,7 +787,7 @@ namespace net.vieapps.Services.APIGateway
 				await Task.WhenAll
 				(
 					context.WriteAsync(response, RESTfulAPIs.JsonFormat, requestInfo.CorrelationID, cts.Token),
-					Global.Cache.RemoveAsync($"Attempt#{context.Connection.RemoteIpAddress}", cts.Token),
+					Global.Cache.RemoveAsync($"Attempt#{context.GetRemoteIPAddress()}", cts.Token),
 					Global.IsDebugResultsEnabled ? context.WriteLogsAsync(RESTfulAPIs.Logger, "Http.Authentications", new List<string>
 					{
 						$"Successfully process request of session (OTP validation)",

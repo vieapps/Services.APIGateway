@@ -1,9 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFrameworks>net6.0;net5.0;netstandard2.0</TargetFrameworks>
+		<TargetFrameworks>net6.0;netstandard2.0</TargetFrameworks>
 		<WarningLevel>3</WarningLevel>
-		<NoWarn>1573,1591</NoWarn>
+		<NoWarn>1573,1591,IDE0074</NoWarn>
 		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 		<DocumentationFile>bin/$(Configuration)/$(TargetFramework)/VIEApps.Services.APIGateway.Controller.xml</DocumentationFile>
 		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
@@ -22,12 +22,15 @@
 		<None Remove=".DS_Store" />
 	</ItemGroup>
 
+	<ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+		<PackageReference Include="Microsoft.Extensions.Logging" Version="5.0.0" />
+	</ItemGroup>
+
 	<ItemGroup>
-		<PackageReference Include="JavaScriptEngineSwitcher.ChakraCore.Native.win-x64" Version="3.16.0" Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))|$(Platform)' == 'true|AnyCPU'" />
+		<PackageReference Include="JavaScriptEngineSwitcher.ChakraCore.Native.win-x64" Version="3.16.0" Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))' == 'true'" />
 		<PackageReference Include="JavaScriptEngineSwitcher.ChakraCore.Native.osx-x64" Version="3.16.0" Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::OSX)))' == 'true'" />
 		<PackageReference Include="JavaScriptEngineSwitcher.ChakraCore.Native.linux-x64" Version="3.16.0" Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))' == 'true'" />
-		<PackageReference Include="System.Text.Encoding.Extensions" Version="4.3.0" />
-		<PackageReference Include="VIEApps.Services.Base" Version="10.5.2203.4" />
+		<PackageReference Include="VIEApps.Services.Base" Version="10.5.2205.1" />
 	</ItemGroup>
 
 </Project>

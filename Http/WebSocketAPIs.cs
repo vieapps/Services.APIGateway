@@ -353,13 +353,15 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		static Task SendAsync(this ManagedWebSocket websocket, UpdateMessage message, string identity = null)
+		static Task SendAsync(this ManagedWebSocket websocket, UpdateMessage message, string identity = null, string correlationID = null)
 			=> websocket.SendAsync(message, Global.CancellationToken, json =>
 			{
 				(json as JObject).Remove("DeviceID");
 				(json as JObject).Remove("ExcludedDeviceID");
 				if (!string.IsNullOrWhiteSpace(identity))
 					json["ID"] = identity;
+				if (!string.IsNullOrWhiteSpace(correlationID))
+					json["CorrelationID"] = correlationID;
 			});
 
 		static async Task PushAsync(this ManagedWebSocket websocket, UpdateMessage message)
@@ -678,6 +680,7 @@ namespace net.vieapps.Services.APIGateway
 					await websocket.SendAsync(new JObject
 					{
 						{ "ID", requestObj.Get<string>("ID") },
+						{ "CorrelationID", correlationID },
 						{ "Type", "Error" },
 						{ "Data", error.Item2 }
 					}, Global.CancellationToken).ConfigureAwait(false);

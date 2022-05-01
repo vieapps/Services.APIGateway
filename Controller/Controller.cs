@@ -49,7 +49,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		~Controller()
-				=> this.Dispose();
+			=> this.Dispose();
 
 		#region Process Info
 		public class ProcessInfo
@@ -674,8 +674,7 @@ namespace net.vieapps.Services.APIGateway
 				$"{(this.ServiceHosting.IndexOf(Path.DirectorySeparatorChar) < 0 ? this.WorkingDirectory : "")}{this.ServiceHosting}.dll.config"
 			}.Where(filename => File.Exists(filename)).ForEach(filename =>
 			{
-				var xml = new XmlDocument();
-				xml.LoadXml(new FileInfo(filename).ReadAsText());
+				var xml = new FileInfo(filename).ReadAsXml();
 
 				if (xml.DocumentElement.SelectNodes("/configuration/connectionStrings/add") is XmlNodeList connectionStringNodes)
 					connectionStringNodes.ToList().ForEach(connectionStringNode =>

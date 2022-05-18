@@ -28,7 +28,7 @@ namespace net.vieapps.Services.APIGateway
 		/// </summary>
 		/// <param name="cancellationToken">The cancellation token</param>
 		public Controller(CancellationToken cancellationToken = default)
-				=> this.CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+			=> this.CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
 		public async Task DisposeAsync()
 		{
@@ -171,6 +171,7 @@ namespace net.vieapps.Services.APIGateway
 
 			var mode = this.IsUserInteractive ? "Interactive app" : "Background service";
 			var runtimeArguments = Extensions.GetRuntimeArguments();
+
 			this.Info = new ControllerInfo
 			{
 				ID = $"{runtimeArguments.Item1}-{runtimeArguments.Item2}-".ToLower() + $"{runtimeArguments.Item3}{runtimeArguments.Item4}{mode}".ToLower().GenerateUUID(),
@@ -180,6 +181,7 @@ namespace net.vieapps.Services.APIGateway
 				Mode = mode,
 				Available = true
 			};
+			Global.NodeID = this.Info.ID;
 
 			if (args?.FirstOrDefault(arg => arg.IsStartsWith("/no-business-services")) != null || "false".IsEquals(UtilityService.GetAppSetting("Controller:Services")))
 				this.AllowRegisterBusinessServices = false;

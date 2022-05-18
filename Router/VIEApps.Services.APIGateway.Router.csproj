@@ -30,7 +30,7 @@
 		<PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
 		<PackageReference Include="System.Reactive" Version="5.0.0" />
 		<PackageReference Include="System.Configuration.ConfigurationManager" Version="6.0.0" />
-		<PackageReference Include="WampSharp.Default.Router" Version="20.1.1" />
+		<PackageReference Include="WampSharp.Default.Router" Version="22.5.1" />
 	</ItemGroup>
 
 </Project>

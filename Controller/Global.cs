@@ -144,6 +144,8 @@ namespace net.vieapps.Services.APIGateway
 
 		static string _StatusPath = null, _TempPath = null, _LogsPath = null;
 
+		internal static string NodeID { get; set; }
+
 		internal static string StatusPath => Global._StatusPath ?? (Global._StatusPath = Global.GetPath("Path:Status", "status"));
 
 		internal static string TempPath => Global._TempPath ?? (Global._TempPath = Global.GetPath("Path:Temp", "temp"));
@@ -159,6 +161,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					{ "Time", DateTime.Now },
 					{ "CorrelationID", correlationID },
+					{ "NodeID", Global.NodeID },
 					{ "DeveloperID", null },
 					{ "AppID", null },
 					{ "ServiceName", serviceName ?? "APIGateway" },

@@ -150,13 +150,11 @@ namespace net.vieapps.Services.APIGateway
 				MailSender.Messages.Remove(message.ID);
 
 				onSuccess?.Invoke(message);
-				Global.OnSendEmailSuccess?.Invoke(
-					"The email message has been sent" + "\r\n" +
+				Global.OnSendEmailSuccess?.Invoke("The email message has been sent" + "\r\n" +
 					$"- ID: {message.ID}" + "\r\n" +
 					$"- From: {message.From}" + "\r\n" +
 					$"- To: {message.To}" + (!string.IsNullOrWhiteSpace(message.Cc) ? $" / {message.Cc}" : "") + (!string.IsNullOrWhiteSpace(message.Bcc) ? $" / {message.Bcc}" : "") + "\r\n" +
-					$"- Subject: {message.Subject}"
-				);
+					$"- Subject: {message.Subject}");
 			}
 			catch (OperationCanceledException) { }
 			catch (Exception ex)

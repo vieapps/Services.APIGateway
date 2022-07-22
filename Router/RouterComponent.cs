@@ -255,7 +255,7 @@ namespace net.vieapps.Services.APIGateway
 			{ "HostedRealmSessionID", $"{this.HostedRealm.SessionId}" },
 			{ "StatisticsServer", $"{this.StatisticsServer != null}".ToLower() },
 			{ "StatisticsServerPort", this.StatisticsServer != null ? this.StatisticsServer.Port : 56429 },
-			{ "Platform", $"{RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "macOS")} {RuntimeInformation.OSArchitecture} ({(RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "Macintosh; Intel Mac OS X; " : "")}{RuntimeInformation.OSDescription.Trim()})" },
+			{ "Platform", $"{RuntimeInformation.FrameworkDescription} @ {(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" : "macOS")} {RuntimeInformation.OSArchitecture} ({(RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "Macintosh; Mac OS X; " : "")}{RuntimeInformation.OSDescription.Trim()})" },
 			{ "Powered", RouterComponent.Powered }
 		};
 

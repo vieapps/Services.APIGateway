@@ -366,6 +366,17 @@ namespace net.vieapps.Services.APIGateway
 					context.WriteError(RESTfulAPIs.Logger, ex, requestInfo);
 				}
 
+			// flush caching storages
+			else if (requestInfo.ServiceName.IsEquals("cache"))
+				try
+				{
+					await context.WriteAsync(await requestInfo.FlushCachingStoragesAsync().ConfigureAwait(false), RESTfulAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationToken).ConfigureAwait(false);
+				}
+				catch (Exception ex)
+				{
+					context.WriteError(RESTfulAPIs.Logger, ex, requestInfo);
+				}
+
 			// process requests of forwarding services
 			else if (RESTfulAPIs.ServiceForwarders.ContainsKey(requestInfo.ServiceName.ToLower()))
 				try
@@ -1340,7 +1351,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
-		#region Helper: controllers & services
+		#region Helper: controllers, services, caching storages
 		public static JToken GetControllers()
 			=> RESTfulAPIs.Controllers.Values.Select(info => new JObject
 			{
@@ -1365,6 +1376,33 @@ namespace net.vieapps.Services.APIGateway
 				{ "Running", info.Running }
 			})
 			.ToJArray();
+
+		public static async Task<JToken> FlushCachingStoragesAsync(this RequestInfo requestInfo)
+		{
+			if (!requestInfo.ObjectName.IsEquals("flush") && !requestInfo.ObjectName.IsEquals("clear"))
+				throw new InvalidRequestException();
+
+			/*
+			var isSystemAdministrator = requestInfo.Session.User.IsSystemAdministrator;
+			if (!isSystemAdministrator)
+			{
+				var response = await Global.CallServiceAsync(new RequestInfo(new Session { User = requestInfo.Session.User }, "Users", "Account", "GET")
+				{
+					Extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+					{
+						{ "IsSystemAdministrator", "" }
+					},
+					CorrelationID = requestInfo.CorrelationID
+				}, Global.CancellationToken).ConfigureAwait(false);
+				isSystemAdministrator = requestInfo.Session.User.ID.IsEquals(response.Get<string>("ID")) && response.Get<bool>("IsSystemAdministrator");
+			}
+			if (!isSystemAdministrator)
+				throw new AccessDeniedException();
+			*/
+
+			await Global.Cache.FlushAllAsync(Global.CancellationToken).ConfigureAwait(false);
+			return new JObject { ["Status"] = "Success" };
+		}
 		#endregion
 
 		#region Helper: process inter-communicate messages

@@ -661,9 +661,11 @@ namespace net.vieapps.Services.APIGateway
 								: requestInfo.ObjectName.IsEquals("definitions")
 									? await Global.CallServiceAsync(requestInfo.PrepareDefinitionRelated(), Global.CancellationToken, WebSocketAPIs.Logger, "Http.APIs").ConfigureAwait(false)
 									: throw new InvalidRequestException("Unknown request")
-						: RESTfulAPIs.ServiceForwarders.ContainsKey(requestInfo.ServiceName.ToLower())
-							? await requestInfo.ForwardRequestAsync(Global.CancellationToken).ConfigureAwait(false)
-							: await Global.CallServiceAsync(requestInfo, Global.CancellationToken, WebSocketAPIs.Logger, "Http.APIs").ConfigureAwait(false);
+						: requestInfo.ServiceName.IsEquals("cache")
+							? await requestInfo.FlushCachingStoragesAsync().ConfigureAwait(false)
+							: RESTfulAPIs.ServiceForwarders.ContainsKey(requestInfo.ServiceName.ToLower())
+								? await requestInfo.ForwardRequestAsync(Global.CancellationToken).ConfigureAwait(false)
+								: await Global.CallServiceAsync(requestInfo, Global.CancellationToken, WebSocketAPIs.Logger, "Http.APIs").ConfigureAwait(false);
 
 				// send the response as an update message
 				await websocket.SendAsync(new UpdateMessage

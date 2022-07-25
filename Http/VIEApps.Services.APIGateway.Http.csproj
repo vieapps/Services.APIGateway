@@ -31,7 +31,7 @@
 	<ItemGroup>
 		<PackageReference Include="Microsoft.AspNetCore.WebSockets" Version="2.2.1" />
 		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.5.2207.1" />
-		<PackageReference Include="VIEApps.Services.Base.Http" Version="10.5.2207.4" />
+		<PackageReference Include="VIEApps.Services.Base.Http" Version="10.5.2207.25" />
 		<PackageReference Include="WampSharp.AspNetCore.WebSockets.Server" Version="22.5.1" />
 	</ItemGroup>
 

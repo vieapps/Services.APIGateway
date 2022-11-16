@@ -620,15 +620,15 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				// prepare
-				var account = requestInfo.Extra != null && requestInfo.Extra.ContainsKey("Account")
-					? requestInfo.Extra["Account"]
-					: requestInfo.Extra != null && requestInfo.Extra.ContainsKey("Email")
-						? requestInfo.Extra["Email"]
+				var account = requestInfo.Extra != null && requestInfo.Extra.TryGetValue("Account", out var extAccount)
+					? extAccount
+					: requestInfo.Extra != null && requestInfo.Extra.TryGetValue("Email", out var extEmail)
+						? extEmail
 						: null;
 
-				var password = requestInfo.Extra != null && requestInfo.Extra.ContainsKey("Password")
-						? requestInfo.Extra["Password"]
-						: null;
+				var password = requestInfo.Extra != null && requestInfo.Extra.TryGetValue("Password", out var extPassword)
+					? extPassword
+					: null;
 
 				if (string.IsNullOrWhiteSpace(account) || string.IsNullOrWhiteSpace(password))
 					throw new InvalidDataException("Request JSON is invalid (account/password must be encrypted by RSA before sending)");

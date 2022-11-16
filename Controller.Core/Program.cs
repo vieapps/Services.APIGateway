@@ -35,7 +35,8 @@ namespace net.vieapps.Services.APIGateway
 			// prepare environment
 			Program.IsUserInteractive = Environment.UserInteractive && args?.FirstOrDefault(a => a.IsStartsWith("/daemon")) == null;
 			Directory.SetCurrentDirectory(AppDomain.CurrentDomain.BaseDirectory);
-			Console.OutputEncoding = System.Text.Encoding.UTF8;
+			if (Program.IsUserInteractive)
+				Console.OutputEncoding = System.Text.Encoding.UTF8;
 
 			// prepare logging
 			var loglevel = args?.FirstOrDefault(a => a.IsStartsWith("/loglevel:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/loglevel:", "");

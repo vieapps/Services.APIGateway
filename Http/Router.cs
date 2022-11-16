@@ -416,37 +416,13 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			public void Event<TMessage>(IWampFormatter<TMessage> formatter, long publicationId, EventDetails details)
-			{
-				var topic = this._topicContainer.GetTopicByUri(details.Topic);
-				if (topic != null)
-					topic.Publish(formatter, publicationId, new PublishOptions
-					{
-						//DiscloseMe = true,
-						Acknowledge = true
-					});
-			}
+				=> this._topicContainer.GetTopicByUri(details.Topic)?.Publish(formatter, publicationId, new PublishOptions { Acknowledge = true });
 
 			public void Event<TMessage>(IWampFormatter<TMessage> formatter, long publicationId, EventDetails details, TMessage[] arguments)
-			{
-				var topic = this._topicContainer.GetTopicByUri(details.Topic);
-				if (topic != null)
-					topic.Publish(formatter, publicationId, new PublishOptions
-					{
-						//DiscloseMe = true,
-						Acknowledge = true
-					}, arguments);
-			}
+				=> this._topicContainer.GetTopicByUri(details.Topic)?.Publish(formatter, publicationId, new PublishOptions { Acknowledge = true }, arguments);
 
 			public void Event<TMessage>(IWampFormatter<TMessage> formatter, long publicationId, EventDetails details, TMessage[] arguments, IDictionary<string, TMessage> argumentsKeywords)
-			{
-				var topic = this._topicContainer.GetTopicByUri(details.Topic);
-				if (topic != null)
-					topic.Publish(formatter, publicationId, new PublishOptions
-					{
-						//DiscloseMe = true,
-						Acknowledge = true
-					}, arguments, argumentsKeywords);
-			}
+				=> this._topicContainer.GetTopicByUri(details.Topic)?.Publish(formatter, publicationId, new PublishOptions { Acknowledge = true }, arguments, argumentsKeywords);
 
 			public void Event<TMessage>(IWampFormatter<TMessage> formatter, long publicationId, PublishOptions options)
 				=> this._subscriber.Event(formatter, publicationId, options);

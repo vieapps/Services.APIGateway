@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
 	<PropertyGroup>
-		<TargetFrameworks>net6.0</TargetFrameworks>
+		<TargetFrameworks>net7.0</TargetFrameworks>
 		<WarningLevel>3</WarningLevel>
 		<NoWarn>1573,1591,IDE0054,IDE0090,CA1822</NoWarn>
 		<OutputType>Exe</OutputType>
@@ -15,9 +15,9 @@
 		<Company>VIEApps.net</Company>
 		<Product>VIEApps NGX</Product>
 		<Copyright>© $([System.DateTime]::Now.Year) VIEApps.net</Copyright>
-		<AssemblyVersion>10.5$(ReleaseVersion)</AssemblyVersion>
-		<FileVersion>10.5$(ReleaseVersion)</FileVersion>
-		<InformationalVersion>10.5.$([System.DateTime]::Now.Year).$([System.DateTime]::Now.Month).$([System.DateTime]::Now.Day)@$(TargetFramework)#$(ReleaseRevision)</InformationalVersion>
+		<AssemblyVersion>10.6$(ReleaseVersion)</AssemblyVersion>
+		<FileVersion>10.6$(ReleaseVersion)</FileVersion>
+		<InformationalVersion>10.6.$([System.DateTime]::Now.Year).$([System.DateTime]::Now.Month).$([System.DateTime]::Now.Day)@$(TargetFramework)#$(ReleaseRevision)</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -30,8 +30,8 @@
 
 	<ItemGroup>
 		<PackageReference Include="Microsoft.AspNetCore.WebSockets" Version="2.2.1" />
-		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.5.2207.1" />
-		<PackageReference Include="VIEApps.Services.Base.Http" Version="10.5.2207.25" />
+		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.6.2211.1" />
+		<PackageReference Include="VIEApps.Services.Base.Http" Version="10.6.2211.1" />
 		<PackageReference Include="WampSharp.AspNetCore.WebSockets.Server" Version="22.5.1" />
 	</ItemGroup>
 

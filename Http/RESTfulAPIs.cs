@@ -348,7 +348,7 @@ namespace net.vieapps.Services.APIGateway
 			else if (requestInfo.ServiceName.IsEquals("pusher"))
 				try
 				{
-					if (requestInfo.Verb.IsEquals("POST") && requestInfo.GetQueryParameter("x-private-token") != null)
+					if (requestInfo.Verb.IsEquals("POST") && requestInfo.Query.TryGetValue("x-private-token", out var privateToken) && RESTfulAPIs.PrivateToken.IsEquals(privateToken))
 					{
 						new CommunicateMessage("APIGateway")
 						{

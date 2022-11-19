@@ -124,11 +124,11 @@ namespace net.vieapps.Services.APIGateway
 
 		bool IsUserInteractive { get; set; } = false;
 
+		bool AllowRegisterBusinessServices { get; set; } = true;
+
 		bool AllowRegisterHelperServices { get; set; } = true;
 
 		bool AllowRegisterHelperTimers { get; set; } = true;
-
-		bool AllowRegisterBusinessServices { get; set; } = true;
 
 		DateTime ClientPingTime { get; set; } = DateTime.Now;
 
@@ -478,7 +478,7 @@ namespace net.vieapps.Services.APIGateway
 			connectRouter();
 
 			// flush logs
-			if (this.AllowRegisterHelperServices)
+			if (this.AllowRegisterHelperServices || args?.FirstOrDefault(arg => arg.IsStartsWith("/no-log-flusher")) == null)
 				this.StartTimer(() =>
 				{
 					if (this.LoggingService == null)

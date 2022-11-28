@@ -51,7 +51,7 @@ namespace net.vieapps.Services.APIGateway
 			// prepare the requesting information
 			var isWebHookRequest = false;
 			var header = context.Request.Headers.ToDictionary().Copy(RESTfulAPIs.ExcludedHeaders.Concat(context.Request.Headers.Keys.Where(name => name.IsStartsWith("cf-") || name.IsStartsWith("sec-"))));
-			var queryString = context.Request.QueryString.ToDictionary(query =>
+			var query = context.Request.QueryString.ToDictionary(queryString =>
 			{
 				var pathSegments = context.GetRequestPathSegments();
 				var serviceName = pathSegments.Length > 0 && !string.IsNullOrWhiteSpace(pathSegments[0])
@@ -83,18 +83,18 @@ namespace net.vieapps.Services.APIGateway
 					if (pathSegments.Length > 4 && !string.IsNullOrWhiteSpace(pathSegments[4]))
 						header["x-webhook-adapter"] = pathSegments[4].GetANSIUri().Replace("-", "").Replace("_", "");
 				}
-				query["service-name"] = serviceName;
-				query["object-name"] = objectName;
-				query["object-identity"] = objectIdentity;
+				queryString["service-name"] = serviceName;
+				queryString["object-name"] = objectName;
+				queryString["object-identity"] = objectIdentity;
 			});
 			var extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-			if (queryString.Remove("x-request-extra", out var extraInfo) && !string.IsNullOrWhiteSpace(extraInfo))
+			if (query.Remove("x-request-extra", out var extraInfo) && !string.IsNullOrWhiteSpace(extraInfo))
 				try
 				{
 					extra = extraInfo.Url64Decode().ToExpandoObject().ToDictionary(kvp => kvp.Key, kvp => kvp.Value?.ToString(), StringComparer.OrdinalIgnoreCase);
 				}
 				catch { }
-			var requestInfo = new RequestInfo(context.GetSession(), queryString["service-name"], queryString["object-name"], context.Request.Method, queryString, header)
+			var requestInfo = new RequestInfo(context.GetSession(), query["service-name"], query["object-name"], context.Request.Method, query, header)
 			{
 				Extra = extra,
 				CorrelationID = context.GetCorrelationID()
@@ -449,11 +449,10 @@ namespace net.vieapps.Services.APIGateway
 
 					// process the request
 					using var cts = CancellationTokenSource.CreateLinkedTokenSource(Global.CancellationToken, context.RequestAborted);
-					var patchMode = requestInfo.GetParameter("x-patch-mode");
 					var response = requestInfo.Verb.IsEquals("PATCH")
-						? "rollback".IsEquals(patchMode)
+						? "rollback".IsEquals(requestInfo.GetParameter("x-patch-mode"))
 							? await requestInfo.RollbackAsync(cts.Token).ConfigureAwait(false)
-							: "sync".IsEquals(patchMode)
+							: "sync".IsEquals(requestInfo.GetParameter("x-patch-mode"))
 								? await context.SyncAsync(requestInfo).ConfigureAwait(false)
 								: throw new InvalidRequestException()
 						: await context.CallServiceAsync(requestInfo, cts.Token, RESTfulAPIs.Logger, "Http.APIs").ConfigureAwait(false);

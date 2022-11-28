@@ -15,6 +15,12 @@ using Newtonsoft.Json.Linq;
 using net.vieapps.Components.Utility;
 using net.vieapps.Components.Security;
 using net.vieapps.Components.Caching;
+using System.Security.AccessControl;
+using static System.Runtime.InteropServices.JavaScript.JSType;
+using System.Reflection.Metadata;
+using WampSharp.V2.Client;
+
+
 #endregion
 
 namespace net.vieapps.Services.APIGateway
@@ -49,22 +55,39 @@ namespace net.vieapps.Services.APIGateway
 		public static async Task ProcessRequestAsync(HttpContext context)
 		{
 			// prepare the requesting information
+			var isWebHookRequest = false;
+			var header = context.Request.Headers.ToDictionary().Copy(RESTfulAPIs.ExcludedHeaders.Concat(context.Request.Headers.Keys.Where(name => name.IsStartsWith("cf-") || name.IsStartsWith("sec-"))));
 			var queryString = context.Request.QueryString.ToDictionary(query =>
 			{
 				var pathSegments = context.GetRequestPathSegments();
 				var serviceName = pathSegments.Length > 0 && !string.IsNullOrWhiteSpace(pathSegments[0])
 					? pathSegments[0].GetANSIUri(false, true)
-					: context.GetHeaderParameter("ServiceName") ?? "";
+					: context.GetParameter("x-service-name") ?? context.GetParameter("ServiceName") ?? "";
 				var objectName = pathSegments.Length > 1 && !string.IsNullOrWhiteSpace(pathSegments[1])
 					? pathSegments[1].GetANSIUri(false, true)
-					: context.GetHeaderParameter("ObjectName") ?? "";
+					: context.GetParameter("x-object-name") ?? context.GetParameter("ObjectName") ?? "";
 				var objectIdentity = pathSegments.Length > 2 && !string.IsNullOrWhiteSpace(pathSegments[2])
-					? pathSegments[2].GetANSIUri(false)
-					: context.GetHeaderParameter("ObjectIdentity") ?? "";
-				if (serviceName.IsEquals("webhook") || serviceName.IsEquals("webhooks"))
+					? pathSegments[2].GetANSIUri(false, true)
+					: context.GetParameter("x-object-identity") ?? context.GetParameter("ObjectIdentity") ?? "";
+				if (serviceName.IsEquals("webhook") || serviceName.IsEquals("webhooks") || serviceName.IsEquals("web-hook") || serviceName.IsEquals("web-hooks"))
 				{
-					objectName = context.GetHeaderParameter("ServiceName") ?? objectName;
-					objectIdentity = context.GetHeaderParameter("ObjectName") ?? objectIdentity;
+					isWebHookRequest = true;
+					objectName = objectIdentity = "";
+					context.SetItem("Correlation-ID", context.GetParameter("x-original-correlation-id") ?? context.GetCorrelationID());
+					header["x-webhook-service"] = serviceName = pathSegments.Length > 1 && !string.IsNullOrWhiteSpace(pathSegments[1])
+						? pathSegments[1].GetANSIUri(false, true).GetCapitalizedFirstLetter()
+						: context.GetParameter("x-service-name") ?? context.GetParameter("ServiceName") ?? "";
+					if (pathSegments.Length > 2 && !string.IsNullOrWhiteSpace(pathSegments[2]) && pathSegments[2].GetANSIUri().IsValidUUID())
+						header["x-webhook-system"] = pathSegments[2].GetANSIUri();
+					if (pathSegments.Length > 3 && !string.IsNullOrWhiteSpace(pathSegments[3]))
+					{
+						if (pathSegments[3].GetANSIUri().IsValidUUID())
+							header["x-webhook-entity"] = pathSegments[3].GetANSIUri();
+						else
+							header["x-webhook-object"] = pathSegments[3].GetANSIUri(false, true).Replace("-", "").Replace("_", "");
+					}
+					if (pathSegments.Length > 4 && !string.IsNullOrWhiteSpace(pathSegments[4]))
+						header["x-webhook-adapter"] = pathSegments[4].GetANSIUri().Replace("-", "").Replace("_", "");
 				}
 				query["service-name"] = serviceName;
 				query["object-name"] = objectName;
@@ -77,10 +100,8 @@ namespace net.vieapps.Services.APIGateway
 					extra = extraInfo.Url64Decode().ToExpandoObject().ToDictionary(kvp => kvp.Key, kvp => kvp.Value?.ToString(), StringComparer.OrdinalIgnoreCase);
 				}
 				catch { }
-
-			var requestInfo = new RequestInfo(context.GetSession(), queryString["service-name"], queryString["object-name"], context.Request.Method, queryString)
+			var requestInfo = new RequestInfo(context.GetSession(), queryString["service-name"], queryString["object-name"], context.Request.Method, queryString, header)
 			{
-				Header = context.Request.Headers.ToDictionary().Copy(RESTfulAPIs.ExcludedHeaders.Concat(context.Request.Headers.Keys.Where(name => name.IsStartsWith("cf-") || name.IsStartsWith("sec-")))),
 				Extra = extra,
 				CorrelationID = context.GetCorrelationID()
 			};
@@ -118,7 +139,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 
 				// parse and update information from token
-				var tokenIsRequired = !isActivationProccessed
+				var tokenIsRequired = !isWebHookRequest && !isActivationProccessed
 					&& (!isSessionInitialized || !requestInfo.Session.User.ID.Equals("") && !requestInfo.Session.User.IsSystemAccount || requestInfo.Query.ContainsKey("register"))
 					&& !RESTfulAPIs.NoTokenRequiredServices.Contains(requestInfo.ServiceName)
 					&& !RESTfulAPIs.PrivateToken.IsEquals(requestInfo.GetParameter("x-private-token"));
@@ -168,10 +189,10 @@ namespace net.vieapps.Services.APIGateway
 					await context.WriteLogsAsync(RESTfulAPIs.Logger, "Http.APIs", $"Error occurred while parsing body of the request => {ex.Message}", ex).ConfigureAwait(false);
 				}
 
-			else if (requestInfo.Verb.IsEquals("GET") && requestInfo.Query.Remove("x-body", out var bodyInfo))
+			else if (requestInfo.Verb.IsEquals("GET") && requestInfo.Query.Remove("x-body", out var encodedBody))
 				try
 				{
-					requestInfo.Body = bodyInfo.Url64Decode();
+					requestInfo.Body = encodedBody.Url64Decode();
 				}
 				catch (Exception ex)
 				{
@@ -179,6 +200,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 			#endregion
 
+			#region prepare security/princial information
 			// verify captcha
 			try
 			{
@@ -196,7 +218,7 @@ namespace net.vieapps.Services.APIGateway
 			if (isAccountProccessed || "otp".IsEquals(requestInfo.ObjectName))
 				try
 				{
-					requestInfo.PrepareAccountRelated(async (msg, ex) => await context.WriteLogsAsync(RESTfulAPIs.Logger, "Http.Authentications", msg, ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID).ConfigureAwait(false));
+					requestInfo.PrepareAccountRelated((msg, ex) => context.WriteLogs(RESTfulAPIs.Logger, "Http.Authentications", msg, ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID));
 				}
 				catch (Exception ex)
 				{
@@ -208,6 +230,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// prepare user principal
 			context.User = new UserPrincipal(requestInfo.Session.User);
+			#endregion
 
 			// process request of sessions
 			if (isSessionProccessed)
@@ -237,6 +260,26 @@ namespace net.vieapps.Services.APIGateway
 			// process request of activations
 			else if (isActivationProccessed)
 				await context.ActivateAsync(requestInfo).ConfigureAwait(false);
+
+			// process request of web-hook messages
+			else if (isWebHookRequest)
+				try
+				{
+					if (requestInfo.Verb.IsEquals("POST"))
+					{
+						net.vieapps.Services.Router.GetService(requestInfo.ServiceName).ProcessWebHookMessageAsync(new RequestInfo(requestInfo)
+						{
+							Query = requestInfo.Query.Copy(new[] { "service-name", "object-name", "object-identity" })
+						}).Run(ex => Global.WriteLogs(Global.Logger, "WebHooks", $"Error occurred at a remote service while processing a web-hook message => {ex.Message}", ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID));
+						await context.WriteAsync(new JObject { ["Status"] = "Success" }).ConfigureAwait(false);
+					}
+					else
+						throw new MethodNotAllowedException(requestInfo.Verb);
+				}
+				catch (Exception ex)
+				{
+					context.WriteError(RESTfulAPIs.Logger, ex, requestInfo);
+				}
 
 			// process request of discovery (controllers, services, definitions, resources, ...)
 			else if (requestInfo.ServiceName.IsEquals("discovery"))
@@ -294,25 +337,7 @@ namespace net.vieapps.Services.APIGateway
 					context.WriteError(RESTfulAPIs.Logger, ex, requestInfo);
 				}
 
-			// process request of web-hook messages 
-			else if (requestInfo.ServiceName.IsEquals("webhook") || requestInfo.ServiceName.IsEquals("webhooks"))
-				try
-				{
-					if (requestInfo.Verb.IsEquals("POST"))
-					{
-						requestInfo.ProcessWebHookMessage();
-						using var cts = CancellationTokenSource.CreateLinkedTokenSource(Global.CancellationToken, context.RequestAborted);
-						await context.WriteAsync(new JObject { ["Status"] = "Success" }, RESTfulAPIs.JsonFormat, requestInfo.CorrelationID, cts.Token).ConfigureAwait(false);
-					}
-					else
-						throw new MethodNotAllowedException(requestInfo.Verb);
-				}
-				catch (Exception ex)
-				{
-					context.WriteError(RESTfulAPIs.Logger, ex, requestInfo);
-				}
-
-			// process request of email email
+			// process request of email
 			else if ((requestInfo.ServiceName.IsEquals("email") || requestInfo.ServiceName.IsEquals("emails")) && "test".IsEquals(requestInfo.ObjectName))
 				try
 				{
@@ -348,7 +373,7 @@ namespace net.vieapps.Services.APIGateway
 			else if (requestInfo.ServiceName.IsEquals("pusher"))
 				try
 				{
-					if (requestInfo.Verb.IsEquals("POST") && requestInfo.Query.TryGetValue("x-private-token", out var privateToken) && RESTfulAPIs.PrivateToken.IsEquals(privateToken))
+					if (requestInfo.Verb.IsEquals("POST"))
 					{
 						new CommunicateMessage("APIGateway")
 						{
@@ -430,8 +455,13 @@ namespace net.vieapps.Services.APIGateway
 
 					// process the request
 					using var cts = CancellationTokenSource.CreateLinkedTokenSource(Global.CancellationToken, context.RequestAborted);
+					var patchMode = requestInfo.GetParameter("x-patch-mode");
 					var response = requestInfo.Verb.IsEquals("PATCH")
-						? await context.SyncAsync(requestInfo).ConfigureAwait(false)
+						? "rollback".IsEquals(patchMode)
+							? await requestInfo.RollbackAsync(cts.Token).ConfigureAwait(false)
+							: "sync".IsEquals(patchMode)
+								? await context.SyncAsync(requestInfo).ConfigureAwait(false)
+								: throw new InvalidRequestException()
 						: await context.CallServiceAsync(requestInfo, cts.Token, RESTfulAPIs.Logger, "Http.APIs").ConfigureAwait(false);
 					await context.WriteAsync(response, RESTfulAPIs.JsonFormat, requestInfo.CorrelationID, cts.Token).ConfigureAwait(false);
 				}
@@ -953,7 +983,15 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
-		#region Process synchronizing requests
+		#region Process rollback/restore/sync requests
+		internal static Task<JToken> RollbackAsync(this RequestInfo requestInfo, CancellationToken cancellationToken)
+		{
+			var service = net.vieapps.Services.Router.GetService(requestInfo.ServiceName);
+			return service != null
+				? service.ProcessRollbackRequestAsync(requestInfo, cancellationToken)
+				: Task.FromResult<JToken>(null);
+		}
+
 		static async Task<JToken> SyncAsync(this HttpContext context, RequestInfo requestInfo)
 		{
 			Exception exception = null;
@@ -1014,25 +1052,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 		#endregion
 
-		#region Process web-hook messages and requests of forwarding services
-		public static void ProcessWebHookMessage(this RequestInfo requestInfo)
-		{
-			var webhook = new RequestInfo(requestInfo)
-			{
-				ServiceName = requestInfo.ObjectName,
-				ObjectName = requestInfo.GetObjectIdentity(),
-				Query = requestInfo.Query.Copy(new[] { "service-name", "object-name", "object-identity" })
-			};
-			try
-			{
-				net.vieapps.Services.Router.GetService(webhook.ServiceName).ProcessWebHookMessageAsync(webhook, Global.CancellationToken).Run(async ex => await Global.WriteLogsAsync(Global.Logger, "Http.WebHooks", $"Error occurred while processing a web-hook message => {ex.Message}\r\nRequest: {webhook.ToString(RESTfulAPIs.JsonFormat)}", ex, webhook.ServiceName, LogLevel.Error, webhook.CorrelationID).ConfigureAwait(false));
-			}
-			catch (Exception ex)
-			{
-				Global.WriteLogs(Global.Logger, "Http.WebHooks", $"Error occurred while processing a web-hook message => {ex.Message}\r\nRequest: {webhook.ToString(RESTfulAPIs.JsonFormat)}", ex, webhook.ServiceName, LogLevel.Error, webhook.CorrelationID);
-			}
-		}
-
+		#region Process requests of forwarding services
 		public static async Task<JToken> ForwardRequestAsync(this RequestInfo requestInfo, CancellationToken cancellationToken)
 		{
 			var stopwatch = Stopwatch.StartNew();

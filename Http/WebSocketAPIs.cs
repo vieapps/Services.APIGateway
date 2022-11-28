@@ -665,7 +665,9 @@ namespace net.vieapps.Services.APIGateway
 							? await requestInfo.FlushCachingStoragesAsync().ConfigureAwait(false)
 							: RESTfulAPIs.ServiceForwarders.ContainsKey(requestInfo.ServiceName.ToLower())
 								? await requestInfo.ForwardRequestAsync(Global.CancellationToken).ConfigureAwait(false)
-								: await Global.CallServiceAsync(requestInfo, Global.CancellationToken, WebSocketAPIs.Logger, "Http.APIs").ConfigureAwait(false);
+								: verb.IsEquals("PATCH") && "rollback".IsEquals(requestInfo.GetParameter("x-patch-mode"))
+									? await requestInfo.RollbackAsync(Global.CancellationToken).ConfigureAwait(false)
+									: await Global.CallServiceAsync(requestInfo, Global.CancellationToken, WebSocketAPIs.Logger, "Http.APIs").ConfigureAwait(false);
 
 				// send the response as an update message
 				await websocket.SendAsync(new UpdateMessage

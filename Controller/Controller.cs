@@ -73,15 +73,15 @@ namespace net.vieapps.Services.APIGateway
 			public ExternalProcess.Info Instance { get; internal set; }
 
 			public void Set<T>(string name, T value)
-					=> this.Extra[name] = value;
+				=> this.Extra[name] = value;
 
 			public void Set<T>(IDictionary<string, T> items)
-					=> items?.ForEach(kvp => this.Set(kvp.Key, kvp.Value));
+				=> items?.ForEach(kvp => this.Set(kvp.Key, kvp.Value));
 
 			public T Get<T>(string name, T @default = default)
-					=> this.Extra.TryGetValue(name, out object value) && value != null && value is T val
-							? val
-							: @default;
+				=> this.Extra.TryGetValue(name, out object value) && value != null && value is T val
+						? val
+						: @default;
 		}
 		#endregion
 
@@ -129,6 +129,8 @@ namespace net.vieapps.Services.APIGateway
 		bool AllowRegisterHelperServices { get; set; } = true;
 
 		bool AllowRegisterHelperTimers { get; set; } = true;
+
+		bool IsWindows { get; } = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 
 		DateTime ClientPingTime { get; set; } = DateTime.Now;
 
@@ -277,9 +279,14 @@ namespace net.vieapps.Services.APIGateway
 							keys.Add("RSA: " + rsa.ExportJsonParameters(true).Encrypt());
 						}
 						keys.Add("ECC: " + CryptoService.GenerateRandomKey().Encrypt().ToBase64());
+						keys.Add("Keys (hex):");
+						keys.Add("- 512 bits: " + CryptoService.GenerateRandomKey(512).ToHex());
+						keys.Add("- 384 bits: " + CryptoService.GenerateRandomKey(384).ToHex());
+						keys.Add("- 256 bits: " + CryptoService.GenerateRandomKey(256).ToHex());
+						keys.Add("- 128 bits: " + CryptoService.GenerateRandomKey(128).ToHex());
 						keys.Add("-----------------------------------------------------------------------");
 					}
-					var filePath = Path.Combine(directoryPath, "encryption-keys.txt");
+					var filePath = Path.Combine(directoryPath, "@keys.txt");
 					Global.OnProcess?.Invoke($"New encryption keys were generated => {filePath}");
 					keys.SaveTo(filePath, false);
 				}
@@ -838,8 +845,8 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				var serviceHosting = string.IsNullOrWhiteSpace(this.BusinessServices[name].Executable) ? this.ServiceHosting : this.BusinessServices[name].Executable;
-				if (!File.Exists(serviceHosting + (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "")))
-					throw new FileNotFoundException($"The service hosting is not found [{serviceHosting + (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "")}]");
+				if (!File.Exists(serviceHosting + (this.IsWindows ? ".exe" : "")))
+					throw new FileNotFoundException($"The service hosting is not found [{serviceHosting + (this.IsWindows ? ".exe" : "")}]");
 
 				this.BusinessServices[name].Instance = ExternalProcess.Start
 				(
@@ -902,7 +909,7 @@ namespace net.vieapps.Services.APIGateway
 				return;
 
 			Global.OnProcess?.Invoke($"[{name}] => The service is stopping");
-			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+			if (this.IsWindows)
 				try
 				{
 					var info = ExternalProcess.Start(processInfo.Instance.FilePath, processInfo.Instance.Arguments.Replace("/agc:r", "/agc:s"), "");
@@ -1013,8 +1020,8 @@ namespace net.vieapps.Services.APIGateway
 
 		void StartLoggingService(string arguments = null)
 		{
-			if (string.IsNullOrWhiteSpace(this.ServiceHosting) || !File.Exists($"{this.ServiceHosting}{(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "")}"))
-				Global.OnError?.Invoke($"Cannot start logging service. The hosting [{this.ServiceHosting}{(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "")}] is not found", null);
+			if (string.IsNullOrWhiteSpace(this.ServiceHosting) || !File.Exists($"{this.ServiceHosting}{(this.IsWindows ? ".exe" : "")}"))
+				Global.OnError?.Invoke($"Cannot start logging service. The hosting [{this.ServiceHosting}{(this.IsWindows ? ".exe" : "")}] is not found", null);
 
 			else
 				try
@@ -1040,7 +1047,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			if (this.LoggingService != null)
 			{
-				if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+				if (this.IsWindows)
 					try
 					{
 						ExternalProcess.Start(this.LoggingService.FilePath, this.LoggingService.Arguments.Replace("/agc:r", "/agc:s"), "").Process.Dispose();

@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using net.vieapps.Components.Utility;
@@ -52,7 +53,7 @@ namespace net.vieapps.Services.APIGateway
 			=> this.Dispose();
 
 		#region Information
-		static Dictionary<string, MailInfo> Messages = null;
+		static ConcurrentDictionary<string, MailInfo> Messages = null;
 		static string _EmailsPath = null, _EmailSmtpServer = null, _EmailSmtpServerEnableSsl = null, _EmailSmtpUser = null, _EmailSmtpUserPassword = null, _EmailDefaultSender = null;
 		static int? _EmailSmtpServerPort = null;
 
@@ -88,7 +89,7 @@ namespace net.vieapps.Services.APIGateway
 		#region Load & Save messages
 		internal static async Task LoadMessagesAsync()
 		{
-			MailSender.Messages = MailSender.Messages ?? new Dictionary<string, MailInfo>();
+			MailSender.Messages = MailSender.Messages ?? new ConcurrentDictionary<string, MailInfo>();
 
 			// previous messages
 			var fileInfo = new FileInfo(Path.Combine(Global.StatusPath, "mails.json"));
@@ -232,7 +233,7 @@ namespace net.vieapps.Services.APIGateway
 			=> this.Dispose();
 
 		#region Information
-		static Dictionary<string, WebHookInfo> Messages { get; } = new Dictionary<string, WebHookInfo>();
+		static ConcurrentDictionary<string, WebHookInfo> Messages { get; } = new ConcurrentDictionary<string, WebHookInfo>();
 		static string _WebHooksPath = null;
 		internal static string WebHooksPath => WebHookSender._WebHooksPath ?? (WebHookSender._WebHooksPath = Global.GetPath("Path:WebHooks", "web-hooks"));
 

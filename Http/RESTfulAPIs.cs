@@ -15,12 +15,6 @@ using Newtonsoft.Json.Linq;
 using net.vieapps.Components.Utility;
 using net.vieapps.Components.Security;
 using net.vieapps.Components.Caching;
-using System.Security.AccessControl;
-using static System.Runtime.InteropServices.JavaScript.JSType;
-using System.Reflection.Metadata;
-using WampSharp.V2.Client;
-
-
 #endregion
 
 namespace net.vieapps.Services.APIGateway

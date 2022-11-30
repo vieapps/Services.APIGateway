@@ -674,7 +674,7 @@ namespace net.vieapps.Services.APIGateway
 				// send the response as an update message
 				await websocket.SendAsync(new UpdateMessage
 				{
-					Type = requestInfo.ServiceName + (string.IsNullOrWhiteSpace(requestInfo.ObjectName) ? "" : "#" + requestInfo.ObjectName + "#" + (!string.IsNullOrWhiteSpace(objectIdentity) && !objectIdentity.IsValidUUID() ? objectIdentity : verb).GetCapitalizedFirstLetter()),
+					Type = $"{requestInfo.ServiceName}{(string.IsNullOrWhiteSpace(requestInfo.ObjectName) ? "" : $"#{("Versions".IsEquals(requestInfo.ObjectName) ? objectIdentity : requestInfo.ObjectName)}#{("Versions".IsEquals(requestInfo.ObjectName) || "Refresh".IsEquals(objectIdentity) ? "Update" : !string.IsNullOrWhiteSpace(objectIdentity) && !objectIdentity.IsValidUUID() ? objectIdentity : verb).GetCapitalizedFirstLetter()}")}",
 					Data = response
 				}, requestObj.Get<string>("ID")).ConfigureAwait(false);
 			}

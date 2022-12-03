@@ -452,9 +452,11 @@ namespace net.vieapps.Services.APIGateway
 					var response = requestInfo.Verb.IsEquals("PATCH")
 						? "rollback".IsEquals(requestInfo.GetParameter("x-patch-mode"))
 							? await requestInfo.RollbackAsync(cts.Token).ConfigureAwait(false)
-							: "sync".IsEquals(requestInfo.GetParameter("x-patch-mode"))
-								? await context.SyncAsync(requestInfo).ConfigureAwait(false)
-								: throw new InvalidRequestException()
+							: "restore".IsEquals(requestInfo.GetParameter("x-patch-mode"))
+								? await requestInfo.RestoreAsync(cts.Token).ConfigureAwait(false)
+								: "sync".IsEquals(requestInfo.GetParameter("x-patch-mode"))
+									? await context.SyncAsync(requestInfo).ConfigureAwait(false)
+									: throw new InvalidRequestException()
 						: await context.CallServiceAsync(requestInfo, cts.Token, RESTfulAPIs.Logger, "Http.APIs").ConfigureAwait(false);
 					await context.WriteAsync(response, RESTfulAPIs.JsonFormat, requestInfo.CorrelationID, cts.Token).ConfigureAwait(false);
 				}
@@ -984,6 +986,9 @@ namespace net.vieapps.Services.APIGateway
 				? service.ProcessRollbackRequestAsync(requestInfo, cancellationToken)
 				: Task.FromResult<JToken>(null);
 		}
+
+		internal static Task<JToken> RestoreAsync(this RequestInfo requestInfo, CancellationToken cancellationToken)
+			=> Task.FromException<JToken>(new NotImplementedException());
 
 		static async Task<JToken> SyncAsync(this HttpContext context, RequestInfo requestInfo)
 		{

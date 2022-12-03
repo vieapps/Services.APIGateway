@@ -668,7 +668,9 @@ namespace net.vieapps.Services.APIGateway
 								: verb.IsEquals("PATCH")
 									? "rollback".IsEquals(requestInfo.GetParameter("x-patch-mode"))
 										? await requestInfo.RollbackAsync(Global.CancellationToken).ConfigureAwait(false)
-										: throw new InvalidRequestException("Unknown request")
+										: "restore".IsEquals(requestInfo.GetParameter("x-patch-mode"))
+											? await requestInfo.RestoreAsync(Global.CancellationToken).ConfigureAwait(false)
+											: throw new InvalidRequestException("Unknown request")
 									: await Global.CallServiceAsync(requestInfo, Global.CancellationToken, WebSocketAPIs.Logger, "Http.APIs").ConfigureAwait(false);
 
 				// send the response as an update message

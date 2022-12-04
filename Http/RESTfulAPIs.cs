@@ -71,7 +71,7 @@ namespace net.vieapps.Services.APIGateway
 					header["x-webhook-service"] = serviceName = pathSegments.Length > 1 && !string.IsNullOrWhiteSpace(pathSegments[1])
 						? pathSegments[1].GetANSIUri(false, true).GetCapitalizedFirstLetter()
 						: context.GetParameter("x-service-name") ?? context.GetParameter("ServiceName") ?? "";
-					if (pathSegments.Length > 2 && !string.IsNullOrWhiteSpace(pathSegments[2]) && pathSegments[2].GetANSIUri().IsValidUUID())
+					if (pathSegments.Length > 2 && !string.IsNullOrWhiteSpace(pathSegments[2]))
 						header["x-webhook-system"] = pathSegments[2].GetANSIUri();
 					if (pathSegments.Length > 3 && !string.IsNullOrWhiteSpace(pathSegments[3]))
 					{

@@ -678,7 +678,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					Type = $"{requestInfo.ServiceName}{(string.IsNullOrWhiteSpace(requestInfo.ObjectName) ? "" : $"#{("Versions".IsEquals(requestInfo.ObjectName) ? objectIdentity : requestInfo.ObjectName)}#{("Versions".IsEquals(requestInfo.ObjectName) || "Refresh".IsEquals(objectIdentity) ? "Update" : !string.IsNullOrWhiteSpace(objectIdentity) && !objectIdentity.IsValidUUID() ? objectIdentity : verb).GetCapitalizedFirstLetter()}")}",
 					Data = response
-				}, requestObj.Get<string>("ID")).ConfigureAwait(false);
+				}, requestObj.Get<string>("ID"), correlationID).ConfigureAwait(false);
 			}
 			catch (RemoteServerException ex)
 			{

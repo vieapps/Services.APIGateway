@@ -980,15 +980,10 @@ namespace net.vieapps.Services.APIGateway
 
 		#region Process rollback/restore/sync requests
 		internal static Task<JToken> RollbackAsync(this RequestInfo requestInfo, CancellationToken cancellationToken)
-		{
-			var service = net.vieapps.Services.Router.GetService(requestInfo.ServiceName);
-			return service != null
-				? service.ProcessRollbackRequestAsync(requestInfo, cancellationToken)
-				: Task.FromResult<JToken>(null);
-		}
+			=> net.vieapps.Services.Router.GetService(requestInfo.ServiceName)?.ProcessRollbackRequestAsync(requestInfo, cancellationToken) ?? Task.FromException<JToken>(new ServiceNotFoundException());
 
 		internal static Task<JToken> RestoreAsync(this RequestInfo requestInfo, CancellationToken cancellationToken)
-			=> Task.FromException<JToken>(new NotImplementedException());
+			=> net.vieapps.Services.Router.GetService(requestInfo.ServiceName)?.ProcessRestoreRequestAsync(requestInfo, cancellationToken) ?? Task.FromException<JToken>(new ServiceNotFoundException());
 
 		static async Task<JToken> SyncAsync(this HttpContext context, RequestInfo requestInfo)
 		{

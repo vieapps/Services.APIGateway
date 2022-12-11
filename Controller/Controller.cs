@@ -1113,16 +1113,16 @@ namespace net.vieapps.Services.APIGateway
 						this.MailSender = new MailSender(this.CancellationTokenSource.Token);
 						await this.MailSender.ProcessAsync
 						(
-							async message =>
+							message =>
 							{
 								var log = "The email message has been sent" + "\r\n" +
 									$"- ID: {message.ID}" + "\r\n" +
 									$"- From: {message.From}" + "\r\n" +
 									$"- To: {message.To}" + (!string.IsNullOrWhiteSpace(message.Cc) ? $" / {message.Cc}" : "") + (!string.IsNullOrWhiteSpace(message.Bcc) ? $" / {message.Bcc}" : "") + "\r\n" +
 									$"- Subject: {message.Subject}";
-								await Global.WriteLogAsync(message.CorrelationID, "APIGateway", "Emails", log, null, this.CancellationTokenSource.Token).ConfigureAwait(false);
+								Global.WriteLog(message.CorrelationID, "APIGateway", "Emails", log);
 							},
-							async (message, exception, beRemoved) =>
+							(message, exception, beRemoved) =>
 							{
 								var log = $"Error occurred while sending an email message => {exception.Message} [{exception.GetType()}]" + "\r\n" +
 									$"- ID: {message.ID}" + "\r\n" +
@@ -1130,7 +1130,7 @@ namespace net.vieapps.Services.APIGateway
 									$"- To: {message.To}" + (!string.IsNullOrWhiteSpace(message.Cc) ? $" / {message.Cc}" : "") + (!string.IsNullOrWhiteSpace(message.Bcc) ? $" / {message.Bcc}" : "") + "\r\n" +
 									$"- Subject: {message.Subject}" +
 									$"{(beRemoved ? "\r\n++ NOTED: The message will  be removed from queue because its failed too much times" : "")}";
-								await Global.WriteLogAsync(message.CorrelationID, "APIGateway", "Emails", log, exception.StackTrace, this.CancellationTokenSource.Token).ConfigureAwait(false);
+								Global.WriteLog(message.CorrelationID, "APIGateway", "Emails", log, exception.StackTrace);
 							}
 						).ConfigureAwait(false);
 					}
@@ -1154,20 +1154,20 @@ namespace net.vieapps.Services.APIGateway
 						this.WebHookSender = new WebHookSender(this.CancellationTokenSource.Token);
 						await this.WebHookSender.ProcessAsync
 						(
-							async message =>
+							message =>
 							{
 								var log = "The web-hook message has been sent" + "\r\n" +
 									$"- ID: {message.ID}" + "\r\n" +
 									$"- End-point: {message.EndpointURL}";
-								await Global.WriteLogAsync(message.CorrelationID, "APIGateway", "WebHooks", log, null, this.CancellationTokenSource.Token).ConfigureAwait(false);
+								Global.WriteLog(message.CorrelationID, "APIGateway", "WebHooks", log);
 							},
-							async (message, exception, beRemoved) =>
+							(message, exception, beRemoved) =>
 							{
 								var log = $"Error occurred while sending a web-hook message => {exception.Message} [{exception.GetType()}]" + "\r\n" +
 									$"- ID: {message.ID}" + "\r\n" +
 									$"- End-point: {message.EndpointURL}" +
 									$"{(beRemoved ? "\r\n++ NOTED: The message will  be removed from queue because its failed too much times" : "")}";
-								await Global.WriteLogAsync(message.CorrelationID, "APIGateway", "WebHooks", log, exception.StackTrace, this.CancellationTokenSource.Token).ConfigureAwait(false);
+								Global.WriteLog(message.CorrelationID, "APIGateway", "WebHooks", log, exception.StackTrace);
 							}
 						).ConfigureAwait(false);
 					}

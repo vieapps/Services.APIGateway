@@ -4,7 +4,7 @@
 
 - Router: for routing messages of all microservices and controllers/managers
 - Controller: for managing all microservices on one node
-- Http: public APIs of all microservices, expose as REST API or WebSocket API (JSON messages with REST style)
+- Http: public APIs of all microservices, expose as RESTful API or WebSocket API (JSON messages with REST style)
 
 ## Supporting parts:
 
@@ -14,6 +14,5 @@
 
 ## Others:
 
-- Messaging protocol: WAMP-proto with WampSharp
+- Messaging protocol: WAMP-proto with WampSharp, support routed RPC and Pub/Sub with multiple instances
 - Authentication mechanisim: JWT (JSON Web Token)
-- .NET Core 2.1/3.1 and .NET Framework 4.8

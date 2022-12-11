@@ -195,6 +195,7 @@ namespace net.vieapps.Services.APIGateway
 				Global.OnSendEmailFailure?.Invoke(log, ex);
 			}
 		}
+		#endregion
 
 		public async Task ProcessAsync(Action<EmailMessage> onSuccess = null, Action<EmailMessage, Exception, bool> onFailure = null)
 		{
@@ -209,8 +210,6 @@ namespace net.vieapps.Services.APIGateway
 				.ForEachAsync((message, index) => this.SendMessageAsync(message, index, onSuccess, onFailure))
 				.ConfigureAwait(false);
 		}
-		#endregion
-
 	}
 
 	// -----------------------------------------------------------
@@ -351,6 +350,7 @@ namespace net.vieapps.Services.APIGateway
 				Global.OnSendWebHookFailure?.Invoke(log, ex);
 			}
 		}
+		#endregion
 
 		public async Task ProcessAsync(Action<WebHookMessage> onSuccess = null, Action<WebHookMessage, Exception, bool> onFailure = null)
 		{
@@ -365,7 +365,5 @@ namespace net.vieapps.Services.APIGateway
 				.ForEachAsync(message => this.SendMessageAsync(message, onSuccess, onFailure))
 				.ConfigureAwait(false);
 		}
-		#endregion
-
 	}
 }

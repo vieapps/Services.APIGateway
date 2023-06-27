@@ -54,11 +54,12 @@ namespace net.vieapps.Services.APIGateway
 		#region Process Info
 		public class ProcessInfo
 		{
-			public ProcessInfo(string id, string executable, string arguments = "", Dictionary<string, object> extra = null)
+			public ProcessInfo(string id, string executable, string arguments, string recycleAt, Dictionary<string, object> extra = null)
 			{
 				this.ID = id;
 				this.Executable = executable;
 				this.Arguments = arguments;
+				this.RecycleAt = string.IsNullOrWhiteSpace(recycleAt) || !DateTime.TryParse($"{DateTime.Now:yyyy/MM/dd} {recycleAt}", out var datetime) ? null as DateTime? : datetime < DateTime.Now ? datetime.AddDays(1) : datetime;
 				this.Extra = new Dictionary<string, object>(extra ?? new Dictionary<string, object>(), StringComparer.OrdinalIgnoreCase);
 			}
 
@@ -67,6 +68,8 @@ namespace net.vieapps.Services.APIGateway
 			public string Executable { get; }
 
 			public string Arguments { get; }
+
+			public DateTime? RecycleAt { get; internal set; }
 
 			public Dictionary<string, object> Extra { get; }
 
@@ -79,9 +82,9 @@ namespace net.vieapps.Services.APIGateway
 				=> items?.ForEach(kvp => this.Set(kvp.Key, kvp.Value));
 
 			public T Get<T>(string name, T @default = default)
-				=> this.Extra.TryGetValue(name, out object value) && value != null && value is T val
-						? val
-						: @default;
+				=> this.Extra.TryGetValue(name, out var value) && value != null && value is T val
+					? val
+					: @default;
 		}
 		#endregion
 
@@ -116,6 +119,12 @@ namespace net.vieapps.Services.APIGateway
 
 		WebHookSender WebHookSender { get; set; }
 
+		bool AllowRegisterBusinessServices { get; set; } = true;
+
+		bool AllowRegisterHelperServices { get; set; } = true;
+
+		bool AllowRegisterHelperTimers { get; set; } = true;
+
 		bool IsHouseKeeperRunning { get; set; } = false;
 
 		bool IsTaskSchedulerRunning { get; set; } = false;
@@ -123,12 +132,6 @@ namespace net.vieapps.Services.APIGateway
 		public bool IsDisposed { get; private set; } = false;
 
 		bool IsUserInteractive { get; set; } = false;
-
-		bool AllowRegisterBusinessServices { get; set; } = true;
-
-		bool AllowRegisterHelperServices { get; set; } = true;
-
-		bool AllowRegisterHelperTimers { get; set; } = true;
 
 		bool IsWindows { get; } = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 
@@ -223,7 +226,7 @@ namespace net.vieapps.Services.APIGateway
 						var name = service.Attributes["name"]?.Value?.Trim().ToLower();
 						var type = service.Attributes["type"]?.Value?.Trim().Replace(" ", "");
 						if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(type))
-							this.BusinessServices[name] = new ProcessInfo(name, service.Attributes["executable"]?.Value?.Trim(), $"{type} {service.Attributes["arguments"]?.Value}".Trim());
+							this.BusinessServices[name] = new ProcessInfo(name, service.Attributes["executable"]?.Value?.Trim(), $"{type} {service.Attributes["arguments"]?.Value}".Trim(), service.Attributes["recycleAt"]?.Value?.Trim());
 					});
 			}
 
@@ -236,7 +239,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 						var arguments = (taskScheduler.Attributes["arguments"]?.Value ?? "").Trim();
 						var id = (executable + " " + arguments).ToLower().GenerateUUID();
-						this.Tasks[id] = new ProcessInfo(id, executable, arguments, new Dictionary<string, object>
+						this.Tasks[id] = new ProcessInfo(id, executable, arguments, null, new Dictionary<string, object>
 						{
 							{ "Time", Int32.TryParse(taskScheduler.Attributes["time"]?.Value, out var time) ? time.ToString() : taskScheduler.Attributes["time"]?.Value ?? "3" }
 						});
@@ -258,8 +261,8 @@ namespace net.vieapps.Services.APIGateway
 			Global.OnProcess?.Invoke($"Temporary directory: {UtilityService.GetAppSetting("Path:Temp", "None")}");
 			Global.OnProcess?.Invoke($"Static files directory: {UtilityService.GetAppSetting("Path:Statics", "None")}");
 			Global.OnProcess?.Invoke($"Status files directory: {UtilityService.GetAppSetting("Path:Status", "None")}");
-			Global.OnProcess?.Invoke($"Number of business services: {(!this.AllowRegisterBusinessServices ? "None" : this.BusinessServices.Count.ToString())}");
-			Global.OnProcess?.Invoke($"Number of scheduling tasks: {(!this.AllowRegisterHelperTimers ? "None" : this.Tasks.Count.ToString())}");
+			Global.OnProcess?.Invoke($"Number of business services: {(!this.AllowRegisterBusinessServices ? "None" : $"{this.BusinessServices.Count}")}");
+			Global.OnProcess?.Invoke($"Number of scheduling tasks: {(!this.AllowRegisterHelperTimers ? "None" : $"{this.Tasks.Count}")}");
 
 			// prepare database settings
 			this.PrepareDatabaseSettings();
@@ -874,7 +877,7 @@ namespace net.vieapps.Services.APIGateway
 				);
 
 				this.BusinessServices[name].Set("State", "Running");
-				Global.OnServiceStarted?.Invoke(name, $"The service was {re}started - Process ID: {this.BusinessServices[name].Instance.ID}");
+				Global.OnServiceStarted?.Invoke(name, $"The service was {re}started{(this.BusinessServices[name].RecycleAt != null ? $" (be recycled at {this.BusinessServices[name].RecycleAt.Value:HH:mm:ss})" : "")} - Process ID: {this.BusinessServices[name].Instance.ID}");
 			}
 			catch (Exception ex)
 			{
@@ -894,7 +897,7 @@ namespace net.vieapps.Services.APIGateway
 		/// <param name="name">The name of a service</param>
 		/// <param name="available">The available state</param>
 		/// <param name="sendServiceInfo">true to send service information to API Gateway</param>
-		public void StopBusinessService(string name, bool available, bool sendServiceInfo)
+		public void StopBusinessService(string name, bool available, bool sendServiceInfo = true)
 		{
 			name = !string.IsNullOrWhiteSpace(name) ? name.ToArray('.').Last().ToLower() : "unknown";
 			if (!this.BusinessServices.ContainsKey(name))
@@ -961,15 +964,26 @@ namespace net.vieapps.Services.APIGateway
 		/// </summary>
 		/// <param name="name">The name of a service</param>
 		public void StopBusinessService(string name)
-			=> this.StopBusinessService(name, true, true);
+			=> this.StopBusinessService(name, true);
 
 		void WatchBusinessServices()
 		{
 			var svcArgs = this.GetServiceArguments().Replace("/", "/call-");
-			this.BusinessServices
-				.Where(kvp => kvp.Value.Instance == null && "Running".IsEquals(kvp.Value.Get<string>("State")))
-				.Select(kvp => kvp.Key)
-				.ForEach(name => this.StartBusinessService(name, svcArgs));
+			this.BusinessServices.ForEach(kvp =>
+			{
+				var svcInfo = kvp.Value;
+				if (svcInfo.Instance != null && svcInfo.RecycleAt != null && DateTime.Now >= svcInfo.RecycleAt.Value && DateTime.Now <= svcInfo.RecycleAt.Value.AddSeconds(5))
+					ExternalProcess.Kill(svcInfo.Instance.Process, null, _ =>
+					{
+						using (svcInfo.Instance.Process)
+							this.BusinessServices[kvp.Key].Set("State", "Running");
+						svcInfo.Instance = null;
+						svcInfo.RecycleAt = DateTime.Parse($"{DateTime.Now.AddDays(1):yyyy/MM/dd} {svcInfo.RecycleAt.Value:HH:mm:ss}");
+						Global.OnProcess?.Invoke($"The service [{kvp.Key}] was killed (be recycled at {svcInfo.RecycleAt.Value:HH:mm:ss})");
+					});
+				else if (svcInfo.Instance == null && "Running".IsEquals(svcInfo.Get<string>("State")))
+					this.StartBusinessService(kvp.Key, svcArgs);
+			});
 		}
 		#endregion
 

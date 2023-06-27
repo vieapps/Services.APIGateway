@@ -194,7 +194,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 			#endregion
 
-			#region prepare security/princial information
+			#region prepare security/principal information
 			// verify captcha
 			try
 			{

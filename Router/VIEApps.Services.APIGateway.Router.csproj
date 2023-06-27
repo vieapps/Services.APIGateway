@@ -22,15 +22,15 @@
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
-		<PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="5.0.0" />
+		<PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="7.0.0" />
 	</ItemGroup>
 
 	<ItemGroup>
 		<PackageReference Include="Fleck" Version="1.2.0" />
-		<PackageReference Include="Newtonsoft.Json" Version="13.0.2" />
-		<PackageReference Include="System.Reactive" Version="5.0.0" />
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+		<PackageReference Include="System.Reactive" Version="6.0.0" />
 		<PackageReference Include="System.Configuration.ConfigurationManager" Version="7.0.0" />
-		<PackageReference Include="WampSharp.Default.Router" Version="22.5.1" />
+		<PackageReference Include="WampSharp.Default.Router" Version="23.5.1" />
 	</ItemGroup>
 
 </Project>

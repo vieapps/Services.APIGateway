@@ -25,10 +25,10 @@
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="7.0.0" />
 		<PackageReference Include="Microsoft.Extensions.Logging.Console" Version="7.0.0" />
 		<PackageReference Include="Serilog.Extensions.Logging.File" Version="3.0.0" />
-		<PackageReference Include="System.Reactive" Version="5.0.0" />
+		<PackageReference Include="System.Reactive" Version="6.0.0" />
 		<PackageReference Include="System.ServiceProcess.ServiceController" Version="7.0.0" />
 		<PackageReference Include="System.Text.Encoding.Extensions" Version="4.3.0" />
-		<PackageReference Include="VIEApps.Components.Utility" Version="10.7.2212.1" />
+		<PackageReference Include="VIEApps.Components.Utility" Version="10.7.2306.1" />
 	</ItemGroup>
 
 </Project>

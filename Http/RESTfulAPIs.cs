@@ -261,10 +261,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					if (requestInfo.Verb.IsEquals("POST"))
 					{
-						net.vieapps.Services.Router.GetService(requestInfo.ServiceName).ProcessWebHookMessageAsync(new RequestInfo(requestInfo)
-						{
-							Query = requestInfo.Query.Copy(new[] { "service-name", "object-name", "object-identity" })
-						}).Run(ex => Global.WriteLogs(Global.Logger, "WebHooks", $"Error occurred at a remote service while processing a web-hook message => {ex.Message}", ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID));
+						requestInfo.GetService().ProcessWebHookMessageAsync(requestInfo).Run(ex => Global.WriteLogs(Global.Logger, "WebHooks", $"Error occurred at a remote service while processing a web-hook message => {ex.Message}", ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID));
 						await context.WriteAsync(new JObject { ["Status"] = "Success" }).ConfigureAwait(false);
 					}
 					else

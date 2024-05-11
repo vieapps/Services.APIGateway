@@ -6,8 +6,8 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyTitle("VIEApps NGX API Gateway")]
 [assembly: AssemblyCompany("VIEApps.net")]
 [assembly: AssemblyProduct("VIEApps NGX")]
-[assembly: AssemblyCopyright("© 2022 VIEApps.net")]
+[assembly: AssemblyCopyright("© 2023 VIEApps.net")]
 
-[assembly: AssemblyVersion("10.7.2212.4")]
-[assembly: AssemblyFileVersion("10.7.2212.4")]
-[assembly: AssemblyInformationalVersion("10.7.2022.12.12@net48#inner.peace")]
+[assembly: AssemblyVersion("10.8.2312.1")]
+[assembly: AssemblyFileVersion("10.8.2312.1")]
+[assembly: AssemblyInformationalVersion("10.8.2023.12.22@net48#1st.year")]

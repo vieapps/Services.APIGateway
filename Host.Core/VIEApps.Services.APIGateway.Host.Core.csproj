@@ -1,9 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFrameworks>net7.0;net7.0-windows</TargetFrameworks>
+		<TargetFrameworks>net8.0;net8.0-windows</TargetFrameworks>
 		<WarningLevel>3</WarningLevel>
-		<NoWarn>1573,1591</NoWarn>
+		<NoWarn>1573,1591,NU1605</NoWarn>
 		<OutputType>Exe</OutputType>
 		<GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
 		<GenerateDependencyFile>true</GenerateDependencyFile>
@@ -20,9 +20,9 @@
 		<Company>VIEApps.net</Company>
 		<Product>VIEApps NGX</Product>
 		<Copyright>© $([System.DateTime]::Now.Year) VIEApps.net</Copyright>
-		<AssemblyVersion>10.7$(ReleaseVersion)</AssemblyVersion>
-		<FileVersion>10.7$(ReleaseVersion)</FileVersion>
-		<InformationalVersion>10.7.$([System.DateTime]::Now.Year).$([System.DateTime]::Now.Month).$([System.DateTime]::Now.Day)@$(TargetFramework)#$(ReleaseRevision)</InformationalVersion>
+		<AssemblyVersion>10.8$(ReleaseVersion)</AssemblyVersion>
+		<FileVersion>10.8$(ReleaseVersion)</FileVersion>
+		<InformationalVersion>10.8.$([System.DateTime]::Now.Year).$([System.DateTime]::Now.Month).$([System.DateTime]::Now.Day)@$(TargetFramework)#$(ReleaseRevision)</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -39,12 +39,12 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.7.2307.1" />
+		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.8.2404.1" />
 	</ItemGroup>
 
 	<ItemGroup>
 		<ProjectReference Include="..\..\Portals\Service\VIEApps.Services.Portals.csproj" Condition="'$(Configuration)' == 'Debug'" />
-		<ProjectReference Include="..\..\Users\Service.WindowsAD\VIEApps.Services.Users.WindowsAD.csproj" Condition="'$(Configuration)' == 'Release' and '$(TargetFramework)' == 'net7.0-windows'" />
+		<ProjectReference Include="..\..\Users\Service.WindowsAD\VIEApps.Services.Users.WindowsAD.csproj" Condition="'$(Configuration)' == 'Release' and '$(TargetFramework)' == 'net8.0-windows'" />
 		<ProjectReference Include="..\Host\VIEApps.Services.APIGateway.Host.csproj" />
 	</ItemGroup>
 

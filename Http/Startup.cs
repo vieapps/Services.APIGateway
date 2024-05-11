@@ -20,15 +20,12 @@ using net.vieapps.Components.Utility;
 
 namespace net.vieapps.Services.APIGateway
 {
-	public class Startup
+	public class Startup(IConfiguration configuration)
 	{
 		public static void Main(string[] args)
 			=> WebHost.CreateDefaultBuilder(args).Run<Startup>(args);
 
-		public Startup(IConfiguration configuration)
-			=> this.Configuration = configuration;
-
-		public IConfiguration Configuration { get; }
+		public IConfiguration Configuration { get; } = configuration;
 
 		public LogLevel LogLevel => this.Configuration.GetAppSetting("Logging/LogLevel/Default", UtilityService.GetAppSetting("Logs:Level", "Information")).TryToEnum(out LogLevel logLevel) ? logLevel : LogLevel.Information;
 
@@ -129,9 +126,9 @@ namespace net.vieapps.Services.APIGateway
 					.Select(info =>
 					{
 						var path = info.Item1;
-						while (path.StartsWith("/"))
+						while (path.StartsWith('/'))
 							path = path.Right(path.Length - 1);
-						while (path.EndsWith("/"))
+						while (path.EndsWith('/'))
 							path = path.Left(path.Length - 1);
 						return new Tuple<string, string>(path, info.Item2);
 					})
@@ -181,7 +178,7 @@ namespace net.vieapps.Services.APIGateway
 					});
 
 			// construct data-sources and connection strings
-			if (RESTfulAPIs.ServiceForwarders.Any())
+			if (!RESTfulAPIs.ServiceForwarders.IsEmpty)
 			{
 				var dbProviderFactories = new Dictionary<string, System.Xml.XmlNode>(StringComparer.OrdinalIgnoreCase);
 				var dbprovidersSection = UtilityService.GetAppSetting("Section:DbProviders", "net.vieapps.dbproviders");
@@ -219,10 +216,10 @@ namespace net.vieapps.Services.APIGateway
 						if (!string.IsNullOrWhiteSpace(dataSourceName) && !dataSources.ContainsKey(dataSourceName))
 						{
 							var connectionStringName = dataSourceNode.Attributes["connectionStringName"]?.Value;
-							if (!string.IsNullOrWhiteSpace(connectionStringName) && connectionStrings.ContainsKey(connectionStringName))
+							if (!string.IsNullOrWhiteSpace(connectionStringName) && connectionStrings.TryGetValue(connectionStringName, out string value))
 							{
 								var attribute = dataSourceNode.OwnerDocument.CreateAttribute("connectionString");
-								attribute.Value = connectionStrings[connectionStringName];
+								attribute.Value = value;
 								dataSourceNode.Attributes.Append(attribute);
 								dataSources[dataSourceName] = dataSourceNode;
 							}
@@ -257,7 +254,7 @@ namespace net.vieapps.Services.APIGateway
 				Global.Logger.LogInformation($"Request body limit: {Global.MaxRequestBodySize:###,###,##0} MB");
 
 				Global.Logger.LogInformation($"Path mappers: {(pathMappers.Any() ? "\r\n\t" + pathMappers.ToString("\r\n\t") : "None")}");
-				Global.Logger.LogInformation($"Service forwarders: {(RESTfulAPIs.ServiceForwarders.Any() ? "\r\n\t" + RESTfulAPIs.ServiceForwarders.ToString("\r\n\t", kvp => $"/{kvp.Key} => {kvp.Value.Item2} [{kvp.Value.Item1.GetTypeName()}]") : "None")}");
+				Global.Logger.LogInformation($"Service forwarders: {(RESTfulAPIs.ServiceForwarders.IsEmpty ? "None" : "\r\n\t" + RESTfulAPIs.ServiceForwarders.ToString("\r\n\t", kvp => $"/{kvp.Key} => {kvp.Value.Item2} [{kvp.Value.Item1.GetTypeName()}]"))}");
 
 				stopwatch.Stop();
 				Global.Logger.LogInformation($"The {Global.ServiceName} HTTP service was started - PID: {Environment.ProcessId} - Execution times: {stopwatch.GetElapsedTimes()}");

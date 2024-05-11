@@ -68,6 +68,8 @@ namespace net.vieapps.Services.APIGateway
 					isWebHookRequest = true;
 					objectName = objectIdentity = "";
 					context.SetItem("Correlation-ID", context.GetParameter("x-original-correlation-id") ?? context.GetCorrelationID());
+					header["x-webhook-type"] = $"{context.Request.Path}".IsEndsWith("~test") ? "test" : $"{context.Request.Path}".IsEndsWith("~forwarder") ? "forwarder" : "sync";
+					header["x-webhook-uri"] = $"{context.GetRequestUri()}";
 					header["x-webhook-service"] = serviceName = pathSegments.Length > 1 && !string.IsNullOrWhiteSpace(pathSegments[1])
 						? pathSegments[1].GetANSIUri(false, true).GetCapitalizedFirstLetter()
 						: context.GetParameter("x-service-name") ?? context.GetParameter("ServiceName") ?? "";
@@ -259,13 +261,38 @@ namespace net.vieapps.Services.APIGateway
 			else if (isWebHookRequest)
 				try
 				{
-					if (requestInfo.Verb.IsEquals("POST"))
+					if (requestInfo.Header.TryGetValue("x-webhook-type", out var webhookType) && webhookType.IsEquals("test"))
+					{
+						var response = new JObject
+						{
+							["Header"] = requestInfo.Header.ToJObject(),
+							["Query"] = requestInfo.Query.ToJObject()
+						};
+						try
+						{
+							response["Body"] = requestInfo.BodyAsJson as JObject;
+						}
+						catch
+						{
+							try
+							{
+								response["Body"] = new Uri($"http://local.host/?{requestInfo.Body}").ParseQuery().ToJObject();
+							}
+							catch
+							{
+								response["Body"] = new JObject{ ["_original"] = requestInfo.Body };
+							}
+						}
+						Global.WriteLogs(Global.Logger, "WebHooks", $"Got a testing web-hook message [{requestInfo.Header["x-webhook-uri"]}] {response}", null, Global.ServiceName, LogLevel.Information, requestInfo.CorrelationID);
+						await context.WriteAsync(response).ConfigureAwait(false);
+					}
+					else if (requestInfo.Verb.IsEquals("POST"))
 					{
 						requestInfo.GetService().ProcessWebHookMessageAsync(requestInfo).Run(ex => Global.WriteLogs(Global.Logger, "WebHooks", $"Error occurred at a remote service while processing a web-hook message => {ex.Message}", ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID));
-						await context.WriteAsync(new JObject { ["Status"] = "Success" }).ConfigureAwait(false);
+						await context.WriteAsync(new JObject { ["Status"] = "OK" }).ConfigureAwait(false);
 					}
 					else
-						throw new MethodNotAllowedException(requestInfo.Verb);
+						throw new MethodNotAllowedException();
 				}
 				catch (Exception ex)
 				{

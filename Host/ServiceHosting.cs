@@ -51,6 +51,7 @@ namespace net.vieapps.Services.APIGateway
 			var isUserInteractive = Environment.UserInteractive && apiCall == null;
 			var doSyncWork = args?.FirstOrDefault(arg => arg.IsStartsWith("/do-sync-work")) != null;
 			var startBeforeDoingSyncWork = doSyncWork && args?.FirstOrDefault(arg => arg.IsStartsWith("/start-before-sync-work")) != null;
+			var connectRouterBeforeDoingSyncWork = doSyncWork && !startBeforeDoingSyncWork && args?.FirstOrDefault(arg => arg.IsStartsWith("/connect-router")) != null;
 			var powered = $"VIEApps NGX API Gateway - Service Hosting {RuntimeInformation.ProcessArchitecture.ToString().ToLower()} {Assembly.GetCallingAssembly().GetVersion()}";
 
 			// prepare type name
@@ -251,13 +252,12 @@ namespace net.vieapps.Services.APIGateway
 			var initializeRepository = !"false".IsEquals(args?.FirstOrDefault(a => a.IsStartsWith("/repository:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/repository:", ""));
 
 			// start the service
-			if (!doSyncWork || startBeforeDoingSyncWork)
-			{
-				logger.LogInformation($"The service is starting");
-				logger.LogInformation($"Service info: {service.ServiceName} - v{this.ServiceType.Assembly.GetVersion()}");
-				logger.LogInformation($"Working mode: {(isUserInteractive ? "Interactive app" : "Background service")}");
-				logger.LogInformation($"Starting arguments: {(args != null && args.Any() ? args.Join(" ") : "None")}");
+			logger.LogInformation($"The service is starting");
+			logger.LogInformation($"Service info: {service.ServiceName} - v{this.ServiceType.Assembly.GetVersion()}");
+			logger.LogInformation($"Working mode: {(isUserInteractive ? "Interactive app" : "Background service")}");
+			logger.LogInformation($"Starting arguments: {(args != null && args.Any() ? args.Join(" ") : "None")}");
 
+			if (!doSyncWork || startBeforeDoingSyncWork)
 				service.Start(args?.ToArray(), initializeRepository, _ =>
 				{
 					logger.LogInformation($"API Gateway Router: {new Uri(Router.GetRouterStrInfo()).GetResolvedURI()}");
@@ -280,13 +280,20 @@ namespace net.vieapps.Services.APIGateway
 					if (isUserInteractive && !doSyncWork)
 						logger.LogWarning($"=====> Enter \"exit\" to terminate ...............");
 				});
-			}
 
 			// do the synchronous work
 			if (doSyncWork)
 			{
-				logger.LogInformation($"The service is running with synchronous work - PID: {Process.GetCurrentProcess().Id}");
-				if (startBeforeDoingSyncWork)
+				if (!startBeforeDoingSyncWork)
+					service.PrepareNodeID(args);
+				if (connectRouterBeforeDoingSyncWork)
+				{
+					logger.LogInformation($"API Gateway Router: {new Uri(Router.GetRouterStrInfo()).GetResolvedURI()}");
+					service.ConnectAsync(args?.ToArray()).Run();
+				}
+				logger.LogInformation($"Environment:\r\n\t{Extensions.GetRuntimeEnvironment()}\r\n\t- Node ID: {service.NodeID}\r\n\t- Powered: {powered}");
+				logger.LogInformation($"The service was started, and now running to do synchronous work - PID: {Process.GetCurrentProcess().Id}");
+				if (startBeforeDoingSyncWork || connectRouterBeforeDoingSyncWork)
 					Task.Delay(1234).Run(true);
 				else if (initializeRepository)
 					service.InitializeRepository();

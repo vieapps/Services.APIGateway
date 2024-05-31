@@ -147,7 +147,7 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				await Task.Delay(100 + (counter * 10), this.CancellationTokenSource.Token).ConfigureAwait(false);
-				await message.SendMessageAsync(this.CancellationTokenSource.Token).ConfigureAwait(false);
+				await message.SendAsync(this.CancellationTokenSource.Token).ConfigureAwait(false);
 				MailSender.Messages.Remove(message.ID);
 
 				onSuccess?.Invoke(message);
@@ -308,7 +308,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			try
 			{
-				using (var response = await message.SendMessageAsync(this.CancellationTokenSource.Token).ConfigureAwait(false))
+				using (var response = await message.SendAsync(this.CancellationTokenSource.Token).ConfigureAwait(false))
 					WebHookSender.Messages.Remove(message.ID);
 				onSuccess?.Invoke(message);
 				var log = "The web-hook message has been sent" + "\r\n" +

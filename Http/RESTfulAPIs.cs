@@ -288,8 +288,21 @@ namespace net.vieapps.Services.APIGateway
 					}
 					else if (requestInfo.Verb.IsEquals("POST"))
 					{
-						requestInfo.GetService().ProcessWebHookMessageAsync(requestInfo).Run(ex => Global.WriteLogs(Global.Logger, "WebHooks", $"Error occurred at a remote service while processing a web-hook message => {ex.Message}", ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID));
-						await context.WriteAsync(new JObject { ["Status"] = "OK" }).ConfigureAwait(false);
+						JToken response = new JObject { ["Status"] = "OK" };
+						var webhook = requestInfo.GetService().ProcessWebHookMessageAsync(requestInfo);
+						if (requestInfo.Query.TryGetValue("wait-for", out var wait) && wait.IsEquals("completed"))
+							try
+							{
+								await webhook.ConfigureAwait(false);
+								response = webhook.Result;
+							}
+							catch (Exception ex)
+							{
+								Global.WriteLogs(RESTfulAPIs.Logger, "WebHooks", $"Error occurred while processing a web-hook message => {ex.Message}", ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID);
+							}
+						else
+							webhook.Run(ex => Global.WriteLogs(RESTfulAPIs.Logger, "WebHooks", $"Error occurred while processing a web-hook message => {ex.Message}", ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID));
+						await context.WriteAsync(response).ConfigureAwait(false);
 					}
 					else
 						throw new MethodNotAllowedException();
@@ -376,7 +389,7 @@ namespace net.vieapps.Services.APIGateway
 							SmtpServerEnableSsl = data.Get("Smtp.EnableSsl", false),
 							SmtpUsername = data.Get<string>("Smtp.User"),
 							SmtpPassword = data.Get<string>("Smtp.UserPassword")
-						}.SendMessageAsync(cts.Token).ConfigureAwait(false);
+						}.SendAsync(cts.Token).ConfigureAwait(false);
 						await context.WriteAsync(new JObject { ["Status"] = "Success" }, RESTfulAPIs.JsonFormat, requestInfo.CorrelationID, cts.Token).ConfigureAwait(false);
 					}
 					else

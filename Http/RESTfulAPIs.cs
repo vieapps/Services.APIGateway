@@ -266,23 +266,9 @@ namespace net.vieapps.Services.APIGateway
 						var response = new JObject
 						{
 							["Header"] = requestInfo.Header.ToJObject(),
-							["Query"] = requestInfo.Query.ToJObject()
+							["Query"] = requestInfo.Query.ToJObject(),
+							["Body"] = requestInfo.BodyAsJson
 						};
-						try
-						{
-							response["Body"] = requestInfo.BodyAsJson as JObject;
-						}
-						catch
-						{
-							try
-							{
-								response["Body"] = new Uri($"http://local.host/?{requestInfo.Body}").ParseQuery().ToJObject();
-							}
-							catch
-							{
-								response["Body"] = new JObject{ ["_original"] = requestInfo.Body };
-							}
-						}
 						Global.WriteLogs(Global.Logger, "WebHooks", $"Got a testing web-hook message [{requestInfo.Header["x-webhook-uri"]}] {response}", null, Global.ServiceName, LogLevel.Information, requestInfo.CorrelationID);
 						await context.WriteAsync(response).ConfigureAwait(false);
 					}

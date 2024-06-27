@@ -28,7 +28,7 @@
 		<PackageReference Include="System.Reactive" Version="6.0.1" />
 		<PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.0" />
 		<PackageReference Include="System.Text.Encoding.Extensions" Version="4.3.0" />
-		<PackageReference Include="VIEApps.Components.Utility" Version="10.8.2406.2" />
+		<PackageReference Include="VIEApps.Components.Utility" Version="10.8.2407.1" />
 	</ItemGroup>
 
 </Project>

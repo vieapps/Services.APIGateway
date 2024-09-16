@@ -98,7 +98,7 @@ namespace net.vieapps.Services.APIGateway
 			Global.Disconnect(waitingTimes);
 		}
 
-		static IWampHost Forwarder { get; set; }
+		static WampHost Forwarder { get; set; }
 
 		public static ConcurrentDictionary<long, IAsyncDisposable> ForwardingTokens { get; } = new ConcurrentDictionary<long, IAsyncDisposable>();
 

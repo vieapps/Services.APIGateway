@@ -26,7 +26,7 @@
 
 	<ItemGroup>
 		<PackageReference Include="Microsoft.Extensions.Logging.Console" Version="8.0.0" />
-		<PackageReference Include="VIEApps.Services.Base" Version="10.8.2407.1" />
+		<PackageReference Include="VIEApps.Services.Base" Version="10.8.2408.1" />
 	</ItemGroup>
 
 </Project>

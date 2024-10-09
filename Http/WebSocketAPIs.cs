@@ -651,7 +651,7 @@ namespace net.vieapps.Services.APIGateway
 				// call the service
 				var response = Global.StaticSegments.Contains(requestInfo.ServiceName.ToLower())
 					? verb.IsEquals("GET")
-						? (await Global.GetStaticFileContentAsync(Global.GetStaticFilePath(new[] { requestInfo.ServiceName.ToLower(), requestInfo.ObjectName.ToLower(), objectIdentity })).ConfigureAwait(false)).GetString().ToJson()
+						? (await Global.GetStaticFileContentAsync(Global.GetStaticFilePath([requestInfo.ServiceName.ToLower(), requestInfo.ObjectName.ToLower(), objectIdentity])).ConfigureAwait(false)).GetString().ToJson()
 						: throw new MethodNotAllowedException(verb)
 					: requestInfo.ServiceName.IsEquals("discovery")
 						? requestInfo.ObjectName.IsEquals("controllers")

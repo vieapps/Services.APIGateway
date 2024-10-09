@@ -1289,7 +1289,7 @@ namespace net.vieapps.Services.APIGateway
 
 				// delete empty folders
 				dir.GetDirectories()
-					.Where(d => d.GetFiles().Length < 1)
+					.Where(d => d.GetFiles().Length < 1 && d.GetDirectories().Length < 1)
 					.ForEach(d =>
 					{
 						try
@@ -1422,7 +1422,7 @@ namespace net.vieapps.Services.APIGateway
 					this.Tasks[task.ID].Instance = ExternalProcess.Start
 					(
 						task.Executable,
-						task.Arguments,
+						task.Arguments.Replace(StringComparison.OrdinalIgnoreCase, "{iso-date}", DateTime.Now.ToString("yyyy-MM-dd")).Replace(StringComparison.OrdinalIgnoreCase, "{iso-time}", DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss")),
 						(sender, args) =>
 						{
 							var arguments = task.Arguments.ToArray(" ", true);
@@ -1437,7 +1437,7 @@ namespace net.vieapps.Services.APIGateway
 							(
 								"The task is completed" + "\r\n" +
 								$"- Execution times: {((sender as Process).ExitTime - (sender as Process).StartTime).TotalMilliseconds.CastAs<long>().GetElapsedTimes()}" + "\r\n" +
-								$"- Command: [{task.Executable + " " + arguments.Join(" ")}]" + "\r\n" +
+								$"- Command: [{task.Executable + " " + arguments.Join(" ").Replace(StringComparison.OrdinalIgnoreCase, "{iso-date}", DateTime.Now.ToString("yyyy-MM-dd")).Replace(StringComparison.OrdinalIgnoreCase, "{iso-time}", DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss"))}]" + "\r\n" +
 								$"- Results: {results}"
 							);
 							this.Tasks[task.ID].Instance = null;

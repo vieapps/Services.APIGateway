@@ -8,6 +8,6 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyProduct("VIEApps NGX")]
 [assembly: AssemblyCopyright("© 2024 VIEApps.net")]
 
-[assembly: AssemblyVersion("10.8.2409.1")]
-[assembly: AssemblyFileVersion("10.8.2409.1")]
-[assembly: AssemblyInformationalVersion("10.8.2024.09.14@net48#2nd.year")]
+[assembly: AssemblyVersion("10.8.2410.1")]
+[assembly: AssemblyFileVersion("10.8.2410.1")]
+[assembly: AssemblyInformationalVersion("10.8.2024.10.04@net48#2nd.year")]

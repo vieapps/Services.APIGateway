@@ -29,8 +29,8 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.8.2408.1" />
-		<PackageReference Include="VIEApps.Services.Base.Http" Version="10.8.2408.1" />
+		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.8.2410.1" />
+		<PackageReference Include="VIEApps.Services.Base.Http" Version="10.8.2410.1" />
 		<PackageReference Include="WampSharp.AspNetCore.WebSockets.Server" Version="23.8.1" />
 	</ItemGroup>
 

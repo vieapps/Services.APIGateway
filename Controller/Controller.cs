@@ -1560,7 +1560,7 @@ namespace net.vieapps.Services.APIGateway
 				);
 
 		void SendServiceInfo(string name, string args, bool available, bool running)
-			=> Task.Run(async () => await this.SendServiceInfoAsync(name, args, available, running).ConfigureAwait(false)).ConfigureAwait(false);
+			=> this.SendServiceInfoAsync(name, args, available, running).Run();
 		#endregion
 
 	}

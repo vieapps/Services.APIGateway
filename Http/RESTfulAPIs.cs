@@ -31,11 +31,11 @@ namespace net.vieapps.Services.APIGateway
 
 		public static string PrivateToken { get; } = UtilityService.GetAppSetting("APIs:PrivateToken", UtilityService.NewUUID);
 
-		public static ConcurrentDictionary<string, Tuple<Type, string, string>> ServiceForwarders { get; } = new ConcurrentDictionary<string, Tuple<Type, string, string>>();
+		public static ConcurrentDictionary<string, Tuple<Type, string, string>> ServiceForwarders { get; } = [];
 
-		public static ConcurrentDictionary<string, JObject> Controllers { get; } = new ConcurrentDictionary<string, JObject>();
+		public static ConcurrentDictionary<string, JObject> Controllers { get; } = [];
 
-		public static ConcurrentDictionary<string, List<JObject>> Services { get; } = new ConcurrentDictionary<string, List<JObject>>();
+		public static ConcurrentDictionary<string, List<JObject>> Services { get; } = [];
 
 		public static Formatting JsonFormat { get; } = Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None;
 
@@ -602,13 +602,13 @@ namespace net.vieapps.Services.APIGateway
 					await Task.WhenAll
 					(
 						context.WriteAsync(response, RESTfulAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationToken),
-						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(RESTfulAPIs.Logger, "Http.Authentications", new List<string>
-						{
+						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(RESTfulAPIs.Logger, "Http.Authentications",
+						[
 							$"Successfully process request of session (registration of anonymous user)",
 							$"- Request: {requestInfo.ToJson().ToString(RESTfulAPIs.JsonFormat)}",
 							$"- Response: {response.ToJson().ToString(RESTfulAPIs.JsonFormat)}",
 							$"- Execution times: {context.GetExecutionTimes()}"
-						})
+						])
 					).ConfigureAwait(false);
 				}
 				catch (Exception ex)
@@ -646,13 +646,13 @@ namespace net.vieapps.Services.APIGateway
 					await Task.WhenAll
 					(
 						context.WriteAsync(response, RESTfulAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationToken),
-						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(RESTfulAPIs.Logger, "Http.Authentications", new List<string>
-						{
+						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(RESTfulAPIs.Logger, "Http.Authentications",
+						[
 							$"Successfully process request of session (registration of authenticated user)",
 							$"- Request: {requestInfo.ToJson().ToString(RESTfulAPIs.JsonFormat)}",
 							$"- Response: {response.ToJson().ToString(RESTfulAPIs.JsonFormat)}",
 							$"- Execution times: {context.GetExecutionTimes()}"
-						})
+						])
 					).ConfigureAwait(false);
 				}
 				catch (Exception ex)
@@ -746,13 +746,13 @@ namespace net.vieapps.Services.APIGateway
 				(
 					context.WriteAsync(response, RESTfulAPIs.JsonFormat, requestInfo.CorrelationID, cts.Token),
 					Global.Cache.RemoveAsync($"Attempt#{context.GetRemoteIPAddress()}", cts.Token),
-					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(RESTfulAPIs.Logger, "Http.Authentications", new List<string>
-					{
+					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(RESTfulAPIs.Logger, "Http.Authentications",
+					[
 						$"Successfully process request of session (sign-in)",
 						$"- Request: {requestInfo.ToJson().ToString(RESTfulAPIs.JsonFormat)}",
 						$"- Response: {response.ToJson().ToString(RESTfulAPIs.JsonFormat)}",
 						$"- Execution times: {context.GetExecutionTimes()}"
-					})
+					])
 				).ConfigureAwait(false);
 
 				// update state of old session
@@ -847,13 +847,13 @@ namespace net.vieapps.Services.APIGateway
 				(
 					context.WriteAsync(response, RESTfulAPIs.JsonFormat, requestInfo.CorrelationID, cts.Token),
 					Global.Cache.RemoveAsync($"Attempt#{context.GetRemoteIPAddress()}", cts.Token),
-					Global.IsDebugResultsEnabled ? context.WriteLogsAsync(RESTfulAPIs.Logger, "Http.Authentications", new List<string>
-					{
+					Global.IsDebugResultsEnabled ? context.WriteLogsAsync(RESTfulAPIs.Logger, "Http.Authentications",
+					[
 						$"Successfully process request of session (OTP validation)",
 						$"- Request: {requestInfo.ToJson().ToString(RESTfulAPIs.JsonFormat)}",
 						$"- Response: {response.ToJson().ToString(RESTfulAPIs.JsonFormat)}",
 						$"- Execution times: {context.GetExecutionTimes()}"
-					}) : Task.CompletedTask
+					]) : Task.CompletedTask
 				).ConfigureAwait(false);
 
 				// update state of old session
@@ -1018,16 +1018,16 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				if (Global.IsDebugResultsEnabled)
-					await context.WriteLogsAsync(developerID, appID, RESTfulAPIs.Logger, "Http.Sync", new List<string> { $"Start call service for synchronizing {requestInfo.Verb} {requestInfo.GetURI()} - {requestInfo.Session.AppName} ({requestInfo.Session.AppMode.ToLower()} app) - {requestInfo.Session.AppPlatform} @ {requestInfo.Session.IP}" }, null, Global.ServiceName, LogLevel.Information, requestInfo.CorrelationID);
+					await context.WriteLogsAsync(developerID, appID, RESTfulAPIs.Logger, "Http.Sync", [$"Start call service for synchronizing {requestInfo.Verb} {requestInfo.GetURI()} - {requestInfo.Session.AppName} ({requestInfo.Session.AppMode.ToLower()} app) - {requestInfo.Session.AppPlatform} @ {requestInfo.Session.IP}"], null, Global.ServiceName, LogLevel.Information, requestInfo.CorrelationID);
 
 				callingWatch = Stopwatch.StartNew();
 				var json = await requestInfo.SyncAsync(Global.CancellationToken).ConfigureAwait(false);
 				callingWatch.Stop();
 
 				if (Global.IsDebugResultsEnabled)
-					await context.WriteLogsAsync(developerID, appID, RESTfulAPIs.Logger, "Http.Sync", new List<string> { "Call service for synchronizing successful" + "\r\n" +
+					await context.WriteLogsAsync(developerID, appID, RESTfulAPIs.Logger, "Http.Sync", ["Call service for synchronizing successful" + "\r\n" +
 						$"- Request: {requestInfo.ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}" + "\r\n" +
-						$"- Response: {json?.ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}" }
+						$"- Response: {json?.ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}"]
 					, null, Global.ServiceName, LogLevel.Information, requestInfo.CorrelationID).ConfigureAwait(false);
 
 				return json;
@@ -1041,9 +1041,9 @@ namespace net.vieapps.Services.APIGateway
 					callingWatch.Stop();
 
 					if (Global.IsDebugResultsEnabled)
-						await context.WriteLogsAsync(developerID, appID, RESTfulAPIs.Logger, "Http.Sync", new List<string> { "Re-call service for synchronizing successful" + "\r\n" +
+						await context.WriteLogsAsync(developerID, appID, RESTfulAPIs.Logger, "Http.Sync", ["Re-call service for synchronizing successful" + "\r\n" +
 							$"- Request: {requestInfo.ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}" + "\r\n" +
-							$"- Response: {json?.ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}" }
+							$"- Response: {json?.ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}"]
 						, null, Global.ServiceName, LogLevel.Information, requestInfo.CorrelationID).ConfigureAwait(false);
 
 					return json;
@@ -1063,7 +1063,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				overallWatch.Stop();
 				if (Global.IsDebugResultsEnabled)
-					await context.WriteLogsAsync(developerID, appID, RESTfulAPIs.Logger, "Http.Sync", new List<string> { $"Call service for synchronizing finished in {callingWatch.GetElapsedTimes()} - Overall: {overallWatch.GetElapsedTimes()}" }, exception, Global.ServiceName, exception == null ? LogLevel.Information : LogLevel.Error, requestInfo.CorrelationID, exception == null ? null : $"Request: {requestInfo.ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}").ConfigureAwait(false);
+					await context.WriteLogsAsync(developerID, appID, RESTfulAPIs.Logger, "Http.Sync", [$"Call service for synchronizing finished in {callingWatch.GetElapsedTimes()} - Overall: {overallWatch.GetElapsedTimes()}"], exception, Global.ServiceName, exception == null ? LogLevel.Information : LogLevel.Error, requestInfo.CorrelationID, exception == null ? null : $"Request: {requestInfo.ToString(Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None)}").ConfigureAwait(false);
 			}
 		}
 		#endregion
@@ -1167,9 +1167,7 @@ namespace net.vieapps.Services.APIGateway
 		public static RequestInfo PrepareAccountRelated(this RequestInfo requestInfo, Action<string, Exception> onParseError = null)
 		{
 			// prepare body
-			var requestBody = requestInfo.GetBodyExpando();
-			if (requestBody == null)
-				throw new InvalidRequestException("Request is invalid (empty)");
+			var requestBody = requestInfo.GetBodyExpando() ?? throw new InvalidRequestException("Request is invalid (empty)");
 
 			// prepare account/email
 			var account = requestBody.Get<string>("Account");

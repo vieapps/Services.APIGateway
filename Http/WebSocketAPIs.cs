@@ -300,8 +300,8 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				// prepare
-				var wampDetails = exception != null && exception is WampException
-					? (exception as WampException).GetDetails()
+				var wampDetails = exception != null && exception is WampException wampException
+					? wampException.GetDetails()
 					: null;
 
 				var msg = wampDetails?.Item2 ?? exception.Message ?? "Unknown error";

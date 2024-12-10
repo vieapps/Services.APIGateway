@@ -1,7 +1,12 @@
 using System;
-using System.ServiceProcess;
-using System.Windows.Forms;
+using System.IO;
+using System.Linq;
 using System.Diagnostics;
+using System.Configuration;
+using System.Windows.Forms;
+using System.ServiceProcess;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace net.vieapps.Services.APIGateway
 {
@@ -13,10 +18,13 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static ServicePresenter Form { get; set; } = null;
 
+		internal static ILogger Logger { get; set; }
+
 		static void Main(string[] args)
 		{
 			if (!Environment.UserInteractive)
 				ServiceBase.Run(new ServiceRunner());
+
 			else
 			{
 				Application.EnableVisualStyles();
@@ -37,11 +45,26 @@ namespace net.vieapps.Services.APIGateway
 				if (!EventLog.SourceExists(source))
 					EventLog.CreateEventSource(source, name);
 
-				Program.EventLog = new EventLog()
+				Program.EventLog = new EventLog
 				{
 					Source = source,
 					Log = name
 				};
+			}
+
+			var logPath = ConfigurationManager.AppSettings["Logs:Path"];
+			var writeLogs = !string.IsNullOrWhiteSpace(logPath) && Directory.Exists(logPath);
+			if (writeLogs)
+			{
+				logPath = Path.Combine(logPath, "{Hour}_apigateway.router.txt");
+				var loglevel = args?.FirstOrDefault(arg => arg.StartsWith("/loglevel:"))?.Replace("/loglevel:", "");
+				if (string.IsNullOrWhiteSpace(loglevel))
+					loglevel = ConfigurationManager.AppSettings["Logs:Level"];
+				if (Enum.TryParse(loglevel, out LogLevel logLevel))
+					logLevel = LogLevel.Information;
+				var loggerFactory = new ServiceCollection().AddLogging(builder => builder.SetMinimumLevel(logLevel)).BuildServiceProvider().GetService<ILoggerFactory>();
+				loggerFactory.AddFile(logPath, logLevel);
+				Program.Logger = loggerFactory.CreateLogger<RouterComponent>();
 			}
 
 			Program.Router = new RouterComponent
@@ -51,12 +74,12 @@ namespace net.vieapps.Services.APIGateway
 				OnStopped = () => Program.WriteLog("VIEApps NGX API Gateway Router was stopped"),
 				OnSessionCreated = info =>
 				{
-					if (Environment.UserInteractive)
+					if (Environment.UserInteractive || writeLogs)
 						Program.WriteLog("\r\n" + $"A session was opened - Session ID: {info.SessionID} - Connection Info: {info.ConnectionID} - {info.EndPoint}");
 				},
 				OnSessionClosed = info =>
 				{
-					if (Environment.UserInteractive)
+					if (Environment.UserInteractive || writeLogs)
 						Program.WriteLog("\r\n" + $"A session was closed - Type: {info?.CloseType} ({info?.CloseReason ?? "N/A"}) - Session ID: {info?.SessionID} - Connection Info: {info?.ConnectionID} - {info?.EndPoint}");
 				}
 			};
@@ -73,6 +96,12 @@ namespace net.vieapps.Services.APIGateway
 		internal static void WriteLog(string log, Exception ex = null)
 		{
 			var msg = $"{log}{(ex != null ? $"\r\n\r\n{ex.StackTrace}" : "")}";
+
+			if (ex != null)
+				Program.Logger?.LogError(msg, ex);
+			else
+				Program.Logger?.LogInformation(msg);
+
 			if (Environment.UserInteractive)
 				Program.Form.UpdateLogs(msg);
 			else

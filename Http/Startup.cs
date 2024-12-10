@@ -159,21 +159,21 @@ namespace net.vieapps.Services.APIGateway
 			// setup the service forwarders
 			if (System.Configuration.ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:Forwarders", "net.vieapps.services.apigateway.http.forwarders")) is AppConfigurationSectionHandler cfgForwarders && cfgForwarders.Section.SelectNodes("forwarder") is System.Xml.XmlNodeList forwarders)
 				forwarders.ToList()
-					.Select(info => new Tuple<string, string, string, string>(info.Attributes["name"]?.Value?.ToLower()?.Trim(), info.Attributes["type"]?.Value, info.Attributes["endpointURL"]?.Value, info.Attributes["dataSource"]?.Value))
-					.Where(info => !string.IsNullOrEmpty(info.Item1) && !string.IsNullOrEmpty(info.Item2) && !string.IsNullOrEmpty(info.Item2))
-					.Select(info => new Tuple<string, string, string, string>(info.Item1.GetANSIUri(), info.Item2, info.Item3, info.Item4))
-					.Where(info => !info.Item1.IsEquals("router") && !info.Item1.IsEquals("pusher"))
+					.Select(info => (Name: info.Attributes["name"]?.Value?.ToLower()?.Trim(), Type: info.Attributes["type"]?.Value, EndpointURL: info.Attributes["endpointURL"]?.Value, DataSource: info.Attributes["dataSource"]?.Value))
+					.Where(info => !string.IsNullOrEmpty(info.Name) && !string.IsNullOrEmpty(info.Type) && !string.IsNullOrEmpty(info.Type))
+					.Select(info => (Name: info.Name.GetANSIUri(), info.Type, info.EndpointURL, info.DataSource))
+					.Where(info => !info.Name.IsEquals("router") && !info.Name.IsEquals("pusher"))
 					.ForEach(info =>
 					{
 						try
 						{
-							var type = AssemblyLoader.GetType(info.Item2);
+							var type = AssemblyLoader.GetType(info.Type);
 							if (type != null && type.CreateInstance() is ServiceForwarder)
-								RESTfulAPIs.ServiceForwarders[info.Item1] = new Tuple<Type, string, string>(type, info.Item3, info.Item4);
+								RESTfulAPIs.ServiceForwarders[info.Name] = (type, info.EndpointURL, info.DataSource);
 						}
 						catch (Exception ex)
 						{
-							Global.Logger.LogError($"Cannot load a service forwarder ({info.Item2}) => {ex.Message}", ex);
+							Global.Logger.LogError($"Cannot load a service forwarder ({info.Type}) => {ex.Message}", ex);
 						}
 					});
 
@@ -253,8 +253,8 @@ namespace net.vieapps.Services.APIGateway
 				Global.Logger.LogInformation($"Show debugs: {Global.IsDebugLogEnabled} - Show results: {Global.IsDebugResultsEnabled} - Show stacks: {Global.IsDebugStacksEnabled}");
 				Global.Logger.LogInformation($"Request body limit: {Global.MaxRequestBodySize:###,###,##0} MB");
 
-				Global.Logger.LogInformation($"Path mappers: {(pathMappers.Any() ? "\r\n\t" + pathMappers.ToString("\r\n\t") : "None")}");
-				Global.Logger.LogInformation($"Service forwarders: {(RESTfulAPIs.ServiceForwarders.IsEmpty ? "None" : "\r\n\t" + RESTfulAPIs.ServiceForwarders.ToString("\r\n\t", kvp => $"/{kvp.Key} => {kvp.Value.Item2} [{kvp.Value.Item1.GetTypeName()}]"))}");
+				Global.Logger.LogInformation($"Path mappers: {(pathMappers.Count > 0 ? "\r\n\t" + pathMappers.ToString("\r\n\t") : "None")}");
+				Global.Logger.LogInformation($"Service forwarders: {(RESTfulAPIs.ServiceForwarders.IsEmpty ? "None" : "\r\n\t" + RESTfulAPIs.ServiceForwarders.ToString("\r\n\t", kvp => $"/{kvp.Key} => {kvp.Value.EndpointURL} [{kvp.Value.Type.GetTypeName()}]"))}");
 
 				stopwatch.Stop();
 				Global.Logger.LogInformation($"The {Global.ServiceName} HTTP service was started - PID: {Environment.ProcessId} - Execution times: {stopwatch.GetElapsedTimes()}");

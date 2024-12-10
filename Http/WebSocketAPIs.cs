@@ -702,14 +702,14 @@ namespace net.vieapps.Services.APIGateway
 						{ "ID", requestObj.Get<string>("ID") },
 						{ "CorrelationID", correlationID },
 						{ "Type", "Error" },
-						{ "Data", error.Item2 }
+						{ "Data", error.Body }
 					}, Global.CancellationToken).ConfigureAwait(false);
 				}
 				catch (Exception e)
 				{
 					WebSocketAPIs.Logger.LogError($"Error occurred while sending an error message via WebSocket => {e.Message}", e);
 				}
-				await Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.APIs", error.Item2.Get<string>("Message"), ex, Global.ServiceName, LogLevel.Error, correlationID, $"Request: {requestObj.ToJson().ToString(RESTfulAPIs.JsonFormat)}\r\nWebSocket Info:\r\n{websocket.GetConnectionInfo()}").ConfigureAwait(false);
+				await Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.APIs", error.Body.Get<string>("Message"), ex, Global.ServiceName, LogLevel.Error, correlationID, $"Request: {requestObj.ToJson().ToString(RESTfulAPIs.JsonFormat)}\r\nWebSocket Info:\r\n{websocket.GetConnectionInfo()}").ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{

@@ -4,10 +4,6 @@ using System.Linq;
 using System.Drawing;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using System.Collections.Generic;
-
-using Newtonsoft.Json.Linq;
-
 using net.vieapps.Components.Utility;
 #endregion
 

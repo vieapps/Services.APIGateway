@@ -31,7 +31,7 @@ namespace net.vieapps.Services.APIGateway
 
 		public static string PrivateToken { get; } = UtilityService.GetAppSetting("APIs:PrivateToken", UtilityService.NewUUID);
 
-		public static ConcurrentDictionary<string, Tuple<Type, string, string>> ServiceForwarders { get; } = [];
+		public static ConcurrentDictionary<string, (Type Type, string EndpointURL, string DataSource)> ServiceForwarders { get; } = [];
 
 		public static ConcurrentDictionary<string, JObject> Controllers { get; } = [];
 
@@ -431,8 +431,8 @@ namespace net.vieapps.Services.APIGateway
 				{
 					var error = requestInfo.GetForwardingRequestError(ex);
 					if (Global.IsDebugLogEnabled)
-						Global.Logger.LogError($"The remote service return an error\r\n- Code: {error.Item1}\r\n- Body: {error.Item2}\r\n- Headers:\r\n\t{error.Item3.ToString("\r\n\t", kvp => $"{kvp.Key}: {kvp.Value}")}\r\n", ex);
-					context.WriteError(error.Item1, error.Item2, error.Item3);
+						Global.Logger.LogError($"The remote service return an error\r\n- Code: {error.StatusCode}\r\n- Body: {error.Body}\r\n- Headers:\r\n\t{error.Headers.ToString("\r\n\t", kvp => $"{kvp.Key}: {kvp.Value}")}\r\n", ex);
+					context.WriteError(error.StatusCode, error.Body, error.Headers);
 				}
 				catch (Exception ex)
 				{
@@ -1073,16 +1073,18 @@ namespace net.vieapps.Services.APIGateway
 		{
 			var stopwatch = Stopwatch.StartNew();
 			var info = RESTfulAPIs.ServiceForwarders[requestInfo.ServiceName.ToLower()];
-			var forwarder = info.Item1.CreateInstance() as ServiceForwarder;
-			var endpointURL = await forwarder.PrepareAsync(requestInfo, info.Item2, info.Item3, cancellationToken).ConfigureAwait(false);
+			var forwarder = info.Type.CreateInstance() as ServiceForwarder;
+			var endpointURL = await forwarder.PrepareAsync(requestInfo, info.EndpointURL, info.DataSource, cancellationToken).ConfigureAwait(false);
 			if (string.IsNullOrWhiteSpace(endpointURL) || (!endpointURL.IsStartsWith("https://") && !endpointURL.IsStartsWith("http://")))
-				throw new InformationInvalidException($"End-point URL is invalid [{info.Item2}] => {endpointURL ?? "(null)"}");
+				throw new InformationInvalidException($"End-point URL is invalid [{info.EndpointURL}] => {endpointURL ?? "(null)"}");
 
+#pragma warning disable CA1861 // Avoid constant arrays as arguments
 			var headers = requestInfo.Header.Copy(new[] { "Host", "Connection" }, dictionary =>
 			{
 				dictionary["AllowAutoRedirect"] = RESTfulAPIs.ServiceForwardersAutoRedirect.ToString();
 				dictionary["User-Agent"] = requestInfo.GetAppAgent();
 			});
+#pragma warning restore CA1861 // Avoid constant arrays as arguments
 			var body = requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT") || requestInfo.Verb.IsEquals("PATCH") ? requestInfo.Body : null;
 			if (Global.IsDebugLogEnabled)
 				await Global.WriteLogsAsync("Http.Forwards", $"Forward the request to a remote service [{requestInfo.Verb}: {endpointURL}]\r\n- IP: {requestInfo.Session.IP}\r\n- Headers:\r\n\t{headers.ToString("\r\n\t", kvp => $"{kvp.Key}: {kvp.Value}")}\r\n- Body: {body ?? "None"}").ConfigureAwait(false);
@@ -1096,7 +1098,7 @@ namespace net.vieapps.Services.APIGateway
 			return response;
 		}
 
-		public static Tuple<int, JToken, Dictionary<string, string>> GetForwardingRequestError(this RequestInfo requestInfo, RemoteServerException exception)
+		public static (int StatusCode, JToken Body, Dictionary<string, string> Headers) GetForwardingRequestError(this RequestInfo requestInfo, RemoteServerException exception)
 		{
 			var statusCode = exception.StatusCode;
 			var headers = requestInfo.Header.Copy(new[] { "Host", "Connection", "Content-Type", "Content-Encoding", "Transfer-Encoding" });
@@ -1131,7 +1133,7 @@ namespace net.vieapps.Services.APIGateway
 					body.Get<JArray>("StackTrace").Add(UtilityService.RemoveHTMLWhitespaces(exception.Body));
 				}
 			body["CorrelationID"] = requestInfo.CorrelationID;
-			return new Tuple<int, JToken, Dictionary<string, string>>((int)statusCode, body, headers);
+			return ((int)statusCode, body, headers);
 		}
 		#endregion
 

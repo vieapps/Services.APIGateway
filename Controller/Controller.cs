@@ -175,14 +175,14 @@ namespace net.vieapps.Services.APIGateway
 			this.IsUserInteractive = Environment.UserInteractive && args?.FirstOrDefault(a => a.IsStartsWith("/daemon")) == null;
 
 			var mode = this.IsUserInteractive ? "Interactive app" : "Background service";
-			var runtimeArguments = Extensions.GetRuntimeArguments();
+			var (user, host, platform, os) = Extensions.GetRuntimeArguments();
 
 			this.Info = new ControllerInfo
 			{
-				ID = $"{runtimeArguments.Item1}-{runtimeArguments.Item2}-".ToLower() + $"{runtimeArguments.Item3}{runtimeArguments.Item4}{mode}".ToLower().GenerateUUID(),
-				User = runtimeArguments.Item1,
-				Host = runtimeArguments.Item2,
-				Platform = $"{Extensions.GetRuntimePlatform()}",
+				ID = $"{user}-{host}-".ToLower() + $"{platform}{os}{mode}".ToLower().GenerateUUID(),
+				User = user,
+				Host = host,
+				Platform = Extensions.GetRuntimePlatform(),
 				Mode = mode,
 				Available = true
 			};
@@ -715,10 +715,10 @@ namespace net.vieapps.Services.APIGateway
 							if (!string.IsNullOrWhiteSpace(dataSourceName) && !dataSources.ContainsKey(dataSourceName))
 							{
 								var connectionStringName = dataSourceNode.Attributes["connectionStringName"]?.Value;
-								if (!string.IsNullOrWhiteSpace(connectionStringName) && connectionStrings.ContainsKey(connectionStringName))
+								if (!string.IsNullOrWhiteSpace(connectionStringName) && connectionStrings.TryGetValue(connectionStringName, out var connectionString))
 								{
 									var attribute = xml.CreateAttribute("connectionString");
-									attribute.Value = connectionStrings[connectionStringName];
+									attribute.Value = connectionString;
 									dataSourceNode.Attributes.Append(attribute);
 									dataSources[dataSourceName] = dataSourceNode;
 								}

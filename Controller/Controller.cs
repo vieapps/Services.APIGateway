@@ -179,7 +179,7 @@ namespace net.vieapps.Services.APIGateway
 
 			this.Info = new ControllerInfo
 			{
-				ID = $"{user}-{host}-".ToLower() + $"{platform}{os}{mode}".ToLower().GenerateUUID(),
+				ID = $"{user}-{host}-" + $"{platform}{os}{mode}".ToLower().GenerateUUID(),
 				User = user,
 				Host = host,
 				Platform = Extensions.GetRuntimePlatform(),
@@ -648,10 +648,10 @@ namespace net.vieapps.Services.APIGateway
 					if (!string.IsNullOrWhiteSpace(dataSourceName) && !dataSources.ContainsKey(dataSourceName))
 					{
 						var connectionStringName = dataSourceNode.Attributes["connectionStringName"]?.Value;
-						if (!string.IsNullOrWhiteSpace(connectionStringName) && connectionStrings.ContainsKey(connectionStringName))
+						if (!string.IsNullOrWhiteSpace(connectionStringName) && connectionStrings.TryGetValue(connectionStringName, out var connectionString))
 						{
 							var attribute = dataSourceNode.OwnerDocument.CreateAttribute("connectionString");
-							attribute.Value = connectionStrings[connectionStringName];
+							attribute.Value = connectionString;
 							dataSourceNode.Attributes.Append(attribute);
 							dataSources[dataSourceName] = dataSourceNode;
 						}

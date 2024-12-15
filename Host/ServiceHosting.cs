@@ -161,8 +161,8 @@ namespace net.vieapps.Services.APIGateway
 			if (useEventWaitHandle)
 			{
 				// get the flag of the existing instance
-				var runtimeArguments = Extensions.GetRuntimeArguments();
-				var name = $"{service.ServiceURI}#{$"/interactive:{isUserInteractive} /user:{runtimeArguments.Item1} /host:{runtimeArguments.Item2} /platform:{runtimeArguments.Item3} /os:{runtimeArguments.Item4}".GenerateUUID()}";
+				var (user, host, platform, os) = Extensions.GetRuntimeArguments();
+				var name = $"{service.ServiceURI}#{$"/interactive:{isUserInteractive} /user:{user} /host:{host} /platform:{platform} /os:{os}".GenerateUUID()}";
 				eventWaitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, name, out var createdNew);
 
 				// process the call to stop
@@ -222,11 +222,11 @@ namespace net.vieapps.Services.APIGateway
 			var logger = (service as IServiceComponent).Logger = Logger.CreateLogger(this.ServiceType);
 
 			// prepare outgoing proxy
-			var proxy = UtilityService.GetAppSetting("Proxy:Host");
+			var proxy = UtilityService.GetAppSetting("Proxy:host");
 			if (!string.IsNullOrWhiteSpace(proxy))
 				try
 				{
-					UtilityService.AssignWebProxy(proxy, UtilityService.GetAppSetting("Proxy:Port").CastAs<int>(), UtilityService.GetAppSetting("Proxy:User"), UtilityService.GetAppSetting("Proxy:UserPassword"), UtilityService.GetAppSetting("Proxy:Bypass")?.ToArray(";"));
+					UtilityService.AssignWebProxy(proxy, UtilityService.GetAppSetting("Proxy:Port").CastAs<int>(), UtilityService.GetAppSetting("Proxy:user"), UtilityService.GetAppSetting("Proxy:UserPassword"), UtilityService.GetAppSetting("Proxy:Bypass")?.ToArray(";"));
 				}
 				catch (Exception ex)
 				{
@@ -272,7 +272,8 @@ namespace net.vieapps.Services.APIGateway
 					logger.LogInformation($"Logging level: {logLevel} - Local rolling log files is {(string.IsNullOrWhiteSpace(logPath) ? "disabled" : $"enabled => {logPath}")}");
 					logger.LogInformation($"Show debugs: {service.IsDebugLogEnabled} - Show results: {service.IsDebugResultsEnabled} - Show stacks: {service.IsDebugStacksEnabled}");
 					logger.LogInformation($"Service URIs:\r\n\t- Round robin: {service.ServiceURI}\r\n\t- Single (unique): {service.ServiceUniqueURI}");
-					logger.LogInformation($"Environment:\r\n\t{Extensions.GetRuntimeEnvironment()}\r\n\t- Node ID: {service.NodeID}\r\n\t- Powered: {powered}");
+					logger.LogInformation($"Environment:\r\n\t{Extensions.GetRuntimeEnvironment()}\r\n\t- Node ID: {service.NodeID}");
+					logger.LogInformation($"Powered by {powered}");
 
 					stopwatch.Stop();
 					logger.LogInformation($"The service was started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");
@@ -291,8 +292,9 @@ namespace net.vieapps.Services.APIGateway
 					logger.LogInformation($"API Gateway Router: {new Uri(Router.GetRouterStrInfo()).GetResolvedURI()}");
 					service.ConnectAsync(args?.ToArray()).Run();
 				}
-				logger.LogInformation($"Environment:\r\n\t{Extensions.GetRuntimeEnvironment()}\r\n\t- Node ID: {service.NodeID}\r\n\t- Powered: {powered}");
-				logger.LogInformation($"The service was started, and now running to do synchronous work - PID: {Process.GetCurrentProcess().Id}");
+				logger.LogInformation($"Environment:\r\n\t{Extensions.GetRuntimeEnvironment()}\r\n\t- Node ID: {service.NodeID}");
+				logger.LogInformation($"Powered by {powered}");
+				logger.LogInformation($"The service was started, and now running synchronous work - PID: {Process.GetCurrentProcess().Id}");
 				if (startBeforeDoingSyncWork || connectRouterBeforeDoingSyncWork)
 					Task.Delay(1234).Run(true);
 				else if (initializeRepository)

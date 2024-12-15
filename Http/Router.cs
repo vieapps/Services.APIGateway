@@ -74,7 +74,7 @@ namespace net.vieapps.Services.APIGateway
 
 					await Task.WhenAll
 					(
-						Global.RegisterServiceAsync("Http.APIs"),
+						Global.RegisterServiceAsync(),
 						Task.Delay(UtilityService.GetRandomNumber(234, 567), Global.CancellationToken)
 					).ConfigureAwait(false);
 
@@ -90,12 +90,12 @@ namespace net.vieapps.Services.APIGateway
 			);
 		}
 
-		public static void Disconnect(int waitingTimes = 1234)
+		public static void Disconnect()
 		{
-			Global.UnregisterService("Http.APIs", waitingTimes);
+			Global.UnregisterService();
 			Global.PrimaryInterCommunicateMessageUpdater?.Dispose();
 			Global.SecondaryInterCommunicateMessageUpdater?.Dispose();
-			Global.Disconnect(waitingTimes);
+			Global.Disconnect();
 		}
 
 		static WampHost Forwarder { get; set; }

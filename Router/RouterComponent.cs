@@ -82,10 +82,13 @@ namespace net.vieapps.Services.APIGateway
 					try
 					{
 						var sslCertificatePassword = ConfigurationManager.AppSettings["SslCertificate:Password"];
+#if NETSTANDARD2_0
 						this.SslCertificate = sslCertificatePassword != null
 							? new X509Certificate2(sslCertificateFilePath, sslCertificatePassword, X509KeyStorageFlags.UserKeySet)
 							: new X509Certificate2(sslCertificateFilePath);
-
+#else
+						this.SslCertificate = X509CertificateLoader.LoadPkcs12FromFile(sslCertificateFilePath, sslCertificatePassword, X509KeyStorageFlags.UserKeySet);
+#endif
 						this.SslProtocol = Enum.TryParse(ConfigurationManager.AppSettings["SslProtocol"] ?? "Tls12", out SslProtocols sslProtocol)
 							? sslProtocol
 							: SslProtocols.Tls12;

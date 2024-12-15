@@ -314,11 +314,11 @@ namespace net.vieapps.Services.APIGateway
 				// prepare
 				var wampDetails = exception != null && exception is WampException wampException
 					? wampException.GetDetails()
-					: null;
+					: (0, null, null, null, null, null);
 
-				var msg = wampDetails?.Item2 ?? exception.Message ?? "Unknown error";
-				var type = wampDetails?.Item3 ?? exception?.GetType().GetTypeName(true) ?? "UnknownException";
-				var code = wampDetails != null ? wampDetails.Item1 : exception != null ? exception.GetHttpStatusCode() : 500;
+				var msg = wampDetails.Message ?? exception.Message ?? "Unknown error";
+				var type = wampDetails.Type ?? exception?.GetType().GetTypeName(true) ?? "UnknownException";
+				var code = wampDetails.Code > 0 ? wampDetails.Code : exception != null ? exception.GetHttpStatusCode() : 500;
 
 				var message = new JObject
 				{
@@ -329,10 +329,10 @@ namespace net.vieapps.Services.APIGateway
 
 				if (Global.IsDebugStacksEnabled)
 				{
-					if (wampDetails != null)
+					if (wampDetails.Code > 0)
 					{
-						var stacks = new JArray { wampDetails.Item4 };
-						var inner = wampDetails.Item6;
+						var stacks = new JArray { wampDetails.Stack };
+						var inner = wampDetails.InnerJSON;
 						while (inner != null)
 						{
 							stacks.Add($"{inner.Get<string>("Message")} [{inner.Get<string>("Type")}] {inner.Get<string>("StackTrace")}");

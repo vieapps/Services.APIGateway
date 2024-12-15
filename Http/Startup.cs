@@ -70,8 +70,8 @@ namespace net.vieapps.Services.APIGateway
 #else
 			Global.Logger.LogInformation($"Working mode: RELEASE ({(environment.IsDevelopment() ? "Development" : "Production")})");
 #endif
-			Global.Logger.LogInformation($"Environment:\r\n\t{Extensions.GetRuntimeEnvironment()}");
 			Global.Logger.LogInformation($"Service URIs:\r\n\t- Round robin: services.{Global.ServiceName.ToLower()}.http\r\n\t- Single (unique): services.{Extensions.GetUniqueName(Global.ServiceName + ".http")}");
+			Global.Logger.LogInformation($"Environment:\r\n\t{Extensions.GetRuntimeEnvironment()}\r\n\t- Node ID: {Extensions.GetNodeID()}");
 
 			Global.CreateRSA();
 			Global.ServiceProvider = appBuilder.ApplicationServices;
@@ -121,32 +121,32 @@ namespace net.vieapps.Services.APIGateway
 			var pathMappers = new List<string>();
 			if (System.Configuration.ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:Maps", "net.vieapps.services.apigateway.http.maps")) is AppConfigurationSectionHandler cfgMaps && cfgMaps.Section.SelectNodes("map") is System.Xml.XmlNodeList maps)
 				maps.ToList()
-					.Select(info => new Tuple<string, string>(info.Attributes["path"]?.Value?.ToLower()?.Trim(), info.Attributes["type"]?.Value))
-					.Where(info => !string.IsNullOrEmpty(info.Item1) && !string.IsNullOrEmpty(info.Item2))
+					.Select(info => (Path: info.Attributes["path"]?.Value?.ToLower()?.Trim(), Type: info.Attributes["type"]?.Value))
+					.Where(info => !string.IsNullOrEmpty(info.Path) && !string.IsNullOrEmpty(info.Type))
 					.Select(info =>
 					{
-						var path = info.Item1;
+						var path = info.Path;
 						while (path.StartsWith('/'))
 							path = path.Right(path.Length - 1);
 						while (path.EndsWith('/'))
 							path = path.Left(path.Length - 1);
-						return new Tuple<string, string>(path, info.Item2);
+						return (Path: path, info.Type);
 					})
-					.Where(info => !info.Item1.IsEquals("router"))
+					.Where(info => !info.Path.IsEquals("router"))
 					.ForEach(info =>
 					{
 						try
 						{
-							if (AssemblyLoader.GetType(info.Item2)?.CreateInstance() is PathMapper mapper)
+							if (AssemblyLoader.GetType(info.Type)?.CreateInstance() is PathMapper mapper)
 							{
-								appBuilder.Map($"/{info.Item1}", builder => mapper.Map(builder, appLifetime, onIncomingConnectionEstablished, onOutgoingConnectionEstablished));
-								Global.Logger.LogInformation($"Successfully branch the request to a specified path: /{info.Item1} => {mapper.GetTypeName()}");
-								pathMappers.Add($"/{info.Item1} => {mapper.GetTypeName()}");
+								appBuilder.Map($"/{info.Path}", builder => mapper.Map(builder, appLifetime, onIncomingConnectionEstablished, onOutgoingConnectionEstablished));
+								Global.Logger.LogInformation($"Successfully branch the request to a specified path: /{info.Path} => {mapper.GetTypeName()}");
+								pathMappers.Add($"/{info.Path} => {mapper.GetTypeName()}");
 							}
 						}
 						catch (Exception ex)
 						{
-							Global.Logger.LogError($"Cannot load a path mapper ({info.Item2}) => {ex.Message}", ex);
+							Global.Logger.LogError($"Cannot load a path mapper ({info.Type}) => {ex.Message}", ex);
 						}
 					});
 
@@ -216,10 +216,10 @@ namespace net.vieapps.Services.APIGateway
 						if (!string.IsNullOrWhiteSpace(dataSourceName) && !dataSources.ContainsKey(dataSourceName))
 						{
 							var connectionStringName = dataSourceNode.Attributes["connectionStringName"]?.Value;
-							if (!string.IsNullOrWhiteSpace(connectionStringName) && connectionStrings.TryGetValue(connectionStringName, out string value))
+							if (!string.IsNullOrWhiteSpace(connectionStringName) && connectionStrings.TryGetValue(connectionStringName, out var connectionString))
 							{
 								var attribute = dataSourceNode.OwnerDocument.CreateAttribute("connectionString");
-								attribute.Value = value;
+								attribute.Value = connectionString;
 								dataSourceNode.Attributes.Append(attribute);
 								dataSources[dataSourceName] = dataSourceNode;
 							}

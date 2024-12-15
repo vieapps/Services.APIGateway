@@ -429,10 +429,10 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch (RemoteServerException ex)
 				{
-					var error = requestInfo.GetForwardingRequestError(ex);
+					var (statusCode, body, headers) = requestInfo.GetForwardingRequestError(ex);
 					if (Global.IsDebugLogEnabled)
-						Global.Logger.LogError($"The remote service return an error\r\n- Code: {error.StatusCode}\r\n- Body: {error.Body}\r\n- Headers:\r\n\t{error.Headers.ToString("\r\n\t", kvp => $"{kvp.Key}: {kvp.Value}")}\r\n", ex);
-					context.WriteError(error.StatusCode, error.Body, error.Headers);
+						Global.Logger.LogError($"The remote service return an error\r\n- Code: {statusCode}\r\n- Body: {body}\r\n- Headers:\r\n\t{headers.ToString("\r\n\t", kvp => $"{kvp.Key}: {kvp.Value}")}\r\n", ex);
+					context.WriteError(statusCode, body, headers);
 				}
 				catch (Exception ex)
 				{

@@ -95,6 +95,8 @@ namespace net.vieapps.Services.APIGateway
 
 		public CancellationTokenSource CancellationTokenSource { get; private set; }
 
+		public CancellationToken CancellationToken => this.CancellationTokenSource.Token;
+
 		IDisposable InterCommunicator { get; set; }
 
 		IDisposable UpdateCommunicator { get; set; }
@@ -357,7 +359,7 @@ namespace net.vieapps.Services.APIGateway
 							{
 								try
 								{
-									await Task.Delay(UtilityService.GetRandomNumber(456, 789), this.CancellationTokenSource.Token).ConfigureAwait(false);
+									await Task.Delay(UtilityService.GetRandomNumber(456, 789), this.CancellationToken).ConfigureAwait(false);
 									await this.RegisterHelperServicesAsync().ConfigureAwait(false);
 								}
 								catch (Exception ex)
@@ -412,16 +414,16 @@ namespace net.vieapps.Services.APIGateway
 							this.State = ServiceState.Connected;
 
 							while (Router.IncomingChannel == null || Router.OutgoingChannel == null)
-								await Task.Delay(UtilityService.GetRandomNumber(123, 456), this.CancellationTokenSource.Token).ConfigureAwait(false);
+								await Task.Delay(UtilityService.GetRandomNumber(123, 456), this.CancellationToken).ConfigureAwait(false);
 
 							if (this.AllowRegisterBusinessServices || this.AllowRegisterHelperServices || this.AllowRegisterHelperTimers)
-								await this.SendInterCommunicateMessageAsync("Controller#Info", this.Info.ToJson(), this.CancellationTokenSource.Token).ConfigureAwait(false);
+								await this.SendInterCommunicateMessageAsync("Controller#Info", this.Info.ToJson(), this.CancellationToken).ConfigureAwait(false);
 
-							await Task.Delay(UtilityService.GetRandomNumber(4567, 5678), this.CancellationTokenSource.Token).ConfigureAwait(false);
+							await Task.Delay(UtilityService.GetRandomNumber(4567, 5678), this.CancellationToken).ConfigureAwait(false);
 							await Task.WhenAll
 							(
-								this.SendInterCommunicateMessageAsync("Controller#RequestInfo", null, this.CancellationTokenSource.Token),
-								this.SendInterCommunicateMessageAsync("Service#RequestInfo", null, this.CancellationTokenSource.Token)
+								this.SendInterCommunicateMessageAsync("Controller#RequestInfo", null, this.CancellationToken),
+								this.SendInterCommunicateMessageAsync("Service#RequestInfo", null, this.CancellationToken)
 							).ConfigureAwait(false);
 						},
 						(sender, arguments) =>
@@ -437,7 +439,7 @@ namespace net.vieapps.Services.APIGateway
 							else if (Router.IncomingChannel != null)
 							{
 								Global.OnProcess?.Invoke($"The incoming channel to API Gateway Router is broken - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
-								Router.IncomingChannel.ReOpen(this.CancellationTokenSource.Token, Global.OnError, "Incoming");
+								Router.IncomingChannel.ReOpen(this.CancellationToken, Global.OnError, "Incoming");
 							}
 						},
 						(sender, arguments) => Global.OnError?.Invoke($"Got an unexpected error of the incoming channel to API Gateway Router => {arguments.Exception?.Message}", arguments.Exception),
@@ -447,7 +449,7 @@ namespace net.vieapps.Services.APIGateway
 							await Router.OutgoingChannel.UpdateAsync(Router.OutgoingChannelSessionID, "APIGateway", "Outgoing (API Gateway Controller)").ConfigureAwait(false);
 
 							while (Router.IncomingChannel == null || Router.OutgoingChannel == null)
-								await Task.Delay(UtilityService.GetRandomNumber(123, 456), this.CancellationTokenSource.Token).ConfigureAwait(false);
+								await Task.Delay(UtilityService.GetRandomNumber(123, 456), this.CancellationToken).ConfigureAwait(false);
 
 							try
 							{
@@ -465,11 +467,11 @@ namespace net.vieapps.Services.APIGateway
 							else if (Router.OutgoingChannel != null)
 							{
 								Global.OnProcess?.Invoke($"The outgoing channel to API Gateway Router is broken - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
-								Router.OutgoingChannel.ReOpen(this.CancellationTokenSource.Token, Global.OnError, "Outgoing");
+								Router.OutgoingChannel.ReOpen(this.CancellationToken, Global.OnError, "Outgoing");
 							}
 						},
 						(sender, arguments) => Global.OnError?.Invoke($"Got an unexpected error of the outgoging channel to API Gateway Router => {arguments.Exception?.Message}", arguments.Exception),
-						this.CancellationTokenSource.Token
+						this.CancellationToken
 					).ConfigureAwait(false);
 				}
 				catch (Exception ex)
@@ -477,7 +479,7 @@ namespace net.vieapps.Services.APIGateway
 					Global.OnError?.Invoke($"Error occurred while connecting to API Gateway Router => {ex.Message}", ex);
 					if (attemptingCounter < 13)
 					{
-						await Task.Delay(UtilityService.GetRandomNumber(456, 789), this.CancellationTokenSource.Token).ConfigureAwait(false);
+						await Task.Delay(UtilityService.GetRandomNumber(456, 789), this.CancellationToken).ConfigureAwait(false);
 						connectRouter();
 					}
 					else
@@ -487,13 +489,57 @@ namespace net.vieapps.Services.APIGateway
 
 			connectRouter();
 
-			// flush logs
-			if (this.AllowRegisterHelperServices || args?.FirstOrDefault(arg => arg.IsStartsWith("/no-log-flusher")) == null)
-				this.StartTimer(() =>
+			if (this.AllowRegisterHelperServices)
+			{
+				if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:FlushLogs", "13"), out var interval) || interval < 1)
+					interval = 13;
+
+				// flush logs
+				if (args?.FirstOrDefault(arg => arg.IsStartsWith("/no-log-flusher")) == null)
+					this.StartTimer(() =>
+					{
+						if (this.LoggingService == null)
+							this.StartLoggingService("/do-sync-work /flush");
+					}, interval);
+
+				// warm-up/refresh HTTP services
+				var urls = new[] { "APIs", "Files", "Portals", "CMSPortals" }.Select(name => UtilityService.GetAppSetting($"HttpUri:{name}")).Where(url => !string.IsNullOrWhiteSpace(url) && (url.IsStartsWith("https://") || url.IsStartsWith("http://"))).Select(url => url + UtilityService.GetAppSetting("LoadBalancer:RefreshURL", "/favicon.ico?timestamp={iso-time}")).ToList();
+				if (!Int32.TryParse(UtilityService.GetAppSetting("LoadBalancer:Nodes", "0"), out var nodes) || nodes < 1)
+					nodes = 1;
+
+				if (urls.Count > 0)
 				{
-					if (this.LoggingService == null)
-						this.StartLoggingService("/do-sync-work /flush");
-				}, Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:FlushLogs", "13"), out var interval) && interval > 0 ? interval : 13);
+					Task.Run(async () => await urls.ForEachAsync(async url =>
+					{
+						for (var index = 0; index < nodes; index++)
+							try
+							{
+								var uri = new Uri(url.Replace(StringComparison.OrdinalIgnoreCase, "{iso-date}", DateTime.Now.ToString("yyyy-MM-dd")).Replace(StringComparison.OrdinalIgnoreCase, "{iso-time}", DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss")));
+								using (var request = await uri.SendHttpRequestAsync().ConfigureAwait(false))
+								{
+									await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
+								}
+							}
+							catch { }
+					}).ConfigureAwait(false)).ConfigureAwait(false);
+					this.StartTimer(async () =>
+					{
+						await urls.ForEachAsync(async url =>
+						{
+							for (var index = 0; index < nodes; index++)
+								try
+								{
+									var uri = new Uri(url.Replace(StringComparison.OrdinalIgnoreCase, "{iso-date}", DateTime.Now.ToString("yyyy-MM-dd")).Replace(StringComparison.OrdinalIgnoreCase, "{iso-time}", DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss")));
+									using (var request = await uri.SendHttpRequestAsync().ConfigureAwait(false))
+									{
+										await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
+									}
+								}
+								catch { }
+						}).ConfigureAwait(false);
+					}, interval * 20);
+				}
+			}
 		}
 
 		/// <summary>
@@ -532,7 +578,7 @@ namespace net.vieapps.Services.APIGateway
 				try
 				{
 					this.Info.Available = false;
-					await this.SendInterCommunicateMessageAsync("Controller#Disconnect", this.Info.ToJson(), this.CancellationTokenSource.Token).ConfigureAwait(false);
+					await this.SendInterCommunicateMessageAsync("Controller#Disconnect", this.Info.ToJson(), this.CancellationToken).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -1124,7 +1170,7 @@ namespace net.vieapps.Services.APIGateway
 				if (this.MailSender == null)
 					try
 					{
-						this.MailSender = new MailSender(this.CancellationTokenSource.Token);
+						this.MailSender = new MailSender(this.CancellationToken);
 						await this.MailSender.ProcessAsync
 						(
 							message =>
@@ -1165,7 +1211,7 @@ namespace net.vieapps.Services.APIGateway
 				if (this.WebHookSender == null)
 					try
 					{
-						this.WebHookSender = new WebHookSender(this.CancellationTokenSource.Token);
+						this.WebHookSender = new WebHookSender(this.CancellationToken);
 						await this.WebHookSender.ProcessAsync
 						(
 							message =>
@@ -1264,9 +1310,9 @@ namespace net.vieapps.Services.APIGateway
 
 			var excludedSubFolders = UtilityService.GetAppSetting("HouseKeeper:ExcludedSubFolders")?.ToList('|');
 			var excludedFileExtensions = UtilityService.GetAppSetting("HouseKeeper:ExcludedFileExtensions")?.ToLower().ToHashSet('|') ?? new HashSet<string>();
-			var remainHours = UtilityService.GetAppSetting("HouseKeeper:RemainHours", "120").CastAs<int>();
+			var remainHours = UtilityService.GetAppSetting("HouseKeeper:RemainHours", "24").CastAs<int>();
 			var specialFileExtensions = UtilityService.GetAppSetting("HouseKeeper:SpecialFileExtensions")?.ToLower().ToHashSet('|') ?? new HashSet<string>();
-			var specialRemainHours = UtilityService.GetAppSetting("HouseKeeper:SpecialRemainHours", "12").CastAs<int>();
+			var specialRemainHours = UtilityService.GetAppSetting("HouseKeeper:SpecialRemainHours", "240").CastAs<int>();
 
 			// process
 			var remainTime = DateTime.Now.AddHours(0 - remainHours);
@@ -1319,6 +1365,30 @@ namespace net.vieapps.Services.APIGateway
 
 			// clean recycle-bin contents
 			var logs = this.CleanRecycleBin();
+
+			// clean trash
+			var attachmentsPath = UtilityService.GetAppSetting("Path:Attachments");
+			if (!string.IsNullOrWhiteSpace(attachmentsPath) && Directory.Exists(attachmentsPath))
+			{
+				remainTime = DateTime.Now.AddDays(0 - 30);
+				Directory.GetDirectories(attachmentsPath).Where(path => path != null && path.Right(32).IsValidUUID()).Select(path => Path.Combine(path, "trash")).Where(path => Directory.Exists(path)).ForEach(path =>
+				{
+					var files = UtilityService.GetFiles(path).Where(file => file.LastAccessTime < remainTime).ToList();
+					if (files.Count > 0)
+					{
+						paths.Add(path);
+						files.ForEach(file =>
+						{
+							try
+							{
+								file.Delete();
+								counter++;
+							}
+							catch { }
+						});
+					}
+				});
+			}
 
 			// done
 			stopwatch.Stop();
@@ -1432,6 +1502,8 @@ namespace net.vieapps.Services.APIGateway
 									arguments[pos + 1] = "***";
 								else if (arguments[pos].IsStartsWith("/password:"))
 									arguments[pos] = "/password:***";
+								else if (arguments[pos].IsStartsWith("mongodb://"))
+									arguments[pos] = "mongodb://***";
 							}
 							Global.OnProcess?.Invoke
 							(
@@ -1456,7 +1528,7 @@ namespace net.vieapps.Services.APIGateway
 				while (running)
 					try
 					{
-						await Task.Delay(1234, this.CancellationTokenSource.Token).ConfigureAwait(false);
+						await Task.Delay(1234, this.CancellationToken).ConfigureAwait(false);
 					}
 					catch (OperationCanceledException)
 					{
@@ -1491,7 +1563,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				case "Controller#RequestInfo":
 					if (this.AllowRegisterBusinessServices || this.AllowRegisterHelperServices || this.AllowRegisterHelperTimers)
-						await this.SendInterCommunicateMessageAsync("Controller#Info", this.Info.ToJson(), this.CancellationTokenSource.Token).ConfigureAwait(false);
+						await this.SendInterCommunicateMessageAsync("Controller#Info", this.Info.ToJson(), this.CancellationToken).ConfigureAwait(false);
 					break;
 
 				case "Service#RequestInfo":
@@ -1556,7 +1628,7 @@ namespace net.vieapps.Services.APIGateway
 						Available = available,
 						Running = running
 					}.ToJson(),
-					this.CancellationTokenSource.Token
+					this.CancellationToken
 				);
 
 		void SendServiceInfo(string name, string args, bool available, bool running)

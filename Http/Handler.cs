@@ -14,7 +14,7 @@ namespace net.vieapps.Services.APIGateway
 {
 	public class Handler
 	{
-		string LoadBalancingHealthCheckUrl { get; } = UtilityService.GetAppSetting("HealthCheckUrl", "/load-balancing-health-check");
+		string LoadBalancerHealthCheckURL { get; } = UtilityService.GetAppSetting("LoadBalancer:HealthCheckURL", "/load-balancer-health-check");
 
 		public Handler(RequestDelegate _) { }
 
@@ -47,8 +47,8 @@ namespace net.vieapps.Services.APIGateway
 					await context.FlushAsync(Global.CancellationToken).ConfigureAwait(false);
 				}
 
-				// load balancing health check
-				else if (context.Request.Path.Value.IsEquals(this.LoadBalancingHealthCheckUrl))
+				// health check
+				else if (context.Request.Path.Value.IsEquals(this.LoadBalancerHealthCheckURL))
 					await context.WriteAsync("OK", "text/plain", null, 0, null, TimeSpan.Zero, null, Global.CancellationToken).ConfigureAwait(false);
 
 				// APIs

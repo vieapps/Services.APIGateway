@@ -503,7 +503,7 @@ namespace net.vieapps.Services.APIGateway
 					}, interval);
 
 				// warm-up/refresh HTTP services
-				var urls = new[] { "APIs", "Files", "Portals", "CMSPortals" }.Select(name => UtilityService.GetAppSetting($"HttpUri:{name}")).Where(url => !string.IsNullOrWhiteSpace(url) && (url.IsStartsWith("https://") || url.IsStartsWith("http://"))).Select(url => url + UtilityService.GetAppSetting("LoadBalancer:RefreshURL", "/favicon.ico?timestamp={iso-time}")).ToList();
+				var urls = new[] { "APIs", "Files", "Portals", "CMSPortals" }.Select(name => UtilityService.GetAppSetting($"HttpUri:{name}")).Where(url => !string.IsNullOrWhiteSpace(url) && (url.IsStartsWith("https://") || url.IsStartsWith("http://"))).Select(url => url + UtilityService.GetAppSetting("LoadBalancer:RefreshURL", "/favicon.ico?t={iso-time-miliseconds}&n={node-id}")).ToList();
 				if (!Int32.TryParse(UtilityService.GetAppSetting("LoadBalancer:Nodes", "0"), out var nodes) || nodes < 1)
 					nodes = 1;
 
@@ -514,14 +514,13 @@ namespace net.vieapps.Services.APIGateway
 						for (var index = 0; index < nodes; index++)
 							try
 							{
-								var uri = new Uri(url.Replace(StringComparison.OrdinalIgnoreCase, "{iso-date}", DateTime.Now.ToString("yyyy-MM-dd")).Replace(StringComparison.OrdinalIgnoreCase, "{iso-time}", DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss")));
-								using (var request = await uri.SendHttpRequestAsync().ConfigureAwait(false))
+								using (var request = await new Uri(this.PrepareTimestamps(url)).SendHttpRequestAsync().ConfigureAwait(false))
 								{
 									await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
 								}
 							}
 							catch { }
-					}).ConfigureAwait(false)).ConfigureAwait(false);
+					}, true, false).ConfigureAwait(false)).ConfigureAwait(false);
 					this.StartTimer(async () =>
 					{
 						await urls.ForEachAsync(async url =>
@@ -529,15 +528,14 @@ namespace net.vieapps.Services.APIGateway
 							for (var index = 0; index < nodes; index++)
 								try
 								{
-									var uri = new Uri(url.Replace(StringComparison.OrdinalIgnoreCase, "{iso-date}", DateTime.Now.ToString("yyyy-MM-dd")).Replace(StringComparison.OrdinalIgnoreCase, "{iso-time}", DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss")));
-									using (var request = await uri.SendHttpRequestAsync().ConfigureAwait(false))
+									using (var request = await new Uri(this.PrepareTimestamps(url)).SendHttpRequestAsync().ConfigureAwait(false))
 									{
 										await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
 									}
 								}
 								catch { }
-						}).ConfigureAwait(false);
-					}, interval * 20);
+						}, true, false).ConfigureAwait(false);
+					}, interval * interval);
 				}
 			}
 		}
@@ -1242,10 +1240,22 @@ namespace net.vieapps.Services.APIGateway
 					}
 			}, Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:WebHook", "3"), out var webhookInterval) && webhookInterval > 0 ? webhookInterval : 3);
 
-			// house keeper (hourly)
+			// house keeper
 			this.StartTimer(() => this.RunHouseKeeper(), 60 * 60);
+			this.StartTimer(() =>
+			{
+				var time = DateTime.Now.AddMinutes(0 - 5);
+				Directory.GetFiles(Global.LogsPath, "*.json").Select(path => new FileInfo(path)).Where(file => file.LastWriteTime <= time).ToList().ForEach(file =>
+				{
+					try
+					{
+						file.Delete();
+					}
+					catch { }
+				});
+			}, 90);
 
-			// task scheduler (hourly)
+			// task scheduler
 			var runTaskSchedulerOnFirstLoad = false;
 			if (ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:TaskScheduler", "net.vieapps.task.scheduler")) is AppConfigurationSectionHandler config)
 				runTaskSchedulerOnFirstLoad = "true".IsEquals(config.Section.Attributes["runOnFirstLoad"]?.Value);
@@ -1269,10 +1279,9 @@ namespace net.vieapps.Services.APIGateway
 					catch { }
 			}, pingInterval + 13);
 
-			// scheduler (update online status, signal to run scheduler at client, ...) - default: 15 minutes
+			// scheduler (update online status, signal to run scheduler at client, ...)
 			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:Scheduler", "900"), out var scheduleInterval))
 				scheduleInterval = 900;
-
 			this.StartTimer(() =>
 			{
 				if ((DateTime.Now - this.ClientSchedulingTime).TotalSeconds >= scheduleInterval)
@@ -1492,7 +1501,7 @@ namespace net.vieapps.Services.APIGateway
 					this.Tasks[task.ID].Instance = ExternalProcess.Start
 					(
 						task.Executable,
-						task.Arguments.Replace(StringComparison.OrdinalIgnoreCase, "{iso-date}", DateTime.Now.ToString("yyyy-MM-dd")).Replace(StringComparison.OrdinalIgnoreCase, "{iso-time}", DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss")),
+						this.PrepareTimestamps(task.Arguments),
 						(sender, args) =>
 						{
 							var arguments = task.Arguments.ToArray(" ", true);
@@ -1509,7 +1518,7 @@ namespace net.vieapps.Services.APIGateway
 							(
 								"The task is completed" + "\r\n" +
 								$"- Execution times: {((sender as Process).ExitTime - (sender as Process).StartTime).TotalMilliseconds.CastAs<long>().GetElapsedTimes()}" + "\r\n" +
-								$"- Command: [{task.Executable + " " + arguments.Join(" ").Replace(StringComparison.OrdinalIgnoreCase, "{iso-date}", DateTime.Now.ToString("yyyy-MM-dd")).Replace(StringComparison.OrdinalIgnoreCase, "{iso-time}", DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss"))}]" + "\r\n" +
+								$"- Command: [{task.Executable + " " + this.PrepareTimestamps(arguments.Join(" "))}]" + "\r\n" +
 								$"- Results: {results}"
 							);
 							this.Tasks[task.ID].Instance = null;
@@ -1635,5 +1644,15 @@ namespace net.vieapps.Services.APIGateway
 			=> this.SendServiceInfoAsync(name, args, available, running).Run();
 		#endregion
 
+		string PrepareTimestamps(string input)
+		{
+			input = input.IsContains("{node-id}") ? input.Replace(StringComparison.OrdinalIgnoreCase, "{node-id}", Global.NodeID) : input;
+			input = input.IsContains("{iso-date}") ? input.Replace(StringComparison.OrdinalIgnoreCase, "{iso-date}", DateTime.Now.ToString("yyyy-MM-dd")) : input;
+			input = input.IsContains("{iso-time}") ? input.Replace(StringComparison.OrdinalIgnoreCase, "{iso-time}", DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss")) : input;
+			input = input.IsContains("{iso-time-seconds}") ? input.Replace(StringComparison.OrdinalIgnoreCase, "{iso-time-seconds}", DateTime.Now.ToString("yyyy.MM.dd.HH.mm.ss")) : input;
+			input = input.IsContains("{iso-time-miliseconds}") ? input.Replace(StringComparison.OrdinalIgnoreCase, "{iso-time-miliseconds}", DateTime.Now.ToString("yyyy.MM.dd.HH.mm.ss.fff")) : input;
+			input = input.IsContains("{iso-time-stamp}") ? input.Replace(StringComparison.OrdinalIgnoreCase, "{iso-time-stamp}", DateTime.Now.ToUnixTimestamp().ToString()) : input;
+			return input;
+		}
 	}
 }

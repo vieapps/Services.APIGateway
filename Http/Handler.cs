@@ -14,7 +14,7 @@ namespace net.vieapps.Services.APIGateway
 {
 	public class Handler
 	{
-		string LoadBalancerHealthCheckURL { get; } = UtilityService.GetAppSetting("LoadBalancer:HealthCheckURL", "/load-balancer-health-check");
+		string LoadBalancerHealthCheckURL => UtilityService.GetAppSetting("LoadBalancer:HealthCheckURL", "/load-balancer-health-check");
 
 		public Handler(RequestDelegate _) { }
 
@@ -44,7 +44,6 @@ namespace net.vieapps.Services.APIGateway
 					if (context.Request.Headers.TryGetValue("Access-Control-Request-Headers", out var requestHeaders))
 						headers["Access-Control-Allow-Headers"] = requestHeaders;
 					context.SetResponseHeaders((int)HttpStatusCode.OK, headers);
-					await context.FlushAsync(Global.CancellationToken).ConfigureAwait(false);
 				}
 
 				// health check
@@ -72,7 +71,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// request to robots.txt file
 			else if (requestPath.Equals("robots.txt"))
-				context.WriteError((int)HttpStatusCode.NotFound, "Not Found", "FileNotFoundException", context.GetCorrelationID());
+				await context.WriteAsync("User-agent: *\r\nDisallow: *", "text/plain", null, 0, null, TimeSpan.Zero, null, Global.CancellationTokenSource.Token).ConfigureAwait(false);
 
 			// request to static segments
 			else if (Global.StaticSegments.Contains(requestPath))

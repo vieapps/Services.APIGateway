@@ -626,7 +626,7 @@ namespace net.vieapps.Services.APIGateway
 
 				requestInfo = new RequestInfo(session, serviceName, objectName, verb, query, header)
 				{
-					Body = body == null ? "" : body is string ? body as string : body.ToJson().ToString(Formatting.None),
+					Body = body == null ? "" : body is string strbody ? strbody : body.ToJson().ToString(Formatting.None),
 					Extra = extra,
 					CorrelationID = correlationID
 				};
@@ -694,7 +694,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (RemoteServerException ex)
 			{
-				var error = requestInfo.GetForwardingRequestError(ex);
+				var (_, body, _) = requestInfo.GetForwardingRequestError(ex);
 				try
 				{
 					await websocket.SendAsync(new JObject
@@ -702,14 +702,14 @@ namespace net.vieapps.Services.APIGateway
 						{ "ID", requestObj.Get<string>("ID") },
 						{ "CorrelationID", correlationID },
 						{ "Type", "Error" },
-						{ "Data", error.Body }
+						{ "Data", body }
 					}, Global.CancellationToken).ConfigureAwait(false);
 				}
-				catch (Exception e)
+				catch (Exception wse)
 				{
-					WebSocketAPIs.Logger.LogError($"Error occurred while sending an error message via WebSocket => {e.Message}", e);
+					WebSocketAPIs.Logger.LogError($"Error occurred while sending an error message via WebSocket => {wse.Message}", wse);
 				}
-				await Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.APIs", error.Body.Get<string>("Message"), ex, Global.ServiceName, LogLevel.Error, correlationID, $"Request: {requestObj.ToJson().ToString(RESTfulAPIs.JsonFormat)}\r\nWebSocket Info:\r\n{websocket.GetConnectionInfo()}").ConfigureAwait(false);
+				await Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.APIs", body?.Get<string>("Message"), ex, Global.ServiceName, LogLevel.Error, correlationID, $"Request: {requestObj.ToJson().ToString(RESTfulAPIs.JsonFormat)}\r\nWebSocket Info:\r\n{websocket.GetConnectionInfo()}").ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{

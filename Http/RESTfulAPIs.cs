@@ -25,25 +25,35 @@ namespace net.vieapps.Services.APIGateway
 		#region Properties
 		public static ILogger Logger { get; set; }
 
-		public static List<string> ExcludedHeaders { get; } = UtilityService.GetAppSetting("APIs:ExcludedHeaders", "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,purpose,ms-aspnetcore-token,x-forwarded-for,x-forwarded-proto,x-forwarded-port,x-original-for,x-original-proto,x-original-remote-endpoint,x-original-port,cdn-loop").ToList();
-
-		public static HashSet<string> NoTokenRequiredServices { get; } = $"{UtilityService.GetAppSetting("APIs:NoTokenRequiredServices", "")}|indexes|discovery|webhook|webhooks".ToLower().ToHashSet('|', true);
-
-		public static string PrivateToken { get; } = UtilityService.GetAppSetting("APIs:PrivateToken", UtilityService.NewUUID);
-
 		public static ConcurrentDictionary<string, (Type Type, string EndpointURL, string DataSource)> ServiceForwarders { get; } = [];
 
 		public static ConcurrentDictionary<string, JObject> Controllers { get; } = [];
 
 		public static ConcurrentDictionary<string, List<JObject>> Services { get; } = [];
 
-		public static Formatting JsonFormat { get; } = Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None;
+		public static List<string> ExcludedHeaders
+			=> UtilityService.GetAppSetting("APIs:ExcludedHeaders", "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,purpose,ms-aspnetcore-token,x-forwarded-for,x-forwarded-proto,x-forwarded-port,x-original-for,x-original-proto,x-original-remote-endpoint,x-original-port,cdn-loop").ToList();
 
-		public static int ExpiresAfter { get; } = Int32.TryParse(UtilityService.GetAppSetting("APIs:ExpiresAfter", "0"), out var expiresAfter) && expiresAfter > -1 ? expiresAfter : 0;
+		public static HashSet<string> NoTokenRequiredServices
+			=> $"{UtilityService.GetAppSetting("APIs:NoTokenRequiredServices", "")}|indexes|discovery|webhook|webhooks".ToLower().ToHashSet('|', true);
 
-		public static int ServiceForwardersTimeout { get; } = Int32.TryParse(UtilityService.GetAppSetting("APIs:ServiceForwarders:Timeout", "180"), out var timeout) && timeout > 0 ? timeout : 180;
+		public static string PrivateToken
+			=> UtilityService.GetAppSetting("APIs:PrivateToken", UtilityService.NewUUID);
 
-		public static bool ServiceForwardersAutoRedirect { get; } = "true".IsEquals(UtilityService.GetAppSetting("APIs:ServiceForwarders:AutoRedirect", "true"));
+		public static Formatting JsonFormat
+			=> Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None;
+
+		public static int ExpiresAfter
+			=> Int32.TryParse(UtilityService.GetAppSetting("APIs:ExpiresAfter", "0"), out var expiresAfter) && expiresAfter > -1 ? expiresAfter : 0;
+
+		public static int ServiceForwardersTimeout
+			=> Int32.TryParse(UtilityService.GetAppSetting("APIs:ServiceForwarders:Timeout", "180"), out var timeout) && timeout > 0 ? timeout : 180;
+
+		public static bool ServiceForwardersAutoRedirect
+			=> "true".IsEquals(UtilityService.GetAppSetting("APIs:ServiceForwarders:AutoRedirect", "true"));
+
+		public static List<string> ServiceForwardersExcludedHeaders
+			=> UtilityService.GetAppSetting("APIs:ServiceForwarders:ExcludedHeaders", "Host,Connection,Content-Type,Content-Encoding,Transfer-Encoding").ToList();
 		#endregion
 
 		public static async Task ProcessRequestAsync(HttpContext context)
@@ -101,6 +111,7 @@ namespace net.vieapps.Services.APIGateway
 				Extra = extra,
 				CorrelationID = context.GetCorrelationID()
 			};
+			var isDebugLogEnabled = Global.IsDebugResultsEnabled || requestInfo.GetParameter("x-logs") != null || context.Request.Query.ContainsKey("x-logs");
 
 			#region prepare authenticate token
 			bool isSessionProccessed = false, isSessionInitialized = false, isAccountProccessed = false, isActivationProccessed = false;
@@ -163,7 +174,7 @@ namespace net.vieapps.Services.APIGateway
 			catch (Exception ex)
 			{
 				context.WriteError(RESTfulAPIs.Logger, ex, requestInfo, null, false);
-				if (Global.IsDebugLogEnabled)
+				if (isDebugLogEnabled)
 					RESTfulAPIs.Logger.LogError(ex.Message, ex);
 				return;
 			}
@@ -205,7 +216,7 @@ namespace net.vieapps.Services.APIGateway
 			catch (Exception ex)
 			{
 				context.WriteError(RESTfulAPIs.Logger, ex, requestInfo, null, false);
-				if (Global.IsDebugLogEnabled)
+				if (isDebugLogEnabled)
 					RESTfulAPIs.Logger.LogError(ex.Message, ex);
 				return;
 			}
@@ -219,7 +230,7 @@ namespace net.vieapps.Services.APIGateway
 				catch (Exception ex)
 				{
 					context.WriteError(RESTfulAPIs.Logger, ex, requestInfo, null, false);
-					if (Global.IsDebugLogEnabled)
+					if (isDebugLogEnabled)
 						RESTfulAPIs.Logger.LogError(ex.Message, ex);
 					return;
 				}
@@ -265,6 +276,8 @@ namespace net.vieapps.Services.APIGateway
 					{
 						var response = new JObject
 						{
+							["URI"] = requestInfo.Header["x-webhook-uri"],
+							["Verb"] = requestInfo.Verb,
 							["Header"] = requestInfo.Header.ToJObject(),
 							["Query"] = requestInfo.Query.ToJObject(),
 							["Body"] = requestInfo.BodyAsJson
@@ -430,13 +443,13 @@ namespace net.vieapps.Services.APIGateway
 				catch (RemoteServerException ex)
 				{
 					var (statusCode, body, headers) = requestInfo.GetForwardingRequestError(ex);
-					if (Global.IsDebugLogEnabled)
+					if (isDebugLogEnabled)
 						Global.Logger.LogError($"The remote service return an error\r\n- Code: {statusCode}\r\n- Body: {body}\r\n- Headers:\r\n\t{headers.ToString("\r\n\t", kvp => $"{kvp.Key}: {kvp.Value}")}\r\n", ex);
 					context.WriteError(statusCode, body, headers);
 				}
 				catch (Exception ex)
 				{
-					if (Global.IsDebugLogEnabled)
+					if (isDebugLogEnabled)
 						Global.Logger.LogError($"The remote service return an unexcpected => {ex.Message}", ex);
 					context.WriteError(RESTfulAPIs.Logger, ex, requestInfo);
 				}
@@ -454,6 +467,8 @@ namespace net.vieapps.Services.APIGateway
 								requestInfo.Extra["Signature"] = requestInfo.Body.GetHMACSHA256(Global.ValidationKey);
 							else if (requestInfo.Header.TryGetValue("x-app-token", out var authenticateToken))
 								requestInfo.Extra["Signature"] = authenticateToken.GetHMACSHA256(Global.ValidationKey);
+							else if (requestInfo.Query.TryGetValue("x-app-token", out authenticateToken))
+								requestInfo.Extra["Signature"] = authenticateToken.GetHMACSHA256(Global.ValidationKey);
 						}
 					}
 
@@ -465,6 +480,8 @@ namespace net.vieapps.Services.APIGateway
 							if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT"))
 								requestInfo.Extra["Signature"] = requestInfo.Body.GetHMACSHA256(Global.ValidationKey);
 							else if (requestInfo.Header.TryGetValue("x-app-token", out var authenticateToken))
+								requestInfo.Extra["Signature"] = authenticateToken.GetHMACSHA256(Global.ValidationKey);
+							else if (requestInfo.Query.TryGetValue("x-app-token", out authenticateToken))
 								requestInfo.Extra["Signature"] = authenticateToken.GetHMACSHA256(Global.ValidationKey);
 							requestInfo.Extra["SessionID"] = requestInfo.Session.SessionID.GetHMACBLAKE256(Global.ValidationKey);
 						}
@@ -481,7 +498,7 @@ namespace net.vieapps.Services.APIGateway
 									? await context.SyncAsync(requestInfo).ConfigureAwait(false)
 									: throw new InvalidRequestException()
 						: await context.CallServiceAsync(requestInfo, cts.Token, RESTfulAPIs.Logger, "Http.APIs").ConfigureAwait(false);
-					await context.WriteAsync(response, RESTfulAPIs.JsonFormat, requestInfo.CorrelationID, cts.Token).ConfigureAwait(false);
+					await context.WriteAsync(response, RESTfulAPIs.JsonFormat, new Dictionary<string, string> { ["X-Correlation-ID"] = requestInfo.CorrelationID, ["X-Node"] = Global.NodeID }, cts.Token).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -626,7 +643,7 @@ namespace net.vieapps.Services.APIGateway
 						Query = requestInfo.Query,
 						Extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
 						{
-							{ "Signature", requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey) }
+							{ "Signature", requestInfo.GetParameter("x-app-token").GetHMACSHA256(Global.ValidationKey) }
 						},
 						CorrelationID = requestInfo.CorrelationID
 					}, Global.CancellationToken, RESTfulAPIs.Logger, "Http.Authentications").ConfigureAwait(false);
@@ -1101,8 +1118,6 @@ namespace net.vieapps.Services.APIGateway
 		public static (int StatusCode, JToken Body, Dictionary<string, string> Headers) GetForwardingRequestError(this RequestInfo requestInfo, RemoteServerException exception)
 		{
 			var statusCode = exception.StatusCode;
-			var headers = requestInfo.Header.Copy(new[] { "Host", "Connection", "Content-Type", "Content-Encoding", "Transfer-Encoding" });
-
 			var body = new JObject
 			{
 				["Message"] = statusCode == HttpStatusCode.NotFound ? "Not found" : exception.Message,
@@ -1133,7 +1148,7 @@ namespace net.vieapps.Services.APIGateway
 					body.Get<JArray>("StackTrace").Add(UtilityService.RemoveHTMLWhitespaces(exception.Body));
 				}
 			body["CorrelationID"] = requestInfo.CorrelationID;
-			return ((int)statusCode, body, headers);
+			return ((int)statusCode, body, requestInfo.Header.Copy(RESTfulAPIs.ServiceForwardersExcludedHeaders));
 		}
 		#endregion
 

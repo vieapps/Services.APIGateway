@@ -32,7 +32,7 @@ namespace net.vieapps.Services.APIGateway
 			else
 			{
 				// CORS policy => allow origin
-				context.Response.Headers["Access-Control-Allow-Origin"] = "*";
+				context.Response.Headers.AccessControlAllowOrigin = "*";
 
 				// CORS options
 				if (context.Request.Method.IsEquals("OPTIONS"))
@@ -71,7 +71,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// request to robots.txt file
 			else if (requestPath.Equals("robots.txt"))
-				await context.WriteAsync("User-agent: *\r\nDisallow: *", "text/plain", null, 0, null, TimeSpan.Zero, null, Global.CancellationTokenSource.Token).ConfigureAwait(false);
+				await context.WriteAsync("User-agent: *\r\nDisallow: *", "text/plain", null, 0, null, TimeSpan.Zero, null, Global.CancellationToken).ConfigureAwait(false);
 
 			// request to static segments
 			else if (Global.StaticSegments.Contains(requestPath))

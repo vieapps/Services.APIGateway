@@ -283,7 +283,7 @@ namespace net.vieapps.Services.APIGateway
 							["Body"] = requestInfo.BodyAsJson
 						};
 						Global.WriteLogs(Global.Logger, "WebHooks", $"Got a testing web-hook message [{requestInfo.Header["x-webhook-uri"]}] {response}", null, Global.ServiceName, LogLevel.Information, requestInfo.CorrelationID);
-						await context.WriteAsync(response).ConfigureAwait(false);
+						await context.WriteAsync(response, Global.CancellationToken).ConfigureAwait(false);
 					}
 					else if (requestInfo.Verb.IsEquals("POST"))
 					{
@@ -301,7 +301,7 @@ namespace net.vieapps.Services.APIGateway
 							}
 						else
 							webhook.Run(ex => Global.WriteLogs(RESTfulAPIs.Logger, "WebHooks", $"Error occurred while processing a web-hook message => {ex.Message}", ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID));
-						await context.WriteAsync(response).ConfigureAwait(false);
+						await context.WriteAsync(response, Global.CancellationToken).ConfigureAwait(false);
 					}
 					else
 						throw new MethodNotAllowedException();
@@ -322,7 +322,7 @@ namespace net.vieapps.Services.APIGateway
 							: requestInfo.ObjectName.IsEquals("definitions")
 								? await context.CallServiceAsync(requestInfo.PrepareDefinitionRelated(), Global.CancellationToken, RESTfulAPIs.Logger, "Http.Definitions").ConfigureAwait(false)
 								: throw new InvalidRequestException();
-					await context.WriteAsync(response, RESTfulAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationToken).ConfigureAwait(false);
+					await context.WriteAsync(response, Global.CancellationToken).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -340,8 +340,7 @@ namespace net.vieapps.Services.APIGateway
 						throw new MethodNotAllowedException(requestInfo.Verb);
 
 					requestInfo.ObjectName = "service";
-					var response = await Global.CallServiceAsync(requestInfo, Global.CancellationToken).ConfigureAwait(false);
-					await context.WriteAsync(response, RESTfulAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationToken).ConfigureAwait(false);
+					await context.WriteAsync(await Global.CallServiceAsync(requestInfo, Global.CancellationToken).ConfigureAwait(false), Global.CancellationToken).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -353,12 +352,12 @@ namespace net.vieapps.Services.APIGateway
 				try
 				{
 					if (requestInfo.Verb.IsEquals("GET"))
-						using (var cts = CancellationTokenSource.CreateLinkedTokenSource(Global.CancellationToken, context.RequestAborted))
-						{
-							var fileName = await requestInfo.DownloadTemporaryFileAsync(cts.Token).ConfigureAwait(false);
-							var fileInfo = new FileInfo(Path.Combine(UtilityService.GetAppSetting("Path:Temp", Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data-files", "temp")), fileName));
-							await context.WriteAsync(fileInfo, fileName.Length > 33 && fileName.Left(32).IsValidUUID() ? fileName.Right(fileName.Length - 33) : fileName, null, cts.Token).ConfigureAwait(false);
-						}
+					{
+						using var cts = CancellationTokenSource.CreateLinkedTokenSource(Global.CancellationToken, context.RequestAborted);
+						var fileName = await requestInfo.DownloadTemporaryFileAsync(cts.Token).ConfigureAwait(false);
+						var fileInfo = new FileInfo(Path.Combine(UtilityService.GetAppSetting("Path:Temp", Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data-files", "temp")), fileName));
+						await context.WriteAsync(fileInfo, fileName.Length > 33 && fileName.Left(32).IsValidUUID() ? fileName.Right(fileName.Length - 33) : fileName, null, cts.Token).ConfigureAwait(false);
+					}
 					else
 						throw new MethodNotAllowedException(requestInfo.Verb);
 				}
@@ -389,7 +388,7 @@ namespace net.vieapps.Services.APIGateway
 							SmtpUsername = data.Get<string>("Smtp.User"),
 							SmtpPassword = data.Get<string>("Smtp.UserPassword")
 						}.SendAsync(cts.Token).ConfigureAwait(false);
-						await context.WriteAsync(new JObject { ["Status"] = "Success" }, RESTfulAPIs.JsonFormat, requestInfo.CorrelationID, cts.Token).ConfigureAwait(false);
+						await context.WriteAsync(new JObject { ["Status"] = "Success" }, cts.Token).ConfigureAwait(false);
 					}
 					else
 						throw new MethodNotAllowedException(requestInfo.Verb);
@@ -410,8 +409,7 @@ namespace net.vieapps.Services.APIGateway
 							Type = "Broadcast#Client",
 							Data = requestInfo.GetBodyJson().As<UpdateMessage>().ToJson()
 						}.Send();
-						using var cts = CancellationTokenSource.CreateLinkedTokenSource(Global.CancellationToken, context.RequestAborted);
-						await context.WriteAsync(new JObject { ["Status"] = "Success" }, RESTfulAPIs.JsonFormat, requestInfo.CorrelationID, cts.Token).ConfigureAwait(false);
+						await context.WriteAsync(new JObject { ["Status"] = "Success" }, Global.CancellationToken).ConfigureAwait(false);
 					}
 					else
 						throw new InvalidRequestException();
@@ -425,7 +423,7 @@ namespace net.vieapps.Services.APIGateway
 			else if (requestInfo.ServiceName.IsEquals("cache"))
 				try
 				{
-					await context.WriteAsync(await requestInfo.FlushCachingStoragesAsync().ConfigureAwait(false), RESTfulAPIs.JsonFormat, requestInfo.CorrelationID, Global.CancellationToken).ConfigureAwait(false);
+					await context.WriteAsync(await requestInfo.FlushCachingStoragesAsync().ConfigureAwait(false), Global.CancellationToken).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -437,8 +435,7 @@ namespace net.vieapps.Services.APIGateway
 				try
 				{
 					using var cts = CancellationTokenSource.CreateLinkedTokenSource(Global.CancellationToken, context.RequestAborted);
-					var response = await requestInfo.ForwardRequestAsync(cts.Token).ConfigureAwait(false);
-					await context.WriteAsync(response, RESTfulAPIs.JsonFormat, requestInfo.CorrelationID, cts.Token).ConfigureAwait(false);
+					await context.WriteAsync(await requestInfo.ForwardRequestAsync(cts.Token).ConfigureAwait(false), cts.Token).ConfigureAwait(false);
 				}
 				catch (RemoteServerException ex)
 				{
@@ -498,12 +495,26 @@ namespace net.vieapps.Services.APIGateway
 									? await context.SyncAsync(requestInfo).ConfigureAwait(false)
 									: throw new InvalidRequestException()
 						: await context.CallServiceAsync(requestInfo, cts.Token, RESTfulAPIs.Logger, "Http.APIs").ConfigureAwait(false);
-					await context.WriteAsync(response, RESTfulAPIs.JsonFormat, new Dictionary<string, string> { ["X-Correlation-ID"] = requestInfo.CorrelationID, ["X-Node"] = Global.NodeID }, cts.Token).ConfigureAwait(false);
+					await context.WriteAsync(response, cts.Token).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
 					context.WriteError(RESTfulAPIs.Logger, ex, requestInfo);
 				}
+		}
+
+		static async Task WriteAsync(this HttpContext context, JToken json, CancellationToken cancellationToken)
+		{
+			context.SetResponseHeaders((int)HttpStatusCode.OK, new Dictionary<string, string>
+			{
+				{ "Content-Type", "application/json" },
+				{ "Cache-Control", "private, no-store, no-cache" },
+				{ "X-Node", Global.NodeID },
+				{ "X-Service", $"{context.GetServerName()} APIs" },
+				{ "X-Version", typeof(Handler).Assembly.GetVersion() },
+				{ "X-Correlation-ID", context.GetCorrelationID() }
+			});
+			await context.Response.Body.WriteAsync(json.ToString(RESTfulAPIs.JsonFormat).ToBytes(), cancellationToken).ConfigureAwait(false); ;
 		}
 
 		#region Send state message of a session
@@ -908,7 +919,7 @@ namespace net.vieapps.Services.APIGateway
 					Query = requestInfo.Query,
 					Extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
 					{
-						["Signature"] = requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey)
+						["Signature"] = requestInfo.GetParameter("x-app-token")?.GetHMACSHA256(Global.ValidationKey)
 					},
 					CorrelationID = requestInfo.CorrelationID
 				}, Global.CancellationToken, RESTfulAPIs.Logger, "Http.Authentications").ConfigureAwait(false);
@@ -1468,7 +1479,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				var name = message.Data.Get<string>("Name");
 				if (!RESTfulAPIs.Services.TryGetValue(name, out var services))
-					RESTfulAPIs.Services.TryAdd(name, new List<JObject> { message.Data as JObject });
+					RESTfulAPIs.Services.TryAdd(name, [message.Data as JObject]);
 				else
 				{
 					var controllerID = message.Data.Get<string>("ControllerID");

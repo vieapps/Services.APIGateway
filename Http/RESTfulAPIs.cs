@@ -512,8 +512,6 @@ namespace net.vieapps.Services.APIGateway
 				{ "Content-Type", "application/json" },
 				{ "Cache-Control", "private, no-store, no-cache" },
 				{ "X-Node", Global.NodeID },
-				{ "X-Service", $"{context.GetServerName()} APIs" },
-				{ "X-Version", typeof(Handler).Assembly.GetVersion() },
 				{ "X-Correlation-ID", context.GetCorrelationID() }
 			});
 			await context.Response.Body.WriteAsync(json.ToString(RESTfulAPIs.JsonFormat).ToBytes(), cancellationToken).ConfigureAwait(false); ;

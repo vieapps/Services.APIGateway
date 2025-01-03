@@ -106,12 +106,14 @@ namespace net.vieapps.Services.APIGateway
 					extra = extraInfo.Url64Decode().ToExpandoObject().ToDictionary(kvp => kvp.Key, kvp => kvp.Value?.ToString(), StringComparer.OrdinalIgnoreCase);
 				}
 				catch { }
+
 			var requestInfo = new RequestInfo(context.GetSession(), query["service-name"], query["object-name"], context.Request.Method, query, header)
 			{
 				Extra = extra,
 				CorrelationID = context.GetCorrelationID()
 			};
-			var isDebugLogEnabled = Global.IsDebugResultsEnabled || requestInfo.GetParameter("x-logs") != null || context.Request.Query.ContainsKey("x-logs");
+
+			var isDebugLogEnabled = Global.IsDebugResultsEnabled || requestInfo.TryGetParameter("x-logs", out var _);
 
 			#region prepare authenticate token
 			bool isSessionProccessed = false, isSessionInitialized = false, isAccountProccessed = false, isActivationProccessed = false;

@@ -71,7 +71,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// request to robots.txt file
 			else if (requestPath.Equals("robots.txt"))
-				await context.WriteAsync("User-agent: *\r\nDisallow: *", "text/plain", null, 0, null, TimeSpan.Zero, null, Global.CancellationToken).ConfigureAwait(false);
+				await context.WriteAsync("User-agent: *\r\nDisallow: *", "text/plain", null, 0, "public", TimeSpan.Zero, null, Global.CancellationToken).ConfigureAwait(false);
 
 			// request to static segments
 			else if (Global.StaticSegments.Contains(requestPath))

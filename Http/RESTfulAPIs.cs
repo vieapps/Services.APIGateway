@@ -164,7 +164,7 @@ namespace net.vieapps.Services.APIGateway
 				// check existed of session
 				if (tokenIsRequired)
 				{
-					if (requestInfo.Query.TryGetValue("register", out var registered))
+					if (requestInfo.Query.TryGetValue("register", out var registered) && requestInfo.ServiceName.IsEquals("Users") && requestInfo.ObjectName.IsEquals("Session"))
 					{
 						if (!registered.IsEquals(await Global.Cache.GetAsync<string>($"Session#{requestInfo.Session.SessionID}", Global.CancellationToken).ConfigureAwait(false)))
 							throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");

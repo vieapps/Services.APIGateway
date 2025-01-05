@@ -1320,6 +1320,7 @@ namespace net.vieapps.Services.APIGateway
 			var excludedSubFolders = UtilityService.GetAppSetting("HouseKeeper:ExcludedSubFolders")?.ToList('|');
 			var excludedFileExtensions = UtilityService.GetAppSetting("HouseKeeper:ExcludedFileExtensions")?.ToLower().ToHashSet('|') ?? new HashSet<string>();
 			var remainHours = UtilityService.GetAppSetting("HouseKeeper:RemainHours", "24").CastAs<int>();
+			var specialFolders = UtilityService.GetAppSetting("HouseKeeper:SpecialFolders")?.ToHashSet('|') ?? new HashSet<string>();
 			var specialFileExtensions = UtilityService.GetAppSetting("HouseKeeper:SpecialFileExtensions")?.ToLower().ToHashSet('|') ?? new HashSet<string>();
 			var specialRemainHours = UtilityService.GetAppSetting("HouseKeeper:SpecialRemainHours", "240").CastAs<int>();
 
@@ -1331,7 +1332,9 @@ namespace net.vieapps.Services.APIGateway
 			{
 				// delete old files
 				UtilityService.GetFiles(dir.FullName, "*.*", true, excludedSubFolders)
-					.Where(file => !excludedFileExtensions.Contains(file.Extension) && file.LastWriteTime < (specialFileExtensions.Contains(file.Extension) ? specialRemainTime : remainTime))
+					.Select(file => (File: file, Path: file.FullName.Left(file.FullName.Length - file.Name.Length - 1), file.Extension, file.LastWriteTime))
+					.Where(info => !excludedFileExtensions.Contains(info.Extension) && info.LastWriteTime < (specialFileExtensions.Contains(info.Extension) || specialFolders.Contains(info.Path) ? specialRemainTime : remainTime))
+					.Select(info => info.File)
 					.ForEach(file =>
 					{
 						try

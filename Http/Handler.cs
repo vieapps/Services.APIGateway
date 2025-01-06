@@ -39,6 +39,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
 					{
+						["X-Node"] = Global.NodeID,
 						["Access-Control-Allow-Methods"] = "HEAD,GET,POST,PUT,PATCH,DELETE"
 					};
 					if (context.Request.Headers.TryGetValue("Access-Control-Request-Headers", out var requestHeaders))

@@ -27,7 +27,7 @@
 
 	<ItemGroup>
 		<PackageReference Include="System.Threading.Tasks" Version="4.3.0" />
-		<PackageReference Include="VIEApps.Services.Base" Version="10.9.2501.1" />
+		<PackageReference Include="VIEApps.Services.Base" Version="10.9.2501.2" />
 	</ItemGroup>
 
 </Project>

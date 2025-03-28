@@ -81,8 +81,14 @@ namespace net.vieapps.Services.APIGateway
 					while (Services.Router.IncomingChannel == null)
 						await Task.Delay(UtilityService.GetRandomNumber(234, 567), Global.CancellationToken).ConfigureAwait(false);
 
-					new CommunicateMessage("APIGateway") { Type = "Controller#RequestInfo" }.Send();
-					new CommunicateMessage("APIGateway") { Type = "Service#RequestInfo" }.Send();
+					new CommunicateMessage("APIGateway")
+					{
+						Type = "Controller#RequestInfo"
+					}.Send();
+					new CommunicateMessage("APIGateway")
+					{
+						Type = "Service#RequestInfo"
+					}.Send();
 				},
 				waitingTimes,
 				exception => Global.Logger.LogError($"Cannot connect to API Gateway Router in period of times => {exception.Message}", exception),
@@ -100,13 +106,13 @@ namespace net.vieapps.Services.APIGateway
 
 		static WampHost Forwarder { get; set; }
 
-		public static ConcurrentDictionary<long, IAsyncDisposable> ForwardingTokens { get; } = new ConcurrentDictionary<long, IAsyncDisposable>();
+		public static ConcurrentDictionary<long, IAsyncDisposable> ForwardingTokens { get; } = [];
 
 		public static void OpenForwarder(IApplicationBuilder appBuilder)
 		{
 			var routerInfo = Services.Router.GetRouterInfo();
 			Global.Logger.LogInformation($"Initialize the forwarder of API Gateway Router [{UtilityService.GetAppSetting("HttpUri:APIs")}/router]");
-			Router.Forwarder = new WampHost(new ForwardingRealmContainer($"{routerInfo.Item1}{(routerInfo.Item1.EndsWith("/") ? "" : "/")}{routerInfo.Item2}", routerInfo.Item3));
+			Router.Forwarder = new WampHost(new ForwardingRealmContainer($"{routerInfo.Address}{(routerInfo.Address.EndsWith("/") ? "" : "/")}{routerInfo.Realm}", routerInfo.UseJSON));
 
 			appBuilder
 				.UseForwardedHeaders(Global.GetForwardedHeadersOptions())

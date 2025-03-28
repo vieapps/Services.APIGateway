@@ -287,14 +287,18 @@ namespace net.vieapps.Services.APIGateway
 						Global.WriteLogs(Global.Logger, "WebHooks", $"Got a testing web-hook message [{requestInfo.Header["x-webhook-uri"]}] {response}", null, Global.ServiceName, LogLevel.Information, requestInfo.CorrelationID);
 						await context.WriteAsync(response, Global.CancellationToken).ConfigureAwait(false);
 					}
-					else if (requestInfo.Verb.IsEquals("POST"))
+					else
 					{
 						JToken response = new JObject { ["Status"] = "OK" };
+						var contentType = "application/json";
+						var contentBody = "";
 						var webhook = requestInfo.GetService().ProcessWebHookMessageAsync(requestInfo);
-						if (requestInfo.Query.TryGetValue("wait-for", out var wait) && wait.IsEquals("completed"))
+						if ("GET".IsEquals(requestInfo.Verb) || (requestInfo.TryGetParameter("wait-for", out var wait) && wait.IsEquals("completed")))
 							try
 							{
 								response = await webhook.ConfigureAwait(false);
+								contentType = response.Get<string>("Content-Type");
+								contentBody = response.Get<string>("Content-Body");
 							}
 							catch (Exception ex)
 							{
@@ -302,10 +306,21 @@ namespace net.vieapps.Services.APIGateway
 							}
 						else
 							webhook.Run(ex => Global.WriteLogs(RESTfulAPIs.Logger, "WebHooks", $"Error occurred while processing a web-hook message => {ex.Message}", ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID));
-						await context.WriteAsync(response, Global.CancellationToken).ConfigureAwait(false);
+
+						if (!string.IsNullOrWhiteSpace(contentType) && !"application/json".IsEquals(contentType) && !string.IsNullOrWhiteSpace(contentBody))
+						{
+							context.SetResponseHeaders((int)HttpStatusCode.OK, new Dictionary<string, string>
+							{
+								{ "Content-Type", contentType },
+								{ "Cache-Control", "private, no-store, no-cache" },
+								{ "X-Node", Global.NodeID },
+								{ "X-Correlation-ID", context.GetCorrelationID() }
+							});
+							await context.Response.Body.WriteAsync(contentBody.ToBytes(), Global.CancellationToken).ConfigureAwait(false);
+						}
+						else
+							await context.WriteAsync(response, Global.CancellationToken).ConfigureAwait(false);
 					}
-					else
-						throw new MethodNotAllowedException();
 				}
 				catch (Exception ex)
 				{
@@ -513,7 +528,7 @@ namespace net.vieapps.Services.APIGateway
 				{ "X-Node", Global.NodeID },
 				{ "X-Correlation-ID", context.GetCorrelationID() }
 			});
-			await context.Response.Body.WriteAsync(json.ToString(RESTfulAPIs.JsonFormat).ToBytes(), cancellationToken).ConfigureAwait(false); ;
+			await context.Response.Body.WriteAsync(json.ToString(RESTfulAPIs.JsonFormat).ToBytes(), cancellationToken).ConfigureAwait(false);
 		}
 
 		#region Send state message of a session
@@ -1443,7 +1458,6 @@ namespace net.vieapps.Services.APIGateway
 			if (!requestInfo.ObjectName.IsEquals("flush") && !requestInfo.ObjectName.IsEquals("clear"))
 				throw new InvalidRequestException();
 
-			/*
 			var isSystemAdministrator = requestInfo.Session.User.IsSystemAdministrator;
 			if (!isSystemAdministrator)
 			{
@@ -1459,7 +1473,6 @@ namespace net.vieapps.Services.APIGateway
 			}
 			if (!isSystemAdministrator)
 				throw new AccessDeniedException();
-			*/
 
 			await Global.Cache.FlushAllAsync(Global.CancellationToken).ConfigureAwait(false);
 			return new JObject { ["Status"] = "Success" };

@@ -3,7 +3,7 @@
 	<PropertyGroup>
 		<TargetFrameworks>net9.0;netstandard2.0</TargetFrameworks>
 		<WarningLevel>3</WarningLevel>
-		<NoWarn>1573,1591,CA1837,NU1605</NoWarn>
+		<NoWarn>1573,1591,CA1837,NU1605,NU1701</NoWarn>
 		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
 		<AssemblyName>VIEApps.Services.APIGateway.ServiceHosting</AssemblyName>
 		<AssemblyTitle>VIEApps NGX API Gateway</AssemblyTitle>
@@ -25,10 +25,10 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.1" />
+		<PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.3" />
 		<PackageReference Include="System.IO.FileSystem" Version="4.3.0" />
 		<PackageReference Include="System.Threading.Tasks" Version="4.3.0" />
-		<PackageReference Include="VIEApps.Services.Base" Version="10.9.2501.2" />
+		<PackageReference Include="VIEApps.Services.Base" Version="10.9.2503.2" />
 	</ItemGroup>
 
 </Project>

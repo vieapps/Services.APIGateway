@@ -32,10 +32,10 @@ namespace net.vieapps.Services.APIGateway
 		public void ConfigureServices(IServiceCollection services)
 		{
 			services
-				.AddResponseCompression(options => options.EnableForHttps = true)
+				.AddHttpContextAccessor()
+				.AddResponseCompression(options => Global.PrepareResponseCompression(options))
 				.AddLogging(builder => builder.SetMinimumLevel(this.LogLevel))
-				.AddCache(options => this.Configuration.GetSection("Cache").Bind(options))
-				.AddHttpContextAccessor();
+				.AddCache(options => this.Configuration.GetSection("Cache").Bind(options));
 			if (Global.UseIISInProcess)
 				services.Configure<IISServerOptions>(options => Global.PrepareIISServerOptions(options, _ => options.MaxRequestBodySize = 1024 * 1024 * Global.MaxRequestBodySize));
 		}

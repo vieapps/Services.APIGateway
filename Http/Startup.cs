@@ -46,7 +46,6 @@ namespace net.vieapps.Services.APIGateway
 			var stopwatch = Stopwatch.StartNew();
 			Console.OutputEncoding = Encoding.UTF8;
 			Global.ServiceName = "APIGateway";
-			Components.WebSockets.WebSocket.AgentName = $"{UtilityService.GetAppSetting("ServerName", "VIEApps NGX")} WebSockets";
 
 			var loggerFactory = appBuilder.ApplicationServices.GetService<ILoggerFactory>();
 			var logPath = UtilityService.GetAppSetting("Path:Logs");
@@ -113,7 +112,7 @@ namespace net.vieapps.Services.APIGateway
 			// setup the forwarder of API Gateway Router
 			var enableForwarder = "true".IsEquals(UtilityService.GetAppSetting("Router:Forwarder", "false"));
 			if (enableForwarder)
-				appBuilder.Map("/router", builder => Router.OpenForwarder(builder));
+				appBuilder.Map("/router", _ => Router.OpenForwarder(appBuilder));
 
 			// setup the path mappers
 			var onIncomingConnectionEstablished = new List<Action<object, WampSessionCreatedEventArgs>>();
@@ -121,34 +120,34 @@ namespace net.vieapps.Services.APIGateway
 			var pathMappers = new List<string>();
 			if (System.Configuration.ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:Maps", "net.vieapps.services.apigateway.http.maps")) is AppConfigurationSectionHandler cfgMaps && cfgMaps.Section.SelectNodes("map") is System.Xml.XmlNodeList maps)
 				maps.ToList()
-					.Select(info => (Path: info.Attributes["path"]?.Value?.ToLower()?.Trim(), Type: info.Attributes["type"]?.Value))
-					.Where(info => !string.IsNullOrEmpty(info.Path) && !string.IsNullOrEmpty(info.Type))
-					.Select(info =>
+				.Select(info => (Path: info.Attributes["path"]?.Value?.ToLower()?.Trim(), Type: info.Attributes["type"]?.Value))
+				.Where(info => !string.IsNullOrEmpty(info.Path) && !string.IsNullOrEmpty(info.Type))
+				.Select(info =>
+				{
+					var path = info.Path;
+					while (path.StartsWith('/'))
+						path = path.Right(path.Length - 1);
+					while (path.EndsWith('/'))
+						path = path.Left(path.Length - 1);
+					return (Path: path, info.Type);
+				})
+				.Where(info => !info.Path.IsEquals("router"))
+				.ForEach(info =>
+				{
+					try
 					{
-						var path = info.Path;
-						while (path.StartsWith('/'))
-							path = path.Right(path.Length - 1);
-						while (path.EndsWith('/'))
-							path = path.Left(path.Length - 1);
-						return (Path: path, info.Type);
-					})
-					.Where(info => !info.Path.IsEquals("router"))
-					.ForEach(info =>
+						if (AssemblyLoader.GetType(info.Type)?.CreateInstance() is PathMapper mapper)
+						{
+							appBuilder.Map($"/{info.Path}", builder => mapper.Map(builder, appLifetime, onIncomingConnectionEstablished, onOutgoingConnectionEstablished));
+							Global.Logger.LogInformation($"Successfully branch the request to a specified path: /{info.Path} => {mapper.GetTypeName()}");
+							pathMappers.Add($"/{info.Path} => {mapper.GetTypeName()}");
+						}
+					}
+					catch (Exception ex)
 					{
-						try
-						{
-							if (AssemblyLoader.GetType(info.Type)?.CreateInstance() is PathMapper mapper)
-							{
-								appBuilder.Map($"/{info.Path}", builder => mapper.Map(builder, appLifetime, onIncomingConnectionEstablished, onOutgoingConnectionEstablished));
-								Global.Logger.LogInformation($"Successfully branch the request to a specified path: /{info.Path} => {mapper.GetTypeName()}");
-								pathMappers.Add($"/{info.Path} => {mapper.GetTypeName()}");
-							}
-						}
-						catch (Exception ex)
-						{
-							Global.Logger.LogError($"Cannot load a path mapper ({info.Type}) => {ex.Message}", ex);
-						}
-					});
+						Global.Logger.LogError($"Cannot load a path mapper ({info.Type}) => {ex.Message}", ex);
+					}
+				});
 
 			// setup the handler for all requests
 			appBuilder.UseMiddleware<Handler>();
@@ -159,23 +158,23 @@ namespace net.vieapps.Services.APIGateway
 			// setup the service forwarders
 			if (System.Configuration.ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:Forwarders", "net.vieapps.services.apigateway.http.forwarders")) is AppConfigurationSectionHandler cfgForwarders && cfgForwarders.Section.SelectNodes("forwarder") is System.Xml.XmlNodeList forwarders)
 				forwarders.ToList()
-					.Select(info => (Name: info.Attributes["name"]?.Value?.ToLower()?.Trim(), Type: info.Attributes["type"]?.Value, EndpointURL: info.Attributes["endpointURL"]?.Value, DataSource: info.Attributes["dataSource"]?.Value))
-					.Where(info => !string.IsNullOrEmpty(info.Name) && !string.IsNullOrEmpty(info.Type) && !string.IsNullOrEmpty(info.Type))
-					.Select(info => (Name: info.Name.GetANSIUri(), info.Type, info.EndpointURL, info.DataSource))
-					.Where(info => !info.Name.IsEquals("router") && !info.Name.IsEquals("pusher"))
-					.ForEach(info =>
+				.Select(info => (Name: info.Attributes["name"]?.Value?.ToLower()?.Trim(), Type: info.Attributes["type"]?.Value, EndpointURL: info.Attributes["endpointURL"]?.Value, DataSource: info.Attributes["dataSource"]?.Value))
+				.Where(info => !string.IsNullOrEmpty(info.Name) && !string.IsNullOrEmpty(info.Type) && !string.IsNullOrEmpty(info.Type))
+				.Select(info => (Name: info.Name.GetANSIUri(), info.Type, info.EndpointURL, info.DataSource))
+				.Where(info => !info.Name.IsEquals("router") && !info.Name.IsEquals("pusher"))
+				.ForEach(info =>
+				{
+					try
 					{
-						try
-						{
-							var type = AssemblyLoader.GetType(info.Type);
-							if (type != null && type.CreateInstance() is ServiceForwarder)
-								RESTfulAPIs.ServiceForwarders[info.Name] = (type, info.EndpointURL, info.DataSource);
-						}
-						catch (Exception ex)
-						{
-							Global.Logger.LogError($"Cannot load a service forwarder ({info.Type}) => {ex.Message}", ex);
-						}
-					});
+						var type = AssemblyLoader.GetType(info.Type);
+						if (type != null && type.CreateInstance() is ServiceForwarder)
+							RESTfulAPIs.ServiceForwarders[info.Name] = (type, info.EndpointURL, info.DataSource);
+					}
+					catch (Exception ex)
+					{
+						Global.Logger.LogError($"Cannot load a service forwarder ({info.Type}) => {ex.Message}", ex);
+					}
+				});
 
 			// construct data-sources and connection strings
 			if (!RESTfulAPIs.ServiceForwarders.IsEmpty)

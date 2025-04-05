@@ -1347,7 +1347,9 @@ namespace net.vieapps.Services.APIGateway
 
 				// delete empty folders
 				dir.GetDirectories()
-					.Where(d => d.GetFiles().Length < 1 && d.GetDirectories().Length < 1)
+					.Select(sd => new[] { sd }.Concat(sd.GetDirectories()))
+					.SelectMany(dirs => dirs)
+					.Where(d => d != null && d.GetFiles().Length < 1 && d.GetDirectories().Length < 1)
 					.ForEach(d =>
 					{
 						try

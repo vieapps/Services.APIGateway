@@ -521,14 +521,16 @@ namespace net.vieapps.Services.APIGateway
 
 		static async Task WriteAsync(this HttpContext context, JToken json, CancellationToken cancellationToken)
 		{
-			context.SetResponseHeaders((int)HttpStatusCode.OK, new Dictionary<string, string>
+			var headers = new Dictionary<string, string>
 			{
 				{ "Content-Type", "application/json" },
 				{ "Cache-Control", "private, no-store, no-cache" },
 				{ "X-Node", Global.NodeID },
 				{ "X-Correlation-ID", context.GetCorrelationID() }
-			});
-			await context.Response.Body.WriteAsync(json.ToString(RESTfulAPIs.JsonFormat).ToBytes(), cancellationToken).ConfigureAwait(false);
+			};
+			var body = json.ToString(RESTfulAPIs.JsonFormat).ToBytes();
+			context.SetResponseHeaders((int)HttpStatusCode.OK, headers);
+			await context.Response.Body.WriteAsync(body, cancellationToken).ConfigureAwait(false);
 		}
 
 		#region Send state message of a session

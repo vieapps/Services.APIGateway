@@ -1333,7 +1333,7 @@ namespace net.vieapps.Services.APIGateway
 				// delete old files
 				UtilityService.GetFiles(dir.FullName, "*.*", 0, true, excludedSubFolders)
 					.Select(file => (File: file, Path: file.FullName.Left(file.FullName.Length - file.Name.Length - 1), file.Extension, file.LastWriteTime))
-					.Where(info => !excludedFileExtensions.Contains(info.Extension) && info.LastWriteTime < (specialFileExtensions.Contains(info.Extension) || specialFolders.Contains(info.Path) ? specialRemainTime : remainTime))
+					.Where(info => !excludedFileExtensions.Contains(info.Extension) && info.LastWriteTime < (specialFileExtensions.Contains(info.Extension) || specialFolders.Select(specialPath => info.Path.IsStartsWith(specialPath)).Where(state => state).Any() ? specialRemainTime : remainTime))
 					.Select(info => info.File)
 					.ForEach(file =>
 					{

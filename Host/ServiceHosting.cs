@@ -191,9 +191,9 @@ namespace net.vieapps.Services.APIGateway
 			var loglevel = args?.FirstOrDefault(arg => arg.IsStartsWith("/loglevel:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/loglevel:", "");
 			if (string.IsNullOrWhiteSpace(loglevel))
 #if DEBUG
-				loglevel = UtilityService.GetAppSetting("Logs:Level", "Debug");
+				loglevel = UtilityService.GetAppSetting($"{service.ServiceName}:Logs:Level") ?? UtilityService.GetAppSetting("Logs:Level", "Debug");
 #else
-				loglevel = UtilityService.GetAppSetting("Logs:Level", "Information");
+				loglevel = UtilityService.GetAppSetting($"{service.ServiceName}:Logs:Level") ?? UtilityService.GetAppSetting("Logs:Level", "Information");
 #endif
 			if (!loglevel.TryToEnum(out LogLevel logLevel))
 #if DEBUG

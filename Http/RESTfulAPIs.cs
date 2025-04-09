@@ -31,29 +31,21 @@ namespace net.vieapps.Services.APIGateway
 
 		public static ConcurrentDictionary<string, List<JObject>> Services { get; } = [];
 
-		public static List<string> ExcludedHeaders
-			=> UtilityService.GetAppSetting("APIs:ExcludedHeaders", "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,purpose,ms-aspnetcore-token,x-forwarded-for,x-forwarded-proto,x-forwarded-port,x-original-for,x-original-proto,x-original-remote-endpoint,x-original-port,cdn-loop").ToList();
+		public static List<string> ExcludedHeaders { get; } = UtilityService.GetAppSetting("APIs:ExcludedHeaders", "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,purpose,ms-aspnetcore-token,x-forwarded-for,x-forwarded-proto,x-forwarded-port,x-original-for,x-original-proto,x-original-remote-endpoint,x-original-port,cdn-loop").ToList();
 
-		public static HashSet<string> NoTokenRequiredServices
-			=> $"{UtilityService.GetAppSetting("APIs:NoTokenRequiredServices", "")}|indexes|discovery|webhook|webhooks".ToLower().ToHashSet('|', true);
+		public static HashSet<string> NoTokenRequiredServices { get; } = $"{UtilityService.GetAppSetting("APIs:NoTokenRequiredServices", "")}|indexes|discovery|webhook|webhooks".ToLower().ToHashSet('|', true);
 
-		public static string PrivateToken
-			=> UtilityService.GetAppSetting("APIs:PrivateToken", UtilityService.NewUUID);
+		public static string PrivateToken { get; } = UtilityService.GetAppSetting("APIs:PrivateToken", UtilityService.NewUUID);
 
-		public static Formatting JsonFormat
-			=> Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None;
+		public static Formatting JsonFormat { get; } = Global.IsDebugLogEnabled ? Formatting.Indented : Formatting.None;
 
-		public static int ExpiresAfter
-			=> Int32.TryParse(UtilityService.GetAppSetting("APIs:ExpiresAfter", "0"), out var expiresAfter) && expiresAfter > -1 ? expiresAfter : 0;
+		public static int ExpiresAfter { get; } = Int32.TryParse(UtilityService.GetAppSetting("APIs:ExpiresAfter", "0"), out var expiresAfter) && expiresAfter > -1 ? expiresAfter : 0;
 
-		public static int ServiceForwardersTimeout
-			=> Int32.TryParse(UtilityService.GetAppSetting("APIs:ServiceForwarders:Timeout", "180"), out var timeout) && timeout > 0 ? timeout : 180;
+		public static int ServiceForwardersTimeout { get; } = Int32.TryParse(UtilityService.GetAppSetting("APIs:ServiceForwarders:Timeout", "180"), out var timeout) && timeout > 0 ? timeout : 180;
 
-		public static bool ServiceForwardersAutoRedirect
-			=> "true".IsEquals(UtilityService.GetAppSetting("APIs:ServiceForwarders:AutoRedirect", "true"));
+		public static bool ServiceForwardersAutoRedirect { get; } = "true".IsEquals(UtilityService.GetAppSetting("APIs:ServiceForwarders:AutoRedirect", "true"));
 
-		public static List<string> ServiceForwardersExcludedHeaders
-			=> UtilityService.GetAppSetting("APIs:ServiceForwarders:ExcludedHeaders", "Host,Connection,Content-Type,Content-Encoding,Transfer-Encoding").ToList();
+		public static List<string> ServiceForwardersExcludedHeaders { get; } = UtilityService.GetAppSetting("APIs:ServiceForwarders:ExcludedHeaders", "Host,Connection,Content-Type,Content-Encoding,Transfer-Encoding").ToList();
 		#endregion
 
 		public static async Task ProcessRequestAsync(HttpContext context)

@@ -147,7 +147,8 @@ namespace net.vieapps.Services.APIGateway
 
 				if (!string.IsNullOrWhiteSpace(authenticateToken))
 				{
-					await context.UpdateWithAuthenticateTokenAsync(requestInfo.Session, authenticateToken, RESTfulAPIs.ExpiresAfter, null, null, null, RESTfulAPIs.Logger, "Authentications", requestInfo.CorrelationID).ConfigureAwait(false);
+					var expiresAfter = Int32.TryParse(context.GetParameter("x-app-token-expires"), out var expires) && expires > 0 ? expires : 0;
+					await context.UpdateWithAuthenticateTokenAsync(requestInfo.Session, authenticateToken, expiresAfter > 0 ? expiresAfter : RESTfulAPIs.ExpiresAfter, null, null, null, RESTfulAPIs.Logger, "Authentications", requestInfo.CorrelationID).ConfigureAwait(false);
 					context.SetSession(requestInfo.Session);
 				}
 				else if (tokenIsRequired)
@@ -281,7 +282,10 @@ namespace net.vieapps.Services.APIGateway
 					}
 					else
 					{
-						JToken response = new JObject { ["Status"] = "OK" };
+						JToken response = new JObject
+						{
+							["Status"] = "OK"
+						};
 						var contentType = "application/json";
 						var contentBody = "";
 						var webhook = requestInfo.GetService().ProcessWebHookMessageAsync(requestInfo);
@@ -300,16 +304,7 @@ namespace net.vieapps.Services.APIGateway
 							webhook.Run(ex => Global.WriteLogs(RESTfulAPIs.Logger, "WebHooks", $"Error occurred while processing a web-hook message => {ex.Message}", ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID));
 
 						if (!string.IsNullOrWhiteSpace(contentType) && !"application/json".IsEquals(contentType) && !string.IsNullOrWhiteSpace(contentBody))
-						{
-							context.SetResponseHeaders((int)HttpStatusCode.OK, new Dictionary<string, string>
-							{
-								{ "Content-Type", contentType },
-								{ "Cache-Control", "private, no-store, no-cache" },
-								{ "X-Node", Global.NodeID },
-								{ "X-Correlation-ID", context.GetCorrelationID() }
-							});
-							await context.Response.Body.WriteAsync(contentBody.ToBytes(), Global.CancellationToken).ConfigureAwait(false);
-						}
+							await context.WriteAsync(contentBody.ToBytes(), Global.CancellationToken).ConfigureAwait(false);
 						else
 							await context.WriteAsync(response, Global.CancellationToken).ConfigureAwait(false);
 					}
@@ -511,19 +506,20 @@ namespace net.vieapps.Services.APIGateway
 				}
 		}
 
-		static async Task WriteAsync(this HttpContext context, JToken json, CancellationToken cancellationToken)
+		static async Task WriteAsync(this HttpContext context, byte[] json, CancellationToken cancellationToken)
 		{
-			var headers = new Dictionary<string, string>
+			context.SetResponseHeaders((int)HttpStatusCode.OK, new Dictionary<string, string>
 			{
 				{ "Content-Type", "application/json" },
 				{ "Cache-Control", "private, no-store, no-cache" },
 				{ "X-Node", Global.NodeID },
 				{ "X-Correlation-ID", context.GetCorrelationID() }
-			};
-			var body = json.ToString(RESTfulAPIs.JsonFormat).ToBytes();
-			context.SetResponseHeaders((int)HttpStatusCode.OK, headers);
-			await context.Response.Body.WriteAsync(body, cancellationToken).ConfigureAwait(false);
+			});
+			await context.Response.Body.WriteAsync(json, cancellationToken).ConfigureAwait(false);
 		}
+
+		static Task WriteAsync(this HttpContext context, JToken json, CancellationToken cancellationToken)
+			=> context.WriteAsync(json.ToString(RESTfulAPIs.JsonFormat).ToBytes(), cancellationToken);
 
 		#region Send state message of a session
 		public static async Task SendSessionStateAsync(this Session session, bool isOnline, string correlationID = null)

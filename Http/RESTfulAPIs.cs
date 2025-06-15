@@ -65,7 +65,7 @@ namespace net.vieapps.Services.APIGateway
 				var objectIdentity = pathSegments.Length > 2 && !string.IsNullOrWhiteSpace(pathSegments[2])
 					? pathSegments[2].GetANSIUri(false, true)
 					: context.GetParameter("x-object-identity") ?? context.GetParameter("ObjectIdentity") ?? "";
-				if (serviceName.IsEquals("webhook") || serviceName.IsEquals("webhooks") || serviceName.IsEquals("web-hook") || serviceName.IsEquals("web-hooks"))
+				if (serviceName.IsStartsWith("webhook") || serviceName.IsStartsWith("web-hook"))
 				{
 					isWebHookRequest = true;
 					objectName = objectIdentity = "";
@@ -564,20 +564,19 @@ namespace net.vieapps.Services.APIGateway
 
 			// update session state
 			if (sendSessionState)
-				await Task.WhenAll
-				(
-					requestInfo.Session.SendSessionStateAsync(true, requestInfo.CorrelationID),
-					new CommunicateMessage("Users")
+			{
+				new CommunicateMessage("Users")
+				{
+					Type = "Session#State",
+					Data = new JObject
 					{
-						Type = "Session#State",
-						Data = new JObject
-						{
-							{ "SessionID", requestInfo.Session.SessionID },
-							{ "UserID", requestInfo.Session.User.ID },
-							{ "IsOnline", true }
-						}
-					}.PublishAsync(RESTfulAPIs.Logger, "Http.Updates")
-				).ConfigureAwait(false);
+						{ "SessionID", requestInfo.Session.SessionID },
+						{ "UserID", requestInfo.Session.User.ID },
+						{ "IsOnline", true }
+					}
+				}.Send();
+				await requestInfo.Session.SendSessionStateAsync(true, requestInfo.CorrelationID).ConfigureAwait(false);
+			}
 		}
 		#endregion
 

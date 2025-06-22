@@ -46,6 +46,8 @@ namespace net.vieapps.Services.APIGateway
 		public static bool ServiceForwardersAutoRedirect { get; } = "true".IsEquals(UtilityService.GetAppSetting("APIs:ServiceForwarders:AutoRedirect", "true"));
 
 		public static List<string> ServiceForwardersExcludedHeaders { get; } = UtilityService.GetAppSetting("APIs:ServiceForwarders:ExcludedHeaders", "Host,Connection,Content-Type,Content-Encoding,Transfer-Encoding").ToList();
+
+		public static string CaptchaKey { get; } = UtilityService.GetAppSetting("Keys:Captcha");
 		#endregion
 
 		public static async Task ProcessRequestAsync(HttpContext context)
@@ -1189,7 +1191,7 @@ namespace net.vieapps.Services.APIGateway
 				throw new InvalidRequestException("Captcha code is invalid", ex);
 			}
 
-			if (!CaptchaService.IsCodeValid(registered, input))
+			if (!CaptchaService.IsCodeValid(registered, input, RESTfulAPIs.CaptchaKey))
 				throw new InvalidRequestException("Captcha code is invalid");
 
 			return requestInfo;

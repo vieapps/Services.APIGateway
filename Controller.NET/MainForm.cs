@@ -14,19 +14,30 @@ namespace net.vieapps.Services.APIGateway
 			=> this.InitializeComponent();
 
 		void MainForm_Load(object sender, EventArgs args)
-			=> Task.Run(async () =>
-			{
-				await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
-				Program.Start();
-				await Task.Delay(UtilityService.GetRandomNumber(3456, 6789)).ConfigureAwait(false);
-				await Program.Manager.SendInterCommunicateMessageAsync("Controller#RequestInfo").ConfigureAwait(false);
-				await Program.Manager.SendInterCommunicateMessageAsync("Service#RequestInfo").ConfigureAwait(false);
-			}).ConfigureAwait(false);
+			=> this.StartAsync().Run();
 
 		private void MainForm_FormClosed(object sender, FormClosedEventArgs args)
-			=> Program.Stop();
+			=> this.Stop();
 
 		void ManageServices_Click(object sender, EventArgs args)
+			=> this.OpenServicesManager();
+
+		void ClearLogs_Click(object sender, EventArgs args)
+			=> this.CleanLogs();
+
+		async Task StartAsync()
+		{
+			await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
+			Program.Start();
+			await Task.Delay(UtilityService.GetRandomNumber(3456, 6789)).ConfigureAwait(false);
+			await Program.Manager.SendInterCommunicateMessageAsync("Controller#RequestInfo").ConfigureAwait(false);
+			await Program.Manager.SendInterCommunicateMessageAsync("Service#RequestInfo").ConfigureAwait(false);
+		}
+
+		void Stop()
+			=> Program.Stop();
+
+		void OpenServicesManager()
 		{
 			if (Program.Controller.State == ServiceState.Ready || Program.Controller.State == ServiceState.Connected)
 			{
@@ -37,10 +48,12 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		void ClearLogs_Click(object sender, EventArgs args)
-			=> this.Logs.Text = "";
-
 		public delegate void UpdateLogsDelegator(string logs);
+
+		public delegate void UpdateServicesInfoDelegator();
+
+		void CleanLogs()
+			=> this.Logs.Text = "";
 
 		internal void UpdateLogs(string logs)
 		{
@@ -58,8 +71,6 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch { }
 		}
-
-		public delegate void UpdateServicesInfoDelegator();
 
 		internal void UpdateServicesInfo()
 		{

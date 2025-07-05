@@ -32,13 +32,11 @@ namespace net.vieapps.Services.APIGateway
 					this.Instance = await Router.IncomingChannel.RealmProxy.Services.RegisterCallee<IManager>(() => this, RegistrationInterceptor.Create()).ConfigureAwait(false);
 
 					this.Communicator?.Dispose();
-					this.Communicator = Router.IncomingChannel.RealmProxy.Services
-						.GetSubject<CommunicateMessage>("messages.services.apigateway")
-						.Subscribe
-						(
-							message => this.ProcessInterCommunicateMessage(message),
-							exception => Global.OnError?.Invoke($"Error occurred while fetching inter-communicate message => {exception.Message}", exception)
-						);
+					this.Communicator = Router.IncomingChannel.RealmProxy.Services.GetSubject<CommunicateMessage>("messages.services.apigateway").Subscribe
+					(
+						message => this.ProcessInterCommunicateMessage(message),
+						exception => Global.OnError?.Invoke($"Error occurred while fetching inter-communicate message => {exception.Message}", exception)
+					);
 				}
 				catch (Exception ex)
 				{

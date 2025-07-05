@@ -164,13 +164,7 @@ namespace net.vieapps.Services.APIGateway
 		/// <param name="onIncomingConnectionEstablished">The action to fire when the incomming connection is established</param>
 		/// <param name="onOutgoingConnectionEstablished">The action to fire when the outgoing connection is established</param>
 		/// <param name="next">The next action to run when the controller was started</param>
-		public void Start
-		(
-			string[] args = null,
-			Action<object, WampSessionCreatedEventArgs> onIncomingConnectionEstablished = null,
-			Action<object, WampSessionCreatedEventArgs> onOutgoingConnectionEstablished = null,
-			Action<Controller> next = null
-		)
+		public void Start(string[] args = null, Action<object, WampSessionCreatedEventArgs> onIncomingConnectionEstablished = null, Action<object, WampSessionCreatedEventArgs> onOutgoingConnectionEstablished = null, Action<Controller> next = null)
 		{
 			// prepare arguments
 			var stopwatch = Stopwatch.StartNew();
@@ -301,15 +295,11 @@ namespace net.vieapps.Services.APIGateway
 			var attemptingCounter = 0;
 
 			void connectRouter()
-			{
-				Task.Run(async () => await connectRouterAsync().ConfigureAwait(false))
-					.ContinueWith(task =>
-					{
-						if (task.Exception != null)
-							Global.OnError?.Invoke($"Error occurred while connecting to the API Gateway Router => {task.Exception.Message}", task.Exception);
-					}, TaskContinuationOptions.OnlyOnRanToCompletion)
-					.Run(true);
-			}
+				=> connectRouterAsync().ContinueWith(task =>
+				{
+					if (task.Exception != null)
+						Global.OnError?.Invoke($"Error occurred while connecting to the API Gateway Router => {task.Exception.Message}", task.Exception);
+				}, TaskContinuationOptions.OnlyOnRanToCompletion).Run(true);
 
 			async Task connectRouterAsync()
 			{
@@ -317,7 +307,8 @@ namespace net.vieapps.Services.APIGateway
 				Global.OnProcess?.Invoke($"Attempting to connect to API Gateway Router [{new Uri(Router.GetRouterStrInfo()).GetResolvedURI()}] #{attemptingCounter}");
 				try
 				{
-					await Router.ConnectAsync(
+					await Router.ConnectAsync
+					(
 						async (sender, arguments) =>
 						{
 							Global.OnProcess?.Invoke($"The incoming channel to API Gateway Router is established - Session ID: {arguments.SessionId}");
@@ -326,29 +317,25 @@ namespace net.vieapps.Services.APIGateway
 								this.State = ServiceState.Ready;
 
 							this.InterCommunicator?.Dispose();
-							this.InterCommunicator = Router.IncomingChannel.RealmProxy.Services
-								.GetSubject<CommunicateMessage>("messages.services.apigateway")
-								.Subscribe
-								(
-									async message => await (this.Info.ID.IsEquals(message.ExcludedNodeID) ? Task.CompletedTask : this.ProcessInterCommunicateMessageAsync(message)).ConfigureAwait(false),
-									exception => Global.OnError?.Invoke($"Error occurred while fetching an inter-communicate message of API Gateway => {exception.Message}", this.State == ServiceState.Connected ? exception : null)
-								);
+							this.InterCommunicator = Router.IncomingChannel.RealmProxy.Services.GetSubject<CommunicateMessage>("messages.services.apigateway").Subscribe
+							(
+								message => this.Info.ID.IsEquals(message.ExcludedNodeID) ? Task.CompletedTask : this.ProcessInterCommunicateMessageAsync(message),
+								exception => Global.OnError?.Invoke($"Error occurred while fetching an inter-communicate message of API Gateway => {exception.Message}", this.State == ServiceState.Connected ? exception : null)
+							);
 							Global.OnProcess?.Invoke($"The communicator of API Gateway was{(this.State == ServiceState.Disconnected ? " re-" : " ")}subscribed successful");
 
 							this.UpdateCommunicator?.Dispose();
-							this.UpdateCommunicator = Router.IncomingChannel.RealmProxy.Services
-								.GetSubject<UpdateMessage>("messages.update")
-								.Subscribe
-								(
-									message =>
-									{
-										if (message.Type.IsEquals("Ping"))
-											this.ClientPingTime = DateTime.Now;
-										else if (message.Type.IsEquals("Scheduler"))
-											this.ClientSchedulingTime = DateTime.Now;
-									},
-									exception => Global.OnError?.Invoke($"Error occurred while fetching an updating message => {exception.Message}", this.State == ServiceState.Connected ? exception : null)
-								);
+							this.UpdateCommunicator = Router.IncomingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("messages.update").Subscribe
+							(
+								message =>
+								{
+									if (message.Type.IsEquals("Ping"))
+										this.ClientPingTime = DateTime.Now;
+									else if (message.Type.IsEquals("Scheduler"))
+										this.ClientSchedulingTime = DateTime.Now;
+								},
+								exception => Global.OnError?.Invoke($"Error occurred while fetching an updating message => {exception.Message}", this.State == ServiceState.Connected ? exception : null)
+							);
 							Global.OnProcess?.Invoke($"The updater of service messages was{(this.State == ServiceState.Disconnected ? " re-" : " ")}subscribed successful");
 
 							try
@@ -1149,7 +1136,25 @@ namespace net.vieapps.Services.APIGateway
 			{
 				try
 				{
-					action?.Invoke();
+					action();
+				}
+				catch (Exception ex)
+				{
+					Global.OnError?.Invoke($"Error occurred while running a timer => {ex.Message}", ex);
+				}
+			});
+			this.Timers.Add(timer);
+			return timer;
+		}
+
+		IDisposable StartTimer(Func<Task> action, int interval, int delay = 0)
+		{
+			interval = interval < 1 ? 1 : interval;
+			var timer = Observable.Timer(TimeSpan.FromMilliseconds(delay > 0 ? delay : interval * 1000), TimeSpan.FromSeconds(interval)).Subscribe(async _ =>
+			{
+				try
+				{
+					await action().ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -1241,10 +1246,10 @@ namespace net.vieapps.Services.APIGateway
 			}, Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:WebHook", "3"), out var webhookInterval) && webhookInterval > 0 ? webhookInterval : 3);
 
 			// house keeper
-			this.StartTimer(() => this.RunHouseKeeper(), 60 * 60);
+			this.StartTimer(this.RunHouseKeeper, 60 * 60);
 			this.StartTimer(() =>
 			{
-				var time = DateTime.Now.AddMinutes(0 - 5);
+				var time = DateTime.Now.AddMinutes(-7);
 				Directory.GetFiles(Global.LogsPath, "*.json").Select(path => new FileInfo(path)).Where(file => file.LastWriteTime <= time).ToList().ForEach(file =>
 				{
 					try
@@ -1259,7 +1264,7 @@ namespace net.vieapps.Services.APIGateway
 			var runTaskSchedulerOnFirstLoad = false;
 			if (ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:TaskScheduler", "net.vieapps.task.scheduler")) is AppConfigurationSectionHandler config)
 				runTaskSchedulerOnFirstLoad = "true".IsEquals(config.Section.Attributes["runOnFirstLoad"]?.Value);
-			this.StartTimer(async () => await this.RunTaskSchedulerAsync().ConfigureAwait(false), 65 * 60, runTaskSchedulerOnFirstLoad ? 5678 : 0);
+			this.StartTimer(this.RunTaskSchedulerAsync, 65 * 60, runTaskSchedulerOnFirstLoad ? 5678 : 0);
 
 			// ping - default: 2 minutes
 			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:Ping", "120"), out var pingInterval))
@@ -1285,15 +1290,11 @@ namespace net.vieapps.Services.APIGateway
 			this.StartTimer(() =>
 			{
 				if ((DateTime.Now - this.ClientSchedulingTime).TotalSeconds >= scheduleInterval)
-					try
+					new UpdateMessage
 					{
-						new UpdateMessage
-						{
-							Type = "Scheduler",
-							DeviceID = "*",
-						}.Send();
-					}
-					catch { }
+						Type = "Scheduler",
+						DeviceID = "*",
+					}.Send();
 			}, scheduleInterval + 13);
 		}
 		#endregion
@@ -1361,7 +1362,7 @@ namespace net.vieapps.Services.APIGateway
 			});
 
 			// clean service logs
-			remainTime = DateTime.Now.AddHours(0 - 36);
+			remainTime = DateTime.Now.AddHours(-36);
 			UtilityService.GetFiles(Global.LogsPath, "*.*").Where(file => file.LastWriteTime < remainTime).ForEach(file =>
 			{
 				try
@@ -1384,7 +1385,7 @@ namespace net.vieapps.Services.APIGateway
 			var attachmentsPath = UtilityService.GetAppSetting("Path:Attachments");
 			if (!string.IsNullOrWhiteSpace(attachmentsPath) && Directory.Exists(attachmentsPath))
 			{
-				remainTime = DateTime.Now.AddDays(0 - 30);
+				remainTime = DateTime.Now.AddDays(-30);
 				Directory.GetDirectories(attachmentsPath).Where(path => path != null && path.Right(32).IsValidUUID()).Select(path => Path.Combine(path, "trash")).Where(path => Directory.Exists(path)).ForEach(path =>
 				{
 					var files = UtilityService.GetFiles(path).Where(file => file.LastAccessTime < remainTime).ToList();

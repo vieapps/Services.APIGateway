@@ -6,15 +6,16 @@ using System.Net;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using net.vieapps.Components.Utility;
-using net.vieapps.Components.Security;
 using net.vieapps.Components.Caching;
+using net.vieapps.Components.Repository;
+using net.vieapps.Components.Security;
+using net.vieapps.Components.Utility;
 #endregion
 
 namespace net.vieapps.Services.APIGateway
@@ -31,9 +32,9 @@ namespace net.vieapps.Services.APIGateway
 
 		public static ConcurrentDictionary<string, List<JObject>> Services { get; } = [];
 
-		public static List<string> ExcludedHeaders { get; } = UtilityService.GetAppSetting("APIs:ExcludedHeaders", "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,purpose,ms-aspnetcore-token,x-forwarded-for,x-forwarded-proto,x-forwarded-port,x-original-for,x-original-proto,x-original-remote-endpoint,x-original-port,cdn-loop").ToList();
+		public static List<string> ExcludedHeaders { get; } = UtilityService.GetAppSetting("APIs:ExcludedHeaders", "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,priority,purpose,ms-aspnetcore-token,x-forwarded-for,x-forwarded-proto,x-forwarded-port,x-original-for,x-original-proto,x-original-remote-endpoint,x-original-port,cdn-loop").ToList();
 
-		public static HashSet<string> NoTokenRequiredServices { get; } = $"{UtilityService.GetAppSetting("APIs:NoTokenRequiredServices", "")}|indexes|discovery|webhook|webhooks".ToLower().ToHashSet('|', true);
+		public static HashSet<string> NoTokenRequiredServices { get; } = $"{UtilityService.GetAppSetting("APIs:NoTokenRequiredServices", "")}|indexes|iplocations|discovery|webhook|webhooks".ToLower().ToHashSet('|', true);
 
 		public static string PrivateToken { get; } = UtilityService.GetAppSetting("APIs:PrivateToken", UtilityService.NewUUID);
 
@@ -48,6 +49,8 @@ namespace net.vieapps.Services.APIGateway
 		public static List<string> ServiceForwardersExcludedHeaders { get; } = UtilityService.GetAppSetting("APIs:ServiceForwarders:ExcludedHeaders", "Host,Connection,Content-Type,Content-Encoding,Transfer-Encoding").ToList();
 
 		public static string CaptchaKey { get; } = UtilityService.GetAppSetting("Keys:Captcha");
+
+		public static bool TrackSessions { get; } = "true".IsEquals(UtilityService.GetAppSetting("Sessions:Track", "true")) && "true".IsEquals(UtilityService.GetAppSetting("Sessions:Track:APIs", "true"));
 		#endregion
 
 		public static async Task ProcessRequestAsync(HttpContext context)
@@ -68,11 +71,11 @@ namespace net.vieapps.Services.APIGateway
 					? pathSegments[2].GetANSIUri(false, true)
 					: context.GetParameter("x-object-identity") ?? context.GetParameter("ObjectIdentity") ?? "";
 				if (serviceName.IsStartsWith("webhook") || serviceName.IsStartsWith("web-hook"))
-				{
+				{					
 					isWebHookRequest = true;
 					objectName = objectIdentity = "";
 					context.SetItem("Correlation-ID", context.GetParameter("x-original-correlation-id") ?? context.GetCorrelationID());
-					header["x-webhook-type"] = $"{context.Request.Path}".IsEndsWith("~test") ? "test" : $"{context.Request.Path}".IsEndsWith("~forwarder") ? "forwarder" : "sync";
+					header["x-webhook-type"] = pathSegments.Last().IsEquals("~test") ? "test" : pathSegments.Last().IsEquals("~forwarder") ? "forwarder" : "sync";
 					header["x-webhook-uri"] = $"{context.GetRequestUri()}";
 					header["x-webhook-service"] = serviceName = pathSegments.Length > 1 && !string.IsNullOrWhiteSpace(pathSegments[1])
 						? pathSegments[1].GetANSIUri(false, true).GetCapitalizedFirstLetter()
@@ -101,29 +104,34 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch { }
 
+			using var cts = CancellationTokenSource.CreateLinkedTokenSource(Global.CancellationToken, context.RequestAborted);
+			bool isSessionProccessed = false, isSessionInitialized = false, isAccountProccessed = false, isActivationProccessed = false;
+			var isDebugLogEnabled = Global.IsDebugResultsEnabled || context.ContainsKey("x-logs");
 			var requestInfo = new RequestInfo(context.GetSession(), query["service-name"], query["object-name"], context.Request.Method, query, header)
 			{
 				Extra = extra,
 				CorrelationID = context.GetCorrelationID()
 			};
 
-			var isDebugLogEnabled = Global.IsDebugResultsEnabled || requestInfo.TryGetParameter("x-logs", out var _);
-
-			#region prepare authenticate token
-			bool isSessionProccessed = false, isSessionInitialized = false, isAccountProccessed = false, isActivationProccessed = false;
-
-			if (requestInfo.ServiceName.IsEquals("users"))
+			#region prepare authenticate token, session/device identity, request body, security/principal
+			// working with Users service
+			if (requestInfo.ServiceName.IsEquals("Users"))
 			{
-				if (requestInfo.ObjectName.IsEquals("session"))
+				if (requestInfo.ObjectName.IsEquals("Session"))
 				{
 					isSessionProccessed = true;
 					isSessionInitialized = requestInfo.Verb.IsEquals("GET");
 					isAccountProccessed = requestInfo.Verb.IsEquals("POST");
 				}
-				else if (requestInfo.ObjectName.IsEquals("account"))
+				else if (requestInfo.ObjectName.IsEquals("Account"))
 					isAccountProccessed = requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT");
-				else if (requestInfo.ObjectName.IsEquals("activate"))
+				else if (requestInfo.ObjectName.IsEquals("Activate"))
 					isActivationProccessed = requestInfo.Verb.IsEquals("GET");
+			}
+			else if (requestInfo.ServiceName.IsEquals("Sessions") || requestInfo.ServiceName.IsStartsWith("Online") || requestInfo.ServiceName.IsStartsWith("Statistics") || requestInfo.ServiceName.IsStartsWith("Hits") || requestInfo.ServiceName.IsStartsWith("Counters"))
+			{
+				requestInfo.ObjectName = requestInfo.ServiceName.IsStartsWith("Statistics") || requestInfo.ServiceName.IsStartsWith("Hits") || requestInfo.ServiceName.IsStartsWith("Counters") ? "Statistics" : "Sessions";
+				requestInfo.ServiceName = "Users";
 			}
 
 			// authenticate token
@@ -161,7 +169,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					if (requestInfo.Query.TryGetValue("register", out var registered) && requestInfo.ServiceName.IsEquals("Users") && requestInfo.ObjectName.IsEquals("Session"))
 					{
-						if (!registered.IsEquals(await Global.Cache.GetAsync<string>($"Session#{requestInfo.Session.SessionID}", Global.CancellationToken).ConfigureAwait(false)))
+						if (!registered.IsEquals(await Global.Cache.GetAsync<string>($"Session#{requestInfo.Session.SessionID}", cts.Token).ConfigureAwait(false)))
 							throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 					}
 					else if (!await context.IsSessionExistAsync(requestInfo.Session, RESTfulAPIs.Logger, "RESTfulAPIs", requestInfo.CorrelationID).ConfigureAwait(false))
@@ -175,18 +183,19 @@ namespace net.vieapps.Services.APIGateway
 					RESTfulAPIs.Logger.LogError(ex.Message, ex);
 				return;
 			}
-			#endregion
 
-			#region prepare session identity & request body
 			// new session
 			if (string.IsNullOrWhiteSpace(requestInfo.Session.SessionID))
 				requestInfo.Session.SessionID = requestInfo.Session.User.SessionID = UtilityService.NewUUID;
+
+			if (string.IsNullOrWhiteSpace(requestInfo.Session.DeviceID))
+				requestInfo.Session.DeviceID = $"{UtilityService.NewUUID}@apis";
 
 			// request body
 			if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT") || requestInfo.Verb.IsEquals("PATCH"))
 				try
 				{
-					requestInfo.Body = await context.ReadTextAsync(Global.CancellationToken).ConfigureAwait(false);
+					requestInfo.Body = await context.ReadTextAsync(cts.Token).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -202,9 +211,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					await context.WriteLogsAsync(RESTfulAPIs.Logger, "RESTfulAPIs", $"Error occurred while parsing body of the 'x-body' parameter => {ex.Message}", ex).ConfigureAwait(false);
 				}
-			#endregion
 
-			#region prepare security/principal information
 			// verify captcha
 			try
 			{
@@ -236,24 +243,28 @@ namespace net.vieapps.Services.APIGateway
 			context.User = new UserPrincipal(requestInfo.Session.User);
 			#endregion
 
+			// update session state
+			if (RESTfulAPIs.TrackSessions)
+				requestInfo.SendSessionState();
+
 			// process request of sessions
 			if (isSessionProccessed)
 				switch (requestInfo.Verb)
 				{
 					case "GET":
-						await context.RegisterSessionAsync(requestInfo).ConfigureAwait(false);
+						await context.RegisterSessionAsync(requestInfo, cts.Token).ConfigureAwait(false);
 						break;
 
 					case "POST":
-						await context.LogSessionInAsync(requestInfo).ConfigureAwait(false);
+						await context.LogSessionInAsync(requestInfo, cts.Token).ConfigureAwait(false);
 						break;
 
 					case "PUT":
-						await context.LogOTPSessionInAsync(requestInfo).ConfigureAwait(false);
+						await context.LogOTPSessionInAsync(requestInfo, cts.Token).ConfigureAwait(false);
 						break;
 
 					case "DELETE":
-						await context.LogSessionOutAsync(requestInfo).ConfigureAwait(false);
+						await context.LogSessionOutAsync(requestInfo, cts.Token).ConfigureAwait(false);
 						break;
 
 					default:
@@ -263,7 +274,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// process request of activations
 			else if (isActivationProccessed)
-				await context.ActivateAsync(requestInfo).ConfigureAwait(false);
+				await context.ActivateAsync(requestInfo, cts.Token).ConfigureAwait(false);
 
 			// process request of web-hook messages
 			else if (isWebHookRequest)
@@ -273,25 +284,23 @@ namespace net.vieapps.Services.APIGateway
 					{
 						var response = new JObject
 						{
-							["URI"] = requestInfo.Header["x-webhook-uri"],
+							["URI"] = requestInfo.GetHeaderParameter("x-webhook-uri"),
 							["Verb"] = requestInfo.Verb,
 							["Header"] = requestInfo.Header.ToJObject(),
 							["Query"] = requestInfo.Query.ToJObject(),
 							["Body"] = requestInfo.BodyAsJson
 						};
-						Global.WriteLogs(Global.Logger, "WebHooks", $"Got a testing web-hook message [{requestInfo.Header["x-webhook-uri"]}] {response}", null, Global.ServiceName, LogLevel.Information, requestInfo.CorrelationID);
-						await context.WriteAsync(response, Global.CancellationToken).ConfigureAwait(false);
+						Global.WriteLogs(Global.Logger, "WebHooks", $"Got a testing web-hook message [{requestInfo.GetHeaderParameter("x-webhook-uri")}] {response}", null, Global.ServiceName, LogLevel.Information, requestInfo.CorrelationID);
+						await context.WriteAsync(response, cts.Token).ConfigureAwait(false);
 					}
 					else
 					{
-						JToken response = new JObject
-						{
-							["Status"] = "OK"
-						};
 						var contentType = "application/json";
 						var contentBody = "";
-						var webhook = requestInfo.GetService().ProcessWebHookMessageAsync(requestInfo);
-						if ("GET".IsEquals(requestInfo.Verb) || (requestInfo.TryGetParameter("wait-for", out var wait) && wait.IsEquals("completed")))
+						var waitForCompleted = "GET".IsEquals(requestInfo.Verb) || (requestInfo.TryGetParameter("wait-for", out var wait) && wait.IsEquals("completed"));
+						var webhook = requestInfo.GetService().ProcessWebHookMessageAsync(requestInfo, waitForCompleted ? cts.Token : Global.CancellationToken);
+						JToken response = new JObject { ["Status"] = "OK" };
+						if (waitForCompleted)
 							try
 							{
 								response = await webhook.ConfigureAwait(false);
@@ -306,9 +315,9 @@ namespace net.vieapps.Services.APIGateway
 							webhook.Run(ex => Global.WriteLogs(RESTfulAPIs.Logger, "WebHooks", $"Error occurred while processing a web-hook message => {ex.Message}", ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID));
 
 						if (!string.IsNullOrWhiteSpace(contentType) && !"application/json".IsEquals(contentType) && !string.IsNullOrWhiteSpace(contentBody))
-							await context.WriteAsync(contentBody.ToBytes(), Global.CancellationToken).ConfigureAwait(false);
+							await context.WriteAsync(contentBody.ToBytes(), cts.Token).ConfigureAwait(false);
 						else
-							await context.WriteAsync(response, Global.CancellationToken).ConfigureAwait(false);
+							await context.WriteAsync(response, cts.Token).ConfigureAwait(false);
 					}
 				}
 				catch (Exception ex)
@@ -325,9 +334,9 @@ namespace net.vieapps.Services.APIGateway
 						: requestInfo.ObjectName.IsEquals("services")
 							? RESTfulAPIs.GetServices()
 							: requestInfo.ObjectName.IsEquals("definitions")
-								? await context.CallServiceAsync(requestInfo.PrepareDefinitionRelated(), Global.CancellationToken, RESTfulAPIs.Logger, "Http.Definitions").ConfigureAwait(false)
+								? await context.CallServiceAsync(requestInfo.PrepareDefinitionRelated(), cts.Token, RESTfulAPIs.Logger, "Http.Definitions").ConfigureAwait(false)
 								: throw new InvalidRequestException();
-					await context.WriteAsync(response, Global.CancellationToken).ConfigureAwait(false);
+					await context.WriteAsync(response, cts.Token).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -345,7 +354,7 @@ namespace net.vieapps.Services.APIGateway
 						throw new MethodNotAllowedException(requestInfo.Verb);
 
 					requestInfo.ObjectName = "service";
-					await context.WriteAsync(await Global.CallServiceAsync(requestInfo, Global.CancellationToken).ConfigureAwait(false), Global.CancellationToken).ConfigureAwait(false);
+					await context.WriteAsync(await Global.CallServiceAsync(requestInfo, cts.Token).ConfigureAwait(false), cts.Token).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -358,7 +367,6 @@ namespace net.vieapps.Services.APIGateway
 				{
 					if (requestInfo.Verb.IsEquals("GET"))
 					{
-						using var cts = CancellationTokenSource.CreateLinkedTokenSource(Global.CancellationToken, context.RequestAborted);
 						var fileName = await requestInfo.DownloadTemporaryFileAsync(cts.Token).ConfigureAwait(false);
 						var fileInfo = new FileInfo(Path.Combine(UtilityService.GetAppSetting("Path:Temp", Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data-files", "temp")), fileName));
 						await context.WriteAsync(fileInfo, fileName.Length > 33 && fileName.Left(32).IsValidUUID() ? fileName.Right(fileName.Length - 33) : fileName, null, cts.Token).ConfigureAwait(false);
@@ -377,7 +385,6 @@ namespace net.vieapps.Services.APIGateway
 				{
 					if (requestInfo.Verb.IsEquals("POST"))
 					{
-						using var cts = CancellationTokenSource.CreateLinkedTokenSource(Global.CancellationToken, context.RequestAborted);
 						var data = requestInfo.BodyAsExpandoObject;
 						await new EmailMessage
 						{
@@ -414,7 +421,7 @@ namespace net.vieapps.Services.APIGateway
 							Type = "Broadcast#Client",
 							Data = requestInfo.GetBodyJson().As<UpdateMessage>().ToJson()
 						}.Send();
-						await context.WriteAsync(new JObject { ["Status"] = "Success" }, Global.CancellationToken).ConfigureAwait(false);
+						await context.WriteAsync(new JObject { ["Status"] = "Success" }, cts.Token).ConfigureAwait(false);
 					}
 					else
 						throw new InvalidRequestException();
@@ -428,7 +435,7 @@ namespace net.vieapps.Services.APIGateway
 			else if (requestInfo.ServiceName.IsEquals("cache"))
 				try
 				{
-					await context.WriteAsync(await requestInfo.FlushCachingStoragesAsync().ConfigureAwait(false), Global.CancellationToken).ConfigureAwait(false);
+					await context.WriteAsync(await requestInfo.FlushCachingStoragesAsync(cts.Token).ConfigureAwait(false), cts.Token).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -439,7 +446,6 @@ namespace net.vieapps.Services.APIGateway
 			else if (RESTfulAPIs.ServiceForwarders.ContainsKey(requestInfo.ServiceName.ToLower()))
 				try
 				{
-					using var cts = CancellationTokenSource.CreateLinkedTokenSource(Global.CancellationToken, context.RequestAborted);
 					await context.WriteAsync(await requestInfo.ForwardRequestAsync(cts.Token).ConfigureAwait(false), cts.Token).ConfigureAwait(false);
 				}
 				catch (RemoteServerException ex)
@@ -467,9 +473,7 @@ namespace net.vieapps.Services.APIGateway
 						{
 							if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT"))
 								requestInfo.Extra["Signature"] = requestInfo.Body.GetHMACSHA256(Global.ValidationKey);
-							else if (requestInfo.Header.TryGetValue("x-app-token", out var authenticateToken))
-								requestInfo.Extra["Signature"] = authenticateToken.GetHMACSHA256(Global.ValidationKey);
-							else if (requestInfo.Query.TryGetValue("x-app-token", out authenticateToken))
+							else if (requestInfo.TryGetParameter("x-app-token", out var authenticateToken))
 								requestInfo.Extra["Signature"] = authenticateToken.GetHMACSHA256(Global.ValidationKey);
 						}
 					}
@@ -479,25 +483,22 @@ namespace net.vieapps.Services.APIGateway
 					{
 						if (!requestInfo.Extra.ContainsKey("Signature"))
 						{
+							requestInfo.Extra["SessionID"] = requestInfo.Session.SessionID.GetHMACBLAKE256(Global.ValidationKey);
 							if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT"))
 								requestInfo.Extra["Signature"] = requestInfo.Body.GetHMACSHA256(Global.ValidationKey);
-							else if (requestInfo.Header.TryGetValue("x-app-token", out var authenticateToken))
+							else if (requestInfo.TryGetParameter("x-app-token", out var authenticateToken))
 								requestInfo.Extra["Signature"] = authenticateToken.GetHMACSHA256(Global.ValidationKey);
-							else if (requestInfo.Query.TryGetValue("x-app-token", out authenticateToken))
-								requestInfo.Extra["Signature"] = authenticateToken.GetHMACSHA256(Global.ValidationKey);
-							requestInfo.Extra["SessionID"] = requestInfo.Session.SessionID.GetHMACBLAKE256(Global.ValidationKey);
 						}
 					}
 
 					// process the request
-					using var cts = CancellationTokenSource.CreateLinkedTokenSource(Global.CancellationToken, context.RequestAborted);
 					var response = requestInfo.Verb.IsEquals("PATCH")
 						? "rollback".IsEquals(requestInfo.GetParameter("x-patch-mode"))
 							? await requestInfo.RollbackAsync(cts.Token).ConfigureAwait(false)
 							: "restore".IsEquals(requestInfo.GetParameter("x-patch-mode"))
 								? await requestInfo.RestoreAsync(cts.Token).ConfigureAwait(false)
 								: "sync".IsEquals(requestInfo.GetParameter("x-patch-mode"))
-									? await context.SyncAsync(requestInfo).ConfigureAwait(false)
+									? await context.SyncAsync(requestInfo, cts.Token).ConfigureAwait(false)
 									: throw new InvalidRequestException()
 						: await context.CallServiceAsync(requestInfo, cts.Token, RESTfulAPIs.Logger, "RESTfulAPIs").ConfigureAwait(false);
 					await context.WriteAsync(response, cts.Token).ConfigureAwait(false);
@@ -523,7 +524,7 @@ namespace net.vieapps.Services.APIGateway
 		static Task WriteAsync(this HttpContext context, JToken json, CancellationToken cancellationToken)
 			=> context.WriteAsync(json.ToString(RESTfulAPIs.JsonFormat).ToBytes(), cancellationToken);
 
-		#region Send state message of a session
+		#region Send session state messages
 		public static async Task SendSessionStateAsync(this Session session, bool isOnline, string correlationID = null)
 		{
 			if (!string.IsNullOrWhiteSpace(session.User.ID))
@@ -547,6 +548,51 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch { }
 		}
+
+		public static void SendSessionState(this RequestInfo requestInfo, bool isOnline = true)
+		{
+			var systemID = string.Empty;
+			if (requestInfo.ServiceName.IsStartsWith("Portals"))
+				try
+				{
+					var body = requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT") || requestInfo.Verb.IsEquals("PATCH") ? requestInfo.BodyAsJson : null;
+					systemID = body?.Get<string>("SystemID") ?? requestInfo.GetParameter("SystemID") ?? requestInfo.GetParameter("OrganizationID") ?? requestInfo.GetParameter("x-system-id");
+					if (string.IsNullOrWhiteSpace(systemID))
+					{
+						systemID = requestInfo.GetParameter("active-id");
+						if (string.IsNullOrWhiteSpace(systemID) && requestInfo.TryGetParameter("x-request", out var base64Request))
+						{
+							var request = base64Request.Url64Decode();
+							var start = request.PositionOf("\"SystemID\":{\"Equals\":\"");
+							if (start > 0)
+							{
+								start = request.PositionOf(":\"", start) + 2;
+								var end = request.PositionOf("\"", start);
+								systemID = request.Substring(start, end - start);
+							}
+						}
+					}
+				}
+				catch { }
+			new CommunicateMessage("Users")
+			{
+				Type = "Session#State",
+				Data = new JObject
+				{
+					["SessionID"] = requestInfo.Session.SessionID,
+					["UserID"] = requestInfo.Session.User?.ID,
+					["Online"] = isOnline,
+					["AppInfo"] = $"{requestInfo.Session.AppName} @ {requestInfo.Session.AppPlatform}",
+					["OSInfo"] = $"{requestInfo.Session.AppAgent.GetOSInfo()} [{requestInfo.Session.AppAgent}]",
+					["Service"] = new JObject
+					{
+						["Name"] = requestInfo.ServiceName.ToLower(),
+						["URI"] = $"{requestInfo.Verb} {requestInfo.GetURI()}",
+						["SystemID"] = string.IsNullOrWhiteSpace(systemID) ? null : systemID
+					}
+				}
+			}.Send();
+		}
 		#endregion
 
 		#region Create/Renew a session
@@ -564,47 +610,41 @@ namespace net.vieapps.Services.APIGateway
 				CorrelationID = requestInfo.CorrelationID
 			}, Global.CancellationToken, RESTfulAPIs.Logger, "Authentications").ConfigureAwait(false);
 
-			// update session state
+			// send update messages
 			if (sendSessionState)
 			{
-				new CommunicateMessage("Users")
-				{
-					Type = "Session#State",
-					Data = new JObject
-					{
-						{ "SessionID", requestInfo.Session.SessionID },
-						{ "UserID", requestInfo.Session.User.ID },
-						{ "IsOnline", true }
-					}
-				}.Send();
+				// update state of the current session (client)
 				await requestInfo.Session.SendSessionStateAsync(true, requestInfo.CorrelationID).ConfigureAwait(false);
+
+				// tell Users service to update state of the current session
+				requestInfo.SendSessionState();
 			}
 		}
 		#endregion
 
 		#region Register a session
-		static async Task RegisterSessionAsync(this HttpContext context, RequestInfo requestInfo)
+		static async Task RegisterSessionAsync(this HttpContext context, RequestInfo requestInfo, CancellationToken cancellationToken)
 		{
 			// session of visitor/system account
 			if (requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.IsSystemAccount)
 				try
 				{
 					// initialize session
-					if (!requestInfo.Query.ContainsKey("register"))
+					if (!requestInfo.ContainsKey("register"))
 					{
 						// generate device identity
 						if (string.IsNullOrWhiteSpace(requestInfo.Session.DeviceID))
 							requestInfo.Session.DeviceID = (requestInfo.Session.AppName + "/" + requestInfo.Session.AppPlatform + "@" + (requestInfo.Session.AppAgent ?? "N/A")).GetHMACBLAKE128(requestInfo.Session.SessionID, true) + "@pwa";
 
 						// store identity into cache for further use
-						await Global.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.GetEncryptedID(), 13, Global.CancellationToken).ConfigureAwait(false);
+						await Global.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.GetEncryptedID(), 13, cancellationToken).ConfigureAwait(false);
 					}
 
 					// register session
 					else
 					{
 						// validate
-						var registered = await Global.Cache.GetAsync<string>($"Session#{requestInfo.Session.SessionID}").ConfigureAwait(false);
+						var registered = await Global.Cache.GetAsync<string>($"Session#{requestInfo.Session.SessionID}", cancellationToken).ConfigureAwait(false);
 						if (!requestInfo.Query["register"].IsEquals(registered))
 						{
 							var ex = new InvalidSessionException("Session is invalid (The session is not issued by the system)");
@@ -626,7 +666,7 @@ namespace net.vieapps.Services.APIGateway
 						await Task.WhenAll
 						(
 							context.CreateOrRenewSessionAsync(requestInfo),
-							Global.Cache.RemoveAsync($"Session#{requestInfo.Session.SessionID}", Global.CancellationToken)
+							Global.Cache.RemoveAsync($"Session#{requestInfo.Session.SessionID}", cancellationToken)
 						).ConfigureAwait(false);
 					}
 
@@ -634,7 +674,7 @@ namespace net.vieapps.Services.APIGateway
 					var response = requestInfo.Session.GetSessionJson();
 					await Task.WhenAll
 					(
-						context.WriteAsync(response, Global.CancellationToken),
+						context.WriteAsync(response, cancellationToken),
 						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(RESTfulAPIs.Logger, "Authentications",
 						[
 							$"Successfully process request of session (registration of anonymous user)",
@@ -662,7 +702,7 @@ namespace net.vieapps.Services.APIGateway
 							{ "Signature", requestInfo.GetParameter("x-app-token").GetHMACSHA256(Global.ValidationKey) }
 						},
 						CorrelationID = requestInfo.CorrelationID
-					}, Global.CancellationToken, RESTfulAPIs.Logger, "Authentications").ConfigureAwait(false);
+					}, cancellationToken, RESTfulAPIs.Logger, "Authentications").ConfigureAwait(false);
 
 					// check
 					if (session == null)
@@ -678,7 +718,7 @@ namespace net.vieapps.Services.APIGateway
 					var response = requestInfo.GetSessionJson();
 					await Task.WhenAll
 					(
-						context.WriteAsync(response, Global.CancellationToken),
+						context.WriteAsync(response, cancellationToken),
 						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(RESTfulAPIs.Logger, "Authentications",
 						[
 							$"Successfully process request of session (registration of authenticated user)",
@@ -696,7 +736,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Log a session in
-		static async Task LogSessionInAsync(this HttpContext context, RequestInfo requestInfo)
+		static async Task LogSessionInAsync(this HttpContext context, RequestInfo requestInfo, CancellationToken cancellationToken)
 		{
 			try
 			{
@@ -721,7 +761,6 @@ namespace net.vieapps.Services.APIGateway
 					{ "Password", password },
 				}.ToString(Formatting.None);
 
-				using var cts = CancellationTokenSource.CreateLinkedTokenSource(Global.CancellationToken, context.RequestAborted);
 				var response = await context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Session", "PUT")
 				{
 					Query = requestInfo.Query,
@@ -731,11 +770,9 @@ namespace net.vieapps.Services.APIGateway
 						{ "Signature", body.GetHMACSHA256(Global.ValidationKey) }
 					},
 					CorrelationID = requestInfo.CorrelationID
-				}, cts.Token, RESTfulAPIs.Logger, "Authentications").ConfigureAwait(false);
+				}, cancellationToken, RESTfulAPIs.Logger, "Authentications").ConfigureAwait(false);
 
 				// two-factors authentication
-				var oldSessionID = string.Empty;
-				var oldUserID = string.Empty;
 				var require2FA = response.Get("Require2FA", false);
 
 				if (require2FA)
@@ -748,12 +785,11 @@ namespace net.vieapps.Services.APIGateway
 
 				else
 				{
-					// update status of old session
+					// update state of the current session (client)
 					await requestInfo.Session.SendSessionStateAsync(false, requestInfo.CorrelationID).ConfigureAwait(false);
 
 					// register new session
-					oldSessionID = requestInfo.Session.SessionID;
-					oldUserID = requestInfo.Session.User.ID;
+					var oldSessionID = requestInfo.Session.SessionID;
 					requestInfo.Session.User = response.Copy<User>();
 					requestInfo.Session.User.SessionID = requestInfo.Session.SessionID = UtilityService.NewUUID;
 					await context.CreateOrRenewSessionAsync(requestInfo).ConfigureAwait(false);
@@ -762,7 +798,7 @@ namespace net.vieapps.Services.APIGateway
 					response = requestInfo.GetSessionJson(payload => payload["did"] = requestInfo.Session.DeviceID);
 
 					// broadcast updates
-					await new CommunicateMessage("APIGateway")
+					new CommunicateMessage("APIGateway")
 					{
 						Type = "Session#Patch",
 						Data = new JObject
@@ -771,14 +807,25 @@ namespace net.vieapps.Services.APIGateway
 							{ "EncryptedID", response["ID"] },
 							{ "AuthenticateToken", response["Token"] }
 						}
-					}.PublishAsync(WebSocketAPIs.Logger, "Http.Updates").ConfigureAwait(false);
+					}.Send();
+
+					// tell Users service to update state of the old session
+					new CommunicateMessage("Users")
+					{
+						Type = "Session#State",
+						Data = new JObject
+						{
+							{ "ID", oldSessionID },
+							{ "Online", false }
+						}
+					}.Send();
 				}
 
 				// response
 				await Task.WhenAll
 				(
-					context.WriteAsync(response, cts.Token),
-					Global.Cache.RemoveAsync($"Attempt#{context.GetRemoteIPAddress()}", cts.Token),
+					context.WriteAsync(response, cancellationToken),
+					Global.Cache.RemoveAsync($"Attempt#{context.GetRemoteIPAddress()}", cancellationToken),
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(RESTfulAPIs.Logger, "Authentications",
 					[
 						$"Successfully process request of session (sign-in)",
@@ -787,19 +834,6 @@ namespace net.vieapps.Services.APIGateway
 						$"- Execution times: {context.GetExecutionTimes()}"
 					])
 				).ConfigureAwait(false);
-
-				// update state of old session
-				if (!string.IsNullOrWhiteSpace(oldSessionID))
-					await new CommunicateMessage("Users")
-					{
-						Type = "Session#State",
-						Data = new JObject
-						{
-							{ "SessionID", oldSessionID },
-							{ "UserID", oldUserID },
-							{ "IsOnline", false }
-						}
-					}.PublishAsync(RESTfulAPIs.Logger, "Http.Updates").ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
@@ -810,7 +844,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Log a session in with OTP
-		static async Task LogOTPSessionInAsync(this HttpContext context, RequestInfo requestInfo)
+		static async Task LogOTPSessionInAsync(this HttpContext context, RequestInfo requestInfo, CancellationToken cancellationToken)
 		{
 			try
 			{
@@ -836,7 +870,6 @@ namespace net.vieapps.Services.APIGateway
 				}
 
 				// call service to log in
-				using var cts = CancellationTokenSource.CreateLinkedTokenSource(Global.CancellationToken, context.RequestAborted);
 				var response = await context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "OTP", "POST")
 				{
 					Query = requestInfo.Query,
@@ -847,9 +880,9 @@ namespace net.vieapps.Services.APIGateway
 						{ "Info", info.Encrypt(Global.EncryptionKey) }
 					}.ToString(Formatting.None),
 					CorrelationID = requestInfo.CorrelationID
-				}, cts.Token, RESTfulAPIs.Logger, "Authentications").ConfigureAwait(false);
+				}, cancellationToken, RESTfulAPIs.Logger, "Authentications").ConfigureAwait(false);
 
-				// update status of old session
+				// update state of the current session (client)
 				await requestInfo.Session.SendSessionStateAsync(false, requestInfo.CorrelationID).ConfigureAwait(false);
 
 				// register new session
@@ -864,7 +897,7 @@ namespace net.vieapps.Services.APIGateway
 				response = requestInfo.GetSessionJson(payload => payload["did"] = requestInfo.Session.DeviceID);
 
 				// broadcast updates
-				await new CommunicateMessage("APIGateway")
+				new CommunicateMessage("APIGateway")
 				{
 					Type = "Session#Patch",
 					Data = new JObject
@@ -873,13 +906,24 @@ namespace net.vieapps.Services.APIGateway
 						{ "EncryptedID", response["ID"] },
 						{ "AuthenticateToken", response["Token"] }
 					}
-				}.PublishAsync(WebSocketAPIs.Logger, "Http.Updates").ConfigureAwait(false);
+				}.Send();
+
+				// tell Users service to update state of the old session
+				new CommunicateMessage("Users")
+				{
+					Type = "Session#State",
+					Data = new JObject
+					{
+						{ "ID", oldSessionID },
+						{ "Online", false }
+					}
+				}.Send();
 
 				// response
 				await Task.WhenAll
 				(
-					context.WriteAsync(response, cts.Token),
-					Global.Cache.RemoveAsync($"Attempt#{context.GetRemoteIPAddress()}", cts.Token),
+					context.WriteAsync(response, cancellationToken),
+					Global.Cache.RemoveAsync($"Attempt#{context.GetRemoteIPAddress()}", cancellationToken),
 					Global.IsDebugResultsEnabled ? context.WriteLogsAsync(RESTfulAPIs.Logger, "Authentications",
 					[
 						$"Successfully process request of session (OTP validation)",
@@ -888,18 +932,6 @@ namespace net.vieapps.Services.APIGateway
 						$"- Execution times: {context.GetExecutionTimes()}"
 					]) : Task.CompletedTask
 				).ConfigureAwait(false);
-
-				// update state of old session
-				await new CommunicateMessage("Users")
-				{
-					Type = "Session#State",
-					Data = new JObject
-					{
-						{ "SessionID", oldSessionID },
-						{ "UserID", oldUserID },
-						{ "IsOnline", false }
-					}
-				}.PublishAsync(RESTfulAPIs.Logger, "Http.Updates").ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
@@ -910,7 +942,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Log a session out
-		static async Task LogSessionOutAsync(this HttpContext context, RequestInfo requestInfo)
+		static async Task LogSessionOutAsync(this HttpContext context, RequestInfo requestInfo, CancellationToken cancellationToken)
 		{
 			try
 			{
@@ -927,28 +959,28 @@ namespace net.vieapps.Services.APIGateway
 						["Signature"] = requestInfo.GetParameter("x-app-token")?.GetHMACSHA256(Global.ValidationKey)
 					},
 					CorrelationID = requestInfo.CorrelationID
-				}, Global.CancellationToken, RESTfulAPIs.Logger, "Authentications").ConfigureAwait(false);
+				}, cancellationToken, RESTfulAPIs.Logger, "Authentications").ConfigureAwait(false);
 
-				// update status of old session
+				// update state of the current session (client)
 				await requestInfo.Session.SendSessionStateAsync(false, requestInfo.CorrelationID).ConfigureAwait(false);
 
 				// prepare new session
 				var oldSessionID = requestInfo.Session.SessionID;
 				var oldUserID = requestInfo.Session.User.ID;
 				requestInfo.Session.SessionID = UtilityService.NewUUID;
-				requestInfo.Session.User = new User("", requestInfo.Session.SessionID, new List<string> { SystemRole.All.ToString() }, new List<Privilege>());
+				requestInfo.Session.User = new User("", requestInfo.Session.SessionID, [SystemRole.All.ToString()], []);
 				requestInfo.Session.Verified = false;
 				await Task.WhenAll
 				(
 					context.CreateOrRenewSessionAsync(requestInfo, null, false),
-					Global.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.GetEncryptedID(), 13, Global.CancellationToken)
+					Global.Cache.SetAsync($"Session#{requestInfo.Session.SessionID}", requestInfo.Session.GetEncryptedID(), 13, cancellationToken)
 				).ConfigureAwait(false);
 
 				// prepare response
 				var response = requestInfo.GetSessionJson(payload => payload["did"] = requestInfo.Session.DeviceID);
 
 				// broadcast updates
-				await new CommunicateMessage("APIGateway")
+				new CommunicateMessage("APIGateway")
 				{
 					Type = "Session#Patch",
 					Data = new JObject
@@ -957,12 +989,23 @@ namespace net.vieapps.Services.APIGateway
 						{ "EncryptedID", response["ID"] },
 						{ "AuthenticateToken", response["Token"] }
 					}
-				}.PublishAsync(WebSocketAPIs.Logger, "Http.Updates").ConfigureAwait(false);
+				}.Send();
+
+				// tell Users service to update state of the old session
+				new CommunicateMessage("Users")
+				{
+					Type = "Session#State",
+					Data = new JObject
+					{
+						{ "ID", oldSessionID },
+						{ "Online", false }
+					}
+				}.Send();
 
 				// response
 				await Task.WhenAll
 				(
-					context.WriteAsync(response, Global.CancellationToken),
+					context.WriteAsync(response, cancellationToken),
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(RESTfulAPIs.Logger, "Authentications", 
 					[
 						$"Successfully process request of session (sign-out)",
@@ -971,18 +1014,6 @@ namespace net.vieapps.Services.APIGateway
 						$"- Execution times: {context.GetExecutionTimes()}"
 					])
 				).ConfigureAwait(false);
-
-				// update state of old session
-				await new CommunicateMessage("Users")
-				{
-					Type = "Session#State",
-					Data = new JObject
-					{
-						{ "SessionID", oldSessionID },
-						{ "UserID", oldUserID },
-						{ "IsOnline", false }
-					}
-				}.PublishAsync(RESTfulAPIs.Logger, "Http.Updates").ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
@@ -992,7 +1023,7 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Activation
-		static async Task ActivateAsync(this HttpContext context, RequestInfo requestInfo)
+		static async Task ActivateAsync(this HttpContext context, RequestInfo requestInfo, CancellationToken cancellationToken)
 		{
 			try
 			{
@@ -1006,7 +1037,7 @@ namespace net.vieapps.Services.APIGateway
 					ServiceName = "Users",
 					ObjectName = "Activate",
 					Verb = "GET"
-				}, Global.CancellationToken, RESTfulAPIs.Logger, "Authentications").ConfigureAwait(false);
+				}, cancellationToken, RESTfulAPIs.Logger, "Authentications").ConfigureAwait(false);
 
 				// get user information & register the session
 				requestInfo.Session.User = response.Copy<User>();
@@ -1017,7 +1048,7 @@ namespace net.vieapps.Services.APIGateway
 				response = requestInfo.GetSessionJson(payload => payload["did"] = requestInfo.Session.DeviceID);
 				await Task.WhenAll
 				(
-					context.WriteAsync(response, Global.CancellationToken),
+					context.WriteAsync(response, cancellationToken),
 					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(RESTfulAPIs.Logger, "Authentications",
 					[
 						$"Successfully process request of session (activation)",
@@ -1041,7 +1072,7 @@ namespace net.vieapps.Services.APIGateway
 		internal static Task<JToken> RestoreAsync(this RequestInfo requestInfo, CancellationToken cancellationToken)
 			=> net.vieapps.Services.Router.GetService(requestInfo.ServiceName)?.ProcessRestoreRequestAsync(requestInfo, cancellationToken) ?? Task.FromException<JToken>(new ServiceNotFoundException());
 
-		static async Task<JToken> SyncAsync(this HttpContext context, RequestInfo requestInfo)
+		static async Task<JToken> SyncAsync(this HttpContext context, RequestInfo requestInfo, CancellationToken cancellationToken)
 		{
 			Exception exception = null;
 			var overallWatch = Stopwatch.StartNew();
@@ -1054,7 +1085,7 @@ namespace net.vieapps.Services.APIGateway
 					await context.WriteLogsAsync(developerID, appID, RESTfulAPIs.Logger, "Sync", [$"Start call service for synchronizing {requestInfo.Verb} {requestInfo.GetURI()} - {requestInfo.Session.AppName} ({requestInfo.Session.AppMode.ToLower()} app) - {requestInfo.Session.AppPlatform} @ {requestInfo.Session.IP}"], null, Global.ServiceName, LogLevel.Information, requestInfo.CorrelationID);
 
 				callingWatch = Stopwatch.StartNew();
-				var json = await requestInfo.SyncAsync(Global.CancellationToken).ConfigureAwait(false);
+				var json = await requestInfo.SyncAsync(cancellationToken).ConfigureAwait(false);
 				callingWatch.Stop();
 
 				if (Global.IsDebugResultsEnabled)
@@ -1067,10 +1098,10 @@ namespace net.vieapps.Services.APIGateway
 			}
 			catch (WampSharp.V2.Client.WampSessionNotEstablishedException)
 			{
-				await Task.Delay(567, Global.CancellationToken).ConfigureAwait(false);
+				await Task.Delay(567, cancellationToken).ConfigureAwait(false);
 				try
 				{
-					var json = await requestInfo.SyncAsync(Global.CancellationToken).ConfigureAwait(false);
+					var json = await requestInfo.SyncAsync(cancellationToken).ConfigureAwait(false);
 					callingWatch.Stop();
 
 					if (Global.IsDebugResultsEnabled)
@@ -1444,7 +1475,7 @@ namespace net.vieapps.Services.APIGateway
 			})
 			.ToJArray();
 
-		public static async Task<JToken> FlushCachingStoragesAsync(this RequestInfo requestInfo)
+		public static async Task<JToken> FlushCachingStoragesAsync(this RequestInfo requestInfo, CancellationToken cancellationToken)
 		{
 			if (!requestInfo.ObjectName.IsEquals("flush") && !requestInfo.ObjectName.IsEquals("clear"))
 				throw new InvalidRequestException();
@@ -1459,13 +1490,13 @@ namespace net.vieapps.Services.APIGateway
 						{ "IsSystemAdministrator", "" }
 					},
 					CorrelationID = requestInfo.CorrelationID
-				}, Global.CancellationToken).ConfigureAwait(false);
+				}, cancellationToken).ConfigureAwait(false);
 				isSystemAdministrator = requestInfo.Session.User.ID.IsEquals(response.Get<string>("ID")) && response.Get<bool>("IsSystemAdministrator");
 			}
 			if (!isSystemAdministrator)
 				throw new AccessDeniedException();
 
-			await Global.Cache.FlushAllAsync(Global.CancellationToken).ConfigureAwait(false);
+			await Global.Cache.FlushAllAsync(cancellationToken).ConfigureAwait(false);
 			return new JObject { ["Status"] = "Success" };
 		}
 		#endregion

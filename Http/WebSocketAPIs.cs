@@ -184,12 +184,15 @@ namespace net.vieapps.Services.APIGateway
 						await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"Error occurred while disposing communicator: {session?.ToJson()?.ToString(Global.IsDebugResultsEnabled ? Formatting.Indented : Formatting.None)}", ex, Global.ServiceName, LogLevel.Error, correlationID).ConfigureAwait(false);
 					}
 
-				// update the session state
-				await Task.WhenAll
-				(
-					session != null ? session.SendSessionStateAsync(false, correlationID) : Task.CompletedTask,
-					Global.IsVisitLogEnabled ? Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.Visits", $"The connection of the WebSocket APIs was stopped" + "\r\n" + websocket.GetConnectionInfo(session) + "\r\n" + $"- Served times: {websocket.Timestamp.GetElapsedTimes()}", null, Global.ServiceName, LogLevel.Information, correlationID) : Task.CompletedTask
-				).ConfigureAwait(false);
+				// update session state
+				if (session != null)
+				{
+					new RequestInfo(session, "Users", "Session", "DISCONNECT").SendSessionState(false);
+					await session.SendSessionStateAsync(false, correlationID).ConfigureAwait(false);
+				}
+
+				if (Global.IsVisitLogEnabled)
+					await Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.Visits", $"The connection of the WebSocket APIs was stopped" + "\r\n" + websocket.GetConnectionInfo(session) + "\r\n" + $"- Served times: {websocket.Timestamp.GetElapsedTimes()}", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
 			}
 			catch { }
 		}
@@ -532,6 +535,8 @@ namespace net.vieapps.Services.APIGateway
 					// update status
 					websocket.SetStatus("Authenticated");
 					websocket.Set("Token", JSONWebToken.DecodeAsJson(appToken, Global.JWTKey));
+					if (RESTfulAPIs.TrackSessions)
+						new RequestInfo(session, "Users", "Session", verb).SendSessionState();
 					await Task.WhenAll
 					(
 						session.SendSessionStateAsync(true, correlationID),
@@ -542,20 +547,12 @@ namespace net.vieapps.Services.APIGateway
 
 				// response to a heartbeat => refresh the session
 				else if ("PONG".IsEquals(verb))
-					await Task.WhenAll
-					(
-						new CommunicateMessage("Users")
-						{
-							Type = "Session#State",
-							Data = new JObject
-							{
-								{ "SessionID", session.SessionID },
-								{ "UserID", session.User.ID },
-								{ "IsOnline", true }
-							}
-						}.PublishAsync(WebSocketAPIs.Logger, "WebSocketAPIs"),
-						Global.IsDebugLogEnabled ? Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"Successfully send an inter-communicate message to refresh a session when got a response of a heartbeat signal" + "\r\n" + websocket.GetConnectionInfo(session), null, Global.ServiceName, LogLevel.Information, correlationID) : Task.CompletedTask
-					).ConfigureAwait(false);
+				{
+					if (RESTfulAPIs.TrackSessions)
+						new RequestInfo(session, "Users", "Session", verb).SendSessionState();
+					if (Global.IsDebugLogEnabled)
+						await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"Successfully send an inter-communicate message to refresh a session when got a response of a heartbeat signal" + "\r\n" + websocket.GetConnectionInfo(session), null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
+				}
 
 				// unknown
 				else
@@ -576,7 +573,11 @@ namespace net.vieapps.Services.APIGateway
 					, ex, Global.ServiceName, LogLevel.Error, correlationID)
 				).ConfigureAwait(false);
 				if (ex is InvalidSessionException)
+				{
 					await WebSocketAPIs.WebSocket.CloseWebSocketAsync(websocket, WebSocketCloseStatus.PolicyViolation, ex.Message).ConfigureAwait(false);
+					if (session != null)
+						new RequestInfo(session, "Users", "Session", "DISCONNECT").SendSessionState(false);
+				}
 			}
 		}
 
@@ -599,7 +600,10 @@ namespace net.vieapps.Services.APIGateway
 				var verb = requestObj.Get("Verb", "GET").ToUpper();
 				var query = new Dictionary<string, string>(requestObj.Get("Query", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase);
 				query.TryGetValue("object-identity", out var objectIdentity);
-				var header = new Dictionary<string, string>(requestObj.Get("Header", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase);
+				var header = new Dictionary<string, string>(requestObj.Get("Header", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase)
+				{
+					["x-requester"] = "vieapps-ngx-websocket-apis"
+				};
 				if (!header.ContainsKey("x-app-token"))
 				{
 					var token = websocket.Get<JObject>("Token");
@@ -660,6 +664,10 @@ namespace net.vieapps.Services.APIGateway
 					requestInfo.Extra["SessionID"] = requestInfo.Session.SessionID.GetHMACBLAKE256(Global.ValidationKey);
 				}
 
+				// update session state
+				if (RESTfulAPIs.TrackSessions)
+					requestInfo.SendSessionState();
+
 				// call the service
 				var response = Global.StaticSegments.Contains(requestInfo.ServiceName.ToLower())
 					? verb.IsEquals("GET")
@@ -674,7 +682,7 @@ namespace net.vieapps.Services.APIGateway
 									? await Global.CallServiceAsync(requestInfo.PrepareDefinitionRelated(), Global.CancellationToken, WebSocketAPIs.Logger, "WebSocketAPIs").ConfigureAwait(false)
 									: throw new InvalidRequestException("Unknown request")
 						: requestInfo.ServiceName.IsEquals("cache")
-							? await requestInfo.FlushCachingStoragesAsync().ConfigureAwait(false)
+							? await requestInfo.FlushCachingStoragesAsync(Global.CancellationToken).ConfigureAwait(false)
 							: RESTfulAPIs.ServiceForwarders.ContainsKey(requestInfo.ServiceName.ToLower())
 								? await requestInfo.ForwardRequestAsync(Global.CancellationToken).ConfigureAwait(false)
 								: verb.IsEquals("PATCH")

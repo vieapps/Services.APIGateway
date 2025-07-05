@@ -1,9 +1,9 @@
 ﻿#region Related components
 using System;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Logging;
 using WampSharp.Binding;
@@ -25,7 +25,8 @@ namespace net.vieapps.Services.APIGateway
 		public static void Connect(List<Action<object, WampSessionCreatedEventArgs>> onIncomingConnectionEstablished = null, List<Action<object, WampSessionCreatedEventArgs>> onOutgoingConnectionEstablished = null, int waitingTimes = 6789)
 		{
 			Global.Logger.LogInformation($"Attempting to connect to API Gateway Router [{new Uri(Services.Router.GetRouterStrInfo()).GetResolvedURI()}]");
-			Global.Connect(
+			Global.Connect
+			(
 				(sender, arguments) =>
 				{
 					onIncomingConnectionEstablished?.ForEach(action =>
@@ -41,22 +42,11 @@ namespace net.vieapps.Services.APIGateway
 					});
 
 					Global.PrimaryInterCommunicateMessageUpdater?.Dispose();
-					Global.PrimaryInterCommunicateMessageUpdater = Services.Router.IncomingChannel?.RealmProxy.Services
-						.GetSubject<CommunicateMessage>("messages.services.apigateway")
-						.Subscribe(
-							async message =>
-							{
-								try
-								{
-									await RESTfulAPIs.ProcessInterCommunicateMessageAsync(message).ConfigureAwait(false);
-								}
-								catch (Exception ex)
-								{
-									await Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.Updates", $"{ex.Message} => {message?.ToJson().ToString(RESTfulAPIs.JsonFormat)}", ex).ConfigureAwait(false);
-								}
-							},
-							async exception => await Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.Updates", $"Error occurred while fetching an inter-communicating message => {exception.Message}", exception).ConfigureAwait(false)
-						);
+					Global.PrimaryInterCommunicateMessageUpdater = Services.Router.IncomingChannel.RealmProxy.Services.GetSubject<CommunicateMessage>("messages.services.apigateway").Subscribe
+					(
+						message => Global.NodeID.IsEquals(message.ExcludedNodeID) ? Task.CompletedTask : RESTfulAPIs.ProcessInterCommunicateMessageAsync(message),
+						exception => Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.Updates", $"Error occurred while fetching an inter-communicating message => {exception.Message}", exception)
+					);
 				},
 				async (sender, arguments) =>
 				{
@@ -110,9 +100,9 @@ namespace net.vieapps.Services.APIGateway
 
 		public static void OpenForwarder(IApplicationBuilder appBuilder)
 		{
-			var routerInfo = Services.Router.GetRouterInfo();
+			var (address, realm, useJSON) = Services.Router.GetRouterInfo();
 			Global.Logger.LogInformation($"Initialize the forwarder of API Gateway Router [{UtilityService.GetAppSetting("HttpUri:APIs")}/router]");
-			Router.Forwarder = new WampHost(new ForwardingRealmContainer($"{routerInfo.Address}{(routerInfo.Address.EndsWith("/") ? "" : "/")}{routerInfo.Realm}", routerInfo.UseJSON));
+			Router.Forwarder = new WampHost(new ForwardingRealmContainer($"{address}{(address.EndsWith("/") ? "" : "/")}{realm}", useJSON));
 
 			appBuilder
 				.UseForwardedHeaders(Global.GetForwardedHeadersOptions())

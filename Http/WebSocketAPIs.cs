@@ -110,7 +110,7 @@ namespace net.vieapps.Services.APIGateway
 				websocket.Set("Session", session);
 				await websocket.PrepareConnectionInfoAsync(correlationID, session, Global.CancellationToken, WebSocketAPIs.Logger).ConfigureAwait(false);
 
-				// wait for few times before connecting to API Gateway Router because RxNET needs that
+				// wait for few times before connecting to API Gateway Router because ReactiveX needs that
 				if (query.ContainsKey("x-restart"))
 					await Task.WhenAll
 					(
@@ -123,24 +123,18 @@ namespace net.vieapps.Services.APIGateway
 					await Task.Delay(UtilityService.GetRandomNumber(234, 567), Global.CancellationToken).ConfigureAwait(false);
 
 				// subscribe an updater to push messages to client device
-				websocket.Set("Updater", Services.Router.IncomingChannel.RealmProxy.Services
-					.GetSubject<UpdateMessage>("messages.update")
-					.Subscribe
-					(
-						async message => await websocket.PushAsync(message).ConfigureAwait(false),
-						async exception => await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"Error occurred while fetching an updating message => {exception.Message}", exception).ConfigureAwait(false)
-					)
-				);
+				websocket.Set("Updater", Services.Router.IncomingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("messages.update").Subscribe
+				(
+					message => websocket.PushAsync(message),
+					exception => Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"Error occurred while fetching an updating message => {exception.Message}", exception)
+				));
 
 				// subscribe a communicator to update related information
-				websocket.Set("Communicator", Services.Router.IncomingChannel.RealmProxy.Services
-					.GetSubject<CommunicateMessage>("messages.services.apigateway")
-					.Subscribe
-					(
-						async message => await websocket.CommunicateAsync(message).ConfigureAwait(false),
-						async exception => await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"Error occurred while fetching an inter-communicating message => {exception.Message}", exception).ConfigureAwait(false)
-					)
-				);
+				websocket.Set("Communicator", Services.Router.IncomingChannel.RealmProxy.Services.GetSubject<CommunicateMessage>("messages.services.apigateway").Subscribe
+				(
+					message => websocket.CommunicateAsync(message),
+					exception => Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"Error occurred while fetching an inter-communicating message => {exception.Message}", exception)
+				));
 
 				// update status
 				websocket.SetStatus("Connected");

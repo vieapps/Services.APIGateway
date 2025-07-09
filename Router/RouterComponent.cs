@@ -1,11 +1,11 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Net;
-using System.IO;
-using System.Reflection;
-using System.Configuration;
-using System.Diagnostics;
 using System.Net.Sockets;
+using System.Reflection;
+using System.Diagnostics;
+using System.Configuration;
 using System.Threading.Tasks;
 using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
@@ -168,26 +168,26 @@ namespace net.vieapps.Services.APIGateway
 							var command = json.Value<string>("Command") ?? "Unknown";
 
 							if (command.ToLower().Equals("info"))
-								Task.Run(() => websocket.Send(this.RouterInfo.ToString(Formatting.None))).ConfigureAwait(false);
+								websocket.Send(this.RouterInfo.ToString(Formatting.None)).Run();
 
 							else if (command.ToLower().Equals("connections"))
-								Task.Run(() => websocket.Send(new JObject
+								websocket.Send(new JObject
 								{
 									{ "Connections", this.Sessions.Count }
-								}.ToString(Formatting.None))).ConfigureAwait(false);
+								}.ToString(Formatting.None)).Run();
 
 							else if (command.ToLower().Equals("sessions"))
-								Task.Run(() => websocket.Send(this.SessionsInfo.ToString(Formatting.None))).ConfigureAwait(false);
+								websocket.Send(this.SessionsInfo.ToString(Formatting.None)).Run();
 
 							else if (command.ToLower().Equals("session"))
 							{
 								if (this.Sessions.TryGetValue(json.Value<long>("SessionID"), out var sessionInfo))
-									Task.Run(() => websocket.Send(sessionInfo.ToJson().ToString(Formatting.None))).ConfigureAwait(false);
+									websocket.Send(sessionInfo.ToJson().ToString(Formatting.None)).Run();
 								else
-									Task.Run(() => websocket.Send(new JObject
+									websocket.Send(new JObject
 									{
 										{ "Error", $"Not Found" }
-									}.ToString(Formatting.None))).ConfigureAwait(false);
+									}.ToString(Formatting.None)).Run();
 							}
 
 							else if (command.ToLower().Equals("update"))
@@ -200,17 +200,17 @@ namespace net.vieapps.Services.APIGateway
 							}
 
 							else
-								Task.Run(() => websocket.Send(new JObject
+								websocket.Send(new JObject
 								{
 									{ "Error", $"Unknown command [{message}]" }
-								}.ToString(Formatting.None))).ConfigureAwait(false);
+								}.ToString(Formatting.None)).Run();
 						}
 						catch (Exception ex)
 						{
-							Task.Run(() => websocket.Send(new JObject
+							websocket.Send(new JObject
 							{
 								{ "Error", $"Bad command [{message}] => {ex.Message}" }
-							}.ToString(Formatting.None))).ConfigureAwait(false);
+							}.ToString(Formatting.None)).Run();
 						}
 					});
 				}
@@ -349,5 +349,28 @@ namespace net.vieapps.Services.APIGateway
 
 		public override string ToString()
 			=> this.ToJson().ToString(Formatting.Indented);
+	}
+
+	public static class Extensions
+	{
+		static async Task ExecuteTask(this Task task, Action<Exception> onError)
+		{
+			try
+			{
+				await task.ConfigureAwait(false);
+			}
+			catch (Exception ex)
+			{
+				onError?.Invoke(ex);
+			}
+		}
+
+		public static void Run(this Task task, bool waitForCompletion = false, Action<Exception> onError = null)
+		{
+			if (waitForCompletion)
+				task.ExecuteTask(onError).Wait();
+			else
+				task.ExecuteTask(onError).ConfigureAwait(false);
+		}
 	}
 }

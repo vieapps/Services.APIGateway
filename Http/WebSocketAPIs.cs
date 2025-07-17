@@ -58,12 +58,8 @@ namespace net.vieapps.Services.APIGateway
 				{
 					if ("Disconnected".IsEquals(websocket.GetStatus()))
 						return false;
-
 					var session = websocket.Get<Session>("Session");
-					if (session == null || session.DeviceID.IsEquals(message.ExcludedDeviceID) || (!"*".Equals(message.DeviceID) && !session.DeviceID.IsEquals(message.DeviceID)))
-						return false;
-
-					return true;
+					return session != null && !session.DeviceID.IsEquals(message.ExcludedDeviceID) && ("*".Equals(message.DeviceID) || session.DeviceID.IsEquals(message.DeviceID));
 				}, message.ToJson().ToString(Formatting.None).ToBytes(), true, Global.CancellationToken).ConfigureAwait(false);
 				if (Global.IsDebugLogEnabled)
 					await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs",
@@ -178,12 +174,8 @@ namespace net.vieapps.Services.APIGateway
 						await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"Error occurred while disposing communicator: {session?.ToJson()?.ToString(Global.IsDebugResultsEnabled ? Formatting.Indented : Formatting.None)}", ex, Global.ServiceName, LogLevel.Error, correlationID).ConfigureAwait(false);
 					}
 
-				// update session state
-				if (session != null)
-				{
-					new RequestInfo(session, "Users", "Session", "DISCONNECT").SendSessionState(false);
-					await session.SendSessionStateAsync(false, correlationID).ConfigureAwait(false);
-				}
+				// session state
+				session?.SendSessionState("Users", "DISCONNECT /session", false, true, true);
 
 				if (Global.IsVisitLogEnabled)
 					await Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.Visits", $"The connection of the WebSocket APIs was stopped" + "\r\n" + websocket.GetConnectionInfo(session) + "\r\n" + $"- Served times: {websocket.Timestamp.GetElapsedTimes()}", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
@@ -459,19 +451,16 @@ namespace net.vieapps.Services.APIGateway
 				// revoke a session => tell client to log-out and register new session
 				else if (message.Type.IsEquals("Session#Revoke"))
 				{
-					await session.SendSessionStateAsync(false, correlationID).ConfigureAwait(false);
+					session.SendSessionState("Users", "REVOKE /session", false, true, true);
 					session.SessionID = UtilityService.NewUUID;
-					session.User = new User("", session.SessionID, new List<string> { SystemRole.All.ToString() }, new List<Privilege>());
+					session.User = new User("", session.SessionID, [SystemRole.All.ToString()], []);
 					session.Verified = false;
-					await Task.WhenAll
-					(
-						Global.Cache.SetAsync($"Session#{session.SessionID}", session.GetEncryptedID(), 13),
-						websocket.SendAsync(new UpdateMessage
-						{
-							Type = "Users#Session#Revoke",
-							Data = session.GetSessionJson()
-						})
-					).ConfigureAwait(false);
+					await Global.Cache.SetAsync($"Session#{session.SessionID}", session.GetEncryptedID(), 13).ConfigureAwait(false);
+					new UpdateMessage
+					{
+						Type = "Users#Session#Revoke",
+						Data = session.GetSessionJson()
+					}.Send();
 					if (Global.IsDebugLogEnabled)
 						await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs",
 							$"Successfully process an inter-communicate message (revoke session)" + "\r\n" +
@@ -524,16 +513,14 @@ namespace net.vieapps.Services.APIGateway
 					// update session
 					session.AppName = body?.Get<string>("x-app-name") ?? session.AppName;
 					session.AppPlatform = body?.Get<string>("x-app-platform") ?? session.AppPlatform;
+					session.SendSessionState("Users", $"{verb} /session", true);
 					await websocket.PrepareConnectionInfoAsync(correlationID, session, Global.CancellationToken, WebSocketAPIs.Logger).ConfigureAwait(false);
 
 					// update status
 					websocket.SetStatus("Authenticated");
 					websocket.Set("Token", JSONWebToken.DecodeAsJson(appToken, Global.JWTKey));
-					if (RESTfulAPIs.TrackSessions)
-						new RequestInfo(session, "Users", "Session", verb).SendSessionState();
 					await Task.WhenAll
 					(
-						session.SendSessionStateAsync(true, correlationID),
 						Global.IsVisitLogEnabled ? Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.Visits", $"The connection of the WebSocket APIs was authenticated" + "\r\n" + websocket.GetConnectionInfo(session) + "\r\n" + $"- Status: {websocket.GetStatus()}", null, Global.ServiceName, LogLevel.Information, correlationID) : Task.CompletedTask,
 						Global.IsDebugLogEnabled ? Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"Successfully authenticate the session" + "\r\n" + $"{websocket.GetConnectionInfo(session)}" + "\r\n" + $"- Request: {requestObj.ToJson().ToString(Formatting.None)}" + "\r\n" + $"- Session: {session.ToJson().ToString(Formatting.None)}", null, Global.ServiceName, LogLevel.Information, correlationID) : Task.CompletedTask
 					).ConfigureAwait(false);
@@ -542,8 +529,7 @@ namespace net.vieapps.Services.APIGateway
 				// response to a heartbeat => refresh the session
 				else if ("PONG".IsEquals(verb))
 				{
-					if (RESTfulAPIs.TrackSessions)
-						new RequestInfo(session, "Users", "Session", verb).SendSessionState();
+					session.SendSessionState("Users", $"{verb} /session", true);
 					if (Global.IsDebugLogEnabled)
 						await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"Successfully send an inter-communicate message to refresh a session when got a response of a heartbeat signal" + "\r\n" + websocket.GetConnectionInfo(session), null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
 				}
@@ -569,8 +555,7 @@ namespace net.vieapps.Services.APIGateway
 				if (ex is InvalidSessionException)
 				{
 					await WebSocketAPIs.WebSocket.CloseWebSocketAsync(websocket, WebSocketCloseStatus.PolicyViolation, ex.Message).ConfigureAwait(false);
-					if (session != null)
-						new RequestInfo(session, "Users", "Session", "DISCONNECT").SendSessionState(false);
+					session?.SendSessionState("Users", "DISCONNECT /session", false, true, true);
 				}
 			}
 		}
@@ -658,9 +643,8 @@ namespace net.vieapps.Services.APIGateway
 					requestInfo.Extra["SessionID"] = requestInfo.Session.SessionID.GetHMACBLAKE256(Global.ValidationKey);
 				}
 
-				// update session state
-				if (RESTfulAPIs.TrackSessions)
-					requestInfo.SendSessionState();
+				// session state
+				requestInfo.SendSessionState(RESTfulAPIs.TrackSessions);
 
 				// call the service
 				var response = Global.StaticSegments.Contains(requestInfo.ServiceName.ToLower())

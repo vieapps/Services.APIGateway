@@ -137,13 +137,23 @@ namespace net.vieapps.Services.APIGateway
 
 		bool IsWindows { get; } = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 
+		bool IsTimers { get; } = "true".IsEquals(UtilityService.GetAppSetting("Controller:Timers", "true"));
+
 		DateTime ClientPingTime { get; set; } = DateTime.Now;
 
+		int PingInterval { get; } = Int32.TryParse(UtilityService.GetAppSetting("Controller:Timers:Interval:Ping", "120"), out var interval) && interval > 0 ? interval : 120;
+
 		DateTime ClientSchedulingTime { get; set; } = DateTime.Now;
+
+		int SchedulingInterval { get; } = Int32.TryParse(UtilityService.GetAppSetting("Controller:Timers:Interval:Scheduler", "900"), out var interval) && interval > 0 ? interval : 900;
+
+		int FlushingInterval { get; } = Int32.TryParse(UtilityService.GetAppSetting("Controller:Timers:Interval:FlushLogs", "13"), out var interval) && interval > 0 ? interval : 13;
 
 		List<string> VersionDataSources { get; } = new List<string>();
 
 		List<string> TrashDataSources { get; } = new List<string>();
+
+		List<string> HttpServices = new List<string> { "APIs", "Files", "Portals", "CMSPortals" };
 
 		/// <summary>
 		/// Gets the number of scheduling tasks
@@ -478,51 +488,34 @@ namespace net.vieapps.Services.APIGateway
 
 			if (this.AllowRegisterHelperServices)
 			{
-				if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:FlushLogs", "13"), out var interval) || interval < 1)
-					interval = 13;
-
 				// flush logs
 				if (args?.FirstOrDefault(arg => arg.IsStartsWith("/no-log-flusher")) == null)
 					this.StartTimer(() =>
 					{
 						if (this.LoggingService == null)
 							this.StartLoggingService("/do-sync-work /flush");
-					}, interval);
+					}, this.FlushingInterval);
 
 				// warm-up/refresh HTTP services
-				var urls = new[] { "APIs", "Files", "Portals", "CMSPortals" }.Select(name => UtilityService.GetAppSetting($"HttpUri:{name}")).Where(url => !string.IsNullOrWhiteSpace(url) && (url.IsStartsWith("https://") || url.IsStartsWith("http://"))).Select(url => url + UtilityService.GetAppSetting("LoadBalancer:RefreshURL", "/favicon.ico?t={iso-time-miliseconds}&n={node-id}")).ToList();
+				var urls = this.HttpServices.Select(name => UtilityService.GetAppSetting($"HttpUri:{name}")).Where(url => !string.IsNullOrWhiteSpace(url) && (url.IsStartsWith("https://") || url.IsStartsWith("http://"))).Select(url => url + UtilityService.GetAppSetting("LoadBalancer:RefreshURL", "/favicon.ico?t={iso-time-miliseconds}&n={node-id}")).ToList();
 				if (!Int32.TryParse(UtilityService.GetAppSetting("LoadBalancer:Nodes", "0"), out var nodes) || nodes < 1)
 					nodes = 1;
 
 				if (urls.Count > 0)
 				{
-					Task.Run(async () => await urls.ForEachAsync(async url =>
-					{
-						for (var index = 0; index < nodes; index++)
-							try
-							{
-								using (var request = await new Uri(this.PrepareTimestamps(url)).SendHttpRequestAsync().ConfigureAwait(false))
-								{
-									await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
-								}
-							}
-							catch { }
-					}, true, false).ConfigureAwait(false)).ConfigureAwait(false);
-					this.StartTimer(async () =>
-					{
-						await urls.ForEachAsync(async url =>
+					Task warmUpAsync()
+						=> urls.ForEachAsync(async url =>
 						{
 							for (var index = 0; index < nodes; index++)
 								try
 								{
 									using (var request = await new Uri(this.PrepareTimestamps(url)).SendHttpRequestAsync().ConfigureAwait(false))
-									{
 										await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
-									}
 								}
 								catch { }
-						}, true, false).ConfigureAwait(false);
-					}, interval * interval);
+						});
+					warmUpAsync().Run();
+					this.StartTimer(warmUpAsync, this.FlushingInterval * this.FlushingInterval);
 				}
 			}
 		}
@@ -1266,36 +1259,31 @@ namespace net.vieapps.Services.APIGateway
 				runTaskSchedulerOnFirstLoad = "true".IsEquals(config.Section.Attributes["runOnFirstLoad"]?.Value);
 			this.StartTimer(this.RunTaskSchedulerAsync, 65 * 60, runTaskSchedulerOnFirstLoad ? 5678 : 0);
 
-			// ping - default: 2 minutes
-			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:Ping", "120"), out var pingInterval))
-				pingInterval = 120;
-
-			this.StartTimer(() =>
+			// timers to send a signal to connected client devices
+			if (this.IsTimers)
 			{
-				if ((DateTime.Now - this.ClientPingTime).TotalSeconds >= pingInterval)
-					try
-					{
+				// ping
+				this.StartTimer(() =>
+				{
+					if ((DateTime.Now - this.ClientPingTime).TotalSeconds >= this.PingInterval)
 						new UpdateMessage
 						{
 							Type = "Ping",
 							DeviceID = "*",
 						}.Send();
-					}
-					catch { }
-			}, pingInterval + 13);
+				}, this.PingInterval + 13);
 
-			// scheduler (update online status, signal to run scheduler at client, ...)
-			if (!Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:Scheduler", "900"), out var scheduleInterval))
-				scheduleInterval = 900;
-			this.StartTimer(() =>
-			{
-				if ((DateTime.Now - this.ClientSchedulingTime).TotalSeconds >= scheduleInterval)
-					new UpdateMessage
-					{
-						Type = "Scheduler",
-						DeviceID = "*",
-					}.Send();
-			}, scheduleInterval + 13);
+				// scheduler (update online status, signal to run scheduler at client, ...)
+				this.StartTimer(() =>
+				{
+					if ((DateTime.Now - this.ClientSchedulingTime).TotalSeconds >= this.SchedulingInterval)
+						new UpdateMessage
+						{
+							Type = "Scheduler",
+							DeviceID = "*",
+						}.Send();
+				}, this.SchedulingInterval + 13);
+			}
 		}
 		#endregion
 
@@ -1631,20 +1619,20 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		Task SendServiceInfoAsync(string name, string args, bool available, bool running)
-				=> this.SendInterCommunicateMessageAsync
-				(
-					"Service#Info",
-					new ServiceInfo
-					{
-						Name = name,
-						UniqueName = Extensions.GetUniqueName(name, args?.ToArray(' ')),
-						ControllerID = this.Info.ID,
-						InvokeInfo = Extensions.GetInvokeInfo(),
-						Available = available,
-						Running = running
-					}.ToJson(),
-					this.CancellationToken
-				);
+			=> this.SendInterCommunicateMessageAsync
+			(
+				"Service#Info",
+				new ServiceInfo
+				{
+					Name = name,
+					UniqueName = Extensions.GetUniqueName(name, args?.ToArray(' ')),
+					ControllerID = this.Info.ID,
+					InvokeInfo = Extensions.GetInvokeInfo(),
+					Available = available,
+					Running = running
+				}.ToJson(),
+				this.CancellationToken
+			);
 
 		void SendServiceInfo(string name, string args, bool available, bool running)
 			=> this.SendServiceInfoAsync(name, args, available, running).Run();

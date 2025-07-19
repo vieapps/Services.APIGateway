@@ -118,7 +118,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		public static void CloseForwarder()
-			=> Task.Run(async () => await Router.ForwardingTokens.Values.ToList().ForEachAsync(async forwardingToken => await forwardingToken.DisposeAsync().ConfigureAwait(false)).ConfigureAwait(false))
+			=> Router.ForwardingTokens.Values.ToList().ForEachAsync(async forwardingToken => await forwardingToken.DisposeAsync())
 				.ContinueWith(_ => Router.Forwarder?.Dispose(), TaskContinuationOptions.OnlyOnRanToCompletion)
 				.ContinueWith(_ => Global.Logger.LogInformation("The forwarder of API Gateway Router was disposed"), TaskContinuationOptions.OnlyOnRanToCompletion)
 				.Run(true);
@@ -134,7 +134,7 @@ namespace net.vieapps.Services.APIGateway
 		public ForwardingToken(IWampRegistrationSubscriptionToken localToken, Task<IAsyncDisposable> remoteToken)
 		{
 			this._localToken = localToken;
-			Task.Run(() => this.RegisterForwardingTokenAsync(remoteToken)).ConfigureAwait(false);
+			this.RegisterForwardingTokenAsync(remoteToken).Run();
 		}
 
 		public async Task RegisterForwardingTokenAsync(Task<IAsyncDisposable> remoteToken)
@@ -166,7 +166,7 @@ namespace net.vieapps.Services.APIGateway
 		public void Dispose()
 		{
 			GC.SuppressFinalize(this);
-			Task.Run(() => this.UnregisterForwardingTokenAsync()).ConfigureAwait(false);
+			this.UnregisterForwardingTokenAsync().Run(true);
 			this._localToken.Dispose();
 		}
 

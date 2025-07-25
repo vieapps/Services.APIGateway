@@ -244,8 +244,8 @@ namespace net.vieapps.Services.APIGateway
 			#endregion
 
 			// session state
-			if (!isSessionProccessed)
-				requestInfo.SendSessionState(RESTfulAPIs.TrackSessions);
+			if (RESTfulAPIs.TrackSessions && !isSessionProccessed)
+				requestInfo.SendSessionState();
 
 			// process request of sessions
 			if (isSessionProccessed)

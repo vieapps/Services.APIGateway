@@ -644,7 +644,8 @@ namespace net.vieapps.Services.APIGateway
 				}
 
 				// session state
-				requestInfo.SendSessionState(RESTfulAPIs.TrackSessions);
+				if (RESTfulAPIs.TrackSessions)
+					requestInfo.SendSessionState();
 
 				// call the service
 				var response = Global.StaticSegments.Contains(requestInfo.ServiceName.ToLower())

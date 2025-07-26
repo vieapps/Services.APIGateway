@@ -513,8 +513,8 @@ namespace net.vieapps.Services.APIGateway
 					// update session
 					session.AppName = body?.Get<string>("x-app-name") ?? session.AppName;
 					session.AppPlatform = body?.Get<string>("x-app-platform") ?? session.AppPlatform;
-					session.SendSessionState("Users", $"{verb} /session", true);
 					await websocket.PrepareConnectionInfoAsync(correlationID, session, Global.CancellationToken, WebSocketAPIs.Logger).ConfigureAwait(false);
+					session.SendSessionState("Users", $"{verb} /session", true);
 
 					// update status
 					websocket.SetStatus("Authenticated");
@@ -643,9 +643,11 @@ namespace net.vieapps.Services.APIGateway
 					requestInfo.Extra["SessionID"] = requestInfo.Session.SessionID.GetHMACBLAKE256(Global.ValidationKey);
 				}
 
-				// session state
+				// tracking
 				if (RESTfulAPIs.TrackSessions)
 					requestInfo.SendSessionState();
+				else
+					requestInfo.TrackStatistics();
 
 				// call the service
 				var response = Global.StaticSegments.Contains(requestInfo.ServiceName.ToLower())

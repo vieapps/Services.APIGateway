@@ -243,9 +243,14 @@ namespace net.vieapps.Services.APIGateway
 			context.User = new UserPrincipal(requestInfo.Session.User);
 			#endregion
 
-			// session state
-			if (RESTfulAPIs.TrackSessions && !isSessionProccessed)
-				requestInfo.SendSessionState();
+			// tracking
+			if (!isSessionProccessed)
+			{
+				if (RESTfulAPIs.TrackSessions)
+					requestInfo.SendSessionState();
+				else
+					requestInfo.TrackStatistics();
+			}
 
 			// process request of sessions
 			if (isSessionProccessed)

@@ -61,6 +61,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			// prepare
 			context.SetItem("PipelineStopwatch", Stopwatch.StartNew());
+			context.SetItem("Correlation-ID", context.GetParameter("x-original-correlation-id") ?? context.GetParameter("x-correlation-id") ?? UtilityService.NewUUID);
 			var requestPath = context.GetRequestPathSegments(true).First();
 
 			if (Global.IsVisitLogEnabled)

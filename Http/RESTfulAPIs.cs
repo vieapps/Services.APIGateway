@@ -189,7 +189,7 @@ namespace net.vieapps.Services.APIGateway
 				requestInfo.Session.SessionID = requestInfo.Session.User.SessionID = UtilityService.NewUUID;
 
 			if (string.IsNullOrWhiteSpace(requestInfo.Session.DeviceID))
-				requestInfo.Session.DeviceID = $"{UtilityService.NewUUID}@vieapps-ngx-apis";
+				requestInfo.Session.DeviceID = $"{UtilityService.NewUUID}@vieapps-ngx";
 
 			// request body
 			if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT") || requestInfo.Verb.IsEquals("PATCH"))
@@ -320,7 +320,7 @@ namespace net.vieapps.Services.APIGateway
 							webhook.Run(ex => Global.WriteLogs(RESTfulAPIs.Logger, "WebHooks", $"Error occurred while processing a web-hook message => {ex.Message}", ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID));
 
 						if (!string.IsNullOrWhiteSpace(contentType) && !"application/json".IsEquals(contentType) && !string.IsNullOrWhiteSpace(contentBody))
-							await context.WriteAsync(contentBody.ToBytes(), cts.Token).ConfigureAwait(false);
+							await context.WriteAsync(contentBody.ToBytes(), contentType, null, cts.Token).ConfigureAwait(false);
 						else
 							await context.WriteAsync(response, cts.Token).ConfigureAwait(false);
 					}
@@ -514,20 +514,20 @@ namespace net.vieapps.Services.APIGateway
 				}
 		}
 
-		static async Task WriteAsync(this HttpContext context, byte[] json, CancellationToken cancellationToken)
+		static async Task WriteAsync(this HttpContext context, byte[] body, string contentType, string cacheControl, CancellationToken cancellationToken)
 		{
 			context.SetResponseHeaders((int)HttpStatusCode.OK, new Dictionary<string, string>
 			{
-				{ "Content-Type", "application/json" },
-				{ "Cache-Control", "private, no-store, no-cache" },
-				{ "X-Node", Global.NodeID },
-				{ "X-Correlation-ID", context.GetCorrelationID() }
+				["Content-Type"] = contentType ?? "application/json",
+				["Cache-Control"] = cacheControl ?? "private, no-store, no-cache",
+				["X-Node"] = Global.NodeID,
+				["X-Correlation-ID"] = context.GetCorrelationID()
 			});
-			await context.Response.Body.WriteAsync(json, cancellationToken).ConfigureAwait(false);
+			await context.Response.Body.WriteAsync(body, cancellationToken).ConfigureAwait(false);
 		}
 
 		static Task WriteAsync(this HttpContext context, JToken json, CancellationToken cancellationToken)
-			=> context.WriteAsync(json.ToString(RESTfulAPIs.JsonFormat).ToBytes(), cancellationToken);
+			=> context.WriteAsync(json.ToString(RESTfulAPIs.JsonFormat).ToBytes(), null, null, cancellationToken);
 
 		#region Create/Renew a session
 		static async Task CreateOrRenewSessionAsync(this HttpContext context, RequestInfo requestInfo, JToken session = null, bool sendSessionState = true)
@@ -562,7 +562,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 						// generate device identity
 						if (string.IsNullOrWhiteSpace(requestInfo.Session.DeviceID))
-							requestInfo.Session.DeviceID = (requestInfo.Session.AppName + "/" + requestInfo.Session.AppPlatform + "@" + (requestInfo.Session.AppAgent ?? "N/A")).GetHMACBLAKE128(requestInfo.Session.SessionID, true) + "@vieapps-ngx-apis";
+							requestInfo.Session.DeviceID = (requestInfo.Session.AppName + "/" + requestInfo.Session.AppPlatform + "@" + (requestInfo.Session.AppAgent ?? "N/A")).GetHMACBLAKE128(requestInfo.Session.SessionID, true) + "@vieapps-ngx";
 
 						// store identity into cache for further use
 						await Global.Cache.SetAsync(cacheKey, requestInfo.Session.GetEncryptedID(), 13, cancellationToken).ConfigureAwait(false);
@@ -906,7 +906,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				// prepare device identity
 				if (string.IsNullOrWhiteSpace(requestInfo.Session.DeviceID))
-					requestInfo.Session.DeviceID = (requestInfo.Session.AppName + "/" + requestInfo.Session.AppPlatform + "@" + (requestInfo.Session.AppAgent ?? "N/A")).GetHMACSHA384(requestInfo.Session.SessionID, true) + "@vieapps-ngx-apis";
+					requestInfo.Session.DeviceID = (requestInfo.Session.AppName + "/" + requestInfo.Session.AppPlatform + "@" + (requestInfo.Session.AppAgent ?? "N/A")).GetHMACSHA384(requestInfo.Session.SessionID, true) + "@vieapps-ngx";
 
 				// call service to activate
 				var response = await context.CallServiceAsync(new RequestInfo(requestInfo)

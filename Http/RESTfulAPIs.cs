@@ -90,7 +90,7 @@ namespace net.vieapps.Services.APIGateway
 							header["x-webhook-object"] = pathSegments[3].GetANSIUri(false, true).Replace("-", "").Replace("_", "");
 					}
 					if (pathSegments.Length > 4 && !string.IsNullOrWhiteSpace(pathSegments[4]))
-						header["x-webhook-adapter"] = pathSegments[4].GetANSIUri().Replace("-", "").Replace("_", "");
+						header["x-webhook-adapter"] = pathSegments[4].GetANSIUri().Replace("_", "");
 				}
 				queryString["service-name"] = serviceName;
 				queryString["object-name"] = objectName;
@@ -113,8 +113,7 @@ namespace net.vieapps.Services.APIGateway
 				CorrelationID = context.GetCorrelationID()
 			};
 
-			#region prepare authenticate token, session/device identity, request body, security/principal
-			// working with Users service
+			// special: working with Users service
 			if (requestInfo.ServiceName.IsEquals("Users"))
 			{
 				if (requestInfo.ObjectName.IsEquals("Session"))
@@ -134,19 +133,46 @@ namespace net.vieapps.Services.APIGateway
 				requestInfo.ServiceName = "Users";
 			}
 
-			// authenticate token
+			// prepare authenticate token
+			var gotAuthorizationToken = false;
 			try
 			{
-				// get token
 				var authenticateToken = requestInfo.GetParameter("x-app-token");
-
-				// support for Bearer token
 				if (string.IsNullOrWhiteSpace(authenticateToken))
 				{
 					authenticateToken = context.GetHeaderParameter("authorization");
-					authenticateToken = authenticateToken != null && authenticateToken.IsStartsWith("Bearer") ? authenticateToken.ToArray(" ").Last() : null;
-					requestInfo.Header["x-app-token"] = authenticateToken;
-					requestInfo.Header.Remove("authorization");
+					if (authenticateToken != null)
+					{
+						requestInfo.Header.Remove("authorization");
+						try
+						{
+							var isBasicToken = authenticateToken.IsStartsWith("Basic");
+							authenticateToken = isBasicToken || authenticateToken.IsStartsWith("Bearer") || authenticateToken.IsStartsWith("JWT") ? authenticateToken.ToArray(" ").Last() : null;
+							if (authenticateToken != null)
+							{
+								gotAuthorizationToken = true;
+								var response = await context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Token", "GET")
+								{
+									Query = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+									Header = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+									{
+										["x-authorization-token"] = authenticateToken,
+										["x-authorization-mode"] = isBasicToken ? "Basic" : "Bearer",
+										["x-authorization-signature"] = authenticateToken.GetHMACSHA256(Global.ValidationKey)
+									},
+									CorrelationID = requestInfo.CorrelationID
+								}, cts.Token, RESTfulAPIs.Logger, "Authentications").ConfigureAwait(false);
+								requestInfo.Header["x-app-token"] = authenticateToken = response.Get<string>("Token");
+								requestInfo.Session.Fill(response.Get<JObject>("Session"));
+							}
+						}
+						catch (Exception ex)
+						{
+							await context.WriteLogsAsync(RESTfulAPIs.Logger, "Authentications", $"Error occurred while authorizing with token => {ex.Message}", ex).ConfigureAwait(false);
+							context.WriteError(RESTfulAPIs.Logger, ex, requestInfo, null, false);
+							return;
+						}
+					}
 				}
 
 				// parse and update information from token
@@ -157,22 +183,24 @@ namespace net.vieapps.Services.APIGateway
 
 				if (!string.IsNullOrWhiteSpace(authenticateToken))
 				{
-					var expiresAfter = Int32.TryParse(context.GetParameter("x-app-token-expires"), out var expires) && expires > 0 ? expires : 0;
-					await context.UpdateWithAuthenticateTokenAsync(requestInfo.Session, authenticateToken, expiresAfter > 0 ? expiresAfter : RESTfulAPIs.ExpiresAfter, null, null, null, RESTfulAPIs.Logger, "Authentications", requestInfo.CorrelationID).ConfigureAwait(false);
-					context.SetSession(requestInfo.Session);
+					if (!gotAuthorizationToken)
+					{
+						var expiresAfter = Int32.TryParse(context.GetParameter("x-app-token-expires"), out var expires) && expires > 0 ? expires : 0;
+						await context.UpdateWithAuthenticateTokenAsync(requestInfo.Session, authenticateToken, expiresAfter > 0 ? expiresAfter : RESTfulAPIs.ExpiresAfter, null, null, null, RESTfulAPIs.Logger, "Authentications", requestInfo.CorrelationID).ConfigureAwait(false);
+					}
 				}
 				else if (tokenIsRequired)
 					throw new InvalidSessionException("Session is invalid (Token is not found)");
 
-				// check existed of session
+				// check session
 				if (tokenIsRequired)
 				{
 					if (requestInfo.Query.TryGetValue("register", out var registered) && requestInfo.ServiceName.IsEquals("Users") && requestInfo.ObjectName.IsEquals("Session"))
 					{
-						if (!registered.IsEquals(await Global.Cache.GetAsync<string>($"Session#{requestInfo.Session.SessionID}", cts.Token).ConfigureAwait(false)))
+						if (!registered.IsEquals(await Global.Cache.GetAsync<string>(requestInfo.Session.SessionID.GetCacheKey<Session>(), cts.Token).ConfigureAwait(false)))
 							throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 					}
-					else if (!await context.IsSessionExistAsync(requestInfo.Session, RESTfulAPIs.Logger, "RESTfulAPIs", requestInfo.CorrelationID).ConfigureAwait(false))
+					else if (!await context.IsSessionExistAsync(requestInfo.Session, RESTfulAPIs.Logger, "Authentications", requestInfo.CorrelationID).ConfigureAwait(false))
 						throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 				}
 			}
@@ -184,7 +212,7 @@ namespace net.vieapps.Services.APIGateway
 				return;
 			}
 
-			// new session
+			// prepare identities
 			if (string.IsNullOrWhiteSpace(requestInfo.Session.SessionID))
 				requestInfo.Session.SessionID = requestInfo.Session.User.SessionID = UtilityService.NewUUID;
 
@@ -229,7 +257,7 @@ namespace net.vieapps.Services.APIGateway
 			if (isAccountProccessed || "otp".IsEquals(requestInfo.ObjectName))
 				try
 				{
-					requestInfo.PrepareAccountRelated((msg, ex) => context.WriteLogs(RESTfulAPIs.Logger, "Authentications", msg, ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID));
+					requestInfo.PrepareAccountRelated((msg, ex) => context.WriteLogs(RESTfulAPIs.Logger, "RESTfulAPIs", msg, ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID));
 				}
 				catch (Exception ex)
 				{
@@ -239,14 +267,14 @@ namespace net.vieapps.Services.APIGateway
 					return;
 				}
 
-			// prepare user principal
+			// update context
+			context.SetSession(requestInfo.Session);
 			context.User = new UserPrincipal(requestInfo.Session.User);
-			#endregion
 
 			// tracking
 			if (!isSessionProccessed)
 			{
-				if (RESTfulAPIs.TrackSessions)
+				if (RESTfulAPIs.TrackSessions || gotAuthorizationToken)
 					requestInfo.SendSessionState();
 				else
 					requestInfo.TrackStatistics();
@@ -295,7 +323,7 @@ namespace net.vieapps.Services.APIGateway
 							["Query"] = requestInfo.Query.ToJObject(),
 							["Body"] = requestInfo.BodyAsJson
 						};
-						Global.WriteLogs(Global.Logger, "WebHooks", $"Got a testing web-hook message [{requestInfo.GetHeaderParameter("x-webhook-uri")}] {response}", null, Global.ServiceName, LogLevel.Information, requestInfo.CorrelationID);
+						await context.WriteLogsAsync(RESTfulAPIs.Logger, "WebHooks", $"Got a testing web-hook message [{requestInfo.GetHeaderParameter("x-webhook-uri")}] {response}").ConfigureAwait(false);
 						await context.WriteAsync(response, cts.Token).ConfigureAwait(false);
 					}
 					else
@@ -314,13 +342,13 @@ namespace net.vieapps.Services.APIGateway
 							}
 							catch (Exception ex)
 							{
-								Global.WriteLogs(RESTfulAPIs.Logger, "WebHooks", $"Error occurred while processing a web-hook message => {ex.Message}", ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID);
+								await context.WriteLogsAsync(RESTfulAPIs.Logger, "WebHooks", $"Error occurred while processing a web-hook message => {ex.Message}", ex).ConfigureAwait(false);
 							}
 						else
 							webhook.Run(ex => Global.WriteLogs(RESTfulAPIs.Logger, "WebHooks", $"Error occurred while processing a web-hook message => {ex.Message}", ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID));
 
 						if (!string.IsNullOrWhiteSpace(contentType) && !"application/json".IsEquals(contentType) && !string.IsNullOrWhiteSpace(contentBody))
-							await context.WriteAsync(contentBody.ToBytes(), contentType, null, cts.Token).ConfigureAwait(false);
+							await context.WriteAsync(contentType, response.Get<string>("Cache-Control"), contentBody.ToBytes(), cts.Token).ConfigureAwait(false);
 						else
 							await context.WriteAsync(response, cts.Token).ConfigureAwait(false);
 					}
@@ -424,7 +452,7 @@ namespace net.vieapps.Services.APIGateway
 						new CommunicateMessage("APIGateway")
 						{
 							Type = "Broadcast#Client",
-							Data = requestInfo.GetBodyJson().As<UpdateMessage>().ToJson()
+							Data = requestInfo.BodyAsJson.As<UpdateMessage>().ToJson()
 						}.Send();
 						await context.WriteAsync(new JObject { ["Status"] = "Success" }, cts.Token).ConfigureAwait(false);
 					}
@@ -514,7 +542,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 		}
 
-		static async Task WriteAsync(this HttpContext context, byte[] body, string contentType, string cacheControl, CancellationToken cancellationToken)
+		static async Task WriteAsync(this HttpContext context, string contentType, string cacheControl, byte[] body, CancellationToken cancellationToken)
 		{
 			context.SetResponseHeaders((int)HttpStatusCode.OK, new Dictionary<string, string>
 			{
@@ -527,7 +555,7 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		static Task WriteAsync(this HttpContext context, JToken json, CancellationToken cancellationToken)
-			=> context.WriteAsync(json.ToString(RESTfulAPIs.JsonFormat).ToBytes(), null, null, cancellationToken);
+			=> context.WriteAsync(null, null, json.ToString(RESTfulAPIs.JsonFormat).ToBytes(), cancellationToken);
 
 		#region Create/Renew a session
 		static async Task CreateOrRenewSessionAsync(this HttpContext context, RequestInfo requestInfo, JToken session = null, bool sendSessionState = true)
@@ -717,7 +745,7 @@ namespace net.vieapps.Services.APIGateway
 					requestInfo.Session.User.SessionID = requestInfo.Session.SessionID = UtilityService.NewUUID;
 					await context.CreateOrRenewSessionAsync(requestInfo).ConfigureAwait(false);
 
-					response = requestInfo.GetSessionJson(payload => payload["did"] = requestInfo.Session.DeviceID);
+					response = requestInfo.GetSessionJson(null, payload => payload["did"] = requestInfo.Session.DeviceID);
 					new CommunicateMessage("APIGateway")
 					{
 						Type = "Session#Patch",
@@ -800,7 +828,7 @@ namespace net.vieapps.Services.APIGateway
 				requestInfo.Session.Verified = true;
 				await context.CreateOrRenewSessionAsync(requestInfo).ConfigureAwait(false);
 
-				response = requestInfo.GetSessionJson(payload => payload["did"] = requestInfo.Session.DeviceID);
+				response = requestInfo.GetSessionJson(null, payload => payload["did"] = requestInfo.Session.DeviceID);
 				new CommunicateMessage("APIGateway")
 				{
 					Type = "Session#Patch",
@@ -867,7 +895,7 @@ namespace net.vieapps.Services.APIGateway
 					Global.Cache.SetAsync(requestInfo.Session.SessionID.GetCacheKey<Session>(), requestInfo.Session.GetEncryptedID(), 13, cancellationToken)
 				).ConfigureAwait(false);
 
-				var response = requestInfo.GetSessionJson(payload => payload["did"] = requestInfo.Session.DeviceID);
+				var response = requestInfo.GetSessionJson(null, payload => payload["did"] = requestInfo.Session.DeviceID);
 				new CommunicateMessage("APIGateway")
 				{
 					Type = "Session#Patch",
@@ -922,7 +950,7 @@ namespace net.vieapps.Services.APIGateway
 				await context.CreateOrRenewSessionAsync(requestInfo).ConfigureAwait(false);
 
 				// response
-				response = requestInfo.GetSessionJson(payload => payload["did"] = requestInfo.Session.DeviceID);
+				response = requestInfo.GetSessionJson(null, payload => payload["did"] = requestInfo.Session.DeviceID);
 				await Task.WhenAll
 				(
 					context.WriteAsync(response, cancellationToken),

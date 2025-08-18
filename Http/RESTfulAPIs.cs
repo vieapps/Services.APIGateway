@@ -60,6 +60,16 @@ namespace net.vieapps.Services.APIGateway
 			var header = context.Request.Headers.ToDictionary().Copy(RESTfulAPIs.ExcludedHeaders.Concat(context.Request.Headers.Keys.Where(name => name.IsStartsWith("cf-") || name.IsStartsWith("sec-"))));
 			var query = context.Request.QueryString.ToDictionary(queryString =>
 			{
+				if (queryString.TryGetValue("x-params", out var xparams))
+				{
+					queryString.Remove("x-params");
+					try
+					{
+						(new RequestInfo { Body = xparams.Url64Decode() }.BodyAsJson as JObject).ForEach(kvp => queryString[kvp.Key] = (kvp.Value as JValue).Value?.ToString());
+					}
+					catch { }
+				}
+
 				var pathSegments = context.GetRequestPathSegments();
 				var serviceName = pathSegments.Length > 0 && !string.IsNullOrWhiteSpace(pathSegments[0])
 					? pathSegments[0].GetANSIUri(false, true)
@@ -70,6 +80,7 @@ namespace net.vieapps.Services.APIGateway
 				var objectIdentity = pathSegments.Length > 2 && !string.IsNullOrWhiteSpace(pathSegments[2])
 					? pathSegments[2].GetANSIUri(false, true)
 					: context.GetParameter("x-object-identity") ?? context.GetParameter("ObjectIdentity") ?? "";
+
 				if (serviceName.IsStartsWith("webhook") || serviceName.IsStartsWith("web-hook"))
 				{					
 					isWebHookRequest = true;
@@ -92,10 +103,12 @@ namespace net.vieapps.Services.APIGateway
 					if (pathSegments.Length > 4 && !string.IsNullOrWhiteSpace(pathSegments[4]))
 						header["x-webhook-adapter"] = pathSegments[4].GetANSIUri().Replace("_", "");
 				}
+
 				queryString["service-name"] = serviceName;
 				queryString["object-name"] = objectName;
 				queryString["object-identity"] = objectIdentity;
 			});
+
 			var extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 			if (query.Remove("x-request-extra", out var extraInfo) && !string.IsNullOrWhiteSpace(extraInfo))
 				try
@@ -200,7 +213,7 @@ namespace net.vieapps.Services.APIGateway
 						if (!registered.IsEquals(await Global.Cache.GetAsync<string>(requestInfo.Session.SessionID.GetCacheKey<Session>(), cts.Token).ConfigureAwait(false)))
 							throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 					}
-					else if (!await context.IsSessionExistAsync(requestInfo.Session, RESTfulAPIs.Logger, "Authentications", requestInfo.CorrelationID).ConfigureAwait(false))
+					else if (!gotAuthorizationToken && !await context.IsSessionExistAsync(requestInfo.Session, RESTfulAPIs.Logger, "Authentications", requestInfo.CorrelationID).ConfigureAwait(false))
 						throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 				}
 			}
@@ -330,7 +343,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 						var contentType = "application/json";
 						var contentBody = "";
-						var waitForCompleted = "GET".IsEquals(requestInfo.Verb) || (requestInfo.TryGetParameter("wait-for", out var wait) && wait.IsEquals("completed"));
+						var waitForCompleted = requestInfo.TryGetParameter("wait-for", out var wait) && wait.IsEquals("completed");
 						var webhook = requestInfo.GetService().ProcessWebHookMessageAsync(requestInfo, waitForCompleted ? cts.Token : Global.CancellationToken);
 						JToken response = new JObject { ["Status"] = "OK" };
 						if (waitForCompleted)

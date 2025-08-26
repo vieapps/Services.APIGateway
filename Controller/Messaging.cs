@@ -331,13 +331,13 @@ namespace net.vieapps.Services.APIGateway
 				}
 				else
 				{
-					var time = DateTime.Now.AddMinutes(1);
+					var time = DateTime.Now.AddSeconds(25);
 					if (counters == 1)
-						time = DateTime.Now.AddMinutes(3);
+						time = DateTime.Now.AddMinutes(1);
 					else if (counters == 2)
-						time = DateTime.Now.AddMinutes(13);
+						time = DateTime.Now.AddMinutes(2);
 					else if (counters > 2)
-						time = DateTime.Now.AddMinutes(23 + ((counters - 2) * 3));
+						time = DateTime.Now.AddMinutes(2 + (counters - 2));
 
 					WebHookSender.Messages[message.ID].Time = time;
 					WebHookSender.Messages[message.ID].Counters = counters + 1;

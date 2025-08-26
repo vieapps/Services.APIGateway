@@ -1,13 +1,13 @@
 ﻿#region Related components
 using System;
 using System.IO;
-using System.Linq;
 using System.Net;
+using System.Linq;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
@@ -65,7 +65,7 @@ namespace net.vieapps.Services.APIGateway
 					queryString.Remove("x-params");
 					try
 					{
-						(new RequestInfo { Body = xparams.Url64Decode() }.BodyAsJson as JObject).ForEach(kvp => queryString[kvp.Key] = (kvp.Value as JValue).Value?.ToString());
+						(xparams.Url64Decode().ToJSON() as JObject).ForEach(kvp => queryString[kvp.Key] = (kvp.Value as JValue).Value?.ToString());
 					}
 					catch { }
 				}
@@ -151,40 +151,38 @@ namespace net.vieapps.Services.APIGateway
 			try
 			{
 				var authenticateToken = requestInfo.GetParameter("x-app-token");
-				if (string.IsNullOrWhiteSpace(authenticateToken))
+				if (string.IsNullOrWhiteSpace(authenticateToken) && requestInfo.TryGetHeaderParameter("authorization", out authenticateToken))
 				{
-					authenticateToken = context.GetHeaderParameter("authorization");
-					if (authenticateToken != null)
+					requestInfo.Header.Remove("authorization");
+					try
 					{
-						requestInfo.Header.Remove("authorization");
-						try
+						var isBasicToken = authenticateToken.IsStartsWith("Basic");
+						authenticateToken = isBasicToken || authenticateToken.IsStartsWith("Bearer") || authenticateToken.IsStartsWith("JWT") ? authenticateToken.ToArray(" ").Last() : null;
+						if (authenticateToken != null)
 						{
-							var isBasicToken = authenticateToken.IsStartsWith("Basic");
-							authenticateToken = isBasicToken || authenticateToken.IsStartsWith("Bearer") || authenticateToken.IsStartsWith("JWT") ? authenticateToken.ToArray(" ").Last() : null;
-							if (authenticateToken != null)
+							gotAuthorizationToken = true;
+							var response = await context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Token", "GET")
 							{
-								gotAuthorizationToken = true;
-								var response = await context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Token", "GET")
+								Query = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+								Header = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
 								{
-									Query = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
-									Header = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-									{
-										["x-authorization-token"] = authenticateToken,
-										["x-authorization-mode"] = isBasicToken ? "Basic" : "Bearer",
-										["x-authorization-signature"] = authenticateToken.GetHMACSHA256(Global.ValidationKey)
-									},
-									CorrelationID = requestInfo.CorrelationID
-								}, cts.Token, RESTfulAPIs.Logger, "Authentications").ConfigureAwait(false);
-								requestInfo.Header["x-app-token"] = authenticateToken = response.Get<string>("Token");
-								requestInfo.Session.Fill(response.Get<JObject>("Session"));
-							}
+									["x-authorization-token"] = authenticateToken,
+									["x-authorization-mode"] = isBasicToken ? "Basic" : "Bearer",
+									["x-authorization-signature"] = authenticateToken.GetHMACSHA256(Global.ValidationKey)
+								},
+								CorrelationID = requestInfo.CorrelationID
+							}, cts.Token, RESTfulAPIs.Logger, "Authentications").ConfigureAwait(false);
+							if (isDebugLogEnabled)
+								await context.WriteLogsAsync(RESTfulAPIs.Logger, "Authentications", $"The request was authorized\r\nRequest: {authenticateToken}\r\nResponse: {response.Get<string>("Token")}").ConfigureAwait(false);
+							requestInfo.Header["x-app-token"] = authenticateToken = response.Get<string>("Token");
+							requestInfo.Session.Fill(response.Get<JObject>("Session"));
 						}
-						catch (Exception ex)
-						{
-							await context.WriteLogsAsync(RESTfulAPIs.Logger, "Authentications", $"Error occurred while authorizing with token => {ex.Message}", ex).ConfigureAwait(false);
-							context.WriteError(RESTfulAPIs.Logger, ex, requestInfo, null, false);
-							return;
-						}
+					}
+					catch (Exception ex)
+					{
+						await context.WriteLogsAsync(RESTfulAPIs.Logger, "Authentications", $"Error occurred while authorizing with token => {ex.Message}", ex).ConfigureAwait(false);
+						context.WriteError(RESTfulAPIs.Logger, ex, requestInfo, null, false);
+						return;
 					}
 				}
 
@@ -358,7 +356,7 @@ namespace net.vieapps.Services.APIGateway
 								await context.WriteLogsAsync(RESTfulAPIs.Logger, "WebHooks", $"Error occurred while processing a web-hook message => {ex.Message}", ex).ConfigureAwait(false);
 							}
 						else
-							webhook.Run(ex => Global.WriteLogs(RESTfulAPIs.Logger, "WebHooks", $"Error occurred while processing a web-hook message => {ex.Message}", ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID));
+							webhook.Run(ex => Global.WriteLogsAsync(RESTfulAPIs.Logger, "WebHooks", $"Error occurred while processing a web-hook message => {ex.Message}", ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID));
 
 						if (!string.IsNullOrWhiteSpace(contentType) && !"application/json".IsEquals(contentType) && !string.IsNullOrWhiteSpace(contentBody))
 							await context.WriteAsync(contentType, response.Get<string>("Cache-Control"), contentBody.ToBytes(), cts.Token).ConfigureAwait(false);
@@ -758,7 +756,7 @@ namespace net.vieapps.Services.APIGateway
 					requestInfo.Session.User.SessionID = requestInfo.Session.SessionID = UtilityService.NewUUID;
 					await context.CreateOrRenewSessionAsync(requestInfo).ConfigureAwait(false);
 
-					response = requestInfo.GetSessionJson(null, payload => payload["did"] = requestInfo.Session.DeviceID);
+					response = requestInfo.GetSessionJson();
 					new CommunicateMessage("APIGateway")
 					{
 						Type = "Session#Patch",
@@ -841,7 +839,7 @@ namespace net.vieapps.Services.APIGateway
 				requestInfo.Session.Verified = true;
 				await context.CreateOrRenewSessionAsync(requestInfo).ConfigureAwait(false);
 
-				response = requestInfo.GetSessionJson(null, payload => payload["did"] = requestInfo.Session.DeviceID);
+				response = requestInfo.GetSessionJson();
 				new CommunicateMessage("APIGateway")
 				{
 					Type = "Session#Patch",
@@ -908,7 +906,7 @@ namespace net.vieapps.Services.APIGateway
 					Global.Cache.SetAsync(requestInfo.Session.SessionID.GetCacheKey<Session>(), requestInfo.Session.GetEncryptedID(), 13, cancellationToken)
 				).ConfigureAwait(false);
 
-				var response = requestInfo.GetSessionJson(null, payload => payload["did"] = requestInfo.Session.DeviceID);
+				var response = requestInfo.GetSessionJson();
 				new CommunicateMessage("APIGateway")
 				{
 					Type = "Session#Patch",
@@ -963,7 +961,7 @@ namespace net.vieapps.Services.APIGateway
 				await context.CreateOrRenewSessionAsync(requestInfo).ConfigureAwait(false);
 
 				// response
-				response = requestInfo.GetSessionJson(null, payload => payload["did"] = requestInfo.Session.DeviceID);
+				response = requestInfo.GetSessionJson();
 				await Task.WhenAll
 				(
 					context.WriteAsync(response, cancellationToken),

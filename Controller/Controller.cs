@@ -327,16 +327,16 @@ namespace net.vieapps.Services.APIGateway
 								this.State = ServiceState.Ready;
 
 							this.InterCommunicator?.Dispose();
-							this.InterCommunicator = Router.IncomingChannel.RealmProxy.Services.GetSubject<CommunicateMessage>("messages.services.apigateway").Subscribe
-							(
+							this.InterCommunicator = Router.IncomingChannel.Subscribe<CommunicateMessage>(
+								"messages.services.apigateway",
 								message => this.Info.ID.IsEquals(message.ExcludedNodeID) ? Task.CompletedTask : this.ProcessInterCommunicateMessageAsync(message),
 								exception => Global.OnError?.Invoke($"Error occurred while fetching an inter-communicate message of API Gateway => {exception.Message}", this.State == ServiceState.Connected ? exception : null)
 							);
 							Global.OnProcess?.Invoke($"The communicator of API Gateway was{(this.State == ServiceState.Disconnected ? " re-" : " ")}subscribed successful");
 
 							this.UpdateCommunicator?.Dispose();
-							this.UpdateCommunicator = Router.IncomingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("messages.update").Subscribe
-							(
+							this.UpdateCommunicator = Router.IncomingChannel.Subscribe<UpdateMessage>(
+								"messages.update",
 								message =>
 								{
 									if (message.Type.IsEquals("Ping"))
@@ -1022,7 +1022,7 @@ namespace net.vieapps.Services.APIGateway
 			catch { }
 			try
 			{
-				this.ManagingService = await Router.IncomingChannel.RealmProxy.Services.RegisterCallee<IController>(() => this, RegistrationInterceptor.Create(this.Info.ID, WampInvokePolicy.Single)).ConfigureAwait(false);
+				this.ManagingService = await Router.IncomingChannel.RegisterAsync<IController>(() => this, RegistrationInterceptor.Create(this.Info.ID, WampInvokePolicy.Single)).ConfigureAwait(false);
 				Global.OnProcess?.Invoke($"The managing service was{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
 			}
 			catch (WampSessionNotEstablishedException)
@@ -1043,7 +1043,7 @@ namespace net.vieapps.Services.APIGateway
 			if (this.AllowRegisterHelperServices)
 				try
 				{
-					this.MessagingService = await Router.IncomingChannel.RealmProxy.Services.RegisterCallee<IMessagingService>(() => new MessagingService(), RegistrationInterceptor.Create()).ConfigureAwait(false);
+					this.MessagingService = await Router.IncomingChannel.RegisterAsync<IMessagingService>(() => new MessagingService(), RegistrationInterceptor.Create()).ConfigureAwait(false);
 					Global.OnProcess?.Invoke($"The messaging service was{(this.State == ServiceState.Disconnected ? " re-" : " ")}registered");
 				}
 				catch (WampSessionNotEstablishedException)

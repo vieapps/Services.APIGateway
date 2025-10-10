@@ -29,11 +29,11 @@ namespace net.vieapps.Services.APIGateway
 						await (this.Instance != null ? this.Instance.DisposeAsync().AsTask() : Task.CompletedTask).ConfigureAwait(false);
 					}
 					catch { }
-					this.Instance = await Router.IncomingChannel.RealmProxy.Services.RegisterCallee<IManager>(() => this, RegistrationInterceptor.Create()).ConfigureAwait(false);
+					this.Instance = await Router.IncomingChannel.RegisterAsync<IManager>(() => this, RegistrationInterceptor.Create()).ConfigureAwait(false);
 
 					this.Communicator?.Dispose();
-					this.Communicator = Router.IncomingChannel.RealmProxy.Services.GetSubject<CommunicateMessage>("messages.services.apigateway").Subscribe
-					(
+					this.Communicator = Router.IncomingChannel.Subscribe<CommunicateMessage>(
+						"messages.services.apigateway",
 						message => this.ProcessInterCommunicateMessage(message),
 						exception => Global.OnError?.Invoke($"Error occurred while fetching inter-communicate message => {exception.Message}", exception)
 					);

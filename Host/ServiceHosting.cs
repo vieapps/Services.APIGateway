@@ -208,7 +208,7 @@ namespace net.vieapps.Services.APIGateway
 				if (isUserInteractive)
 					builder.AddConsole();
 			}).BuildServiceProvider().GetService<ILoggerFactory>());
-			Components.Caching.Cache.AssignLoggerFactory(Logger.GetLoggerFactory());
+			Enyim.Caching.Logger.AssignLoggerFactory(Logger.GetLoggerFactory());
 
 			var logPath = UtilityService.GetAppSetting("Path:Logs");
 			if ("true".IsEquals(UtilityService.GetAppSetting("Logs:WriteFiles", "true")) && !string.IsNullOrWhiteSpace(logPath) && Directory.Exists(logPath))

@@ -264,18 +264,16 @@ namespace net.vieapps.Services.APIGateway
 			appLifetime.ApplicationStopping.Register(() =>
 			{
 				Global.Logger = loggerFactory.CreateLogger<Startup>();
-				WebSocketAPIs.Dispose();
 				Global.RSA.Dispose();
+				WebSocketAPIs.Dispose();
 				if (enableForwarder)
 					Router.CloseForwarder();
+				Router.Disconnect();
 			});
 
 			// assign app event handler => on stopped
 			appLifetime.ApplicationStopped.Register(() =>
 			{
-				Router.Disconnect();
-				Global.CancellationTokenSource.Cancel();
-				Global.CancellationTokenSource.Dispose();
 				Global.Logger.LogInformation($"The {Global.ServiceName} HTTP service was stopped");
 			});
 

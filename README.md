@@ -14,6 +14,6 @@
 
 ## Others:
 
-- Messaging protocol: WAMP-proto with WampSharp, support routed RPC and Pub/Sub with multiple instances
+- Messaging protocol: WAMP-proto by WampSharp with reactive streams (Rx.NET), support Routed RPC and Pub/Sub with multiple instances
 - Authentication mechanism: JWT (JSON Web Token)
 - Further: MQTT as an alternative Pub/Sub model

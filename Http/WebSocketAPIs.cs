@@ -119,16 +119,16 @@ namespace net.vieapps.Services.APIGateway
 					await Task.Delay(UtilityService.GetRandomNumber(234, 567), Global.CancellationToken).ConfigureAwait(false);
 
 				// subscribe an updater to push messages to client device
-				websocket.Set("Updater", Services.Router.IncomingChannel.RealmProxy.Services.GetSubject<UpdateMessage>("messages.update").Subscribe
-				(
-					message => websocket.PushAsync(message),
+				websocket.Set("Updater", Services.Router.IncomingChannel.Subscribe<UpdateMessage>(
+					"messages.update",
+					websocket.PushAsync,
 					exception => Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"Error occurred while fetching an updating message => {exception.Message}", exception)
 				));
 
 				// subscribe a communicator to update related information
-				websocket.Set("Communicator", Services.Router.IncomingChannel.RealmProxy.Services.GetSubject<CommunicateMessage>("messages.services.apigateway").Subscribe
-				(
-					message => websocket.CommunicateAsync(message),
+				websocket.Set("Communicator", Services.Router.IncomingChannel.Subscribe<CommunicateMessage>(
+					"messages.services.apigateway",
+					websocket.CommunicateAsync,
 					exception => Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"Error occurred while fetching an inter-communicating message => {exception.Message}", exception)
 				));
 

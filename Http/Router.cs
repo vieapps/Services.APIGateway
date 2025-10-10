@@ -42,8 +42,8 @@ namespace net.vieapps.Services.APIGateway
 					});
 
 					Global.PrimaryInterCommunicateMessageUpdater?.Dispose();
-					Global.PrimaryInterCommunicateMessageUpdater = Services.Router.IncomingChannel.RealmProxy.Services.GetSubject<CommunicateMessage>("messages.services.apigateway").Subscribe
-					(
+					Global.PrimaryInterCommunicateMessageUpdater = Services.Router.IncomingChannel.Subscribe<CommunicateMessage>(
+						"messages.services.apigateway",
 						message => Global.NodeID.IsEquals(message.ExcludedNodeID) ? Task.CompletedTask : RESTfulAPIs.ProcessInterCommunicateMessageAsync(message),
 						exception => Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.Updates", $"Error occurred while fetching an inter-communicating message => {exception.Message}", exception)
 					);
@@ -89,8 +89,6 @@ namespace net.vieapps.Services.APIGateway
 		public static void Disconnect()
 		{
 			Global.UnregisterService();
-			Global.PrimaryInterCommunicateMessageUpdater?.Dispose();
-			Global.SecondaryInterCommunicateMessageUpdater?.Dispose();
 			Global.Disconnect();
 		}
 

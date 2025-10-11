@@ -1,3 +1,4 @@
+#region Related components
 using System;
 using System.IO;
 using System.Linq;
@@ -15,12 +16,15 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using WampSharp.V2;
 using WampSharp.V2.Realm;
+#endregion
 
 namespace net.vieapps.Services.APIGateway
 {
 	public class RouterComponent
 	{
-		public const string Powered = "WAMP#v23.5.1-Fleck#v1.2.0-SSL+rev:2025.01.01";
+
+		#region Properties
+		public const string Powered = "WAMP#v23.8.1-Fleck#v1.2.0-SSL+rev:2025.10.11#moving.forward";
 
 		public IWampHost Host { get; private set; } = null;
 
@@ -49,6 +53,7 @@ namespace net.vieapps.Services.APIGateway
 		public Action<SessionInfo> OnSessionClosed { get; set; } = null;
 
 		Fleck.WebSocketServer StatisticsServer { get; set; } = null;
+		#endregion
 
 		public void Start(string[] args)
 		{
@@ -288,8 +293,8 @@ namespace net.vieapps.Services.APIGateway
 				this.Sessions.Values.ToList().ForEach(info => sessions.Add(info.ToJson()));
 				return new JObject
 				{
-						{ "Total", this.Sessions.Count },
-						{ "Sessions", sessions }
+					{ "Total", this.Sessions.Count },
+					{ "Sessions", sessions }
 				};
 			}
 		}

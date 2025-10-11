@@ -71,13 +71,28 @@ namespace net.vieapps.Services.APIGateway
 			Program.Router = new RouterComponent
 			{
 				OnError = ex => Program.WriteLog(ex.Message, ex),
-				OnStarted = () => Program.WriteLog(Program.Router.RouterInfoString.Replace("\t", "")),
+				OnStarted = () => Program.WriteLog("VIEApps NGX API Gateway Router was started" + "\r\n\r\n" + Program.Router.RouterInfoString.Replace("\t", "")),
 				OnStopped = () => Program.WriteLog("VIEApps NGX API Gateway Router was stopped")
 			};
 			if (Environment.UserInteractive || writeLogs)
 			{
-				Program.Router.OnSessionCreated = info => Program.WriteLog((Environment.UserInteractive ? "\r\n" : "") + $"A session was opened - Session ID: {info.SessionID} - Connection Info: {info.ConnectionID} - {info.EndPoint}");
-				Program.Router.OnSessionClosed = info => Program.WriteLog((Environment.UserInteractive ? "\r\n" : "") + $"A session was closed - Type: {info?.CloseType} ({info?.CloseReason ?? "N/A"}) - Session ID: {info?.SessionID} - Connection Info: {info?.ConnectionID} - {info?.EndPoint}");
+				Program.Router.OnSessionCreated = info => Program.WriteLog(
+					(Environment.UserInteractive ? "\r\n\r\n" : "") +
+					$"A session was opened" + "\r\n" +
+					$"- Session ID: {info.SessionID}" + "\r\n" +
+					$"- Connection ID: {info.ConnectionID}" + "\r\n" +
+					$"- IP: {info.EndPoint}" + "\r\n" +
+					$"- Service: {info.Name ?? "N/A"} [{info.Description ?? "N/A"}]"
+				);
+				Program.Router.OnSessionClosed = info => Program.WriteLog(
+					(Environment.UserInteractive ? "\r\n\r\n" : "") +
+					$"A session was closed" + "\r\n" +
+					$"- Session ID: {info.SessionID}" + "\r\n" +
+					$"- Connection ID: {info.ConnectionID}" + "\r\n" +
+					$"- IP: {info.EndPoint}" + "\r\n" +
+					$"- Service: {info.Name ?? "N/A"} [{info.Description ?? "N/A"}]" + "\r\n" +
+					$"- Type: {info?.CloseType} ({info?.CloseReason ?? "N/A"})"
+				);
 			}
 			Program.Router.Start(args);
 		}

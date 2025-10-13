@@ -7,14 +7,15 @@ using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Logging;
 using WampSharp.Binding;
-using WampSharp.Core.Serialization;
 using WampSharp.V2;
+using WampSharp.V2.Rpc;
 using WampSharp.V2.Core;
-using WampSharp.V2.Core.Contracts;
+using WampSharp.V2.Client;
 using WampSharp.V2.Realm;
 using WampSharp.V2.PubSub;
-using WampSharp.V2.Rpc;
-using WampSharp.V2.Client;
+using WampSharp.V2.Core.Contracts;
+using WampSharp.Core.Serialization;
+using net.vieapps.Components.Security;
 using net.vieapps.Components.Utility;
 #endregion
 
@@ -40,9 +41,9 @@ namespace net.vieapps.Services.APIGateway
 							Global.Logger.LogError($"Error occurred while calling on-incoming action => {ex.Message}", ex);
 						}
 					});
-
 					Global.PrimaryInterCommunicateMessageUpdater?.Dispose();
-					Global.PrimaryInterCommunicateMessageUpdater = Services.Router.IncomingChannel.Subscribe<CommunicateMessage>(
+					Global.PrimaryInterCommunicateMessageUpdater = Services.Router.IncomingChannel.Subscribe<CommunicateMessage>
+					(
 						"messages.services.apigateway",
 						message => Global.NodeID.IsEquals(message.ExcludedNodeID) ? Task.CompletedTask : RESTfulAPIs.ProcessInterCommunicateMessageAsync(message),
 						exception => Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.Updates", $"Error occurred while fetching an inter-communicating message => {exception.Message}", exception)
@@ -61,24 +62,28 @@ namespace net.vieapps.Services.APIGateway
 							Global.Logger.LogError($"Error occurred while calling on-outgoing action => {ex.Message}", ex);
 						}
 					});
-
-					await Task.WhenAll
-					(
-						Global.RegisterServiceAsync(),
-						Task.Delay(UtilityService.GetRandomNumber(234, 567), Global.CancellationToken)
-					).ConfigureAwait(false);
-
-					while (Services.Router.IncomingChannel == null)
-						await Task.Delay(UtilityService.GetRandomNumber(234, 567), Global.CancellationToken).ConfigureAwait(false);
-
-					new CommunicateMessage("APIGateway")
+					try
 					{
-						Type = "Controller#RequestInfo"
-					}.Send();
-					new CommunicateMessage("APIGateway")
+						await Task.WhenAll
+						(
+							Global.RegisterServiceAsync(),
+							Task.Delay(UtilityService.GetRandomNumber(234, 567), Global.CancellationToken)
+						).ConfigureAwait(false);
+						while (Services.Router.IncomingChannel == null)
+							await Task.Delay(UtilityService.GetRandomNumber(234, 567), Global.CancellationToken).ConfigureAwait(false);
+						new CommunicateMessage("APIGateway")
+						{
+							Type = "Controller#RequestInfo"
+						}.Send();
+						new CommunicateMessage("APIGateway")
+						{
+							Type = "Service#RequestInfo"
+						}.Send();
+					}
+					catch (Exception ex)
 					{
-						Type = "Service#RequestInfo"
-					}.Send();
+						Global.Logger.LogError($"Error occurred while sending service info => {ex.Message}", ex);
+					}
 				},
 				waitingTimes,
 				exception => Global.Logger.LogError($"Cannot connect to API Gateway Router in period of times => {exception.Message}", exception),

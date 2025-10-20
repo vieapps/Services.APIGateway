@@ -24,7 +24,7 @@ namespace net.vieapps.Services.APIGateway
 	{
 
 		#region Properties
-		public const string Powered = "WAMP#v23.8.1-Fleck#v1.2.0-SSL+rev:2025.10.11#moving.forward";
+		public const string Powered = "WAMP#v23.8.1-Fleck#v1.2.0-SSL+rev:2025.10.20#moving.forward";
 
 		public IWampHost Host { get; private set; } = null;
 
@@ -49,6 +49,8 @@ namespace net.vieapps.Services.APIGateway
 		public Action OnStopped { get; set; } = null;
 
 		public Action<SessionInfo> OnSessionCreated { get; set; } = null;
+
+		public Action<SessionInfo> OnSessionUpdated { get; set; } = null;
 
 		public Action<SessionInfo> OnSessionClosed { get; set; } = null;
 
@@ -201,6 +203,7 @@ namespace net.vieapps.Services.APIGateway
 								{
 									sessionInfo.Name = json.Value<string>("Name");
 									sessionInfo.Description = json.Value<string>("Description");
+									this.OnSessionUpdated?.Invoke(sessionInfo);
 								}
 							}
 

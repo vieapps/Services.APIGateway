@@ -321,8 +321,8 @@ namespace net.vieapps.Services.APIGateway
 					(
 						async (sender, arguments) =>
 						{
-							Global.OnProcess?.Invoke($"The incoming channel to API Gateway Router is established - Session ID: {arguments.SessionId}");
-							await Router.IncomingChannel.UpdateAsync(Router.IncomingChannelSessionID, "APIGateway", "Incoming (API Gateway Controller)").ConfigureAwait(false);
+							Global.OnProcess?.Invoke($"The API Gateway incoming channel was established - Session ID: {arguments.SessionId}");
+							await Router.IncomingChannel.UpdateAsync(Router.IncomingChannelSessionID, "APIGateway", $"Incoming: services.controllers @ {this.Info.ID}").ConfigureAwait(false);
 							if (this.State == ServiceState.Initializing)
 								this.State = ServiceState.Ready;
 
@@ -432,18 +432,18 @@ namespace net.vieapps.Services.APIGateway
 							}
 
 							if (Router.ChannelsAreClosedBySystem || (arguments.CloseType.Equals(SessionCloseType.Goodbye) && "wamp.close.normal".IsEquals(arguments.Reason)))
-								Global.OnProcess?.Invoke($"The incoming channel to API Gateway Router is closed - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
+								Global.OnProcess?.Invoke($"The API Gateway incoming channel was closed - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
 							else if (Router.IncomingChannel != null)
 							{
-								Global.OnProcess?.Invoke($"The incoming channel to API Gateway Router is broken - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
+								Global.OnProcess?.Invoke($"The API Gateway incoming channel was broken - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
 								Router.IncomingChannel.ReOpen(this.CancellationToken, Global.OnError, "Incoming");
 							}
 						},
-						(sender, arguments) => Global.OnError?.Invoke($"Got an unexpected error of the incoming channel to API Gateway Router => {arguments.Exception?.Message}", arguments.Exception),
+						(sender, arguments) => Global.OnError?.Invoke($"Got an unexpected error of the API Gateway incoming channel => {arguments.Exception?.Message}", arguments.Exception),
 						async (sender, arguments) =>
 						{
-							Global.OnProcess?.Invoke($"The outgoing channel to API Gateway Router is established - Session ID: {arguments.SessionId}");
-							await Router.OutgoingChannel.UpdateAsync(Router.OutgoingChannelSessionID, "APIGateway", "Outgoing (API Gateway Controller)").ConfigureAwait(false);
+							Global.OnProcess?.Invoke($"The API Gateway outgoing channel was established - Session ID: {arguments.SessionId}");
+							await Router.OutgoingChannel.UpdateAsync(Router.OutgoingChannelSessionID, "APIGateway", $"Outgoing: services.controllers @ {this.Info.ID}").ConfigureAwait(false);
 
 							while (Router.IncomingChannel == null || Router.OutgoingChannel == null)
 								await Task.Delay(UtilityService.GetRandomNumber(123, 456), this.CancellationToken).ConfigureAwait(false);
@@ -460,14 +460,14 @@ namespace net.vieapps.Services.APIGateway
 						(sender, arguments) =>
 						{
 							if (Router.ChannelsAreClosedBySystem || (arguments.CloseType.Equals(SessionCloseType.Goodbye) && "wamp.close.normal".IsEquals(arguments.Reason)))
-								Global.OnProcess?.Invoke($"The outgoing channel to API Gateway Router is closed - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
+								Global.OnProcess?.Invoke($"The API Gateway outgoing channel was closed - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
 							else if (Router.OutgoingChannel != null)
 							{
-								Global.OnProcess?.Invoke($"The outgoing channel to API Gateway Router is broken - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
+								Global.OnProcess?.Invoke($"The API Gateway outgoing channel was broken - {arguments.CloseType} ({(string.IsNullOrWhiteSpace(arguments.Reason) ? "Unknown" : arguments.Reason)})");
 								Router.OutgoingChannel.ReOpen(this.CancellationToken, Global.OnError, "Outgoing");
 							}
 						},
-						(sender, arguments) => Global.OnError?.Invoke($"Got an unexpected error of the outgoging channel to API Gateway Router => {arguments.Exception?.Message}", arguments.Exception),
+						(sender, arguments) => Global.OnError?.Invoke($"Got an unexpected error of the API Gateway outgoing channel => {arguments.Exception?.Message}", arguments.Exception),
 						this.CancellationToken
 					).ConfigureAwait(false);
 				}

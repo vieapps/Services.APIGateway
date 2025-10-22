@@ -255,7 +255,7 @@ namespace net.vieapps.Services.APIGateway
 			logger.LogInformation($"The service is starting");
 			logger.LogInformation($"Service info: {service.ServiceName} - v{this.ServiceType.Assembly.GetVersion()}");
 			logger.LogInformation($"Working mode: {(isUserInteractive ? "Interactive app" : "Background service")}");
-			logger.LogInformation($"Starting arguments: {(args != null && args.Any() ? args.Join(" ") : "None")}");
+			logger.LogInformation($"Starting arguments: {(args != null && args.Count > 0 ? args.Join(" ") : "None")}");
 
 			if (!doSyncWork || startBeforeDoingSyncWork)
 				service.Start(args?.ToArray(), initializeRepository, _ =>
@@ -264,7 +264,7 @@ namespace net.vieapps.Services.APIGateway
 					logger.LogInformation($"API Gateway HTTP service: {UtilityService.GetAppSetting("HttpUri:APIs", "None")}");
 					logger.LogInformation($"Files HTTP service: {UtilityService.GetAppSetting("HttpUri:Files", "None")}");
 					logger.LogInformation($"Portals HTTP service: {UtilityService.GetAppSetting("HttpUri:Portals", "None")}");
-					logger.LogInformation($"CMSPortals HTTP service: {UtilityService.GetAppSetting("HttpUri:CMSPortals", "None")}");
+					logger.LogInformation($"CMS Portals HTTP service: {UtilityService.GetAppSetting("HttpUri:CMSPortals", "None")}");
 					logger.LogInformation($"Root (base) directory: {AppDomain.CurrentDomain.BaseDirectory}");
 					logger.LogInformation($"Status files directory: {UtilityService.GetAppSetting("Path:Status", "None")}");
 					logger.LogInformation($"Static files directory: {UtilityService.GetAppSetting("Path:Statics", "None")}");

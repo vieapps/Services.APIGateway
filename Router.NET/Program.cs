@@ -108,9 +108,9 @@ namespace net.vieapps.Services.APIGateway
 			{
 				var sessions = "";
 				Program.Router.Sessions.Select(kvp => kvp.Value)
+					.OrderBy(info => info.EndPoint).ThenBy(info => info.Name).ThenBy(info => info.Description)
 					.Select(info => $"\r\n- ID: {info.SessionID} [{info.ConnectionID}] - IP: {info.EndPoint} - Service: {info.Name ?? "N/A"} [{info.Description ?? "N/A"}]")
-					.ToList()
-					.ForEach(info => sessions += info);
+					.ToList().ForEach(info => sessions += info);
 				Program.WriteLog((Environment.UserInteractive ? "\r\n\r\n" : "") + $"Total of sessions: {Program.Router.Sessions.Count}" + sessions);
 			});
 			Program.Router.Start(args);

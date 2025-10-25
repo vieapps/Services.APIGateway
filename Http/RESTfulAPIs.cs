@@ -82,7 +82,7 @@ namespace net.vieapps.Services.APIGateway
 					: context.GetParameter("x-object-identity") ?? context.GetParameter("ObjectIdentity") ?? "";
 
 				if (serviceName.IsStartsWith("webhook") || serviceName.IsStartsWith("web-hook"))
-				{					
+				{
 					isWebHookRequest = true;
 					objectName = objectIdentity = "";
 					context.SetItem("Correlation-ID", context.GetParameter("x-original-correlation-id") ?? context.GetCorrelationID());
@@ -108,6 +108,9 @@ namespace net.vieapps.Services.APIGateway
 				queryString["object-name"] = objectName;
 				queryString["object-identity"] = objectIdentity;
 			});
+
+			if (!query.TryGetValue("service-name", out var svcName) || string.IsNullOrWhiteSpace(svcName))
+				throw new InvalidRequestException();
 
 			var extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 			if (query.Remove("x-request-extra", out var extraInfo) && !string.IsNullOrWhiteSpace(extraInfo))

@@ -17,7 +17,7 @@
 		<Copyright>© $([System.DateTime]::Now.Year) VIEApps.net</Copyright>
 		<AssemblyVersion>10.9$(ReleaseVersion)</AssemblyVersion>
 		<FileVersion>10.9$(ReleaseVersion)</FileVersion>
-		<InformationalVersion>10.9.$([System.DateTime]::Now.Year).$([System.DateTime]::Now.Month).$([System.DateTime]::Now.Day)@$(TargetFramework)#$(ReleaseRevision)</InformationalVersion>
+		<InformationalVersion>10.9.$([System.DateTime]::Now.Year).$([System.DateTime]::Now.Month).$([System.DateTime]::Now.Day)#$(ReleaseRevision)</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>

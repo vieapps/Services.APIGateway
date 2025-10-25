@@ -32,11 +32,11 @@ namespace net.vieapps.Services.APIGateway
 		{
 			WebSocketAPIs.WebSocket = new Components.WebSockets.WebSocket(Components.Utility.Logger.GetLoggerFactory(), Global.CancellationToken)
 			{
-				OnError = async (websocket, exception) => await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"Got an error while processing => {exception.Message} ({websocket?.ID} {websocket?.RemoteEndPoint})", exception).ConfigureAwait(false),
-				OnConnectionEstablished = async websocket => await (websocket == null ? Task.CompletedTask : websocket.WhenConnectionIsEstablishedAsync()).ConfigureAwait(false),
-				OnConnectionBroken = async websocket => await (websocket == null ? Task.CompletedTask : websocket.WhenConnectionIsBrokenAsync()).ConfigureAwait(false),
-				OnMessageReceived = async (websocket, result, data) => await (websocket == null ? Task.CompletedTask : websocket.WhenMessageIsReceivedAsync(result, data)).ConfigureAwait(false),
-				KeepAliveInterval = TimeSpan.FromSeconds(Int32.TryParse(UtilityService.GetAppSetting("Proxy:KeepAliveInterval", "45"), out var interval) ? interval : 45)
+				KeepAliveInterval = TimeSpan.FromSeconds(Int32.TryParse(UtilityService.GetAppSetting("Proxy:KeepAliveInterval", "45"), out var interval) ? interval : 45),
+				OnError = (websocket, exception) => Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"Got an error while processing => {exception.Message} ({websocket?.ID} {websocket?.RemoteEndPoint})", exception).Run(),
+				OnConnectionEstablished = websocket => (websocket == null ? Task.CompletedTask : websocket.WhenConnectionIsEstablishedAsync()).Run(),
+				OnConnectionBroken = websocket => (websocket == null ? Task.CompletedTask : websocket.WhenConnectionIsBrokenAsync()).Run(),
+				OnMessageReceived = (websocket, result, data) => (websocket == null ? Task.CompletedTask : websocket.WhenMessageIsReceivedAsync(result, data)).Run()
 			};
 			Global.Logger.LogInformation($"{Global.ServiceName} WebSocket APIs was initialized - Buffer size: {Components.WebSockets.WebSocket.ReceiveBufferSize:#,##0} bytes - Keep-Alive interval: {WebSocketAPIs.WebSocket.KeepAliveInterval.TotalSeconds} second(s)");
 		}
@@ -234,15 +234,20 @@ namespace net.vieapps.Services.APIGateway
 				var objectName = requestObj.Get("ObjectName", "").GetCapitalizedFirstLetter();
 				var verb = requestObj.Get("Verb", "GET").ToUpper();
 				var query = new Dictionary<string, string>(requestObj.Get("Query", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase);
-				query.TryGetValue("object-identity", out var objectIdentity);
 
 				// visit logs
 				if (Global.IsVisitLogEnabled)
+				{
+					if (query.TryGetValue("object-identity", out var objectIdentity))
+						objectIdentity = $"/{objectIdentity}";
+					else
+						objectIdentity = "";
 					await Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.Visits",
-						$"Request starting {verb} " + $"/{serviceName.ToLower()}{(string.IsNullOrWhiteSpace(objectName) ? "" : $"/{objectName.ToLower()}")}{(string.IsNullOrWhiteSpace(objectIdentity) ? "" : $"/{objectIdentity}")}".ToLower() + (query.TryGetValue("x-request", out var xrequest) ? $"?x-request={xrequest}" : "") + " HTTPWS/1.1" + " \r\n" +
+						$"Request starting {verb} " + $"/{serviceName.ToLower()}{(string.IsNullOrWhiteSpace(objectName) ? "" : $"/{objectName.ToLower()}")}{objectIdentity}".ToLower() + (query.TryGetValue("x-request", out var xrequest) ? $"?x-request={xrequest}" : "") + " HTTPWS/1.1" + " \r\n" +
 						$"- App: {session.AppName ?? "Unknown"} @ {session.AppPlatform ?? "Unknown"} [{session.AppAgent ?? "Unknown"}]" + " \r\n" +
 						$"- WebSocket: {websocket.ID} @ {websocket.RemoteEndPoint}"
 					, null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
+				}
 
 				// process requests of a session
 				if ("session".IsEquals(serviceName))
@@ -251,19 +256,19 @@ namespace net.vieapps.Services.APIGateway
 				// process requests of a service
 				else
 				{
-					// wait for the authenticating process in 5 seconds
+					// wait for the authenticating process in few seconds
 					if (!"Authenticated".IsEquals(websocket.GetStatus()))
-						using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
-						{
-							while (!cts.IsCancellationRequested)
-								try
-								{
-									await Task.Delay(UtilityService.GetRandomNumber(123, 456), Global.CancellationToken).ConfigureAwait(false);
-									if ("Authenticated".IsEquals(websocket.GetStatus()))
-										cts.Cancel();
-								}
-								catch { }
-						}
+					{
+						using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(13));
+						while (!cts.IsCancellationRequested)
+							try
+							{
+								await Task.Delay(UtilityService.GetRandomNumber(123, 456), Global.CancellationToken).ConfigureAwait(false);
+								if ("Authenticated".IsEquals(websocket.GetStatus()))
+									cts.Cancel();
+							}
+							catch { }
+					}
 
 					// process the request
 					if ("Authenticated".IsEquals(websocket.GetStatus()))

@@ -649,13 +649,13 @@ namespace net.vieapps.Services.APIGateway
 					await Task.WhenAll
 					(
 						context.WriteAsync(response, cancellationToken),
-						!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(RESTfulAPIs.Logger, "Authentications",
+						Global.IsDebugResultsEnabled ? context.WriteLogsAsync(RESTfulAPIs.Logger, "Authentications",
 						[
 							$"Successfully process request of session (registration of anonymous user)",
 							$"- Request: {requestInfo.ToJson().ToString(RESTfulAPIs.JsonFormat)}",
 							$"- Response: {response.ToJson().ToString(RESTfulAPIs.JsonFormat)}",
 							$"- Execution times: {context.GetExecutionTimes()}"
-						])
+						]) : Task.CompletedTask
 					).ConfigureAwait(false);
 				}
 				catch (Exception ex)
@@ -780,13 +780,13 @@ namespace net.vieapps.Services.APIGateway
 				(
 					context.WriteAsync(response, cancellationToken),
 					Global.Cache.RemoveAsync($"Attempt#{context.GetRemoteIPAddress()}", cancellationToken),
-					!Global.IsDebugResultsEnabled ? Task.CompletedTask : context.WriteLogsAsync(RESTfulAPIs.Logger, "Authentications",
+					Global.IsDebugResultsEnabled ? context.WriteLogsAsync(RESTfulAPIs.Logger, "Authentications",
 					[
-						$"Successfully process request of session (sign-in)",
+						$"Successfully process request of session (log-in)",
 						$"- Request: {requestInfo.ToJson().ToString(RESTfulAPIs.JsonFormat)}",
 						$"- Response: {response.ToJson().ToString(RESTfulAPIs.JsonFormat)}",
 						$"- Execution times: {context.GetExecutionTimes()}"
-					])
+					]) : Task.CompletedTask
 				).ConfigureAwait(false);
 			}
 			catch (Exception ex)

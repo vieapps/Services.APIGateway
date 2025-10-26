@@ -327,7 +327,8 @@ namespace net.vieapps.Services.APIGateway
 								this.State = ServiceState.Ready;
 
 							this.InterCommunicator?.Dispose();
-							this.InterCommunicator = Router.IncomingChannel.Subscribe<CommunicateMessage>(
+							this.InterCommunicator = Router.IncomingChannel.Subscribe<CommunicateMessage>
+							(
 								"messages.services.apigateway",
 								message => this.Info.ID.IsEquals(message.ExcludedNodeID) ? Task.CompletedTask : this.ProcessInterCommunicateMessageAsync(message),
 								exception => Global.OnError?.Invoke($"Error occurred while fetching an inter-communicate message of API Gateway => {exception.Message}", this.State == ServiceState.Connected ? exception : null)
@@ -335,7 +336,8 @@ namespace net.vieapps.Services.APIGateway
 							Global.OnProcess?.Invoke($"The communicator of API Gateway was{(this.State == ServiceState.Disconnected ? " re-" : " ")}subscribed successful");
 
 							this.UpdateCommunicator?.Dispose();
-							this.UpdateCommunicator = Router.IncomingChannel.Subscribe<UpdateMessage>(
+							this.UpdateCommunicator = Router.IncomingChannel.Subscribe<UpdateMessage>
+							(
 								"messages.update",
 								message =>
 								{
@@ -445,11 +447,10 @@ namespace net.vieapps.Services.APIGateway
 							Global.OnProcess?.Invoke($"The API Gateway outgoing channel was established - Session ID: {arguments.SessionId}");
 							await Router.OutgoingChannel.UpdateAsync(Router.OutgoingChannelSessionID, "APIGateway", $"Outgoing: services.controllers @ {this.Info.ID}").ConfigureAwait(false);
 
-							while (Router.IncomingChannel == null || Router.OutgoingChannel == null)
-								await Task.Delay(UtilityService.GetRandomNumber(123, 456), this.CancellationToken).ConfigureAwait(false);
-
 							try
 							{
+								while (Router.IncomingChannel == null)
+									await Task.Delay(UtilityService.GetRandomNumber(123, 456), this.CancellationToken).ConfigureAwait(false);
 								onOutgoingConnectionEstablished?.Invoke(sender, arguments);
 							}
 							catch (Exception ex)
@@ -532,8 +533,8 @@ namespace net.vieapps.Services.APIGateway
 				{
 					await Task.WhenAll
 					(
-						this.BusinessServices.Keys.ForEachAsync(async name => await Task.Run(() => this.StopBusinessService(name, false, false)).ConfigureAwait(false)),
-						this.Tasks.Values.ForEachAsync(async serviceInfo => await Task.Run(() => ExternalProcess.Stop(serviceInfo.Instance, null, null, 789)).ConfigureAwait(false))
+						this.BusinessServices.Keys.ForEachAsync(name => UtilityService.ExecuteTask(() => this.StopBusinessService(name, false, false))),
+						this.Tasks.Values.ForEachAsync(serviceInfo => UtilityService.ExecuteTask(() => ExternalProcess.Stop(serviceInfo.Instance, null, null, 789)))
 					).ConfigureAwait(false);
 				}
 				catch (Exception ex)
@@ -544,7 +545,7 @@ namespace net.vieapps.Services.APIGateway
 			// dispose all timers
 			try
 			{
-				this.Timers.ForEach(timer => timer.Dispose());
+				this.Timers.ForEach(timer => timer?.Dispose());
 			}
 			catch (Exception ex)
 			{
@@ -615,9 +616,9 @@ namespace net.vieapps.Services.APIGateway
 			{
 				this.InterCommunicator?.Dispose();
 				this.UpdateCommunicator?.Dispose();
+				this.CancellationTokenSource.Cancel();
 				await Router.DisconnectAsync().ConfigureAwait(false);
 				this.State = ServiceState.Disconnected;
-				this.CancellationTokenSource.Cancel();
 				Global.OnProcess?.Invoke($"The API Gateway Controller was disconnected");
 			}
 			catch (Exception ex)

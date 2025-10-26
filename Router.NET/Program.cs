@@ -1,12 +1,13 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using System;
+using System.Configuration;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Diagnostics;
-using System.Configuration;
-using System.Windows.Forms;
+using System.Net;
 using System.ServiceProcess;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.DependencyInjection;
+using System.Windows.Forms;
 
 namespace net.vieapps.Services.APIGateway
 {
@@ -104,11 +105,11 @@ namespace net.vieapps.Services.APIGateway
 					$"- Type: {info?.CloseType} ({info?.CloseReason ?? "N/A"})"
 				);
 			}
-			Program.Timer = System.Reactive.Linq.Observable.Timer(TimeSpan.Zero, TimeSpan.FromMinutes(60)).Subscribe(_ =>
+			Program.Timer = System.Reactive.Linq.Observable.Timer(TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(60)).Subscribe(_ =>
 			{
 				var sessions = "";
-				Program.Router.Sessions.Select(kvp => kvp.Value)
-					.OrderBy(info => info.EndPoint).ThenBy(info => info.Name).ThenBy(info => info.Description)
+				Program.Router.Sessions.Select(kvp => kvp.Value).Select(info => (IP: info.EndPoint.Address.ToString(), Info: info)).ToList()
+					.OrderBy(kvp => kvp.IP).ThenBy(kvp => kvp.Info.Name).ThenBy(kvp => kvp.Info.Description).Select(kvp => kvp.Info)
 					.Select(info => $"\r\n- ID: {info.SessionID} [{info.ConnectionID}] - IP: {info.EndPoint} - Service: {info.Name ?? "N/A"} [{info.Description ?? "N/A"}]")
 					.ToList().ForEach(info => sessions += info);
 				Program.WriteLog((Environment.UserInteractive ? "\r\n\r\n" : "") + $"Total of sessions: {Program.Router.Sessions.Count}" + sessions);

@@ -110,7 +110,10 @@ namespace net.vieapps.Services.APIGateway
 			});
 
 			if (!query.TryGetValue("service-name", out var svcName) || string.IsNullOrWhiteSpace(svcName))
-				throw new InvalidRequestException();
+			{
+				context.WriteError(RESTfulAPIs.Logger, new InvalidRequestException(), null, null, false);
+				return;
+			}
 
 			var extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 			if (query.Remove("x-request-extra", out var extraInfo) && !string.IsNullOrWhiteSpace(extraInfo))

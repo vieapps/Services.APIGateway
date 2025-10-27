@@ -51,6 +51,10 @@
     </None>
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\Base.Libs\VIEApps.Services.Base.Libs.csproj">
+      <Project>{f46b1dac-46d4-4779-b8b7-caccea2f9550}</Project>
+      <Name>VIEApps.Services.Base.Libs</Name>
+    </ProjectReference>
     <ProjectReference Include="..\Host\VIEApps.Services.APIGateway.Host.csproj">
       <Project>{1bc743a3-169d-4d90-ada2-06997ce99c52}</Project>
       <Name>VIEApps.Services.APIGateway.Host</Name>

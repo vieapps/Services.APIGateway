@@ -1,13 +1,13 @@
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using System;
-using System.Configuration;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Net;
+using System.Diagnostics;
+using System.Configuration;
 using System.ServiceProcess;
 using System.Windows.Forms;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Serilog;
 
 namespace net.vieapps.Services.APIGateway
 {
@@ -19,7 +19,7 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static ServicePresenter Form { get; set; }
 
-		internal static ILogger Logger { get; set; }
+		internal static Microsoft.Extensions.Logging.ILogger Logger { get; set; }
 
 		internal static IDisposable Timer { get; set; }
 
@@ -62,14 +62,13 @@ namespace net.vieapps.Services.APIGateway
 				logLevel = LogLevel.Information;
 
 			var logPath = ConfigurationManager.AppSettings["Logs:Path"];
-			var writeLogs = !string.IsNullOrWhiteSpace(logPath) && Directory.Exists(logPath) && logLevel != LogLevel.None;
+			var writeLogs = !string.IsNullOrWhiteSpace(logPath) && Directory.Exists(logPath);
 			if (writeLogs)
-			{
-				logPath = Path.Combine(logPath, "{Date}_apigateway.router.txt");
-				var loggerFactory = new ServiceCollection().AddLogging(builder => builder.SetMinimumLevel(logLevel)).BuildServiceProvider().GetService<ILoggerFactory>();
-				loggerFactory.AddFile(logPath, logLevel);
-				Program.Logger = loggerFactory.CreateLogger<RouterComponent>();
-			}
+				Program.Logger = new ServiceCollection()
+					.AddLogging(builder => builder.SetMinimumLevel(logLevel).AddSerilog(new LoggerConfiguration().WriteTo.File(path: Path.Combine(logPath, $"apigateway.router-.txt"), rollingInterval: RollingInterval.Day).CreateLogger()))
+					.BuildServiceProvider()
+					.GetService<ILoggerFactory>()
+					.CreateLogger<RouterComponent>();
 
 			Program.Router = new RouterComponent
 			{
@@ -113,7 +112,7 @@ namespace net.vieapps.Services.APIGateway
 					.Select(info => $"\r\n- ID: {info.SessionID} [{info.ConnectionID}] - IP: {info.EndPoint} - Service: {info.Name ?? "N/A"} [{info.Description ?? "N/A"}]")
 					.ToList().ForEach(info => sessions += info);
 				Program.WriteLog((Environment.UserInteractive ? "\r\n\r\n" : "") + $"Total of sessions: {Program.Router.Sessions.Count}" + sessions);
-			});
+			}, _ => { });
 			Program.Router.Start(args);
 		}
 

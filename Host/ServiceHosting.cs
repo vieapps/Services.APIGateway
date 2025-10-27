@@ -188,6 +188,10 @@ namespace net.vieapps.Services.APIGateway
 			};
 
 			// prepare logging
+			var logPath = UtilityService.GetAppSetting("Path:Logs");
+			if (string.IsNullOrWhiteSpace(logPath) || !Directory.Exists(logPath))
+				logPath = null;
+
 			var loglevel = args?.FirstOrDefault(arg => arg.IsStartsWith("/loglevel:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/loglevel:", "");
 			if (string.IsNullOrWhiteSpace(loglevel))
 #if DEBUG
@@ -204,20 +208,11 @@ namespace net.vieapps.Services.APIGateway
 
 			Logger.AssignLoggerFactory(new ServiceCollection().AddLogging(builder =>
 			{
-				builder.SetMinimumLevel(logLevel);
+				builder.SetMinimumLevel(logLevel).AddFile(logPath, service.ServiceName);
 				if (isUserInteractive)
 					builder.AddConsole();
 			}).BuildServiceProvider().GetService<ILoggerFactory>());
 			Enyim.Caching.Logger.AssignLoggerFactory(Logger.GetLoggerFactory());
-
-			var logPath = UtilityService.GetAppSetting("Path:Logs");
-			if ("true".IsEquals(UtilityService.GetAppSetting("Logs:WriteFiles", "true")) && !string.IsNullOrWhiteSpace(logPath) && Directory.Exists(logPath))
-			{
-				logPath = Path.Combine(logPath, "{Hour}_" + $"{service.ServiceName.ToLower()}.txt");
-				Logger.GetLoggerFactory().AddFile(logPath, logLevel);
-			}
-			else
-				logPath = null;
 
 			var logger = (service as IServiceComponent).Logger = Logger.CreateLogger(this.ServiceType);
 

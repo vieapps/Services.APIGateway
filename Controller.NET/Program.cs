@@ -5,9 +5,10 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
+using net.vieapps.Services;
 using net.vieapps.Components.Utility;
 #endregion
 
@@ -40,6 +41,10 @@ namespace net.vieapps.Services.APIGateway
 			Program.Arguments = args;
 
 			// prepare logging
+			var logPath = UtilityService.GetAppSetting("Path:Logs");
+			if (string.IsNullOrWhiteSpace(logPath) || !Directory.Exists(logPath))
+				logPath = null;
+
 			var loglevel = args?.FirstOrDefault(a => a.IsStartsWith("/loglevel:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/loglevel:", "");
 			if (string.IsNullOrWhiteSpace(loglevel))
 #if DEBUG
@@ -54,17 +59,7 @@ namespace net.vieapps.Services.APIGateway
 				logLevel = LogLevel.Information;
 #endif
 
-			Components.Utility.Logger.AssignLoggerFactory(new ServiceCollection().AddLogging(builder => builder.SetMinimumLevel(logLevel)).BuildServiceProvider().GetService<ILoggerFactory>());
-
-			var logPath = UtilityService.GetAppSetting("Path:Logs");
-			if (!string.IsNullOrWhiteSpace(logPath) && Directory.Exists(logPath))
-			{
-				logPath = Path.Combine(logPath, "{Hour}_apigateway.controller.txt");
-				Components.Utility.Logger.GetLoggerFactory().AddFile(logPath, logLevel);
-			}
-			else
-				logPath = null;
-
+			Components.Utility.Logger.AssignLoggerFactory(new ServiceCollection().AddLogging(builder => builder.SetMinimumLevel(logLevel).AddFile(logPath, "apigateway.controller")).BuildServiceProvider().GetService<ILoggerFactory>());
 			Program.Logger = Components.Utility.Logger.CreateLogger<Controller>();
 
 			JsonConvert.DefaultSettings = () => new JsonSerializerSettings

@@ -21,16 +21,19 @@ namespace net.vieapps.Services.APIGateway
 			var isUserInteractive = Environment.UserInteractive && args?.FirstOrDefault(a => a.StartsWith("/daemon")) == null;
 			var logPath = ConfigurationManager.AppSettings["Logs:Path"];
 			var logger = new ServiceCollection().AddLogging(builder =>
-				{
-					builder.SetMinimumLevel(LogLevel.Information);
-					if (isUserInteractive)
-						builder.AddConsole();
-					if (!string.IsNullOrWhiteSpace(logPath) && Directory.Exists(logPath))
-						builder.AddSerilog(new LoggerConfiguration().WriteTo.File(path: Path.Combine(logPath, $"apigateway.router-.txt"), rollingInterval: RollingInterval.Day).CreateLogger());
-				})
-				.BuildServiceProvider()
-				.GetService<ILoggerFactory>()
-				.CreateLogger<RouterComponent>();
+			{
+				builder.SetMinimumLevel(LogLevel.Information);
+				if (isUserInteractive)
+					builder.AddConsole();
+				if (!string.IsNullOrWhiteSpace(logPath) && Directory.Exists(logPath))
+					builder.AddSerilog(new LoggerConfiguration().WriteTo
+						.File(path: Path.Combine(logPath, "apigateway.router..txt"), rollingInterval: RollingInterval.Day)
+						.CreateLogger()
+					);
+			})
+			.BuildServiceProvider()
+			.GetService<ILoggerFactory>()
+			.CreateLogger<RouterComponent>();
 
 			void showInfo()
 			{

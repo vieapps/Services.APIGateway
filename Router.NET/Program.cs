@@ -65,9 +65,13 @@ namespace net.vieapps.Services.APIGateway
 			var writeLogs = !string.IsNullOrWhiteSpace(logPath) && Directory.Exists(logPath);
 			if (writeLogs)
 				Program.Logger = new ServiceCollection()
-					.AddLogging(builder => builder.SetMinimumLevel(logLevel).AddSerilog(new LoggerConfiguration().WriteTo.File(path: Path.Combine(logPath, $"apigateway.router-.txt"), rollingInterval: RollingInterval.Day).CreateLogger()))
+					.AddLogging(builder => builder.SetMinimumLevel(logLevel))
 					.BuildServiceProvider()
 					.GetService<ILoggerFactory>()
+					.AddSerilog(new LoggerConfiguration().WriteTo
+						.File(path: Path.Combine(logPath, "apigateway.router..txt"), rollingInterval: RollingInterval.Day)
+						.CreateLogger()
+					)
 					.CreateLogger<RouterComponent>();
 
 			Program.Router = new RouterComponent

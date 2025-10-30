@@ -384,7 +384,7 @@ namespace net.vieapps.Services.APIGateway
 								// business services
 								if (this.AllowRegisterBusinessServices)
 								{
-									Parallel.ForEach(this.BusinessServices, kvp => this.StartBusinessService(kvp.Key));
+									this.BusinessServices.ForEach(kvp => this.StartBusinessService(kvp.Key), true);
 									this.StartTimer(() => this.WatchBusinessServices(), 5);
 								}
 							}
@@ -545,7 +545,7 @@ namespace net.vieapps.Services.APIGateway
 			// dispose all timers
 			try
 			{
-				this.Timers.ForEach(timer => timer?.Dispose());
+				this.Timers.ForEach(timer => timer?.Dispose(), true);
 			}
 			catch (Exception ex)
 			{
@@ -808,7 +808,7 @@ namespace net.vieapps.Services.APIGateway
 		/// Gets the collection of available businness services
 		/// </summary>
 		public Dictionary<string, ProcessInfo> AvailableBusinessServices
-			=> this.BusinessServices.Where(kvp => this.IsBusinessServiceAvailable(kvp.Key)).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+			=> this.BusinessServices.Where(kvp => this.IsBusinessServiceAvailable(kvp.Key)).ToDictionary();
 
 		/// <summary>
 		/// Gets the collection of available businness services
@@ -846,7 +846,7 @@ namespace net.vieapps.Services.APIGateway
 		public string GetServiceArguments()
 		{
 			var runtimeArguments = Extensions.GetRuntimeArguments();
-			return $"/user:{runtimeArguments.Item1.UrlEncode()} /host:{runtimeArguments.Item2.UrlEncode()} /platform:{runtimeArguments.Item3.UrlEncode()} /os:{runtimeArguments.Item4.UrlEncode()}";
+			return $"/user:{runtimeArguments.User.UrlEncode()} /host:{runtimeArguments.Host.UrlEncode()} /platform:{runtimeArguments.Platform.UrlEncode()} /os:{runtimeArguments.OS.UrlEncode()}";
 		}
 
 		/// <summary>
@@ -1243,15 +1243,19 @@ namespace net.vieapps.Services.APIGateway
 			this.StartTimer(this.RunHouseKeeper, 60 * 60);
 			this.StartTimer(() =>
 			{
-				var time = DateTime.Now.AddMinutes(-7);
-				Directory.GetFiles(Global.LogsPath, "*.json").Select(path => new FileInfo(path)).Where(file => file.LastWriteTime <= time).ToList().ForEach(file =>
-				{
-					try
+				var time = DateTime.Now.AddMinutes(-13);
+				Directory.GetFiles(Global.LogsPath, "*.json")
+					.Select(path => new FileInfo(path))
+					.Where(file => file.LastWriteTime <= time)
+					.ToList()
+					.ForEach(file =>
 					{
-						file.Delete();
-					}
-					catch { }
-				});
+						try
+						{
+							file.Delete();
+						}
+						catch { }
+					});
 			}, 90);
 
 			// task scheduler
@@ -1352,15 +1356,17 @@ namespace net.vieapps.Services.APIGateway
 
 			// clean service logs
 			remainTime = DateTime.Now.AddHours(-36);
-			UtilityService.GetFiles(Global.LogsPath, "*.*").Where(file => file.LastWriteTime < remainTime).ForEach(file =>
-			{
-				try
+			UtilityService.GetFiles(Global.LogsPath, "*.*")
+				.Where(file => file.LastWriteTime < remainTime)
+				.ForEach(file =>
 				{
-					file.Delete();
-					counter++;
-				}
-				catch { }
-			});
+					try
+					{
+						file.Delete();
+						counter++;
+					}
+					catch { }
+				});
 
 			new CommunicateMessage("Logs")
 			{
@@ -1375,23 +1381,27 @@ namespace net.vieapps.Services.APIGateway
 			if (!string.IsNullOrWhiteSpace(attachmentsPath) && Directory.Exists(attachmentsPath))
 			{
 				remainTime = DateTime.Now.AddDays(-30);
-				Directory.GetDirectories(attachmentsPath).Where(path => path != null && path.Right(32).IsValidUUID()).Select(path => Path.Combine(path, "trash")).Where(path => Directory.Exists(path)).ForEach(path =>
-				{
-					var files = UtilityService.GetFiles(path).Where(file => file.LastAccessTime < remainTime).ToList();
-					if (files.Count > 0)
+				Directory.GetDirectories(attachmentsPath)
+					.Where(path => path != null && path.Right(32).IsValidUUID())
+					.Select(path => Path.Combine(path, "trash"))
+					.Where(path => Directory.Exists(path))
+					.ForEach(path =>
 					{
-						paths.Add(path);
-						files.ForEach(file =>
+						var files = UtilityService.GetFiles(path).Where(file => file.LastAccessTime < remainTime).ToList();
+						if (files.Count > 0)
 						{
-							try
+							paths.Add(path);
+							files.ForEach(file =>
 							{
-								file.Delete();
-								counter++;
-							}
-							catch { }
-						});
-					}
-				});
+								try
+								{
+									file.Delete();
+									counter++;
+								}
+								catch { }
+							});
+						}
+					});
 			}
 
 			// done
@@ -1468,13 +1478,12 @@ namespace net.vieapps.Services.APIGateway
 				return;
 
 			// prepare
-			var tasks = this.Tasks.Values
-				.Where(serviceInfo =>
-				{
-					var time = serviceInfo.Get<string>("Time");
-					return serviceInfo.Instance == null && ("hourly".IsEquals(time) || $"{DateTime.Now.Hour}".IsEquals(time));
-				})
-				.ToList();
+			var tasks = this.Tasks.Values.Where(serviceInfo =>
+			{
+				var time = serviceInfo.Get<string>("Time");
+				return serviceInfo.Instance == null && ("hourly".IsEquals(time) || $"{DateTime.Now.Hour}".IsEquals(time));
+			})
+			.ToList();
 
 			if (tasks.Count < 1)
 				return;

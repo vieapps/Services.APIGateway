@@ -23,8 +23,9 @@ namespace net.vieapps.Services.APIGateway
 	public class RouterComponent
 	{
 
-		#region Properties
 		public const string Powered = "WAMP#v23.8.1-Fleck#v1.2.0-SSL+rev:2025.10.20#moving.forward";
+
+		#region Properties
 
 		public IWampHost Host { get; private set; } = null;
 

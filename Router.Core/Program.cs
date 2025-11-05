@@ -27,7 +27,7 @@ namespace net.vieapps.Services.APIGateway
 					builder.AddConsole();
 				if (!string.IsNullOrWhiteSpace(logPath) && Directory.Exists(logPath))
 					builder.AddSerilog(new LoggerConfiguration().WriteTo
-						.File(path: Path.Combine(logPath, "apigateway.router..txt"), rollingInterval: RollingInterval.Day)
+						.File(path: Path.Combine(logPath, "apigateway.router-.txt"), rollingInterval: RollingInterval.Day)
 						.CreateLogger()
 					);
 			})

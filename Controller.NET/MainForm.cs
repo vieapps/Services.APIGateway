@@ -14,7 +14,7 @@ namespace net.vieapps.Services.APIGateway
 			=> this.InitializeComponent();
 
 		void MainForm_Load(object sender, EventArgs args)
-			=> this.StartAsync().Run();
+			=> this.StartAsync().Execute();
 
 		private void MainForm_FormClosed(object sender, FormClosedEventArgs args)
 			=> this.Stop();

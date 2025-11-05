@@ -45,7 +45,7 @@ namespace net.vieapps.Services.APIGateway
 		public void Dispose()
 		{
 			GC.SuppressFinalize(this);
-			this.DisposeAsync().Run(true);
+			this.DisposeAsync().Execute(true);
 		}
 
 		~Controller()
@@ -309,7 +309,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					if (task.Exception != null)
 						Global.OnError?.Invoke($"Error occurred while connecting to the API Gateway Router => {task.Exception.Message}", task.Exception);
-				}, TaskContinuationOptions.OnlyOnRanToCompletion).Run(true);
+				}, TaskContinuationOptions.OnlyOnRanToCompletion).Execute(true);
 
 			async Task connectRouterAsync()
 			{
@@ -515,7 +515,7 @@ namespace net.vieapps.Services.APIGateway
 								}
 								catch { }
 						});
-					warmUpAsync().Run();
+					warmUpAsync().Execute();
 					this.StartTimer(warmUpAsync, this.FlushingInterval * this.FlushingInterval);
 				}
 			}
@@ -634,7 +634,7 @@ namespace net.vieapps.Services.APIGateway
 		/// Stops the API Gateway Controller
 		/// </summary>
 		public void Stop()
-			=> this.StopAsync().Run(true);
+			=> this.StopAsync().Execute(true);
 
 		void PrepareDatabaseSettings()
 		{
@@ -1645,7 +1645,7 @@ namespace net.vieapps.Services.APIGateway
 			);
 
 		void SendServiceInfo(string name, string args, bool available, bool running)
-			=> this.SendServiceInfoAsync(name, args, available, running).Run();
+			=> this.SendServiceInfoAsync(name, args, available, running).Execute();
 		#endregion
 
 		string PrepareTimestamps(string input)

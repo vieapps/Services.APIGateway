@@ -69,7 +69,7 @@ namespace net.vieapps.Services.APIGateway
 					.BuildServiceProvider()
 					.GetService<ILoggerFactory>()
 					.AddSerilog(new LoggerConfiguration().WriteTo
-						.File(path: Path.Combine(logPath, "apigateway.router..txt"), rollingInterval: RollingInterval.Day)
+						.File(path: Path.Combine(logPath, "apigateway.router-.txt"), rollingInterval: RollingInterval.Day)
 						.CreateLogger()
 					)
 					.CreateLogger<RouterComponent>();

@@ -23,7 +23,7 @@ namespace net.vieapps.Services.APIGateway
 	public class RouterComponent
 	{
 
-		public const string Powered = "WAMP#v23.8.1-Fleck#v1.2.0-SSL+rev:2025.10.20#moving.forward";
+		public const string Powered = "WAMP#v23.8.1-Fleck#v1.2.0-SSL+rev:2025.11.04#moving.forward";
 
 		#region Properties
 

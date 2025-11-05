@@ -156,7 +156,7 @@ namespace net.vieapps.Services.APIGateway
 		{
 			try
 			{
-				var filePath = Path.Combine(Global.LogsPath, $"zlogs.services.{DateTime.Now:yyyyMMddHHmmss}.{UtilityService.NewUUID}.json");
+				var filePath = Path.Combine(Global.LogsPath, $"zlogs.services.{DateTime.Now:yyyyMMddHHmmssffffff}.{UtilityService.NewUUID}.json");
 				await new JObject
 				{
 					{ "Time", DateTime.Now },
@@ -174,12 +174,6 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		public static void WriteLog(string correlationID, string serviceName, string objectName, string log, string stack = null)
-			=> Global.WriteLogAsync(correlationID, serviceName, objectName, log, stack)
-				.ContinueWith(task =>
-				{
-					if (task.Exception != null)
-						Global.OnError?.Invoke(task.Exception.Message, task.Exception);
-				}, TaskContinuationOptions.OnlyOnRanToCompletion)
-				.Run();
+			=> Global.WriteLogAsync(correlationID, serviceName, objectName, log, stack).Execute(ex => Global.OnError?.Invoke(ex.Message, ex));
 	}
 }

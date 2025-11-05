@@ -232,9 +232,11 @@ namespace net.vieapps.Services.APIGateway
 			void terminate(string message, bool available = true, bool disconnect = true)
 				=> (service.Disposed ? Task.CompletedTask : service.DisposeAsync(args?.ToArray(), available, disconnect, _ => logger.LogInformation(message)).AsTask())
 					.ContinueWith(async _ => await Task.Delay(123).ConfigureAwait(false), TaskContinuationOptions.OnlyOnRanToCompletion)
-					.Run(true);
+					.Execute(true);
 
 			AppDomain.CurrentDomain.ProcessExit += (sender, arguments) => terminate($"The service was terminated (by \"process exit\" signal) - Served times: {time.GetElapsedTimes()}", false);
+
+			AppDomain.CurrentDomain.UnhandledException += (sender, arguments) => logger.LogError((Exception)arguments.ExceptionObject, "----- UNHANDLED EXCEPTION -----");
 
 			Console.CancelKeyPress += (sender, arguments) =>
 			{
@@ -285,13 +287,13 @@ namespace net.vieapps.Services.APIGateway
 				if (connectRouterBeforeDoingSyncWork)
 				{
 					logger.LogInformation($"API Gateway Router: {new Uri(Router.GetRouterStrInfo()).GetResolvedURI()}");
-					service.ConnectAsync(args?.ToArray()).Run();
+					service.ConnectAsync(args?.ToArray()).Execute();
 				}
 				logger.LogInformation($"Environment:\r\n\t{Extensions.GetRuntimeEnvironment()}\r\n\t- Node ID: {service.NodeID}");
 				logger.LogInformation($"Powered by {powered}");
 				logger.LogInformation($"The service was started, and now running synchronous work - PID: {Process.GetCurrentProcess().Id}");
 				if (startBeforeDoingSyncWork || connectRouterBeforeDoingSyncWork)
-					Task.Delay(1234).Run(true);
+					Task.Delay(1234).Execute(true);
 				else if (initializeRepository)
 					service.InitializeRepository();
 				service.DoWork(args?.ToArray());

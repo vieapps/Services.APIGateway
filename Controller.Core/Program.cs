@@ -335,6 +335,6 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		static void Stop()
-			=> Program.StopAsync().Run(true);
+			=> Program.StopAsync().Execute(true);
 	}
 }

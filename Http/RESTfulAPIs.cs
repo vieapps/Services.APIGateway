@@ -362,7 +362,7 @@ namespace net.vieapps.Services.APIGateway
 								await context.WriteLogsAsync(RESTfulAPIs.Logger, "WebHooks", $"Error occurred while processing a web-hook message => {ex.Message}", ex).ConfigureAwait(false);
 							}
 						else
-							webhook.Run(ex => Global.WriteLogsAsync(RESTfulAPIs.Logger, "WebHooks", $"Error occurred while processing a web-hook message => {ex.Message}", ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID));
+							webhook.Execute(ex => Global.WriteLogsAsync(RESTfulAPIs.Logger, "WebHooks", $"Error occurred while processing a web-hook message => {ex.Message}", ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID));
 
 						if (!string.IsNullOrWhiteSpace(contentType) && !"application/json".IsEquals(contentType) && !string.IsNullOrWhiteSpace(contentBody))
 							await context.WriteAsync(contentType, response.Get<string>("Cache-Control"), contentBody.ToBytes(), cts.Token).ConfigureAwait(false);

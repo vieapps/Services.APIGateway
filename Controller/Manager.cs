@@ -105,7 +105,7 @@ namespace net.vieapps.Services.APIGateway
 		public void Dispose()
 		{
 			GC.SuppressFinalize(this);
-			this.DisposeAsync().Run(true);
+			this.DisposeAsync().Execute(true);
 		}
 
 		~Manager()

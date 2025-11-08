@@ -50,7 +50,7 @@ namespace net.vieapps.Services.APIGateway
 
 		public static string CaptchaKey { get; } = UtilityService.GetAppSetting("Keys:Captcha");
 
-		public static bool TrackSessions { get; } = "true".IsEquals(UtilityService.GetAppSetting("Sessions:Track", "true")) && "true".IsEquals(UtilityService.GetAppSetting("Sessions:Track:APIs", "true"));
+		public static bool TrackSessions { get; set; } = "true".IsEquals(UtilityService.GetAppSetting("Sessions:Track", "true")) && "true".IsEquals(UtilityService.GetAppSetting("Sessions:Track:APIs", "true"));
 		#endregion
 
 		public static async Task ProcessRequestAsync(HttpContext context)

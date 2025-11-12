@@ -106,7 +106,7 @@ namespace net.vieapps.Services.APIGateway
 				else if (pathSegments.Length > 3 && !objectIdentity.IsValidUUID())
 					queryString["object-extra-identity"] = pathSegments[3].GetANSIUri(false, true);
 
-				queryString["service-name"] = serviceName;
+				queryString["service-name"] = ".well-known".IsEquals(serviceName) ? "discovery" : serviceName;
 				queryString["object-name"] = objectName;
 				queryString["object-identity"] = objectIdentity;
 			});

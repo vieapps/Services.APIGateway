@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFrameworks>net9.0;net9.0-windows</TargetFrameworks>
+		<TargetFrameworks>net10.0;net10.0-windows</TargetFrameworks>
 		<WarningLevel>3</WarningLevel>
 		<NoWarn>1573,1591,NU1605</NoWarn>
 		<OutputType>Exe</OutputType>
@@ -20,9 +20,9 @@
 		<Company>VIEApps.net</Company>
 		<Product>VIEApps NGX</Product>
 		<Copyright>© $([System.DateTime]::Now.Year) VIEApps.net</Copyright>
-		<AssemblyVersion>10.9$(ReleaseVersion)</AssemblyVersion>
-		<FileVersion>10.9$(ReleaseVersion)</FileVersion>
-		<InformationalVersion>10.9.$([System.DateTime]::Now.Year).$([System.DateTime]::Now.Month).$([System.DateTime]::Now.Day)#$(ReleaseRevision)</InformationalVersion>
+		<AssemblyVersion>10.10$(ReleaseVersion)</AssemblyVersion>
+		<FileVersion>10.10$(ReleaseVersion)</FileVersion>
+		<InformationalVersion>10.10.$([System.DateTime]::Now.Year).$([System.DateTime]::Now.Month).$([System.DateTime]::Now.Day)#$(ReleaseRevision)</InformationalVersion>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -39,12 +39,12 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.9.2511.1" />
+		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.10.2511.1" />
 	</ItemGroup>
 
 	<ItemGroup>
 		<ProjectReference Include="..\..\Portals\Service\VIEApps.Services.Portals.csproj" Condition="'$(Configuration)' == 'Debug'" />
-		<ProjectReference Include="..\..\Users\Service.WindowsAD\VIEApps.Services.Users.WindowsAD.csproj" Condition="'$(Configuration)' == 'Release' and '$(TargetFramework)' == 'net9.0-windows'" />
+		<ProjectReference Include="..\..\Users\Service.WindowsAD\VIEApps.Services.Users.WindowsAD.csproj" Condition="'$(Configuration)' == 'Release' and '$(TargetFramework)' == 'net10.0-windows'" />
 		<ProjectReference Include="..\Host\VIEApps.Services.APIGateway.Host.csproj" />
 	</ItemGroup>
 

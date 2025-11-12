@@ -470,9 +470,9 @@ namespace net.vieapps.Services.APIGateway
 					channel.RealmProxy.Monitor.ConnectionBroken += (sender, args) =>
 					{
 						if (!Services.Router.ChannelsAreClosedBySystem)
-							channel.ReOpen();
+							channel.OpenAsync().Execute();
 					};
-					channel.Open().Wait(1234);
+					channel.OpenAsync().Execute(true);
 					this.Name = realm.Name;
 					this.RpcCatalog = new ForwardingRpcCatalog(realm.RpcCatalog, channel);
 					this.TopicContainer = new ForwardingTopicContainer(realm.TopicContainer, channel);

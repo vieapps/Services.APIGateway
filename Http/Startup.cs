@@ -103,9 +103,9 @@ namespace net.vieapps.Services.APIGateway
 			// setup the middlewares
 			appBuilder
 				.UseForwardedHeaders(Global.GetForwardedHeadersOptions())
-				.UseCache()
 				.UseStatusCodeHandler()
 				.UseResponseCompression()
+				.UseCache()
 				.UseWebSockets(new WebSocketOptions
 				{
 					KeepAliveInterval = WebSocketAPIs.KeepAliveInterval

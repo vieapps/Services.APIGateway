@@ -106,13 +106,8 @@ namespace net.vieapps.Services.APIGateway
 				else if (pathSegments.Length > 3 && !objectIdentity.IsValidUUID())
 					queryString["object-extra-identity"] = pathSegments[3].GetANSIUri(false, true);
 
-				if ((".well-known".IsEquals(serviceName) && "mcp.json".IsEquals(objectName)) || ("manifest.json".IsEquals(objectName) && (".mcp".IsEquals(serviceName) || "mcp".IsEquals(serviceName))))
-				{
-					serviceName = "Discovery";
-					objectName = "MCP.Manifest";
-				}
-				else if (".well-known".IsEquals(serviceName) || "autodiscover".IsEquals(serviceName))
-					serviceName = "Discovery";
+				if (".well-known".IsEquals(serviceName) || "autodiscover".IsEquals(serviceName))
+					serviceName = "discovery";
 
 				queryString["service-name"] = serviceName;
 				queryString["object-name"] = objectName;

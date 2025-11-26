@@ -103,8 +103,8 @@ namespace net.vieapps.Services.APIGateway
 					if (pathSegments.Length > 4 && !string.IsNullOrWhiteSpace(pathSegments[4]))
 						header["x-webhook-adapter"] = pathSegments[4].GetANSIUri().Replace("_", "");
 				}
-				else if (pathSegments.Length > 3 && !objectIdentity.IsValidUUID())
-					queryString["object-extra-identity"] = pathSegments[3].GetANSIUri(false, true);
+				else if (pathSegments.Length > 3 && pathSegments[3].IsValidUUID())
+					queryString["object-extra-identity"] = pathSegments[3];
 
 				if (".well-known".IsEquals(serviceName) || "autodiscover".IsEquals(serviceName))
 					serviceName = "discovery";

@@ -340,6 +340,8 @@ namespace net.vieapps.Services.APIGateway
 				}
 
 				message["CorrelationID"] = correlationID;
+				message["NodeID"] = Global.NodeID;
+
 				message = new JObject
 				{
 					{ "Type", "Error" },

@@ -97,9 +97,6 @@ namespace net.vieapps.Services.APIGateway
 					Global.Logger.LogError($"Error occurred while assigning web-proxy => {ex.Message}", ex);
 				}
 
-			// setup the real-time updater
-			WebSocketAPIs.Initialize();
-
 			// setup the middlewares
 			appBuilder
 				.UseForwardedHeaders(Global.GetForwardedHeadersOptions())
@@ -267,7 +264,6 @@ namespace net.vieapps.Services.APIGateway
 			{
 				Global.Logger = loggerFactory.CreateLogger<Startup>();
 				Global.RSA.Dispose();
-				WebSocketAPIs.Dispose();
 				if (enableForwarder)
 					Router.CloseForwarder();
 				Router.Disconnect();

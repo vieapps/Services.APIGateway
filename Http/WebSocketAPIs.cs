@@ -22,30 +22,18 @@ namespace net.vieapps.Services.APIGateway
 {
 	internal static class WebSocketAPIs
 	{
-		static Components.WebSockets.WebSocket WebSocket { get; set; }
-
 		public static ILogger Logger { get; set; }
 
 		public static TimeSpan KeepAliveInterval => WebSocketAPIs.WebSocket.KeepAliveInterval;
 
-		public static void Initialize()
+		static Components.WebSockets.WebSocket WebSocket { get; } = new(Components.Utility.Logger.GetLoggerFactory(), Global.CancellationToken)
 		{
-			WebSocketAPIs.WebSocket = new Components.WebSockets.WebSocket(Components.Utility.Logger.GetLoggerFactory(), Global.CancellationToken)
-			{
-				KeepAliveInterval = TimeSpan.FromSeconds(Int32.TryParse(UtilityService.GetAppSetting("Proxy:KeepAliveInterval", "45"), out var interval) ? interval : 45),
-				OnError = (websocket, exception) => Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"Got an error while processing => {exception.Message} ({websocket?.ID} {websocket?.RemoteEndPoint})", exception).Execute(),
-				OnConnectionEstablished = websocket => (websocket == null ? Task.CompletedTask : websocket.WhenConnectionIsEstablishedAsync()).Execute(),
-				OnConnectionBroken = websocket => (websocket == null ? Task.CompletedTask : websocket.WhenConnectionIsBrokenAsync()).Execute(),
-				OnMessageReceived = (websocket, result, data) => (websocket == null ? Task.CompletedTask : websocket.WhenMessageIsReceivedAsync(result, data)).Execute()
-			};
-			Global.Logger.LogInformation($"{Global.ServiceName} WebSocket APIs was initialized - Buffer size: {Components.WebSockets.WebSocket.ReceiveBufferSize:#,##0} bytes - Keep-Alive interval: {WebSocketAPIs.WebSocket.KeepAliveInterval.TotalSeconds} second(s)");
-		}
-
-		public static void Dispose()
-		{
-			WebSocketAPIs.WebSocket.Dispose();
-			Global.Logger.LogInformation($"The WebSocket APIs was disposed");
-		}
+			KeepAliveInterval = TimeSpan.FromSeconds(Int32.TryParse(UtilityService.GetAppSetting("Proxy:KeepAliveInterval", "45"), out var interval) ? interval : 45),
+			OnError = (websocket, exception) => Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"Got an error while processing => {exception.Message} ({websocket?.ID} {websocket?.RemoteEndPoint})", exception).Execute(),
+			OnConnectionEstablished = websocket => (websocket == null ? Task.CompletedTask : websocket.PrepareAsync()).Execute(),
+			OnConnectionBroken = websocket => (websocket == null ? Task.CompletedTask : websocket.DisconnectAsync()).Execute(),
+			OnMessageReceived = (websocket, result, data) => (websocket == null ? Task.CompletedTask : websocket.ProcessAsync(result, data)).Execute()
+		};
 
 		public static Task WrapWebSocketAsync(HttpContext context, Func<HttpContext, Task> whenIsNotWebSocketRequestAsync = null)
 			=> WebSocketAPIs.WebSocket.WrapAsync(context, whenIsNotWebSocketRequestAsync);
@@ -80,7 +68,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		static async Task WhenConnectionIsEstablishedAsync(this ManagedWebSocket websocket)
+		static async Task PrepareAsync(this ManagedWebSocket websocket)
 		{
 			try
 			{
@@ -143,7 +131,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		static async Task WhenConnectionIsBrokenAsync(this ManagedWebSocket websocket)
+		static async Task DisconnectAsync(this ManagedWebSocket websocket)
 		{
 			try
 			{
@@ -183,7 +171,7 @@ namespace net.vieapps.Services.APIGateway
 			catch { }
 		}
 
-		static async Task WhenMessageIsReceivedAsync(this ManagedWebSocket websocket, WebSocketReceiveResult result, byte[] data)
+		static async Task ProcessAsync(this ManagedWebSocket websocket, WebSocketReceiveResult result, byte[] data)
 		{
 			try
 			{
@@ -340,7 +328,6 @@ namespace net.vieapps.Services.APIGateway
 				}
 
 				message["CorrelationID"] = correlationID;
-				message["NodeID"] = Global.NodeID;
 
 				message = new JObject
 				{

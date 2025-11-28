@@ -105,7 +105,7 @@ namespace net.vieapps.Services.APIGateway
 				.UseCache()
 				.UseWebSockets(new WebSocketOptions
 				{
-					KeepAliveInterval = WebSocketAPIs.KeepAliveInterval
+					KeepAliveInterval = WebSocketAPIs.WebSocket.KeepAliveInterval
 				});
 
 			// setup the forwarder of API Gateway Router

@@ -147,7 +147,7 @@ namespace net.vieapps.Services.APIGateway
 
 		int SchedulingInterval { get; } = Int32.TryParse(UtilityService.GetAppSetting("Controller:Timers:Interval:Scheduler", "900"), out var interval) && interval > 0 ? interval : 900;
 
-		int FlushingInterval { get; } = Int32.TryParse(UtilityService.GetAppSetting("Controller:Timers:Interval:FlushLogs", "13"), out var interval) && interval > 0 ? interval : 13;
+		int FlushingInterval { get; } = Int32.TryParse(UtilityService.GetAppSetting("Controller:Timers:Interval:FlushLogs", "7"), out var interval) && interval > 0 ? interval : 7;
 
 		List<string> VersionDataSources { get; } = new List<string>();
 

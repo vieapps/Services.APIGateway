@@ -111,7 +111,7 @@ namespace net.vieapps.Services.APIGateway
 				.UseForwardedHeaders(Global.GetForwardedHeadersOptions())
 				.UseWebSockets(new WebSocketOptions
 				{
-					KeepAliveInterval = WebSocketAPIs.KeepAliveInterval
+					KeepAliveInterval = WebSocketAPIs.WebSocket.KeepAliveInterval
 				});
 			Router.Forwarder.RegisterTransport(new WampSharp.AspNetCore.WebSockets.Server.AspNetCoreWebSocketTransport(appBuilder), new JTokenJsonBinding(), new JTokenMessagePackBinding());
 			Global.Logger.LogInformation("The transport of forwarder of API Gateway Router was registered (ASP.NET Core WebSocket)");

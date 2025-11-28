@@ -39,7 +39,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.10.2511.1" />
+		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.10.2512.1" />
 	</ItemGroup>
 
 	<ItemGroup>

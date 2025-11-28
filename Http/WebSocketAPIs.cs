@@ -24,9 +24,7 @@ namespace net.vieapps.Services.APIGateway
 	{
 		public static ILogger Logger { get; set; }
 
-		public static TimeSpan KeepAliveInterval => WebSocketAPIs.WebSocket.KeepAliveInterval;
-
-		static Components.WebSockets.WebSocket WebSocket { get; } = new(Components.Utility.Logger.GetLoggerFactory(), Global.CancellationToken)
+		public static Components.WebSockets.WebSocket WebSocket { get; } = new(Components.Utility.Logger.GetLoggerFactory(), Global.CancellationToken)
 		{
 			KeepAliveInterval = TimeSpan.FromSeconds(Int32.TryParse(UtilityService.GetAppSetting("Proxy:KeepAliveInterval", "45"), out var interval) ? interval : 45),
 			OnError = (websocket, exception) => Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"Got an error while processing => {exception.Message} ({websocket?.ID} {websocket?.RemoteEndPoint})", exception).Execute(),
@@ -34,39 +32,6 @@ namespace net.vieapps.Services.APIGateway
 			OnConnectionBroken = websocket => (websocket == null ? Task.CompletedTask : websocket.DisconnectAsync()).Execute(),
 			OnMessageReceived = (websocket, result, data) => (websocket == null ? Task.CompletedTask : websocket.ProcessAsync(result, data)).Execute()
 		};
-
-		public static Task WrapWebSocketAsync(HttpContext context, Func<HttpContext, Task> whenIsNotWebSocketRequestAsync = null)
-			=> WebSocketAPIs.WebSocket.WrapAsync(context, whenIsNotWebSocketRequestAsync);
-
-		public static async Task BroadcastAsync(UpdateMessage message)
-		{
-			try
-			{
-				await WebSocketAPIs.WebSocket.SendAsync(websocket =>
-				{
-					if ("Disconnected".IsEquals(websocket.GetStatus()))
-						return false;
-					var session = websocket.Get<Session>("Session");
-					return session != null && !session.DeviceID.IsEquals(message.ExcludedDeviceID) && ("*".Equals(message.DeviceID) || session.DeviceID.IsEquals(message.DeviceID));
-				}, message.ToJson().ToString(Formatting.None).ToBytes(), true, Global.CancellationToken).ConfigureAwait(false);
-				if (Global.IsDebugLogEnabled)
-					await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs",
-						$"Successfully broadcast a message to all connected devices" + "\r\n" +
-						$"- Type: {message.Type}" + "\r\n" +
-						$"- Message: {message.Data?.ToString(RESTfulAPIs.JsonFormat)}"
-					, null, Global.ServiceName, LogLevel.Debug).ConfigureAwait(false);
-			}
-			catch (OperationCanceledException) { }
-			catch (ObjectDisposedException) { }
-			catch (Exception ex)
-			{
-				await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs",
-					$"Error occurred while broadcasting a message to all connected devices => {ex.Message}" + "\r\n" +
-					$"- Type: {message.Type}" + "\r\n" +
-					$"- Message: {message.ToJson().ToString(RESTfulAPIs.JsonFormat)}"
-				, ex, Global.ServiceName, LogLevel.Error).ConfigureAwait(false);
-			}
-		}
 
 		static async Task PrepareAsync(this ManagedWebSocket websocket)
 		{
@@ -287,6 +252,36 @@ namespace net.vieapps.Services.APIGateway
 
 		static string GetStatus(this ManagedWebSocket websocket)
 			=> websocket.Get<string>("Status");
+
+		public static async Task BroadcastAsync(UpdateMessage message)
+		{
+			try
+			{
+				await WebSocketAPIs.WebSocket.SendAsync(websocket =>
+				{
+					if ("Disconnected".IsEquals(websocket.GetStatus()))
+						return false;
+					var session = websocket.Get<Session>("Session");
+					return session != null && !session.DeviceID.IsEquals(message.ExcludedDeviceID) && ("*".Equals(message.DeviceID) || session.DeviceID.IsEquals(message.DeviceID));
+				}, message.ToJson().ToString(Formatting.None).ToBytes(), true, Global.CancellationToken).ConfigureAwait(false);
+				if (Global.IsDebugLogEnabled)
+					await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs",
+						$"Successfully broadcast a message to all connected devices" + "\r\n" +
+						$"- Type: {message.Type}" + "\r\n" +
+						$"- Message: {message.Data?.ToString(RESTfulAPIs.JsonFormat)}"
+					, null, Global.ServiceName, LogLevel.Debug).ConfigureAwait(false);
+			}
+			catch (OperationCanceledException) { }
+			catch (ObjectDisposedException) { }
+			catch (Exception ex)
+			{
+				await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs",
+					$"Error occurred while broadcasting a message to all connected devices => {ex.Message}" + "\r\n" +
+					$"- Type: {message.Type}" + "\r\n" +
+					$"- Message: {message.ToJson().ToString(RESTfulAPIs.JsonFormat)}"
+				, ex, Global.ServiceName, LogLevel.Error).ConfigureAwait(false);
+			}
+		}
 
 		static async Task SendAsync(this ManagedWebSocket websocket, Exception exception, string correlationID = null, string identity = null, string additionalMsg = null)
 		{

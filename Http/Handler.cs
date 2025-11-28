@@ -25,7 +25,7 @@ namespace net.vieapps.Services.APIGateway
 				return Task.WhenAll
 				(
 					Global.IsVisitLogEnabled ? context.WriteLogsAsync(Global.Logger, "Http.Visits", $"Wrap a WebSocket connection successful\r\n- Endpoint: {context.GetRemoteIPAddress()}:{context.Connection.RemotePort}\r\n- URI: {context.GetRequestUri()}{(Global.IsDebugLogEnabled ? $"\r\n- Headers:\r\n\t{context.Request.Headers.Select(kvp => $"{kvp.Key}: {kvp.Value}").Join("\r\n\t")}" : "")}") : Task.CompletedTask,
-					APIGateway.WebSocketAPIs.WrapWebSocketAsync(context)
+					APIGateway.WebSocketAPIs.WebSocket.WrapAsync(context)
 				);
 
 			// CORS: allow origin

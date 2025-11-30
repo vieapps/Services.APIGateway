@@ -14,54 +14,42 @@ namespace net.vieapps.Services.APIGateway
 {
 	public class Handler
 	{
-		string LoadBalancerHealthCheckURL => UtilityService.GetAppSetting("LoadBalancer:HealthCheckURL", "/load-balancer-health-check");
+		string LoadBalancerHealthCheckURL { get; } = UtilityService.GetAppSetting("LoadBalancer:HealthCheckURL", "/load-balancer-health-check");
 
 		public Handler(RequestDelegate _) { }
 
-		public Task Invoke(HttpContext context)
+		public async Task Invoke(HttpContext context)
 		{
-			// request of WebSocket
-			if (context.WebSockets.IsWebSocketRequest)
-				return Task.WhenAll
-				(
-					Global.IsVisitLogEnabled ? context.WriteLogsAsync(Global.Logger, "Http.Visits", $"Wrap a WebSocket connection successful\r\n- Endpoint: {context.GetRemoteIPAddress()}:{context.Connection.RemotePort}\r\n- URI: {context.GetRequestUri()}{(Global.IsDebugLogEnabled ? $"\r\n- Headers:\r\n\t{context.Request.Headers.Select(kvp => $"{kvp.Key}: {kvp.Value}").Join("\r\n\t")}" : "")}") : Task.CompletedTask,
-					APIGateway.WebSocketAPIs.WebSocket.WrapAsync(context)
-				);
-
-			// CORS: allow origin
-			context.Response.Headers.AccessControlAllowOrigin = "*";
-
-			// CORS: options
-			if (context.Request.Method.IsEquals("OPTIONS"))
+			if (!context.Request.Method.IsEquals("OPTIONS"))
 			{
-				var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+				// Web Socket
+				if (context.WebSockets.IsWebSocketRequest)
+					await Task.WhenAll
+					(
+						Global.IsVisitLogEnabled ? context.WriteLogsAsync(Global.Logger, "WebSocketAPIs", $"Wrap a WebSocket connection successful\r\n- Endpoint: {context.GetRemoteIPAddress()}:{context.Connection.RemotePort}\r\n- URI: {context.GetRequestUri()}{(Global.IsDebugLogEnabled ? $"\r\n- Headers:\r\n\t{context.Request.Headers.Select(kvp => $"{kvp.Key}: {kvp.Value}").Join("\r\n\t")}" : "")}") : Task.CompletedTask,
+						APIGateway.WebSocketAPIs.WebSocket.WrapAsync(context)
+					).ConfigureAwait(false);
+
+				// Event Stream (Server Sent Event)
+				else if (context.IsEventStreamRequest())
+					await Task.WhenAll
+					(
+						Global.IsVisitLogEnabled ? context.WriteLogsAsync(Global.Logger, "WebSocketAPIs", $"Wrap an EventStream connection successful\r\n- Endpoint: {context.GetRemoteIPAddress()}:{context.Connection.RemotePort}\r\n- URI: {context.GetRequestUri()}{(Global.IsDebugLogEnabled ? $"\r\n- Headers:\r\n\t{context.Request.Headers.Select(kvp => $"{kvp.Key}: {kvp.Value}").Join("\r\n\t")}" : "")}") : Task.CompletedTask,
+						APIGateway.WebSocketAPIs.WrapEventStreamAsync(context)
+					).ConfigureAwait(false);
+
+				// HTTP
+				else
 				{
-					["X-Node"] = Global.NodeID,
-					["Access-Control-Allow-Methods"] = "HEAD,GET,POST,PUT,PATCH,DELETE"
-				};
-				if (context.Request.Headers.TryGetValue("Access-Control-Request-Headers", out var requestHeaders))
-					headers["Access-Control-Allow-Headers"] = requestHeaders;
-				context.SetResponseHeaders((int)HttpStatusCode.OK, headers);
-				return Task.CompletedTask;
+					await (context.Request.Path.Value.IsEquals(this.LoadBalancerHealthCheckURL) ? context.WriteAsync("OK", "text/plain", null, 0, null, TimeSpan.Zero, null, Global.CancellationToken) : this.ProcessRequestAsync(context)).ConfigureAwait(false);
+					if (Global.IsVisitLogEnabled)
+						await context.WriteVisitFinishingLogAsync().ConfigureAwait(false);
+				}
 			}
-
-			// health check
-			if (context.Request.Path.Value.IsEquals(this.LoadBalancerHealthCheckURL))
-				return context.WriteAsync("OK", "text/plain", null, 0, null, TimeSpan.Zero, null, Global.CancellationToken);
-
-			// requests of the service
-			return this.ProcessRequestAsync(context);
 		}
 
 		async Task ProcessRequestAsync(HttpContext context)
 		{
-			// prepare
-			context.SetItem("PipelineStopwatch", Stopwatch.StartNew());
-			context.SetItem("Correlation-ID", context.GetParameter("x-original-correlation-id") ?? context.GetParameter("x-correlation-id") ?? UtilityService.NewUUID);
-
-			if (Global.IsVisitLogEnabled)
-				await context.WriteVisitStartingLogAsync().ConfigureAwait(false);
-
 			var requestPath = context.GetRequestPathSegments(true).First();
 
 			// request to favicon.ico file
@@ -79,14 +67,48 @@ namespace net.vieapps.Services.APIGateway
 			// request to services
 			else
 				await APIGateway.RESTfulAPIs.ProcessRequestAsync(context).ConfigureAwait(false);
-
-			if (Global.IsVisitLogEnabled)
-				await context.WriteVisitFinishingLogAsync().ConfigureAwait(false);
 		}
 
 		public class RESTfulAPIs { }
 
 		public class WebSocketAPIs { }
 
+	}
+
+	public class Starter(RequestDelegate next)
+	{
+		readonly RequestDelegate NextAsync = next;
+
+		public async Task Invoke(HttpContext context)
+		{
+			// process the request of HTTP
+			if (!context.WebSockets.IsWebSocketRequest && !context.IsEventStreamRequest())
+			{
+				// CORS options
+				context.Response.Headers.AccessControlAllowOrigin = "*";
+				if (context.Request.Method.IsEquals("OPTIONS"))
+				{
+					var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+					{
+						["X-Node"] = Global.NodeID,
+						["Access-Control-Allow-Methods"] = "HEAD,GET,POST,PUT,PATCH,DELETE"
+					};
+					if (context.Request.Headers.TryGetValue("Access-Control-Request-Headers", out var requestHeaders))
+						headers["Access-Control-Allow-Headers"] = requestHeaders;
+					context.SetResponseHeaders((int)HttpStatusCode.OK, headers);
+				}
+
+				// visit logs
+				else
+				{
+					context.SetItem("PipelineStopwatch", Stopwatch.StartNew());
+					if (Global.IsVisitLogEnabled)
+						await context.WriteVisitStartingLogAsync().ConfigureAwait(false);
+				}
+			}
+
+			// next step
+			await this.NextAsync(context).ConfigureAwait(false);
+		}
 	}
 }

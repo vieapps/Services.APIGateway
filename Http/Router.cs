@@ -104,7 +104,7 @@ namespace net.vieapps.Services.APIGateway
 		public static void OpenForwarder(IApplicationBuilder appBuilder)
 		{
 			var (address, realm, useJSON) = Services.Router.GetRouterInfo();
-			Global.Logger.LogInformation($"Initialize the forwarder of API Gateway Router [{UtilityService.GetAppSetting("HttpUri:APIs")}/router]");
+			Global.Logger.LogInformation($"Initialize the forwarder of API Gateway Router [{UtilityService.GetAppSetting("HttpUri:APIs")}/~router]");
 			Router.Forwarder = new WampHost(new ForwardingRealmContainer($"{address}{(address.EndsWith("/") ? "" : "/")}{realm}", useJSON));
 
 			appBuilder
@@ -117,7 +117,7 @@ namespace net.vieapps.Services.APIGateway
 			Global.Logger.LogInformation("The transport of forwarder of API Gateway Router was registered (ASP.NET Core WebSocket)");
 
 			Router.Forwarder.Open();
-			Global.Logger.LogInformation($"The forwarder of API Gateway Router is ready for serving [{UtilityService.GetAppSetting("HttpUri:APIs")}/router => {new Uri(Services.Router.GetRouterStrInfo()).GetResolvedURI()}]");
+			Global.Logger.LogInformation($"The forwarder of API Gateway Router is ready for serving [{UtilityService.GetAppSetting("HttpUri:APIs")}/~router => {new Uri(Services.Router.GetRouterStrInfo()).GetResolvedURI()}]");
 		}
 
 		public static void CloseForwarder()

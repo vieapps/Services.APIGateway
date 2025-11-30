@@ -45,7 +45,7 @@ namespace net.vieapps.Services.APIGateway
 				services.Configure<IISServerOptions>(options => Global.PrepareIISServerOptions(options, _ => options.MaxRequestBodySize = 1024 * 1024 * Global.MaxRequestBodySize));
 		}
 
-		public void Configure(IApplicationBuilder appBuilder, IHostApplicationLifetime appLifetime, IWebHostEnvironment environment)
+		public void Configure(IApplicationBuilder appBuilder, IHostApplicationLifetime appLifetime, IWebHostEnvironment appEnvironment)
 		{
 			// settings
 			var stopwatch = Stopwatch.StartNew();
@@ -67,16 +67,16 @@ namespace net.vieapps.Services.APIGateway
 			Global.Logger.LogInformation($"The {Global.ServiceName} HTTP service is starting");
 			Global.Logger.LogInformation($"Version: {typeof(Startup).Assembly.GetVersion()}");
 #if DEBUG
-			Global.Logger.LogInformation($"Working mode: DEBUG ({(environment.IsDevelopment() ? "Development" : "Production")})");
+			Global.Logger.LogInformation($"Working mode: DEBUG ({(appEnvironment.IsDevelopment() ? "Development" : "Production")})");
 #else
-			Global.Logger.LogInformation($"Working mode: RELEASE ({(environment.IsDevelopment() ? "Development" : "Production")})");
+			Global.Logger.LogInformation($"Working mode: RELEASE ({(appEnvironment.IsDevelopment() ? "Development" : "Production")})");
 #endif
 			Global.Logger.LogInformation($"Service URIs:\r\n\t- Round robin: services.{Global.ServiceName.ToLower()}.http\r\n\t- Single (unique): services.{Extensions.GetUniqueName($"{Global.ServiceName}.http")}");
 			Global.Logger.LogInformation($"Environment:\r\n\t{Extensions.GetRuntimeEnvironment()}\r\n\t- Node ID: {Extensions.GetNodeID()}");
 
 			Global.CreateRSA();
 			Global.ServiceProvider = appBuilder.ApplicationServices;
-			Global.RootPath = environment.ContentRootPath;
+			Global.RootPath = appEnvironment.ContentRootPath;
 
 			JsonConvert.DefaultSettings = () => new JsonSerializerSettings
 			{
@@ -102,16 +102,13 @@ namespace net.vieapps.Services.APIGateway
 				.UseForwardedHeaders(Global.GetForwardedHeadersOptions())
 				.UseStatusCodeHandler()
 				.UseResponseCompression()
-				.UseCache()
-				.UseWebSockets(new WebSocketOptions
-				{
-					KeepAliveInterval = WebSocketAPIs.WebSocket.KeepAliveInterval
-				});
+				.UseCache();
 
 			// setup the forwarder of API Gateway Router
+			var excludedBranches = new HashSet<string>(["router", "pusher"], StringComparer.OrdinalIgnoreCase);
 			var enableForwarder = "true".IsEquals(UtilityService.GetAppSetting("Router:Forwarder", "false"));
 			if (enableForwarder)
-				appBuilder.Map("/router", _ => Router.OpenForwarder(appBuilder));
+				appBuilder.Map("/~router", Router.OpenForwarder);
 
 			// setup the path mappers
 			var onIncomingConnectionEstablished = new List<Action<object, WampSessionCreatedEventArgs>>();
@@ -130,16 +127,16 @@ namespace net.vieapps.Services.APIGateway
 						path = path.Left(path.Length - 1);
 					return (Path: path, info.Type);
 				})
-				.Where(info => !info.Path.IsEquals("router"))
+				.Where(info => !excludedBranches.Contains(info.Path))
 				.ForEach(info =>
 				{
 					try
 					{
 						if (AssemblyLoader.GetType(info.Type)?.CreateInstance() is PathMapper mapper)
 						{
-							appBuilder.Map($"/{info.Path}", builder => mapper.Map(builder, appLifetime, onIncomingConnectionEstablished, onOutgoingConnectionEstablished));
-							Global.Logger.LogInformation($"Successfully branch the request to a specified path: /{info.Path} => {mapper.GetTypeName()}");
-							pathMappers.Add($"/{info.Path} => {mapper.GetTypeName()}");
+							appBuilder.Map($"/~{info.Path}", builder => mapper.Map(builder, appLifetime, onIncomingConnectionEstablished, onOutgoingConnectionEstablished));
+							Global.Logger.LogInformation($"Successfully branch the request to a specified path: /~{info.Path} => {mapper.GetTypeName()}");
+							pathMappers.Add($"/~{info.Path} => {mapper.GetTypeName()}");
 						}
 					}
 					catch (Exception ex)
@@ -149,7 +146,14 @@ namespace net.vieapps.Services.APIGateway
 				});
 
 			// setup the handler for all requests
-			appBuilder.UseMiddleware<Handler>();
+			appBuilder
+				.UseWebSockets(new WebSocketOptions
+				{
+					KeepAliveInterval = WebSocketAPIs.WebSocket.KeepAliveInterval
+				})
+				.UseMiddleware<Authenticator>(true, true)
+				.UseMiddleware<Starter>()
+				.UseMiddleware<Handler>();
 
 			// connect to API Gateway Router
 			Router.Connect(onIncomingConnectionEstablished, onOutgoingConnectionEstablished);
@@ -160,7 +164,7 @@ namespace net.vieapps.Services.APIGateway
 				.Select(info => (Name: info.Attributes["name"]?.Value?.ToLower()?.Trim(), Type: info.Attributes["type"]?.Value, EndpointURL: info.Attributes["endpointURL"]?.Value, DataSource: info.Attributes["dataSource"]?.Value))
 				.Where(info => !string.IsNullOrEmpty(info.Name) && !string.IsNullOrEmpty(info.Type) && !string.IsNullOrEmpty(info.Type))
 				.Select(info => (Name: info.Name.GetANSIUri(), info.Type, info.EndpointURL, info.DataSource))
-				.Where(info => !info.Name.IsEquals("router") && !info.Name.IsEquals("pusher"))
+				.Where(info => !excludedBranches.Contains(info.Name))
 				.ForEach(info =>
 				{
 					try

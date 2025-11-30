@@ -131,6 +131,7 @@ namespace net.vieapps.Services.APIGateway
 			using var cts = CancellationTokenSource.CreateLinkedTokenSource(Global.CancellationToken, context.RequestAborted);
 			bool isSessionProccessed = false, isSessionInitialized = false, isAccountProccessed = false, isActivationProccessed = false;
 			var isDebugLogEnabled = Global.IsDebugResultsEnabled || context.ContainsKey("x-logs");
+
 			var requestInfo = new RequestInfo(context.GetSession(), query["service-name"], query["object-name"], context.Request.Method, query, header)
 			{
 				Extra = extra,
@@ -157,72 +158,25 @@ namespace net.vieapps.Services.APIGateway
 				requestInfo.ServiceName = "Users";
 			}
 
-			// prepare authenticate token
-			var gotAuthorizationToken = false;
+			// check token & session
 			try
 			{
-				var authenticateToken = requestInfo.GetParameter("x-app-token");
-				if (string.IsNullOrWhiteSpace(authenticateToken) && requestInfo.TryGetHeaderParameter("authorization", out authenticateToken))
-				{
-					requestInfo.Header.Remove("authorization");
-					try
-					{
-						var isBasicToken = authenticateToken.IsStartsWith("Basic");
-						authenticateToken = isBasicToken || authenticateToken.IsStartsWith("Bearer") || authenticateToken.IsStartsWith("JWT") ? authenticateToken.ToArray(" ").Last() : null;
-						if (authenticateToken != null)
-						{
-							gotAuthorizationToken = true;
-							var response = await context.CallServiceAsync(new RequestInfo(requestInfo.Session, "Users", "Token", "GET")
-							{
-								Query = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
-								Header = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-								{
-									["x-authorization-token"] = authenticateToken,
-									["x-authorization-mode"] = isBasicToken ? "Basic" : "Bearer",
-									["x-authorization-signature"] = authenticateToken.GetHMACSHA256(Global.ValidationKey)
-								},
-								CorrelationID = requestInfo.CorrelationID
-							}, cts.Token, RESTfulAPIs.Logger, "Authentications").ConfigureAwait(false);
-							if (isDebugLogEnabled)
-								await context.WriteLogsAsync(RESTfulAPIs.Logger, "Authentications", $"The request was authorized\r\nRequest: {authenticateToken}\r\nResponse: {response.Get<string>("Token")}").ConfigureAwait(false);
-							requestInfo.Header["x-app-token"] = authenticateToken = response.Get<string>("Token");
-							requestInfo.Session.Fill(response.Get<JObject>("Session"));
-						}
-					}
-					catch (Exception ex)
-					{
-						await context.WriteLogsAsync(RESTfulAPIs.Logger, "Authentications", $"Error occurred while authorizing with token => {ex.Message}", ex).ConfigureAwait(false);
-						context.WriteError(RESTfulAPIs.Logger, ex, requestInfo, null, false);
-						return;
-					}
-				}
-
-				// parse and update information from token
 				var tokenIsRequired = !isWebHookRequest && !isActivationProccessed
 					&& (!isSessionInitialized || !requestInfo.Session.User.ID.Equals("") && !requestInfo.Session.User.IsSystemAccount || requestInfo.Query.ContainsKey("register"))
 					&& !RESTfulAPIs.NoTokenRequiredServices.Contains(requestInfo.ServiceName)
 					&& !RESTfulAPIs.PrivateToken.IsEquals(requestInfo.GetParameter("x-private-token"));
-
-				if (!string.IsNullOrWhiteSpace(authenticateToken))
-				{
-					if (!gotAuthorizationToken)
-					{
-						var expiresAfter = Int32.TryParse(context.GetParameter("x-app-token-expires"), out var expires) && expires > 0 ? expires : 0;
-						await context.UpdateWithAuthenticateTokenAsync(requestInfo.Session, authenticateToken, expiresAfter > 0 ? expiresAfter : RESTfulAPIs.ExpiresAfter, null, null, null, RESTfulAPIs.Logger, "Authentications", requestInfo.CorrelationID).ConfigureAwait(false);
-					}
-				}
-				else if (tokenIsRequired)
-					throw new InvalidSessionException("Session is invalid (Token is not found)");
-
-				// check session
 				if (tokenIsRequired)
 				{
+					if (!requestInfo.ContainsKey("x-app-token"))
+						throw new InvalidSessionException("Session is invalid (Token is not found)");
+
 					if (requestInfo.Query.TryGetValue("register", out var registered) && requestInfo.ServiceName.IsEquals("Users") && requestInfo.ObjectName.IsEquals("Session"))
 					{
 						if (!registered.IsEquals(await Global.Cache.GetAsync<string>(requestInfo.Session.SessionID.GetCacheKey<Session>(), cts.Token).ConfigureAwait(false)))
 							throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 					}
-					else if (!gotAuthorizationToken && !await context.IsSessionExistAsync(requestInfo.Session, RESTfulAPIs.Logger, "Authentications", requestInfo.CorrelationID).ConfigureAwait(false))
+
+					else if (!await context.IsSessionExistAsync(requestInfo.Session, RESTfulAPIs.Logger, "Authentications", requestInfo.CorrelationID).ConfigureAwait(false))
 						throw new InvalidSessionException("Session is invalid (The session is not issued by the system)");
 				}
 			}
@@ -233,13 +187,6 @@ namespace net.vieapps.Services.APIGateway
 					RESTfulAPIs.Logger.LogError(ex.Message, ex);
 				return;
 			}
-
-			// prepare identities
-			if (string.IsNullOrWhiteSpace(requestInfo.Session.SessionID))
-				requestInfo.Session.SessionID = requestInfo.Session.User.SessionID = UtilityService.NewUUID;
-
-			if (string.IsNullOrWhiteSpace(requestInfo.Session.DeviceID))
-				requestInfo.Session.DeviceID = $"{UtilityService.NewUUID}@vieapps-ngx";
 
 			// request body
 			if (requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT") || requestInfo.Verb.IsEquals("PATCH"))
@@ -290,13 +237,19 @@ namespace net.vieapps.Services.APIGateway
 				}
 
 			// update context
+			if (string.IsNullOrWhiteSpace(requestInfo.Session.SessionID))
+				requestInfo.Session.SessionID = requestInfo.Session.User.SessionID = UtilityService.NewUUID;
+
+			if (string.IsNullOrWhiteSpace(requestInfo.Session.DeviceID))
+				requestInfo.Session.DeviceID = $"{UtilityService.NewUUID}@vieapps-ngx";
+
 			context.SetSession(requestInfo.Session);
 			context.User = new UserPrincipal(requestInfo.Session.User);
 
 			// tracking
 			if (!isSessionProccessed)
 			{
-				if (RESTfulAPIs.TrackSessions || gotAuthorizationToken)
+				if (RESTfulAPIs.TrackSessions)
 					requestInfo.SendSessionState();
 				else
 					requestInfo.TrackStatistics();

@@ -26,15 +26,15 @@ namespace net.vieapps.Services.APIGateway
 
 		public static async Task WrapEventStreamAsync(this HttpContext context)
 		{
-			if (!context.IsAuthenticated())
-				throw new UnauthorizedException();
-
 			using var cts = CancellationTokenSource.CreateLinkedTokenSource(Global.CancellationToken, context.RequestAborted);
 			var session = context.GetSession();
 			var time = DateTime.Now;
 			try
 			{
+				if (!context.IsAuthenticated())
+					throw new UnauthorizedException();
 				await context.InitializeEventStreamAsync().ConfigureAwait(false);
+				session.SendSessionState("Users", "CONNECT /session");
 				var (account, location) = await session.PrepareConnectionInfoAsync(context.GetCorrelationID(), cts.Token, WebSocketAPIs.Logger).ConfigureAwait(false);
 				context.SetItem("AccountInfo", account);
 				context.SetItem("LocationInfo", location);
@@ -43,7 +43,11 @@ namespace net.vieapps.Services.APIGateway
 				if (Global.IsVisitLogEnabled)
 					await context.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"The connection of the WebSocket APIs (EventStream) was established\r\n{GetConnectionInfo(null, context)}").ConfigureAwait(false);
 			}
-			catch { }
+			catch (Exception ex)
+			{
+				context.WriteError(WebSocketAPIs.Logger, ex);
+				return;
+			}
 
 			var updater = Services.Router.IncomingChannel.Subscribe<UpdateMessage>
 			(
@@ -390,8 +394,11 @@ namespace net.vieapps.Services.APIGateway
 					message["ID"] = identity;
 
 				// send & write logs
-				await websocket.SendAsync(message, Global.CancellationToken).ConfigureAwait(false);
-				await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", msg ?? exception.Message, exception, Global.ServiceName, LogLevel.Error, correlationID, string.IsNullOrWhiteSpace(additionalMsg) ? null : $"{additionalMsg}\r\nWebSocket Info:\r\n{websocket.GetConnectionInfo()}").ConfigureAwait(false);
+				await Task.WhenAll
+				(
+					websocket.SendAsync(message, Global.CancellationToken),
+					Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", msg ?? exception.Message, exception, Global.ServiceName, LogLevel.Error, correlationID, string.IsNullOrWhiteSpace(additionalMsg) ? null : $"{additionalMsg}\r\nWebSocket Info:\r\n{websocket.GetConnectionInfo()}")
+				).ConfigureAwait(false);
 			}
 			catch (ObjectDisposedException) { }
 			catch (Exception ex)
@@ -433,7 +440,7 @@ namespace net.vieapps.Services.APIGateway
 
 					if (Global.IsDebugLogEnabled)
 						await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs",
-							$"Successfully push a message to the device ({message?.DeviceID})" + "\r\n" + GetConnectionInfo(websocket, context) + "\r\n" +
+							$"Successfully push a message to the device ({message.DeviceID})" + "\r\n" + GetConnectionInfo(websocket, context) + "\r\n" +
 							$"- Type: {message.Type}" + "\r\n" +
 							$"- Message: {message.Data?.ToString(RESTfulAPIs.JsonFormat)}"
 						, null, Global.ServiceName, LogLevel.Information).ConfigureAwait(false);
@@ -443,7 +450,7 @@ namespace net.vieapps.Services.APIGateway
 				catch (Exception ex)
 				{
 					await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs",
-						$"Error occurred while pushing a message to the device ({message?.DeviceID}) => {ex.Message}" + "\r\n" + GetConnectionInfo(websocket, context) + "\r\n" +
+						$"Error occurred while pushing a message to the device ({message.DeviceID}) => {ex.Message}" + "\r\n" + GetConnectionInfo(websocket, context) + "\r\n" +
 						$"- Type: {message.Type}" + "\r\n" +
 						$"- Message: {message.ToJson().ToString(RESTfulAPIs.JsonFormat)}"
 					, ex, Global.ServiceName, LogLevel.Error).ConfigureAwait(false);
@@ -553,7 +560,15 @@ namespace net.vieapps.Services.APIGateway
 				: message.CommunicateAsync(websocket, null);
 
 		static Task CommunicateAsync(this HttpContext context, CommunicateMessage message)
-			=> message.CommunicateAsync(null, context);
+			=> message.Type.IsEquals("Broadcast#Client")
+				? context.PushAsync(new UpdateMessage
+				{
+					DeviceID = message.Data.Get("DeviceID", "*"),
+					ExcludedDeviceID = message.Data.Get("ExcludedDeviceID", ""),
+					Type = message.Data.Get<string>("Type"),
+					Data = message.Data.Get<JToken>("Data")
+				})
+				: message.CommunicateAsync(null, context);
 
 		static async Task ProcessSessionAsync(this ManagedWebSocket websocket, ExpandoObject requestObj, Session session = null, string correlationID = null)
 		{
@@ -587,7 +602,7 @@ namespace net.vieapps.Services.APIGateway
 					session.AppName = body?.Get<string>("x-app-name") ?? session.AppName;
 					session.AppPlatform = body?.Get<string>("x-app-platform") ?? session.AppPlatform;
 					await websocket.PrepareConnectionInfoAsync(correlationID, session, Global.CancellationToken, WebSocketAPIs.Logger).ConfigureAwait(false);
-					session.SendSessionState("Users", $"{verb} /session", true);
+					session.SendSessionState("Users", $"{verb} /session");
 
 					// update status
 					websocket.SetStatus("Authenticated");
@@ -602,7 +617,7 @@ namespace net.vieapps.Services.APIGateway
 				// response to a heartbeat => refresh the session
 				else if ("PONG".IsEquals(verb))
 				{
-					session.SendSessionState("Users", $"{verb} /session", true);
+					session.SendSessionState("Users", $"{verb} /session");
 					if (Global.IsDebugLogEnabled)
 						await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"Successfully send an inter-communicate message to refresh a session when got a response of a heartbeat signal" + "\r\n" + websocket.GetConnectionInfo(session), null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
 				}

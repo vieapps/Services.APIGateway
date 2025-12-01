@@ -30,14 +30,18 @@ namespace net.vieapps.Services.APIGateway
 				throw new UnauthorizedException();
 
 			using var cts = CancellationTokenSource.CreateLinkedTokenSource(Global.CancellationToken, context.RequestAborted);
+			var session = context.GetSession();
+			var time = DateTime.Now;
 			try
 			{
-				while (Services.Router.IncomingChannel == null)
-					await Task.Delay(UtilityService.GetRandomNumber(123, 456), cts.Token).ConfigureAwait(false);
 				await context.InitializeEventStreamAsync().ConfigureAwait(false);
-				var (account, location) = await context.GetSession().PrepareConnectionInfoAsync(context.GetCorrelationID(), cts.Token, WebSocketAPIs.Logger).ConfigureAwait(false);
+				var (account, location) = await session.PrepareConnectionInfoAsync(context.GetCorrelationID(), cts.Token, WebSocketAPIs.Logger).ConfigureAwait(false);
 				context.SetItem("AccountInfo", account);
 				context.SetItem("LocationInfo", location);
+				while (Services.Router.IncomingChannel == null)
+					await Task.Delay(UtilityService.GetRandomNumber(123, 456), cts.Token).ConfigureAwait(false);
+				if (Global.IsVisitLogEnabled)
+					await context.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"The connection of the WebSocket APIs (EventStream) was established\r\n{GetConnectionInfo(null, context)}").ConfigureAwait(false);
 			}
 			catch { }
 
@@ -71,9 +75,10 @@ namespace net.vieapps.Services.APIGateway
 			updater.Dispose();
 			communicator.Dispose();
 
-			context.GetSession()?.SendSessionState("Users", "DISCONNECT /session", false, true, true);
+			session.SendSessionState("Users", "DISCONNECT /session", false, true, true);
+
 			if (Global.IsVisitLogEnabled)
-				await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"The connection of the EventStream was disconnected").ConfigureAwait(false);
+				await context.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"The connection of the WebSocket APIs (EventStream) was disconnected\r\n{GetConnectionInfo(null, context)}\r\n- Served times: {time.GetElapsedTimes()}").ConfigureAwait(false);
 		}
 
 		public static Components.WebSockets.WebSocket WebSocket { get; } = new(Components.Utility.Logger.GetLoggerFactory(), Global.CancellationToken)
@@ -140,7 +145,7 @@ namespace net.vieapps.Services.APIGateway
 				// update status
 				websocket.SetStatus("Connected");
 				if (Global.IsVisitLogEnabled)
-					await Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.Visits", $"The connection of the WebSocket APIs was established" + "\r\n" + websocket.GetConnectionInfo() + "\r\n" + $"- Status: {websocket.GetStatus()}", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
+					await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"The connection of the WebSocket APIs (WebSocket) was established\r\n{websocket.GetConnectionInfo()}\r\n- Status: {websocket.GetStatus()}", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
@@ -183,7 +188,7 @@ namespace net.vieapps.Services.APIGateway
 				session?.SendSessionState("Users", "DISCONNECT /session", false, true, true);
 
 				if (Global.IsVisitLogEnabled)
-					await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"The connection of the WebSocket APIs was stopped" + "\r\n" + websocket.GetConnectionInfo(session) + "\r\n" + $"- Served times: {websocket.Timestamp.GetElapsedTimes()}", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
+					await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"The connection of the WebSocket APIs (WebSocket) was disconnected\r\n{websocket.GetConnectionInfo(session)}\r\n- Served times: {websocket.Timestamp.GetElapsedTimes()}", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
 			}
 			catch { }
 		}
@@ -247,7 +252,7 @@ namespace net.vieapps.Services.APIGateway
 						objectIdentity = $"/{objectIdentity}";
 					else
 						objectIdentity = "";
-					await Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.Visits",
+					await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs",
 						$"Request starting {verb} " + $"/{serviceName.ToLower()}{(string.IsNullOrWhiteSpace(objectName) ? "" : $"/{objectName.ToLower()}")}{objectIdentity}".ToLower() + (query.TryGetValue("x-request", out var xrequest) ? $"?x-request={xrequest}" : "") + " HTTPWS/1.1" + " \r\n" +
 						$"- App: {session.AppName ?? "Unknown"} @ {session.AppPlatform ?? "Unknown"} [{session.AppAgent ?? "Unknown"}]" + " \r\n" +
 						$"- WebSocket: {websocket.ID} @ {websocket.RemoteEndPoint}"
@@ -294,7 +299,7 @@ namespace net.vieapps.Services.APIGateway
 				// visit logs
 				stopwatch.Stop();
 				if (Global.IsVisitLogEnabled)
-					await Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.Visits", $"Request finished in {stopwatch.GetElapsedTimes()}", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
+					await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"Request finished in {stopwatch.GetElapsedTimes()}", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
 			}
 			catch { }
 		}
@@ -424,7 +429,7 @@ namespace net.vieapps.Services.APIGateway
 						await websocket.SendAsync(message).ConfigureAwait(false);
 
 					else if (context != null)
-						await context.PushEventMessageAsync(message.Data?.ToString(Formatting.None), message.Type).ConfigureAwait(false);
+						await context.PushEventMessageAsync(message.Data?.ToString(Formatting.None), message.Type, $"esm-{context.SetItem("EventMessagesCounter", context.TryGetItem("EventMessagesCounter", out int counter) ? counter + 1 : 1)}").ConfigureAwait(false);
 
 					if (Global.IsDebugLogEnabled)
 						await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs",
@@ -589,7 +594,7 @@ namespace net.vieapps.Services.APIGateway
 					websocket.Set("Token", JSONWebToken.DecodeAsJson(appToken, Global.JWTKey));
 					await Task.WhenAll
 					(
-						Global.IsVisitLogEnabled ? Global.WriteLogsAsync(WebSocketAPIs.Logger, "Http.Visits", $"The connection of the WebSocket APIs was authenticated" + "\r\n" + GetConnectionInfo(websocket) + "\r\n" + $"- Status: {websocket.GetStatus()}", null, Global.ServiceName, LogLevel.Information, correlationID) : Task.CompletedTask,
+						Global.IsVisitLogEnabled ? Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"The connection of the WebSocket APIs was authenticated" + "\r\n" + GetConnectionInfo(websocket) + "\r\n" + $"- Status: {websocket.GetStatus()}", null, Global.ServiceName, LogLevel.Information, correlationID) : Task.CompletedTask,
 						Global.IsDebugLogEnabled ? Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"Successfully authenticate the session" + "\r\n" + GetConnectionInfo(websocket) + "\r\n" + $"- Request: {requestObj.ToJson().ToString(Formatting.None)}" + "\r\n" + $"- Session: {session.ToJson().ToString(Formatting.None)}", null, Global.ServiceName, LogLevel.Information, correlationID) : Task.CompletedTask
 					).ConfigureAwait(false);
 				}

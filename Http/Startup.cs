@@ -151,7 +151,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					KeepAliveInterval = WebSocketAPIs.WebSocket.KeepAliveInterval
 				})
-				.UseMiddleware<Authenticator>(true, true)
+				.UseMiddleware<Authenticator>(true, true, true, 0, true)
 				.UseMiddleware<Starter>()
 				.UseMiddleware<Handler>();
 

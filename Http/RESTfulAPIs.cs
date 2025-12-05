@@ -526,7 +526,7 @@ namespace net.vieapps.Services.APIGateway
 				["X-Node"] = Global.NodeID,
 				["X-Correlation-ID"] = context.GetCorrelationID()
 			});
-			await context.Response.Body.WriteAsync(body, cancellationToken).ConfigureAwait(false);
+			await context.WritesAsync(body, cancellationToken).ConfigureAwait(false);
 		}
 
 		static Task WriteAsync(this HttpContext context, JToken json, CancellationToken cancellationToken)

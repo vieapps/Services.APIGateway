@@ -34,14 +34,8 @@ namespace net.vieapps.Services.APIGateway
 				if (!context.IsAuthenticated())
 					throw new UnauthorizedException();
 				await context.InitializeEventStreamAsync().ConfigureAwait(false);
-				session.SendSessionState("Users", "CONNECT /session");
-				var (account, location) = await session.PrepareConnectionInfoAsync(context.GetCorrelationID(), cts.Token, WebSocketAPIs.Logger).ConfigureAwait(false);
-				context.SetItem("AccountInfo", account);
-				context.SetItem("LocationInfo", location);
 				while (Services.Router.IncomingChannel == null)
 					await Task.Delay(UtilityService.GetRandomNumber(123, 456), cts.Token).ConfigureAwait(false);
-				if (Global.IsVisitLogEnabled)
-					await context.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"The connection of the WebSocket APIs (EventStream) was established\r\n{GetConnectionInfo(null, context)}").ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
@@ -63,13 +57,17 @@ namespace net.vieapps.Services.APIGateway
 				exception => Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"[SSE] Communicating message => {exception.Message}", exception)
 			);
 
-			while (true)
+			session.SendSessionState("Users", "CONNECT /session");
+			var (account, location) = await session.PrepareConnectionInfoAsync(context.GetCorrelationID(), cts.Token, WebSocketAPIs.Logger).ConfigureAwait(false);
+			context.SetItem("AccountInfo", account);
+			context.SetItem("LocationInfo", location);
+			if (Global.IsVisitLogEnabled)
+				await context.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"The connection of the WebSocket APIs (EventStream) was established\r\n{GetConnectionInfo(null, context)}").ConfigureAwait(false);
+
+			while (!cts.IsCancellationRequested)
 				try
 				{
-					if (cts.IsCancellationRequested)
-						break;
-					else
-						await Task.Delay(UtilityService.GetRandomNumber(456, 789), cts.Token).ConfigureAwait(false);
+					await Task.Delay(UtilityService.GetRandomNumber(123, 456), cts.Token).ConfigureAwait(false);
 				}
 				catch
 				{
@@ -85,6 +83,17 @@ namespace net.vieapps.Services.APIGateway
 				await context.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"The connection of the WebSocket APIs (EventStream) was disconnected\r\n{GetConnectionInfo(null, context)}\r\n- Served times: {time.GetElapsedTimes()}").ConfigureAwait(false);
 		}
 
+		public static Task WrapWebSocketAsync(this HttpContext context)
+			=> WebSocketAPIs.WebSocket.WrapAsync(context, websocket =>
+			{
+				var session = context.GetSession();
+				session.SendSessionState("Users", "CONNECT /session");
+				websocket.SetSession(session);
+				websocket.SetStatus(session.User != null && session.User.IsAuthenticated ? "Authenticated" : "Initializing");
+				if (context.ContainsKey("x-app-token"))
+					websocket.Set("Token", JSONWebToken.DecodeAsJson(context.GetParameter("x-app-token"), Global.JWTKey));
+			});
+
 		public static Components.WebSockets.WebSocket WebSocket { get; } = new(Components.Utility.Logger.GetLoggerFactory(), Global.CancellationToken)
 		{
 			KeepAliveInterval = TimeSpan.FromSeconds(Int32.TryParse(UtilityService.GetAppSetting("Proxy:KeepAliveInterval", "45"), out var interval) ? interval : 45),
@@ -98,26 +107,22 @@ namespace net.vieapps.Services.APIGateway
 		{
 			try
 			{
-				// update status
-				websocket.SetStatus("Initializing");
+				// prepare
 				var correlationID = UtilityService.NewUUID;
-
-				// prepare session
 				var query = websocket.RequestUri.ParseQuery();
-				var session = Global.GetSession(websocket.Headers, query, $"{(websocket.RemoteEndPoint as IPEndPoint).Address}");
 
-				// update session identity
-				session.SessionID = query.TryGetValue("x-session-id", out var sessionID) ? sessionID.Url64Decode() : "";
-				if (string.IsNullOrWhiteSpace(session.SessionID))
-					throw new InvalidRequestException("Session identity is not found");
-
-				// update device identity
-				session.DeviceID = query.TryGetValue("x-device-id", out var deviceID) ? deviceID.Url64Decode() : "";
-				if (string.IsNullOrWhiteSpace(session.DeviceID))
-					throw new InvalidRequestException("Device identity is not found");
-
-				// update session
-				websocket.Set("Session", session);
+				var session = websocket.GetSession();
+				if (session == null)
+				{
+					session = Global.GetSession(websocket.Headers, query, $"{(websocket.RemoteEndPoint as IPEndPoint).Address}");
+					session.SessionID = query.TryGetValue("x-session-id", out var sessionID) ? sessionID.Url64Decode() : session.SessionID;
+					if (string.IsNullOrWhiteSpace(session.SessionID))
+						throw new InvalidRequestException("Session identity is not found");
+					session.DeviceID = query.TryGetValue("x-device-id", out var deviceID) ? deviceID.Url64Decode() : session.DeviceID;
+					if (string.IsNullOrWhiteSpace(session.DeviceID))
+						throw new InvalidRequestException("Device identity is not found");
+					websocket.SetSession(session);
+				}
 				await websocket.PrepareConnectionInfoAsync(correlationID, session, Global.CancellationToken, WebSocketAPIs.Logger).ConfigureAwait(false);
 
 				// wait for few times before connecting to API Gateway Router because ReactiveX needs that
@@ -146,10 +151,13 @@ namespace net.vieapps.Services.APIGateway
 					exception => Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"[WS] Communicating message => {exception.Message}", exception)
 				));
 
-				// update status
-				websocket.SetStatus("Connected");
-				if (Global.IsVisitLogEnabled)
-					await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"The connection of the WebSocket APIs (WebSocket) was established\r\n{websocket.GetConnectionInfo()}\r\n- Status: {websocket.GetStatus()}", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
+				// final
+				websocket.SetStatus("Authenticated".IsEquals(websocket.GetStatus()) ? "Authenticated" : "Connected");
+				await Task.WhenAll
+				(
+					websocket.SendAsync(new UpdateMessage { Type = "Ping" }, null, correlationID, true),
+					Global.IsVisitLogEnabled ? Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"The connection of the WebSocket APIs (WebSocket) was established\r\n{websocket.GetConnectionInfo()}\r\n- Status: {websocket.GetStatus()}", null, Global.ServiceName, LogLevel.Information, correlationID) : Task.CompletedTask
+				).ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
@@ -212,14 +220,7 @@ namespace net.vieapps.Services.APIGateway
 				// last message or single small message
 				var stopwatch = Stopwatch.StartNew();
 				var correlationID = UtilityService.NewUUID;
-
-				if (websocket.Extra.TryGetValue("Message", out message))
-				{
-					message = (message as byte[]).Concat(data);
-					websocket.Extra.Remove("Message");
-				}
-				else
-					message = data;
+				message = websocket.Extra.TryRemove("Message", out message) ? (message as byte[]).Concat(data) : data;
 
 				// check message
 				var requestMsg = result.MessageType.Equals(WebSocketMessageType.Text) ? (message as byte[]).GetString() : null;
@@ -231,7 +232,7 @@ namespace net.vieapps.Services.APIGateway
 					await Task.Delay(UtilityService.GetRandomNumber(123, 456), Global.CancellationToken).ConfigureAwait(false);
 
 				// check session
-				var session = websocket.Get<Session>("Session");
+				var session = websocket.GetSession();
 				if (session == null)
 				{
 					await Task.WhenAll
@@ -281,7 +282,10 @@ namespace net.vieapps.Services.APIGateway
 								if ("Authenticated".IsEquals(websocket.GetStatus()))
 									cts.Cancel();
 							}
-							catch { }
+							catch
+							{
+								break;
+							}
 					}
 
 					// process the request
@@ -314,6 +318,12 @@ namespace net.vieapps.Services.APIGateway
 		static string GetStatus(this ManagedWebSocket websocket)
 			=> websocket.Get<string>("Status");
 
+		static void SetSession(this ManagedWebSocket websocket, Session session)
+			=> websocket.Set("Session", session);
+
+		static Session GetSession(this ManagedWebSocket websocket)
+			=> websocket.Get<Session>("Session");
+
 		public static async Task BroadcastAsync(UpdateMessage message)
 		{
 			try
@@ -322,9 +332,13 @@ namespace net.vieapps.Services.APIGateway
 				{
 					if ("Disconnected".IsEquals(websocket.GetStatus()))
 						return false;
-					var session = websocket.Get<Session>("Session");
-					return session != null && !session.DeviceID.IsEquals(message.ExcludedDeviceID) && ("*".Equals(message.DeviceID) || session.DeviceID.IsEquals(message.DeviceID));
-				}, message.ToJson().ToString(Formatting.None).ToBytes(), true, Global.CancellationToken).ConfigureAwait(false);
+					var session = websocket.GetSession();
+					return session != null && session.DeviceID != null && !session.DeviceID.IsEquals(message.ExcludedDeviceID) && ("*".Equals(message.DeviceID) || session.DeviceID.IsEquals(message.DeviceID));
+				}, new JObject
+				{
+					["Type"] = message.Type,
+					["Data"] = message.Data
+				}.ToString(Formatting.None).ToBytes(), true, Global.CancellationToken).ConfigureAwait(false);
 				if (Global.IsDebugLogEnabled)
 					await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs",
 						$"Successfully broadcast a message to all connected devices" + "\r\n" +
@@ -332,8 +346,8 @@ namespace net.vieapps.Services.APIGateway
 						$"- Message: {message.Data?.ToString(RESTfulAPIs.JsonFormat)}"
 					, null, Global.ServiceName, LogLevel.Debug).ConfigureAwait(false);
 			}
-			catch (OperationCanceledException) { }
 			catch (ObjectDisposedException) { }
+			catch (OperationCanceledException) { }
 			catch (Exception ex)
 			{
 				await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs",
@@ -383,15 +397,15 @@ namespace net.vieapps.Services.APIGateway
 						message["StackTrace"] = exception?.GetStacks();
 				}
 
-				message["CorrelationID"] = correlationID;
-
 				message = new JObject
 				{
-					{ "Type", "Error" },
-					{ "Data", message }
+					["Type"] = "Error",
+					["Data"] = message
 				};
 				if (!string.IsNullOrWhiteSpace(identity))
 					message["ID"] = identity;
+				message["CorrelationID"] = correlationID;
+				message["NodeID"] = Global.NodeID;
 
 				// send & write logs
 				await Task.WhenAll
@@ -401,26 +415,32 @@ namespace net.vieapps.Services.APIGateway
 				).ConfigureAwait(false);
 			}
 			catch (ObjectDisposedException) { }
+			catch (OperationCanceledException) { }
 			catch (Exception ex)
 			{
 				WebSocketAPIs.Logger.LogError($"Error occurred while sending an error message via WebSocket => {ex.Message}", ex);
 			}
 		}
 
-		static Task SendAsync(this ManagedWebSocket websocket, UpdateMessage message, string identity = null, string correlationID = null)
-			=> websocket.SendAsync(message, Global.CancellationToken, json =>
+		static Task SendAsync(this ManagedWebSocket websocket, UpdateMessage message, string identity = null, string correlationID = null, bool includeNodeID = false)
+		{
+			var json = new JObject
 			{
-				(json as JObject).Remove("DeviceID");
-				(json as JObject).Remove("ExcludedDeviceID");
-				if (!string.IsNullOrWhiteSpace(identity))
-					json["ID"] = identity;
-				if (!string.IsNullOrWhiteSpace(correlationID))
-					json["CorrelationID"] = correlationID;
-			});
+				["Type"] = message.Type,
+				["Data"] = message.Data
+			};
+			if (!string.IsNullOrWhiteSpace(identity))
+				json["ID"] = identity;
+			if (!string.IsNullOrWhiteSpace(correlationID))
+				json["CorrelationID"] = correlationID;
+			if (includeNodeID)
+				json["NodeID"] = Global.NodeID;
+			return websocket.SendAsync(json, Global.CancellationToken);
+		}
 
 		static string GetConnectionInfo(ManagedWebSocket websocket, HttpContext context = null)
 		{
-			var session = websocket?.Get<Session>("Session") ?? context?.GetSession();
+			var session = websocket?.GetSession() ?? context?.GetSession();
 			var account = websocket?.Get("AccountInfo", "Visitor") ?? context?.GetItem<string>("AccountInfo") ?? "Visitor";
 			var location = websocket?.Get("LocationInfo", "Unknown") ?? context?.GetItem<string>("LocationInfo") ?? "Unknown";
 			return websocket?.GetConnectionInfo(session) ?? $"- Account: {account} {session?.GetConnectionInfo(context?.Request.Headers.ToDictionary())}\r\n - Location: {location}";
@@ -428,7 +448,7 @@ namespace net.vieapps.Services.APIGateway
 
 		static async Task PushAsync(this UpdateMessage message, ManagedWebSocket websocket, HttpContext context)
 		{
-			var session = websocket?.Get<Session>("Session") ?? context?.GetSession();
+			var session = websocket?.GetSession() ?? context?.GetSession();
 			if (message != null && session != null && session.DeviceID != null && !session.DeviceID.IsEquals(message.ExcludedDeviceID) && ("*".Equals(message.DeviceID) || session.DeviceID.IsEquals(message.DeviceID)))
 				try
 				{
@@ -436,7 +456,11 @@ namespace net.vieapps.Services.APIGateway
 						await websocket.SendAsync(message).ConfigureAwait(false);
 
 					else if (context != null)
-						await context.PushEventMessageAsync(message.Data?.ToString(Formatting.None), message.Type, $"esm-{context.SetItem("EventMessagesCounter", context.TryGetItem("EventMessagesCounter", out int counter) ? counter + 1 : 1)}").ConfigureAwait(false);
+						await context.PushEventMessageAsync(new JObject
+						{
+							["Type"] = message.Type,
+							["Data"] = message.Data
+						}.ToString(Formatting.None), $"esm-{context.SetItem("EventMessagesCounter", context.TryGetItem("EventMessagesCounter", out int counter) ? counter + 1 : 1)}").ConfigureAwait(false);
 
 					if (Global.IsDebugLogEnabled)
 						await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs",
@@ -468,7 +492,7 @@ namespace net.vieapps.Services.APIGateway
 		static async Task CommunicateAsync(this CommunicateMessage message, ManagedWebSocket websocket, HttpContext context)
 		{
 			var correlationID = UtilityService.NewUUID;
-			var session = websocket?.Get<Session>("Session") ?? context?.GetSession();
+			var session = websocket?.GetSession() ?? context?.GetSession();
 			if (message != null && session != null && session.SessionID != null && session.SessionID.IsEquals(message.Data.Get<string>("SessionID")))
 				try
 				{
@@ -572,18 +596,25 @@ namespace net.vieapps.Services.APIGateway
 
 		static async Task ProcessSessionAsync(this ManagedWebSocket websocket, ExpandoObject requestObj, Session session = null, string correlationID = null)
 		{
-			session = session ?? websocket.Get<Session>("Session");
-			correlationID = correlationID ?? UtilityService.NewUUID;
+			session ??= websocket.GetSession();
+			correlationID ??= UtilityService.NewUUID;
 			try
 			{
 				// authenticate the session
 				var verb = requestObj.Get("Verb", "GET").ToUpper();
 				if ("AUTH".IsEquals(verb) || "VERIFY".IsEquals(verb) || "HEAD".IsEquals(verb) || "PATCH".IsEquals(verb))
 				{
-					// update status
-					websocket.SetStatus("Authenticating");
+					// check status
+					if ("Authenticated".IsEquals(websocket.GetStatus()))
+					{
+						if (Global.IsVisitLogEnabled)
+							await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"The connection of the WebSocket APIs was authenticated" + "\r\n" + GetConnectionInfo(websocket) + "\r\n" + $"- Status: {websocket.GetStatus()}", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);
+						return;
+					}
 
 					// authenticate
+					websocket.SetStatus("Authenticating");
+
 					var body = requestObj.Get("Body")?.ToExpandoObject();
 					var appToken = body?.Get<string>("x-app-token") ?? "";
 					await Global.UpdateWithAuthenticateTokenAsync(session, appToken, RESTfulAPIs.ExpiresAfter, null, null, null, WebSocketAPIs.Logger, "WebSocketAPIs", correlationID).ConfigureAwait(false);
@@ -605,8 +636,8 @@ namespace net.vieapps.Services.APIGateway
 					session.SendSessionState("Users", $"{verb} /session");
 
 					// update status
-					websocket.SetStatus("Authenticated");
 					websocket.Set("Token", JSONWebToken.DecodeAsJson(appToken, Global.JWTKey));
+					websocket.SetStatus("Authenticated");
 					await Task.WhenAll
 					(
 						Global.IsVisitLogEnabled ? Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"The connection of the WebSocket APIs was authenticated" + "\r\n" + GetConnectionInfo(websocket) + "\r\n" + $"- Status: {websocket.GetStatus()}", null, Global.ServiceName, LogLevel.Information, correlationID) : Task.CompletedTask,
@@ -635,7 +666,7 @@ namespace net.vieapps.Services.APIGateway
 						$"Error occurred while processing the session" + "\r\n" + GetConnectionInfo(websocket) + "\r\n" +
 						$"- Status: {websocket.GetStatus()}" + "\r\n" +
 						$"- Request: {requestObj.ToJson().ToString(RESTfulAPIs.JsonFormat)}" + "\r\n" +
-						$"- Session: {session.ToJson().ToString(RESTfulAPIs.JsonFormat)}" + "\r\n" +
+						$"- Session: {session?.ToJson().ToString(RESTfulAPIs.JsonFormat)}" + "\r\n" +
 						$"- Error: {ex.Message}"
 					, ex, Global.ServiceName, LogLevel.Error, correlationID)
 				).ConfigureAwait(false);
@@ -649,8 +680,8 @@ namespace net.vieapps.Services.APIGateway
 
 		static async Task ProcessRequestAsync(this ManagedWebSocket websocket, ExpandoObject requestObj, Session session = null, string correlationID = null)
 		{
-			session = session ?? websocket.Get<Session>("Session");
-			correlationID = correlationID ?? UtilityService.NewUUID;
+			session ??= websocket.GetSession();
+			correlationID ??= UtilityService.NewUUID;
 
 			var requestInfo = new RequestInfo
 			{
@@ -775,10 +806,11 @@ namespace net.vieapps.Services.APIGateway
 				{
 					await websocket.SendAsync(new JObject
 					{
-						{ "ID", requestObj.Get<string>("ID") },
-						{ "CorrelationID", correlationID },
-						{ "Type", "Error" },
-						{ "Data", body }
+						["Type"] = "Error",
+						["Data"] = body,
+						["ID"] = requestObj.Get<string>("ID"),
+						["CorrelationID"] = correlationID,
+						["NodeID"] = Global.NodeID
 					}, Global.CancellationToken).ConfigureAwait(false);
 				}
 				catch (Exception wse)

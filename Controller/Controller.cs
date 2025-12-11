@@ -103,7 +103,9 @@ namespace net.vieapps.Services.APIGateway
 
 		IAsyncDisposable ManagingService { get; set; }
 
-		ExternalProcess.Info LoggingService { get; set; }
+		DateTime LogFlusherTime { get; set; } = DateTime.Now;
+
+		ExternalProcess.Info LogFlusher { get; set; }
 
 		IAsyncDisposable MessagingService { get; set; }
 
@@ -476,11 +478,18 @@ namespace net.vieapps.Services.APIGateway
 			{
 				// flush logs
 				if (args?.FirstOrDefault(arg => arg.IsStartsWith("/no-log-flusher")) == null)
+				{
 					this.StartTimer(() =>
 					{
-						if (this.LoggingService == null)
-							this.StartLoggingService("/do-sync-work /flush");
+						if (this.LogFlusher == null)
+							this.StartLogFlusher("/do-sync-work /flush");
 					}, this.FlushingInterval);
+					this.StartTimer(() =>
+					{
+						if ((DateTime.Now - this.LogFlusherTime).TotalMinutes > 10)
+							ExternalProcess.Kill(this.LogFlusher?.Process);
+					}, 60);
+				}
 
 				// warm-up/refresh HTTP services
 				var urls = this.HttpServices.Select(name => UtilityService.GetAppSetting($"HttpUri:{name}")).Where(url => !string.IsNullOrWhiteSpace(url) && (url.IsStartsWith("https://") || url.IsStartsWith("http://"))).Select(url => url + UtilityService.GetAppSetting("LoadBalancer:RefreshURL", "/favicon.ico?t={iso-time-miliseconds}&n={node-id}")).ToList();
@@ -566,7 +575,7 @@ namespace net.vieapps.Services.APIGateway
 
 			if (this.AllowRegisterHelperServices)
 			{
-				this.StopLoggingService();
+				this.StopLogFlusher();
 				if (this.MessagingService != null)
 					try
 					{
@@ -1042,7 +1051,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 		}
 
-		void StartLoggingService(string arguments = null)
+		void StartLogFlusher(string arguments = null)
 		{
 			if (string.IsNullOrWhiteSpace(this.ServiceHosting) || !File.Exists($"{this.ServiceHosting}{(this.IsWindows ? ".exe" : "")}"))
 				Global.OnError?.Invoke($"Cannot start logging service. The hosting [{this.ServiceHosting}{(this.IsWindows ? ".exe" : "")}] is not found", null);
@@ -1052,14 +1061,17 @@ namespace net.vieapps.Services.APIGateway
 				{
 					var svcComponent = UtilityService.GetAppSetting("Logs:Service:Component", "net.vieapps.Services.Logs.ServiceComponent,VIEApps.Services.Logs");
 					var svcArguments = $"/svc:{svcComponent} {UtilityService.GetAppSetting("Logs:Service:Arguments", "")} {arguments ?? ""} /agc:r {this.GetServiceArguments().Replace("/", "/call-")} /controller-id:{this.Info.ID}".Trim();
-					this.LoggingService = ExternalProcess.Start(this.ServiceHosting, svcArguments, (_, __) =>
+					this.LogFlusher = ExternalProcess.Start(this.ServiceHosting, svcArguments, (_, __) =>
 					{
 						if (string.IsNullOrWhiteSpace(arguments))
 							Global.OnProcess?.Invoke("The logging service was stopped");
-						this.LoggingService = null;
+						this.LogFlusher = null;
 					}, null);
-					if (string.IsNullOrWhiteSpace(arguments))
+					if (!string.IsNullOrWhiteSpace(arguments))
+					{
 						Global.OnProcess?.Invoke("The logging service was started");
+						this.LogFlusherTime = DateTime.Now;
+					}
 				}
 				catch (Exception ex)
 				{
@@ -1067,39 +1079,39 @@ namespace net.vieapps.Services.APIGateway
 				}
 		}
 
-		void StopLoggingService()
+		void StopLogFlusher()
 		{
-			if (this.LoggingService != null)
+			if (this.LogFlusher != null)
 			{
 				if (this.IsWindows)
 					try
 					{
-						ExternalProcess.Start(this.LoggingService.FilePath, this.LoggingService.Arguments.Replace("/agc:r", "/agc:s"), "").Process.Dispose();
+						ExternalProcess.Start(this.LogFlusher.FilePath, this.LogFlusher.Arguments.Replace("/agc:r", "/agc:s"), "").Process.Dispose();
 						Global.OnProcess?.Invoke("The logging service was stopped");
 					}
 					catch (Exception ex)
 					{
 						Global.OnError?.Invoke($"Error occurred while stopping the logging service => {ex.Message}", ex);
-						ExternalProcess.Kill(this.LoggingService?.Process);
+						ExternalProcess.Kill(this.LogFlusher?.Process);
 					}
 					finally
 					{
-						this.LoggingService = null;
+						this.LogFlusher = null;
 					}
 				else
 					ExternalProcess.Stop
 					(
-						this.LoggingService,
+						this.LogFlusher,
 						_ =>
 						{
 							Global.OnProcess?.Invoke($"The logging service was stopped");
-							this.LoggingService = null;
+							this.LogFlusher = null;
 						},
 						ex =>
 						{
 							Global.OnError?.Invoke($"Error occurred while stopping the logging service => {ex.Message}", ex);
-							ExternalProcess.Kill(this.LoggingService?.Process);
-							this.LoggingService = null;
+							ExternalProcess.Kill(this.LogFlusher?.Process);
+							this.LogFlusher = null;
 						},
 						1234
 					);

@@ -27,7 +27,7 @@ namespace net.vieapps.Services.APIGateway
 					await Task.WhenAll
 					(
 						Global.IsVisitLogEnabled ? context.WriteLogsAsync(Global.Logger, "WebSocketAPIs", $"Wrap a WebSocket connection successful\r\n- Endpoint: {context.GetRemoteIPAddress()}:{context.Connection.RemotePort}\r\n- URI: {context.GetRequestUri()}{(Global.IsDebugLogEnabled ? $"\r\n- Headers:\r\n\t{context.Request.Headers.Select(kvp => $"{kvp.Key}: {kvp.Value}").Join("\r\n\t")}" : "")}") : Task.CompletedTask,
-						APIGateway.WebSocketAPIs.WebSocket.WrapAsync(context)
+						APIGateway.WebSocketAPIs.WrapWebSocketAsync(context)
 					).ConfigureAwait(false);
 
 				// Event Stream (Server Sent Event)
@@ -48,25 +48,16 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		async Task ProcessRequestAsync(HttpContext context)
+		Task ProcessRequestAsync(HttpContext context)
 		{
 			var requestPath = context.GetRequestPathSegments(true).First();
-
-			// request to favicon.ico file
-			if (requestPath.Equals("favicon.ico"))
-				await context.ProcessFavouritesIconFileRequestAsync().ConfigureAwait(false);
-
-			// request to robots.txt file
-			else if (requestPath.Equals("robots.txt"))
-				await context.WriteAsync("User-agent: *\r\nDisallow: *", "text/plain", null, 0, "public", TimeSpan.Zero, null, Global.CancellationToken).ConfigureAwait(false);
-
-			// request to static segments
-			else if (Global.StaticSegments.Contains(requestPath))
-				await context.ProcessStaticFileRequestAsync().ConfigureAwait(false);
-
-			// request to services
-			else
-				await APIGateway.RESTfulAPIs.ProcessRequestAsync(context).ConfigureAwait(false);
+			return requestPath.Equals("favicon.ico")
+				? context.ProcessFavouritesIconFileRequestAsync()
+				: requestPath.Equals("robots.txt")
+					? context.WriteAsync("User-agent: *\r\nDisallow: *", "text/plain", null, 0, "public", TimeSpan.Zero, null, Global.CancellationToken)
+					: Global.StaticSegments.Contains(requestPath)
+						? context.ProcessStaticFileRequestAsync()
+						: APIGateway.RESTfulAPIs.ProcessRequestAsync(context);
 		}
 
 		public class RESTfulAPIs { }

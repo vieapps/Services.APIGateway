@@ -1,12 +1,15 @@
 ﻿#region Related components
 using System;
 using System.IO;
+using System.Net;
 using System.Linq;
 using System.Text;
 using System.Diagnostics;
 using System.Collections.Generic;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,6 +37,8 @@ namespace net.vieapps.Services.APIGateway
 
 		public LogLevel LogLevel => this.Configuration.GetAppSetting("Logging/LogLevel/Default", UtilityService.GetAppSetting("Logs:Level", "Information")).TryToEnum(out LogLevel logLevel) ? logLevel : LogLevel.Information;
 
+		public bool UseRateLimit { get; } = "true".IsEquals(UtilityService.GetAppSetting("APIs:RateLimit"));
+
 		public void ConfigureServices(IServiceCollection services)
 		{
 			services
@@ -43,6 +48,30 @@ namespace net.vieapps.Services.APIGateway
 				.AddCache(options => this.Configuration.GetSection("Cache").Bind(options));
 			if (Global.UseIISInProcess)
 				services.Configure<IISServerOptions>(options => Global.PrepareIISServerOptions(options, _ => options.MaxRequestBodySize = 1024 * 1024 * Global.MaxRequestBodySize));
+
+			// rate limit
+			if (this.UseRateLimit)
+				services.AddRateLimiter(options => options.AddPolicy
+				(
+					"VIEApps-NGX-APIs",
+					context => context.IsAuthenticated()
+						? RateLimitPartition.GetNoLimiter("Authenticated")
+						: RateLimitPartition.GetFixedWindowLimiter
+						(
+							partitionKey: context.GetRemoteIPAddress().ToString(),
+							factory: _ => new FixedWindowRateLimiterOptions
+							{
+								PermitLimit = UtilityService.GetAppSetting("APIs:RateLimit:Permit", "3").As<int>(),
+								Window = TimeSpan.FromSeconds(UtilityService.GetAppSetting("APIs:RateLimit:Seconds", "5").As<int>()),
+								QueueLimit = UtilityService.GetAppSetting("APIs:RateLimit:Queue", "5").As<int>(),
+								QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+							}
+						)
+				).OnRejected = async (context, cancellationToken) =>
+				{
+					context.HttpContext.Response.StatusCode = (int)HttpStatusCode.TooManyRequests;
+					await context.HttpContext.Response.WriteAsync("Too many requests... ", cancellationToken).ConfigureAwait(false);
+				});
 		}
 
 		public void Configure(IApplicationBuilder appBuilder, IHostApplicationLifetime appLifetime, IWebHostEnvironment appEnvironment)
@@ -103,6 +132,10 @@ namespace net.vieapps.Services.APIGateway
 				.UseStatusCodeHandler()
 				.UseResponseCompression()
 				.UseCache();
+
+			// rate limit
+			if (this.UseRateLimit)
+				appBuilder.UseRateLimiter();
 
 			// setup the forwarder of API Gateway Router
 			var excludedBranches = new HashSet<string>(["router", "pusher"], StringComparer.OrdinalIgnoreCase);

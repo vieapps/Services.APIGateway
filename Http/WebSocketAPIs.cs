@@ -605,7 +605,7 @@ namespace net.vieapps.Services.APIGateway
 				if ("AUTH".IsEquals(verb) || "VERIFY".IsEquals(verb) || "HEAD".IsEquals(verb) || "PATCH".IsEquals(verb))
 				{
 					// check status
-					if ("Authenticated".IsEquals(websocket.GetStatus()))
+					if ("Authenticated".IsEquals(websocket.GetStatus()) && session.User != null && session.User.IsAuthenticated)
 					{
 						if (Global.IsVisitLogEnabled)
 							await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"The connection of the WebSocket APIs was authenticated" + "\r\n" + GetConnectionInfo(websocket) + "\r\n" + $"- Status: {websocket.GetStatus()}", null, Global.ServiceName, LogLevel.Information, correlationID).ConfigureAwait(false);

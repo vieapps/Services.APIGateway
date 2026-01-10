@@ -294,7 +294,7 @@ namespace net.vieapps.Services.APIGateway
 				logger.LogInformation($"The service was started, and now running synchronous work - PID: {Process.GetCurrentProcess().Id}");
 				if (startBeforeDoingSyncWork || connectRouterBeforeDoingSyncWork)
 					Task.Delay(1234).Execute(true);
-				else if (initializeRepository)
+				if (!startBeforeDoingSyncWork && initializeRepository)
 					service.InitializeRepository();
 				service.DoWork(args?.ToArray());
 			}

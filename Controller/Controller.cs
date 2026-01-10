@@ -54,11 +54,12 @@ namespace net.vieapps.Services.APIGateway
 		#region Process Info
 		public class ProcessInfo
 		{
-			public ProcessInfo(string id, string executable, string arguments, string recycleAt, Dictionary<string, object> extra = null)
+			public ProcessInfo(string id, string executable, string arguments, string runAs, string recycleAt, Dictionary<string, object> extra = null)
 			{
 				this.ID = id;
 				this.Executable = executable;
 				this.Arguments = arguments;
+				this.RunAs = runAs;
 				this.RecycleAt = string.IsNullOrWhiteSpace(recycleAt) || !DateTime.TryParse($"{DateTime.Now:yyyy/MM/dd} {recycleAt}", out var datetime) ? null as DateTime? : datetime < DateTime.Now ? datetime.AddDays(1) : datetime;
 				this.Extra = new Dictionary<string, object>(extra ?? new Dictionary<string, object>(), StringComparer.OrdinalIgnoreCase);
 			}
@@ -68,6 +69,8 @@ namespace net.vieapps.Services.APIGateway
 			public string Executable { get; }
 
 			public string Arguments { get; }
+
+			public string RunAs { get; }
 
 			public DateTime? RecycleAt { get; internal set; }
 
@@ -234,7 +237,7 @@ namespace net.vieapps.Services.APIGateway
 						var name = service.Attributes["name"]?.Value?.Trim().ToLower();
 						var type = service.Attributes["type"]?.Value?.Trim().Replace(" ", "");
 						if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(type))
-							this.BusinessServices[name] = new ProcessInfo(name, service.Attributes["executable"]?.Value?.Trim(), $"{type} {service.Attributes["arguments"]?.Value}".Trim(), service.Attributes["recycleAt"]?.Value?.Trim());
+							this.BusinessServices[name] = new ProcessInfo(name, service.Attributes["executable"]?.Value?.Trim(), $"{type} {service.Attributes["arguments"]?.Value}".Trim(), service.Attributes["runAs"]?.Value?.Trim(), service.Attributes["recycleAt"]?.Value?.Trim());
 					});
 			}
 
@@ -247,7 +250,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 						var arguments = (taskScheduler.Attributes["arguments"]?.Value ?? "").Trim();
 						var id = (executable + " " + arguments).ToLower().GenerateUUID();
-						this.Tasks[id] = new ProcessInfo(id, executable, arguments, null, new Dictionary<string, object>
+						this.Tasks[id] = new ProcessInfo(id, executable, arguments, null, null, new Dictionary<string, object>
 						{
 							{ "Time", Int32.TryParse(taskScheduler.Attributes["time"]?.Value, out var time) ? time.ToString() : taskScheduler.Attributes["time"]?.Value ?? "3" }
 						});
@@ -474,24 +477,24 @@ namespace net.vieapps.Services.APIGateway
 
 			connectRouter();
 
+			// flush logs
+			if ((this.AllowRegisterHelperServices || args?.FirstOrDefault(arg => arg.IsStartsWith("/log-flusher")) != null) && args?.FirstOrDefault(arg => arg.IsStartsWith("/no-log-flusher")) == null)
+			{
+				this.StartTimer(() =>
+				{
+					if (this.LogFlusher == null)
+						this.StartLogFlusher("/do-sync-work /flush");
+				}, this.FlushingInterval);
+				this.StartTimer(() =>
+				{
+					if ((DateTime.Now - this.LogFlusherTime).TotalMinutes > 10)
+						ExternalProcess.Kill(this.LogFlusher?.Process);
+				}, 60);
+			}
+
+			// warm-up/refresh HTTP services
 			if (this.AllowRegisterHelperServices)
 			{
-				// flush logs
-				if (args?.FirstOrDefault(arg => arg.IsStartsWith("/no-log-flusher")) == null)
-				{
-					this.StartTimer(() =>
-					{
-						if (this.LogFlusher == null)
-							this.StartLogFlusher("/do-sync-work /flush");
-					}, this.FlushingInterval);
-					this.StartTimer(() =>
-					{
-						if ((DateTime.Now - this.LogFlusherTime).TotalMinutes > 10)
-							ExternalProcess.Kill(this.LogFlusher?.Process);
-					}, 60);
-				}
-
-				// warm-up/refresh HTTP services
 				var urls = this.HttpServices.Select(name => UtilityService.GetAppSetting($"HttpUri:{name}")).Where(url => !string.IsNullOrWhiteSpace(url) && (url.IsStartsWith("https://") || url.IsStartsWith("http://"))).Select(url => url + UtilityService.GetAppSetting("LoadBalancer:RefreshURL", "/favicon.ico?t={iso-time-miliseconds}&n={node-id}")).ToList();
 				if (!Int32.TryParse(UtilityService.GetAppSetting("LoadBalancer:Nodes", "0"), out var nodes) || nodes < 1)
 					nodes = 1;
@@ -872,7 +875,7 @@ namespace net.vieapps.Services.APIGateway
 
 				this.BusinessServices[name].Instance = ExternalProcess.Start
 				(
-					serviceHosting,
+					$"{(string.IsNullOrWhiteSpace(this.BusinessServices[name].RunAs) ? "" : $"{this.BusinessServices[name].RunAs} ")}{serviceHosting}",
 					$"/svc:{this.BusinessServices[name].Arguments} {arguments ?? ""} /agc:r {this.GetServiceArguments().Replace("/", "/call-")} /controller-id:{this.Info.ID}".Trim(),
 					(sender, args) =>
 					{

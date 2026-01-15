@@ -450,6 +450,39 @@ namespace net.vieapps.Services.APIGateway
 					context.WriteError(RESTfulAPIs.Logger, ex, requestInfo);
 				}
 
+			// compute 2FA/OTP
+			else if (requestInfo.ServiceName.IsEquals("2fa") || requestInfo.ServiceName.IsEquals("otp"))
+				try
+				{
+					if (!requestInfo.Verb.IsEquals("POST"))
+						throw new MethodNotAllowedException(requestInfo.Verb);
+					var secrets = new List<string>();
+					var body = requestInfo.BodyAsJson;
+					(body?.Get<string>("secrets") ?? body?.Get<string>("secret") ?? "").Replace("\r", "").ToList("\n")
+						.Where(secret => !string.IsNullOrWhiteSpace(secret))
+						.Select(secret => secret.Trim().ToList("|"))
+						.SelectMany(secret => secret)
+						.Where(secret => !string.IsNullOrWhiteSpace(secret))
+						.ForEach(secret =>
+						{
+							var result = "";
+							try
+							{
+								result = $"{secret}|{OTPService.GeneratePassword(secret)}";
+							}
+							catch (Exception ex)
+							{
+								result = $"{secret}|{ex.Message}";
+							}
+							secrets.Add(result);
+						});
+					await context.WriteAsync(secrets.ToJArray(), cts.Token).ConfigureAwait(false);
+				}
+				catch (Exception ex)
+				{
+					context.WriteError(RESTfulAPIs.Logger, ex, requestInfo);
+				}
+
 			// process requests of forwarding services
 			else if (RESTfulAPIs.ServiceForwarders.ContainsKey(requestInfo.ServiceName.ToLower()))
 				try

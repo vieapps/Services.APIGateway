@@ -304,6 +304,7 @@ namespace net.vieapps.Services.APIGateway
 				if (enableForwarder)
 					Router.CloseForwarder();
 				Router.Disconnect();
+				Extensions.ShutdownLogsAsync().Execute(true);
 			});
 
 			// assign app event handler => on stopped

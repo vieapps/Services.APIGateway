@@ -126,6 +126,8 @@ namespace net.vieapps.Services.APIGateway
 
 		WebHookSender WebHookSender { get; set; }
 
+		bool AllowRouter { get; set; } = true;
+
 		bool AllowRegisterBusinessServices { get; set; } = true;
 
 		bool AllowRegisterHelperServices { get; set; } = true;
@@ -199,14 +201,22 @@ namespace net.vieapps.Services.APIGateway
 			};
 			Global.NodeID = this.Info.ID;
 
-			if (args?.FirstOrDefault(arg => arg.IsStartsWith("/no-business-services")) != null || "false".IsEquals(UtilityService.GetAppSetting("Controller:Services")))
-				this.AllowRegisterBusinessServices = false;
+			if (args?.FirstOrDefault(arg => arg.IsStartsWith("/no-router")) != null || "false".IsEquals(UtilityService.GetAppSetting("Controller:Router")))
+				this.AllowRouter = false;
 
-			if (args?.FirstOrDefault(arg => arg.IsStartsWith("/no-helper-services")) != null || "false".IsEquals(UtilityService.GetAppSetting("Controller:Helper:Services")))
-				this.AllowRegisterHelperServices = false;
+			if (this.AllowRouter)
+			{
+				if (args?.FirstOrDefault(arg => arg.IsStartsWith("/no-business-services")) != null || "false".IsEquals(UtilityService.GetAppSetting("Controller:Services")))
+					this.AllowRegisterBusinessServices = false;
 
-			if (args?.FirstOrDefault(arg => arg.IsStartsWith("/no-helper-timers")) != null || "false".IsEquals(UtilityService.GetAppSetting("Controller:Helper:Timers")))
-				this.AllowRegisterHelperTimers = false;
+				if (args?.FirstOrDefault(arg => arg.IsStartsWith("/no-helper-services")) != null || "false".IsEquals(UtilityService.GetAppSetting("Controller:Helper:Services")))
+					this.AllowRegisterHelperServices = false;
+
+				if (args?.FirstOrDefault(arg => arg.IsStartsWith("/no-helper-timers")) != null || "false".IsEquals(UtilityService.GetAppSetting("Controller:Helper:Timers")))
+					this.AllowRegisterHelperTimers = false;
+			}
+			else
+				this.AllowRegisterBusinessServices = this.AllowRegisterHelperServices = this.AllowRegisterHelperTimers = false;
 
 			// prepare directories
 			try
@@ -246,7 +256,7 @@ namespace net.vieapps.Services.APIGateway
 				taskSchedulers.ToList().ForEach(taskScheduler =>
 				{
 					var executable = taskScheduler.Attributes["executable"]?.Value.Trim();
-					if (!string.IsNullOrWhiteSpace(executable) && File.Exists(executable))
+					if (!string.IsNullOrWhiteSpace(executable) && File.Exists(executable.Replace("\"", "")))
 					{
 						var arguments = (taskScheduler.Attributes["arguments"]?.Value ?? "").Trim();
 						var id = (executable + " " + arguments).ToLower().GenerateUUID();
@@ -376,6 +386,8 @@ namespace net.vieapps.Services.APIGateway
 									{
 										this.RegisterTimers();
 										Global.OnProcess?.Invoke($"The background workers & schedulers are registered - Number of scheduling timers: {this.NumberOfTimers:#,##0} - Number of scheduling tasks: {this.NumberOfTasks:#,##0}");
+										if (ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:TaskScheduler", "net.vieapps.task.scheduler")) is AppConfigurationSectionHandler config && "true".IsEquals(config.Section.Attributes["runOnFirstLoad"]?.Value))
+											this.RunTaskSchedulerAsync(true, 1234).Execute();
 									}
 									catch (Exception ex)
 									{
@@ -475,7 +487,8 @@ namespace net.vieapps.Services.APIGateway
 				}
 			}
 
-			connectRouter();
+			if (this.AllowRouter)
+				connectRouter();
 
 			// flush logs
 			if ((this.AllowRegisterHelperServices || args?.FirstOrDefault(arg => arg.IsStartsWith("/log-flusher")) != null) && args?.FirstOrDefault(arg => arg.IsStartsWith("/no-log-flusher")) == null)
@@ -508,7 +521,7 @@ namespace net.vieapps.Services.APIGateway
 								try
 								{
 									using (var request = await new Uri(this.PrepareTimestamps(url)).SendHttpRequestAsync().ConfigureAwait(false))
-										await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
+									await Task.Delay(UtilityService.GetRandomNumber(123, 456)).ConfigureAwait(false);
 								}
 								catch { }
 						});
@@ -614,7 +627,8 @@ namespace net.vieapps.Services.APIGateway
 				this.InterCommunicator?.Dispose();
 				this.UpdateCommunicator?.Dispose();
 				this.CancellationTokenSource.Cancel();
-				await Router.DisconnectAsync().ConfigureAwait(false);
+				if (this.AllowRouter)
+					await Router.DisconnectAsync().ConfigureAwait(false);
 				this.State = ServiceState.Disconnected;
 				Global.OnProcess?.Invoke($"The API Gateway Controller was disconnected");
 			}
@@ -1259,10 +1273,7 @@ namespace net.vieapps.Services.APIGateway
 			}, 90);
 
 			// task scheduler
-			var runTaskSchedulerOnFirstLoad = false;
-			if (ConfigurationManager.GetSection(UtilityService.GetAppSetting("Section:TaskScheduler", "net.vieapps.task.scheduler")) is AppConfigurationSectionHandler config)
-				runTaskSchedulerOnFirstLoad = "true".IsEquals(config.Section.Attributes["runOnFirstLoad"]?.Value);
-			this.StartTimer(this.RunTaskSchedulerAsync, 65 * 60, runTaskSchedulerOnFirstLoad ? 5678 : 0);
+			this.StartTimer(() => this.RunTaskSchedulerAsync(), 65 * 60);
 
 			// timers to send a signal to connected client devices
 			if (this.IsTimers)
@@ -1368,51 +1379,50 @@ namespace net.vieapps.Services.APIGateway
 					catch { }
 				});
 
-			new CommunicateMessage("Logs")
-			{
-				Type = "Clean"
-			}.Send();
+			var logs = "The house keeper is complete the working..." + "\r\n\r\nPaths\r\n=> " + paths.ToString("\r\n=> ") + "\r\n\r\n" + $"- Total of cleaned files: {counter:#,##0}" + "\r\n\r\n";
 
-			// clean recycle-bin contents
-			var logs = this.CleanRecycleBin();
-
-			// clean trash
-			var attachmentsPath = UtilityService.GetAppSetting("Path:Attachments");
-			if (!string.IsNullOrWhiteSpace(attachmentsPath) && Directory.Exists(attachmentsPath))
+			if (this.AllowRouter)
 			{
-				remainTime = DateTime.Now.AddDays(-30);
-				Directory.GetDirectories(attachmentsPath)
-					.Where(path => path != null && path.Right(32).IsValidUUID())
-					.Select(path => Path.Combine(path, "trash"))
-					.Where(path => Directory.Exists(path))
-					.ForEach(path =>
-					{
-						var files = UtilityService.GetFiles(path).Where(file => file.LastAccessTime < remainTime).ToList();
-						if (files.Count > 0)
+				new CommunicateMessage("Logs")
+				{
+					Type = "Clean"
+				}.Send();
+
+				// clean recycle-bin contents
+				logs += $"- Recycle-Bin\r\n\t" + this.CleanRecycleBin().ToString("\r\n\t") + "\r\n\r\n";
+
+				// clean trash
+				var attachmentsPath = UtilityService.GetAppSetting("Path:Attachments");
+				if (!string.IsNullOrWhiteSpace(attachmentsPath) && Directory.Exists(attachmentsPath))
+				{
+					remainTime = DateTime.Now.AddDays(-30);
+					Directory.GetDirectories(attachmentsPath)
+						.Where(path => path != null && path.Right(32).IsValidUUID())
+						.Select(path => Path.Combine(path, "trash"))
+						.Where(path => Directory.Exists(path))
+						.ForEach(path =>
 						{
-							paths.Add(path);
-							files.ForEach(file =>
+							var files = UtilityService.GetFiles(path).Where(file => file.LastAccessTime < remainTime).ToList();
+							if (files.Count > 0)
 							{
-								try
+								paths.Add(path);
+								files.ForEach(file =>
 								{
-									file.Delete();
-									counter++;
-								}
-								catch { }
-							});
-						}
-					});
+									try
+									{
+										file.Delete();
+										counter++;
+									}
+									catch { }
+								});
+							}
+						});
+				}
 			}
 
 			// done
 			stopwatch.Stop();
-			Global.OnProcess?.Invoke
-			(
-				"The house keeper is complete the working..." + "\r\n\r\nPaths\r\n=> " + paths.ToString("\r\n=> ") + "\r\n\r\n" +
-				$"- Total of cleaned files: {counter:#,##0}" + "\r\n\r\n" +
-				$"- Recycle-Bin\r\n\t" + logs.ToString("\r\n\t") + "\r\n\r\n" +
-				$"- Execution times: {stopwatch.GetElapsedTimes()}"
-			);
+			Global.OnProcess?.Invoke(logs + $"- Execution times: {stopwatch.GetElapsedTimes()}");
 			this.IsHouseKeeperRunning = false;
 		}
 
@@ -1471,19 +1481,24 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region Run task scheduler
-		async Task RunTaskSchedulerAsync()
+		async Task RunTaskSchedulerAsync(bool force = false, int delay = 0)
 		{
+			// wait
+			if (delay > 0)
+				await Task.Delay(delay).ConfigureAwait(false);
+
 			// stop if its still running
 			if (this.IsTaskSchedulerRunning)
 				return;
 
 			// prepare
-			var tasks = this.Tasks.Values.Where(serviceInfo =>
-			{
-				var time = serviceInfo.Get<string>("Time");
-				return serviceInfo.Instance == null && ("hourly".IsEquals(time) || $"{DateTime.Now.Hour}".IsEquals(time));
-			})
-			.ToList();
+			var tasks = force
+				? this.Tasks.Values.ToList()
+				: this.Tasks.Values.Where(serviceInfo =>
+					{
+						var time = serviceInfo.Get<string>("Time");
+						return serviceInfo.Instance == null && ("hourly".IsEquals(time) || $"{DateTime.Now.Hour}".IsEquals(time));
+					}).ToList();
 
 			if (tasks.Count < 1)
 				return;

@@ -9,7 +9,7 @@
 		<GenerateDependencyFile>true</GenerateDependencyFile>
 		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 		<PreserveCompilationContext>true</PreserveCompilationContext>
-		<ServerGarbageCollection>false</ServerGarbageCollection>
+		<ServerGarbageCollection>true</ServerGarbageCollection>
 		<ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
 		<InvariantGlobalization>false</InvariantGlobalization>
 		<RootNamespace>net.vieapps.Services.APIGateway</RootNamespace>
@@ -39,7 +39,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.10.2601.1" />
+		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.10.2602.1" />
 	</ItemGroup>
 
 	<ItemGroup>

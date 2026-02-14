@@ -34,7 +34,7 @@ namespace net.vieapps.Services.APIGateway
 
 		public static List<string> ExcludedHeaders { get; } = UtilityService.GetAppSetting("APIs:ExcludedHeaders", "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,priority,purpose,ms-aspnetcore-token,x-forwarded-for,x-forwarded-proto,x-forwarded-port,x-original-for,x-original-proto,x-original-remote-endpoint,x-original-port,cdn-loop").ToList();
 
-		public static HashSet<string> NoTokenRequiredServices { get; } = $"{UtilityService.GetAppSetting("APIs:NoTokenRequiredServices", "")}|indexes|iplocations|discovery|webhook|webhooks".ToLower().ToHashSet('|', true);
+		public static HashSet<string> NoTokenRequiredServices { get; } = $"{UtilityService.GetAppSetting("APIs:NoTokenRequiredServices", "")}|test|indexes|iplocations|discovery|webhook|webhooks".ToLower().ToHashSet('|', true);
 
 		public static string PrivateToken { get; } = UtilityService.GetAppSetting("APIs:PrivateToken", UtilityService.NewUUID);
 
@@ -250,7 +250,7 @@ namespace net.vieapps.Services.APIGateway
 			if (!isSessionProccessed)
 			{
 				if (RESTfulAPIs.TrackSessions)
-					requestInfo.SendSessionState();
+					requestInfo.SendSessionState(null, message => message.Data["Crawler"] = context.IsCrawlerbot());
 				else
 					requestInfo.TrackStatistics();
 			}
@@ -387,8 +387,8 @@ namespace net.vieapps.Services.APIGateway
 					context.WriteError(RESTfulAPIs.Logger, ex, requestInfo);
 				}
 
-			// process request of email
-			else if ((requestInfo.ServiceName.IsEquals("email") || requestInfo.ServiceName.IsEquals("emails")) && "test".IsEquals(requestInfo.ObjectName))
+			// process request of email testing
+			else if ((requestInfo.ServiceName.IsEquals("test") && "email".IsEquals(requestInfo.ObjectName)) || ((requestInfo.ServiceName.IsEquals("email") || requestInfo.ServiceName.IsEquals("emails")) && "test".IsEquals(requestInfo.ObjectName)))
 				try
 				{
 					if (requestInfo.Verb.IsEquals("POST"))
@@ -412,6 +412,34 @@ namespace net.vieapps.Services.APIGateway
 					}
 					else
 						throw new MethodNotAllowedException(requestInfo.Verb);
+				}
+				catch (Exception ex)
+				{
+					context.WriteError(RESTfulAPIs.Logger, ex, requestInfo);
+				}
+
+			// process request of ip/agent testing
+			else if (requestInfo.ServiceName.IsEquals("test"))
+				try
+				{
+					var userAgent = requestInfo.GetParameter("request-user-agent") ?? requestInfo.Session.AppAgent ?? "";
+					var isCrawlerbot = userAgent.IsCrawlerbot(out var crawlerbot);
+					var ipAddress = requestInfo.GetParameter("request-ip") ?? requestInfo.Session.IP;
+					var location = await requestInfo.Session.GetLocationAsync(ipAddress, cts.Token).ConfigureAwait(false);
+					await context.WriteAsync(new JObject
+					{
+						["Crawler"] = new JObject
+						{
+							["Is"] = isCrawlerbot,
+							["Name"] = crawlerbot,
+							["Agent"] = userAgent
+						},
+						["Location"] = new JObject
+						{
+							["IP"] = ipAddress,
+							["Geo"] = location
+						}
+					}, cts.Token).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{

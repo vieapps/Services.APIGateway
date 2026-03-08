@@ -56,6 +56,7 @@ namespace net.vieapps.Services.APIGateway
 		public static async Task ProcessRequestAsync(HttpContext context)
 		{
 			// prepare the requesting information
+			var stopwatch = Stopwatch.StartNew();
 			var isWebHookRequest = false;
 			var header = context.Request.Headers.ToDictionary().Copy(RESTfulAPIs.ExcludedHeaders.Concat(context.Request.Headers.Keys.Where(name => name.IsStartsWith("cf-") || name.IsStartsWith("sec-"))));
 			var query = context.Request.QueryString.ToDictionary(queryString =>
@@ -254,6 +255,9 @@ namespace net.vieapps.Services.APIGateway
 				else
 					requestInfo.TrackStatistics();
 			}
+			
+			context.UpdateServerTiming("ngxPrepare", stopwatch.ElapsedMilliseconds);
+			stopwatch.Restart();
 
 			// process request of sessions
 			if (isSessionProccessed)
@@ -322,6 +326,7 @@ namespace net.vieapps.Services.APIGateway
 						else
 							webhook.Execute(ex => Global.WriteLogsAsync(RESTfulAPIs.Logger, "WebHooks", $"Error occurred while processing a web-hook message => {ex.Message}", ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID));
 
+						context.UpdateServerTiming("ngxServ", stopwatch.ElapsedMilliseconds);
 						if (!string.IsNullOrWhiteSpace(contentType) && !"application/json".IsEquals(contentType) && !string.IsNullOrWhiteSpace(contentBody))
 							await context.WriteAsync(contentType, response.Get<string>("Cache-Control"), contentBody.ToBytes(), cts.Token).ConfigureAwait(false);
 						else
@@ -344,6 +349,7 @@ namespace net.vieapps.Services.APIGateway
 							: requestInfo.ObjectName.IsEquals("definitions")
 								? await context.CallServiceAsync(requestInfo.PrepareDefinitionRelated(), cts.Token, RESTfulAPIs.Logger, "Http.Definitions").ConfigureAwait(false)
 								: throw new InvalidRequestException();
+					context.UpdateServerTiming("ngxServ", stopwatch.ElapsedMilliseconds);
 					await context.WriteAsync(response, cts.Token).ConfigureAwait(false);
 				}
 				catch (Exception ex)
@@ -362,7 +368,9 @@ namespace net.vieapps.Services.APIGateway
 						throw new MethodNotAllowedException(requestInfo.Verb);
 
 					requestInfo.ObjectName = "service";
-					await context.WriteAsync(await Global.CallServiceAsync(requestInfo, cts.Token).ConfigureAwait(false), cts.Token).ConfigureAwait(false);
+					var response = await Global.CallServiceAsync(requestInfo, cts.Token).ConfigureAwait(false);
+					context.UpdateServerTiming("ngxServ", stopwatch.ElapsedMilliseconds);
+					await context.WriteAsync(response, cts.Token).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -471,7 +479,9 @@ namespace net.vieapps.Services.APIGateway
 			else if (requestInfo.ServiceName.IsEquals("cache"))
 				try
 				{
-					await context.WriteAsync(await requestInfo.FlushCachingStoragesAsync(cts.Token).ConfigureAwait(false), cts.Token).ConfigureAwait(false);
+					var response = await requestInfo.FlushCachingStoragesAsync(cts.Token).ConfigureAwait(false);
+					context.UpdateServerTiming("ngxServ", stopwatch.ElapsedMilliseconds);
+					await context.WriteAsync(response, cts.Token).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -504,7 +514,9 @@ namespace net.vieapps.Services.APIGateway
 							}
 							secrets.Add(result);
 						});
-					await context.WriteAsync(secrets.ToJArray(), cts.Token).ConfigureAwait(false);
+					var response = secrets.ToJArray();
+					context.UpdateServerTiming("ngxServ", stopwatch.ElapsedMilliseconds);
+					await context.WriteAsync(response, cts.Token).ConfigureAwait(false);
 				}
 				catch (Exception ex)
 				{
@@ -515,7 +527,9 @@ namespace net.vieapps.Services.APIGateway
 			else if (RESTfulAPIs.ServiceForwarders.ContainsKey(requestInfo.ServiceName.ToLower()))
 				try
 				{
-					await context.WriteAsync(await requestInfo.ForwardRequestAsync(cts.Token).ConfigureAwait(false), cts.Token).ConfigureAwait(false);
+					var response = await requestInfo.ForwardRequestAsync(cts.Token).ConfigureAwait(false);
+					context.UpdateServerTiming("ngxForward", stopwatch.ElapsedMilliseconds);
+					await context.WriteAsync(response, cts.Token).ConfigureAwait(false);
 				}
 				catch (RemoteServerException ex)
 				{
@@ -570,6 +584,7 @@ namespace net.vieapps.Services.APIGateway
 									? await context.SyncAsync(requestInfo, cts.Token).ConfigureAwait(false)
 									: throw new InvalidRequestException()
 						: await context.CallServiceAsync(requestInfo, cts.Token, RESTfulAPIs.Logger, "RESTfulAPIs").ConfigureAwait(false);
+					context.UpdateServerTiming("ngxServ", stopwatch.ElapsedMilliseconds);
 					await context.WriteAsync(response, cts.Token).ConfigureAwait(false);
 				}
 				catch (Exception ex)
@@ -616,6 +631,8 @@ namespace net.vieapps.Services.APIGateway
 		#region Register a session
 		static async Task RegisterSessionAsync(this HttpContext context, RequestInfo requestInfo, CancellationToken cancellationToken)
 		{
+			var stopwatch = Stopwatch.StartNew();
+
 			// session of visitor/system account
 			if (requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.IsSystemAccount)
 				try
@@ -665,6 +682,7 @@ namespace net.vieapps.Services.APIGateway
 
 					// response
 					var response = requestInfo.Session.GetSessionJson();
+					context.UpdateServerTiming("ngxRegister", stopwatch.ElapsedMilliseconds);
 					await Task.WhenAll
 					(
 						context.WriteAsync(response, cancellationToken),
@@ -704,6 +722,7 @@ namespace net.vieapps.Services.APIGateway
 
 					// response
 					var response = requestInfo.GetSessionJson();
+					context.UpdateServerTiming("ngxAuthenticate", stopwatch.ElapsedMilliseconds);
 					await Task.WhenAll
 					(
 						context.WriteAsync(response, cancellationToken),
@@ -728,6 +747,8 @@ namespace net.vieapps.Services.APIGateway
 		{
 			try
 			{
+				var stopwatch = Stopwatch.StartNew();
+
 				// prepare
 				var account = requestInfo.Extra != null && requestInfo.Extra.TryGetValue("Account", out var extAccount)
 					? extAccount
@@ -795,6 +816,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 
 				// response
+				context.UpdateServerTiming("ngxLogIn", stopwatch.ElapsedMilliseconds);
 				await Task.WhenAll
 				(
 					context.WriteAsync(response, cancellationToken),
@@ -821,6 +843,8 @@ namespace net.vieapps.Services.APIGateway
 		{
 			try
 			{
+				var stopwatch = Stopwatch.StartNew();
+
 				// prepare
 				var body = requestInfo.GetBodyExpando();
 				var id = body.Get<string>("ID");
@@ -877,6 +901,7 @@ namespace net.vieapps.Services.APIGateway
 				}.Send();
 
 				// response
+				context.UpdateServerTiming("ngxLogIn2FA", stopwatch.ElapsedMilliseconds);
 				await Task.WhenAll
 				(
 					context.WriteAsync(response, cancellationToken),
@@ -903,6 +928,8 @@ namespace net.vieapps.Services.APIGateway
 		{
 			try
 			{
+				var stopwatch = Stopwatch.StartNew();
+
 				// check
 				if (requestInfo.Session.User.ID.Equals("") || requestInfo.Session.User.IsSystemAccount)
 					throw new InvalidRequestException();
@@ -944,6 +971,7 @@ namespace net.vieapps.Services.APIGateway
 				}.Send();
 
 				// response
+				context.UpdateServerTiming("ngxLogOut", stopwatch.ElapsedMilliseconds);
 				await Task.WhenAll
 				(
 					context.WriteAsync(response, cancellationToken),
@@ -968,6 +996,8 @@ namespace net.vieapps.Services.APIGateway
 		{
 			try
 			{
+				var stopwatch = Stopwatch.StartNew();
+
 				// prepare device identity
 				if (string.IsNullOrWhiteSpace(requestInfo.Session.DeviceID))
 					requestInfo.Session.DeviceID = (requestInfo.Session.AppName + "/" + requestInfo.Session.AppPlatform + "@" + (requestInfo.Session.AppAgent ?? "N/A")).GetHMACSHA384(requestInfo.Session.SessionID, true) + "@vieapps-ngx";
@@ -987,6 +1017,7 @@ namespace net.vieapps.Services.APIGateway
 
 				// response
 				response = requestInfo.GetSessionJson();
+				context.UpdateServerTiming("ngxActivate", stopwatch.ElapsedMilliseconds);
 				await Task.WhenAll
 				(
 					context.WriteAsync(response, cancellationToken),
@@ -1437,8 +1468,15 @@ namespace net.vieapps.Services.APIGateway
 			if (!isSystemAdministrator)
 				throw new AccessDeniedException();
 
+			new CommunicateMessage("APIGateway")
+			{
+				Type = "PurgeCache"
+			}.Send();
 			await Global.Cache.FlushAllAsync(cancellationToken).ConfigureAwait(false);
-			return new JObject { ["Status"] = "Success" };
+			return new JObject
+			{
+				["Status"] = "Success"
+			};
 		}
 		#endregion
 

@@ -1214,7 +1214,7 @@ namespace net.vieapps.Services.APIGateway
 						this.MailSender?.Dispose();
 						this.MailSender = null;
 					}
-			}, Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:Mail", "5"), out var emailInterval) && emailInterval > 0 ? emailInterval : 5);
+			}, Int32.TryParse(UtilityService.GetAppSetting("Controller:Timers:Interval:Mail", "5"), out var emailInterval) && emailInterval > 0 ? emailInterval : 5);
 
 			// send web hook messages
 			this.StartTimer(async () =>
@@ -1251,7 +1251,7 @@ namespace net.vieapps.Services.APIGateway
 						this.WebHookSender?.Dispose();
 						this.WebHookSender = null;
 					}
-			}, Int32.TryParse(UtilityService.GetAppSetting("TimerInterval:WebHook", "3"), out var webhookInterval) && webhookInterval > 0 ? webhookInterval : 3);
+			}, Int32.TryParse(UtilityService.GetAppSetting("Controller:Timers:Interval:WebHook", "3"), out var webhookInterval) && webhookInterval > 0 ? webhookInterval : 3);
 
 			// house keeper
 			this.StartTimer(this.RunHouseKeeper, 60 * 60);
@@ -1336,7 +1336,8 @@ namespace net.vieapps.Services.APIGateway
 			paths.Select(path => new DirectoryInfo(path)).Where(dir => dir.Exists).ForEach(dir =>
 			{
 				// delete old files
-				UtilityService.GetFiles(dir.FullName, "*.*", 0, true, excludedSubFolders)
+				dir.GetFiles("*.*", 0, true, excludedSubFolders)
+					.Select(filePath => new FileInfo(filePath))
 					.Select(file => (File: file, Path: file.FullName.Left(file.FullName.Length - file.Name.Length - 1), file.Extension, file.LastWriteTime))
 					.Where(info => !excludedFileExtensions.Contains(info.Extension) && info.LastWriteTime < (specialFileExtensions.Contains(info.Extension) || specialFolders.Select(specialPath => info.Path.IsStartsWith(specialPath)).Where(state => state).Any() ? specialRemainTime : remainTime))
 					.Select(info => info.File)
@@ -1368,6 +1369,7 @@ namespace net.vieapps.Services.APIGateway
 			// clean service logs
 			remainTime = DateTime.Now.AddHours(-36);
 			UtilityService.GetFiles(Global.LogsPath, "*.*")
+				.Select(filePath => new FileInfo(filePath))
 				.Where(file => file.LastWriteTime < remainTime)
 				.ForEach(file =>
 				{
@@ -1402,7 +1404,7 @@ namespace net.vieapps.Services.APIGateway
 						.Where(path => Directory.Exists(path))
 						.ForEach(path =>
 						{
-							var files = UtilityService.GetFiles(path).Where(file => file.LastAccessTime < remainTime).ToList();
+							var files = UtilityService.GetFiles(path).Select(filePath => new FileInfo(filePath)).Where(file => file.LastAccessTime < remainTime).ToList();
 							if (files.Count > 0)
 							{
 								paths.Add(path);

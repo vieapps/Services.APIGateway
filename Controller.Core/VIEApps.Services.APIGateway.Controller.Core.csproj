@@ -6,9 +6,6 @@
 		<NoWarn>1573,1591,NU1605</NoWarn>
 		<OutputType>Exe</OutputType>
 		<GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
-		<GenerateDependencyFile>true</GenerateDependencyFile>
-		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-		<PreserveCompilationContext>true</PreserveCompilationContext>
 		<ServerGarbageCollection>true</ServerGarbageCollection>
 		<ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
 		<InvariantGlobalization>false</InvariantGlobalization>

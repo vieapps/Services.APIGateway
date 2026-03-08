@@ -91,19 +91,19 @@ namespace net.vieapps.Services.APIGateway
 			MailSender.Messages = MailSender.Messages ?? new ConcurrentDictionary<string, MailInfo>();
 
 			// previous messages
-			var fileInfo = new FileInfo(Path.Combine(Global.StatusPath, "mails.json"));
-			if (fileInfo.Exists)
+			var statusFilePath = Path.Combine(Global.StatusPath, "mails.json");
+			if (File.Exists(statusFilePath))
 				try
 				{
-					var msgs = JArray.Parse(await fileInfo.ReadAsTextAsync().ConfigureAwait(false));
-					fileInfo.Delete();
-					foreach (JObject msg in msgs)
+					var msgs = await UtilityService.ReadAsJsonAsync(statusFilePath).ConfigureAwait(false) as JArray;
+					msgs.Select(msg => msg as JObject).Where(msg => msg != null).ForEach(msg =>
 					{
 						var message = new EmailMessage(msg.Get<string>("Message"));
 						var time = msg.Get<DateTime>("Time");
 						var counters = msg.Get<long>("Counters").CastAs<int>();
 						MailSender.Messages.Add(message.ID, new MailInfo { Message = message, Time = time, Counters = counters });
-					}
+					});
+					File.Delete(statusFilePath);
 				}
 				catch (Exception ex)
 				{
@@ -112,30 +112,29 @@ namespace net.vieapps.Services.APIGateway
 
 			// new messages
 			if (Directory.Exists(MailSender.EmailsPath))
-				await UtilityService.GetFiles(MailSender.EmailsPath, "*.msg").ForEachAsync(async file =>
+				await UtilityService.GetFiles(MailSender.EmailsPath, "*.msg").ForEachAsync(async emailFilePath =>
 				{
 					try
 					{
-						var msg = await EmailMessage.LoadAsync(file.FullName).ConfigureAwait(false);
+						var msg = await EmailMessage.LoadAsync(emailFilePath).ConfigureAwait(false);
 						MailSender.Messages.Add(msg.ID, new MailInfo { Message = msg, Time = msg.SendingTime, Counters = 0 });
 					}
 					catch (Exception ex)
 					{
 						Global.OnError?.Invoke($"Error occurred while loading email messages: {ex.Message}", ex);
 					}
-					file.Delete();
+					File.Delete(emailFilePath);
 				}, true, false).ConfigureAwait(false);
 		}
 
 		internal static async Task SaveMessagesAsync()
 		{
-			if (MailSender.Messages != null && MailSender.Messages.Any())
-				await MailSender.Messages.ToJArray(info => new JObject
-				{
-					{ "Time", info.Time },
-					{ "Counters", info.Counters },
-					{ "Message", info.Message.Encrypted }
-				}).ToString(Formatting.Indented).ToBytes().SaveAsTextAsync(Path.Combine(Global.StatusPath, "mails.json")).ConfigureAwait(false);
+			await (MailSender.Messages?.Values ?? Array.Empty<MailInfo>()).ToJArray(info => new JObject
+			{
+				{ "Time", info.Time },
+				{ "Counters", info.Counters },
+				{ "Message", info.Message.Encrypted }
+			}).ToString(Formatting.Indented).SaveAsTextAsync(Path.Combine(Global.StatusPath, "mails.json")).ConfigureAwait(false);
 			MailSender.Messages = null;
 		}
 		#endregion
@@ -275,7 +274,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// new messages
 			if (Directory.Exists(WebHookSender.WebHooksPath))
-				await UtilityService.GetFiles(WebHookSender.WebHooksPath, "*.msg").ForEachAsync(async file =>
+				await UtilityService.GetFiles(WebHookSender.WebHooksPath, "*.msg").Select(filePath => new FileInfo(filePath)).ForEachAsync(async file =>
 				{
 					try
 					{

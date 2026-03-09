@@ -326,7 +326,7 @@ namespace net.vieapps.Services.APIGateway
 						else
 							webhook.Execute(ex => Global.WriteLogsAsync(RESTfulAPIs.Logger, "WebHooks", $"Error occurred while processing a web-hook message => {ex.Message}", ex, Global.ServiceName, LogLevel.Error, requestInfo.CorrelationID));
 
-						context.UpdateServerTiming("ngxServ", stopwatch.ElapsedMilliseconds);
+						context.UpdateServerTiming("ngxServe", stopwatch.ElapsedMilliseconds);
 						if (!string.IsNullOrWhiteSpace(contentType) && !"application/json".IsEquals(contentType) && !string.IsNullOrWhiteSpace(contentBody))
 							await context.WriteAsync(contentType, response.Get<string>("Cache-Control"), contentBody.ToBytes(), cts.Token).ConfigureAwait(false);
 						else
@@ -349,7 +349,7 @@ namespace net.vieapps.Services.APIGateway
 							: requestInfo.ObjectName.IsEquals("definitions")
 								? await context.CallServiceAsync(requestInfo.PrepareDefinitionRelated(), cts.Token, RESTfulAPIs.Logger, "Http.Definitions").ConfigureAwait(false)
 								: throw new InvalidRequestException();
-					context.UpdateServerTiming("ngxServ", stopwatch.ElapsedMilliseconds);
+					context.UpdateServerTiming("ngxServe", stopwatch.ElapsedMilliseconds);
 					await context.WriteAsync(response, cts.Token).ConfigureAwait(false);
 				}
 				catch (Exception ex)
@@ -369,7 +369,7 @@ namespace net.vieapps.Services.APIGateway
 
 					requestInfo.ObjectName = "service";
 					var response = await Global.CallServiceAsync(requestInfo, cts.Token).ConfigureAwait(false);
-					context.UpdateServerTiming("ngxServ", stopwatch.ElapsedMilliseconds);
+					context.UpdateServerTiming("ngxServe", stopwatch.ElapsedMilliseconds);
 					await context.WriteAsync(response, cts.Token).ConfigureAwait(false);
 				}
 				catch (Exception ex)
@@ -480,7 +480,7 @@ namespace net.vieapps.Services.APIGateway
 				try
 				{
 					var response = await requestInfo.FlushCachingStoragesAsync(cts.Token).ConfigureAwait(false);
-					context.UpdateServerTiming("ngxServ", stopwatch.ElapsedMilliseconds);
+					context.UpdateServerTiming("ngxServe", stopwatch.ElapsedMilliseconds);
 					await context.WriteAsync(response, cts.Token).ConfigureAwait(false);
 				}
 				catch (Exception ex)
@@ -515,7 +515,7 @@ namespace net.vieapps.Services.APIGateway
 							secrets.Add(result);
 						});
 					var response = secrets.ToJArray();
-					context.UpdateServerTiming("ngxServ", stopwatch.ElapsedMilliseconds);
+					context.UpdateServerTiming("ngxServe", stopwatch.ElapsedMilliseconds);
 					await context.WriteAsync(response, cts.Token).ConfigureAwait(false);
 				}
 				catch (Exception ex)
@@ -584,7 +584,7 @@ namespace net.vieapps.Services.APIGateway
 									? await context.SyncAsync(requestInfo, cts.Token).ConfigureAwait(false)
 									: throw new InvalidRequestException()
 						: await context.CallServiceAsync(requestInfo, cts.Token, RESTfulAPIs.Logger, "RESTfulAPIs").ConfigureAwait(false);
-					context.UpdateServerTiming("ngxServ", stopwatch.ElapsedMilliseconds);
+					context.UpdateServerTiming("ngxServe", stopwatch.ElapsedMilliseconds);
 					await context.WriteAsync(response, cts.Token).ConfigureAwait(false);
 				}
 				catch (Exception ex)

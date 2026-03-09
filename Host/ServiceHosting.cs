@@ -217,15 +217,15 @@ namespace net.vieapps.Services.APIGateway
 			var logger = (service as IServiceComponent).Logger = Logger.CreateLogger(this.ServiceType);
 
 			// prepare outgoing proxy
-			var proxy = UtilityService.GetAppSetting("Proxy:host");
+			var proxy = UtilityService.GetAppSetting("Proxy:Host");
 			if (!string.IsNullOrWhiteSpace(proxy))
 				try
 				{
-					UtilityService.AssignWebProxy(proxy, UtilityService.GetAppSetting("Proxy:Port").CastAs<int>(), UtilityService.GetAppSetting("Proxy:user"), UtilityService.GetAppSetting("Proxy:UserPassword"), UtilityService.GetAppSetting("Proxy:Bypass")?.ToArray(";"));
+					UtilityService.AssignWebProxy(proxy, UtilityService.GetAppSetting("Proxy:Port").CastAs<int>(), UtilityService.GetAppSetting("Proxy:User"), UtilityService.GetAppSetting("Proxy:UserPassword"), UtilityService.GetAppSetting("Proxy:Bypass")?.ToArray(";"));
 				}
 				catch (Exception ex)
 				{
-					logger.LogError($"Error occurred while assigning web-proxy => {ex.Message}", ex);
+					logger.LogError($"Error occurred while assigning proxy => {ex.Message}", ex);
 				}
 
 			// setup hooks

@@ -385,7 +385,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 						var fileName = await requestInfo.DownloadTemporaryFileAsync(cts.Token).ConfigureAwait(false);
 						var fileInfo = new FileInfo(Path.Combine(UtilityService.GetAppSetting("Path:Temp", Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data-files", "temp")), fileName));
-						await context.WriteAsync(fileInfo, fileName.Length > 33 && fileName.Left(32).IsValidUUID() ? fileName.Right(fileName.Length - 33) : fileName, null, cts.Token).ConfigureAwait(false);
+						await context.SendFileAsync(fileInfo, fileName.Length > 33 && fileName.Left(32).IsValidUUID() ? fileName.Right(fileName.Length - 33) : fileName, null, null, context.GetCorrelationID(), cts.Token).ConfigureAwait(false);
 					}
 					else
 						throw new MethodNotAllowedException(requestInfo.Verb);

@@ -144,7 +144,11 @@ namespace net.vieapps.Services.APIGateway
 
 		static string _StatusPath = null, _TempPath = null, _LogsPath = null;
 
-		internal static string NodeID { get; set; }
+		internal static string NodeID
+		{
+			get => Router.NodeID;
+			set => Router.NodeID = value;
+		}
 
 		internal static string StatusPath => Global._StatusPath ?? (Global._StatusPath = Global.GetPath("Path:Status", "status"));
 

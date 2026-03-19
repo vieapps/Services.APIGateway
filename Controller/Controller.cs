@@ -3,20 +3,21 @@ using System;
 using System.IO;
 using System.Xml;
 using System.Linq;
+using System.Reflection;
+using System.Diagnostics;
 using System.Reactive.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Diagnostics;
 using System.Configuration;
-using System.Reflection;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using MongoDB.Driver.Linq;
 using Newtonsoft.Json.Linq;
-using WampSharp.V2.Realm;
 using WampSharp.V2.Client;
 using WampSharp.V2.Core.Contracts;
-using net.vieapps.Components.Utility;
+using WampSharp.V2.Realm;
 using net.vieapps.Components.Repository;
+using net.vieapps.Components.Utility;
 #endregion
 
 namespace net.vieapps.Services.APIGateway
@@ -54,13 +55,14 @@ namespace net.vieapps.Services.APIGateway
 		#region Process Info
 		public class ProcessInfo
 		{
-			public ProcessInfo(string id, string executable, string arguments, string runAs, string recycleAt, Dictionary<string, object> extra = null)
+			public ProcessInfo(string id, string executable, string arguments, string runAs, string recycleAt, string recyclePeriod, Dictionary<string, object> extra = null)
 			{
 				this.ID = id;
 				this.Executable = executable;
 				this.Arguments = arguments;
 				this.RunAs = runAs;
-				this.RecycleAt = string.IsNullOrWhiteSpace(recycleAt) || !DateTime.TryParse($"{DateTime.Now:yyyy/MM/dd} {recycleAt}", out var datetime) ? null as DateTime? : datetime < DateTime.Now ? datetime.AddDays(1) : datetime;
+				this.RecyclePeriod = !string.IsNullOrWhiteSpace(recyclePeriod) && Int32.TryParse(recyclePeriod, out var period) && period > 0 ? period : 0;
+				this.RecycleAt = string.IsNullOrWhiteSpace(recycleAt) || !DateTime.TryParse($"{DateTime.Now:yyyy/MM/dd} {recycleAt}", out var datetime) ? null as DateTime? : datetime < DateTime.Now ? datetime.AddHours(this.RecyclePeriod > 0 ? this.RecyclePeriod : 24) : datetime;
 				this.Extra = new Dictionary<string, object>(extra ?? new Dictionary<string, object>(), StringComparer.OrdinalIgnoreCase);
 			}
 
@@ -73,6 +75,8 @@ namespace net.vieapps.Services.APIGateway
 			public string RunAs { get; }
 
 			public DateTime? RecycleAt { get; internal set; }
+
+			public int RecyclePeriod { get; internal set; } = 0;
 
 			public Dictionary<string, object> Extra { get; }
 
@@ -247,7 +251,7 @@ namespace net.vieapps.Services.APIGateway
 						var name = service.Attributes["name"]?.Value?.Trim().ToLower();
 						var type = service.Attributes["type"]?.Value?.Trim().Replace(" ", "");
 						if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(type))
-							this.BusinessServices[name] = new ProcessInfo(name, service.Attributes["executable"]?.Value?.Trim(), $"{type} {service.Attributes["arguments"]?.Value}".Trim(), service.Attributes["runAs"]?.Value?.Trim(), service.Attributes["recycleAt"]?.Value?.Trim());
+							this.BusinessServices[name] = new ProcessInfo(name, service.Attributes["executable"]?.Value?.Trim(), $"{type} {service.Attributes["arguments"]?.Value}".Trim(), service.Attributes["runAs"]?.Value?.Trim(), service.Attributes["recycleAt"]?.Value?.Trim(), service.Attributes["recyclePeriod"]?.Value?.Trim());
 					});
 			}
 
@@ -260,7 +264,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 						var arguments = (taskScheduler.Attributes["arguments"]?.Value ?? "").Trim();
 						var id = (executable + " " + arguments).ToLower().GenerateUUID();
-						this.Tasks[id] = new ProcessInfo(id, executable, arguments, null, null, new Dictionary<string, object>
+						this.Tasks[id] = new ProcessInfo(id, executable, arguments, null, null, null, new Dictionary<string, object>
 						{
 							{ "Time", Int32.TryParse(taskScheduler.Attributes["time"]?.Value, out var time) ? time.ToString() : taskScheduler.Attributes["time"]?.Value ?? "3" }
 						});
@@ -1008,13 +1012,13 @@ namespace net.vieapps.Services.APIGateway
 			this.BusinessServices.ForEach(kvp =>
 			{
 				var svcInfo = kvp.Value;
-				if (svcInfo.Instance != null && svcInfo.RecycleAt != null && DateTime.Now >= svcInfo.RecycleAt.Value && DateTime.Now <= svcInfo.RecycleAt.Value.AddSeconds(5))
+				if (svcInfo.Instance != null && svcInfo.RecycleAt != null && DateTime.Now >= svcInfo.RecycleAt.Value && DateTime.Now <= svcInfo.RecycleAt.Value.AddSeconds(9))
 					ExternalProcess.Kill(svcInfo.Instance.Process, null, _ =>
 					{
 						using (svcInfo.Instance.Process)
 							this.BusinessServices[kvp.Key].Set("State", "Running");
 						svcInfo.Instance = null;
-						svcInfo.RecycleAt = DateTime.Parse($"{DateTime.Now.AddDays(1):yyyy/MM/dd} {svcInfo.RecycleAt.Value:HH:mm:ss}");
+						svcInfo.RecycleAt = DateTime.Now.AddHours(svcInfo.RecyclePeriod > 0 ? svcInfo.RecyclePeriod : 24);
 						Global.OnProcess?.Invoke($"The service [{kvp.Key}] was killed (be recycled at {svcInfo.RecycleAt.Value:HH:mm:ss})");
 					});
 				else if (svcInfo.Instance == null && "Running".IsEquals(svcInfo.Get<string>("State")))

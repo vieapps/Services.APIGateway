@@ -37,20 +37,15 @@ namespace net.vieapps.Services.APIGateway
 			{
 				this.IsDisposed = true;
 				await this.StopAsync().ConfigureAwait(false);
-				this.CancellationTokenSource.Dispose();
 				Global.OnProcess?.Invoke($"The API Gateway Controller was disposed");
 				await Task.Delay(123).ConfigureAwait(false);
+				this.CancellationTokenSource.Dispose();
 			}
 		}
 
 		public void Dispose()
-		{
-			GC.SuppressFinalize(this);
-			this.DisposeAsync().Execute(true);
-		}
+			=> this.DisposeAsync().Execute(true);
 
-		~Controller()
-			=> this.Dispose();
 
 		#region Process Info
 		public class ProcessInfo
@@ -138,6 +133,8 @@ namespace net.vieapps.Services.APIGateway
 
 		bool AllowRegisterHelperTimers { get; set; } = true;
 
+		bool AllowLogsFlusher { get; set; } = "true".IsEquals(UtilityService.GetAppSetting("Controller:Helper:FlushLogs", "false"));
+
 		bool IsHouseKeeperRunning { get; set; } = false;
 
 		bool IsTaskSchedulerRunning { get; set; } = false;
@@ -159,6 +156,10 @@ namespace net.vieapps.Services.APIGateway
 		int SchedulingInterval { get; } = Int32.TryParse(UtilityService.GetAppSetting("Controller:Timers:Interval:Scheduler", "900"), out var interval) && interval > 0 ? interval : 900;
 
 		int FlushingInterval { get; } = Int32.TryParse(UtilityService.GetAppSetting("Controller:Timers:Interval:FlushLogs", "13"), out var interval) && interval > 0 ? interval : 13;
+
+		int SendMailInterval { get; } = Int32.TryParse(UtilityService.GetAppSetting("Controller:Timers:Interval:Mail", "5"), out var interval) && interval > 0 ? interval : 5;
+
+		int SendWebHooksInterval { get; } = Int32.TryParse(UtilityService.GetAppSetting("Controller:Timers:Interval:WebHook", "3"), out var interval) && interval > 0 ? interval : 3;
 
 		List<string> VersionDataSources { get; } = new List<string>();
 
@@ -495,7 +496,10 @@ namespace net.vieapps.Services.APIGateway
 				connectRouter();
 
 			// flush logs
-			if ((this.AllowRegisterHelperServices || args?.FirstOrDefault(arg => arg.IsStartsWith("/log-flusher")) != null) && args?.FirstOrDefault(arg => arg.IsStartsWith("/no-log-flusher")) == null)
+			var allowLogsFlusher = (this.AllowRegisterHelperServices && this.AllowLogsFlusher) || args?.FirstOrDefault(arg => arg.IsStartsWith("/log-flusher")) != null;
+			if (allowLogsFlusher)
+				allowLogsFlusher = args?.FirstOrDefault(arg => arg.IsStartsWith("/no-log-flusher")) == null;
+			if (allowLogsFlusher)
 			{
 				this.StartTimer(() =>
 				{
@@ -1218,7 +1222,7 @@ namespace net.vieapps.Services.APIGateway
 						this.MailSender?.Dispose();
 						this.MailSender = null;
 					}
-			}, Int32.TryParse(UtilityService.GetAppSetting("Controller:Timers:Interval:Mail", "5"), out var emailInterval) && emailInterval > 0 ? emailInterval : 5);
+			}, this.SendMailInterval);
 
 			// send web hook messages
 			this.StartTimer(async () =>
@@ -1255,7 +1259,7 @@ namespace net.vieapps.Services.APIGateway
 						this.WebHookSender?.Dispose();
 						this.WebHookSender = null;
 					}
-			}, Int32.TryParse(UtilityService.GetAppSetting("Controller:Timers:Interval:WebHook", "3"), out var webhookInterval) && webhookInterval > 0 ? webhookInterval : 3);
+			}, this.SendWebHooksInterval);
 
 			// house keeper
 			this.StartTimer(this.RunHouseKeeper, 60 * 60);

@@ -58,7 +58,7 @@ namespace net.vieapps.Services.APIGateway
 			this.ServiceTypeName = args?.FirstOrDefault(arg => arg.IsStartsWith("/svc:"))?.Replace(StringComparison.OrdinalIgnoreCase, "/svc:", "");
 			if (string.IsNullOrWhiteSpace(this.ServiceTypeName) && args?.FirstOrDefault(arg => arg.IsStartsWith("/svn:")) != null)
 			{
-				var fileInfo = new FileInfo(Path.Combine($"{UtilityService.GetAppSetting("Path:APIGateway:Controller")}", $"VIEApps.Services.APIGateway.{(RuntimeInformation.FrameworkDescription.IsContains(".NET Framework") ? "exe" : "dll")}.config"));
+				var fileInfo = new FileInfo(Path.Combine(UtilityService.GetAppSetting("Path:APIGateway:Controller"), $"VIEApps.Services.APIGateway.{(RuntimeInformation.FrameworkDescription.IsContains(".NET Framework") ? "exe" : "dll")}.config"));
 				if (fileInfo.Exists)
 					try
 					{
@@ -179,6 +179,14 @@ namespace net.vieapps.Services.APIGateway
 				}
 			}
 
+			// thread pool
+			ThreadPool.GetMaxThreads(out var maxWorker, out var maxIO);
+			var workerThreads = Int32.TryParse(UtilityService.GetAppSetting($"{service.ServiceName}:ThreadPool:Worker"), out var workers) && workers > 0 ? workers : 200;
+			if (workerThreads > maxWorker)
+				workerThreads = maxWorker / 10;
+			int ioThreads = workerThreads / 10;
+			ThreadPool.SetMinThreads(workerThreads, ioThreads);
+
 			// prepare environment
 			JsonConvert.DefaultSettings = () => new JsonSerializerSettings
 			{
@@ -270,6 +278,9 @@ namespace net.vieapps.Services.APIGateway
 					logger.LogInformation($"Show debugs: {service.IsDebugLogEnabled} - Show results: {service.IsDebugResultsEnabled} - Show stacks: {service.IsDebugStacksEnabled}");
 					logger.LogInformation($"Service URIs:\r\n\t- Round robin: {service.ServiceURI}\r\n\t- Single (unique): {service.ServiceUniqueURI}");
 					logger.LogInformation($"Environment:\r\n\t{Extensions.GetRuntimeEnvironment()}\r\n\t- Node ID: {service.NodeID}");
+
+					ThreadPool.GetMinThreads(out var minWorker, out var minIO);
+					logger.LogInformation($"ThreadPool:\r\n\t- Config: {workerThreads:###,##0} / {ioThreads:###,##0}\r\n\t- Current max: {maxWorker:###,##0} / {maxIO:###,##0}\r\n\t- Current min: {minWorker:###,##0} / {minIO:###,##0}");
 					logger.LogInformation($"Powered by {powered}");
 
 					stopwatch.Stop();

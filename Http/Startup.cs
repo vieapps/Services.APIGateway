@@ -41,6 +41,8 @@ namespace net.vieapps.Services.APIGateway
 
 		public void ConfigureServices(IServiceCollection services)
 		{
+			Global.ServiceName = "APIGateway";
+
 			services
 				.AddHttpContextAccessor()
 				.AddResponseCompression(options => Global.PrepareResponseCompression(options))
@@ -79,7 +81,6 @@ namespace net.vieapps.Services.APIGateway
 			// settings
 			var stopwatch = Stopwatch.StartNew();
 			Console.OutputEncoding = Encoding.UTF8;
-			Global.ServiceName = "APIGateway";
 
 			var loggerFactory = appBuilder.ApplicationServices.GetService<ILoggerFactory>();
 			var logPath = UtilityService.GetAppSetting("Path:Logs");

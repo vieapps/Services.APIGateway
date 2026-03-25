@@ -593,17 +593,14 @@ namespace net.vieapps.Services.APIGateway
 				}
 		}
 
-		static async Task WriteAsync(this HttpContext context, string contentType, string cacheControl, byte[] body, CancellationToken cancellationToken)
-		{
-			context.SetResponseHeaders((int)HttpStatusCode.OK, new Dictionary<string, string>
+		static Task WriteAsync(this HttpContext context, string contentType, string cacheControl, byte[] body, CancellationToken cancellationToken)
+			=> context.WriteAsync(body, new Dictionary<string, string>
 			{
 				["Content-Type"] = contentType ?? "application/json",
 				["Cache-Control"] = cacheControl ?? "private, no-store, no-cache",
 				["X-Node"] = Global.NodeID,
 				["X-Correlation-ID"] = context.GetCorrelationID()
-			});
-			await context.WritesAsync(body, cancellationToken).ConfigureAwait(false);
-		}
+			}, cancellationToken);
 
 		static Task WriteAsync(this HttpContext context, JToken json, CancellationToken cancellationToken)
 			=> context.WriteAsync(null, null, json.ToString(RESTfulAPIs.JsonFormat).ToBytes(), cancellationToken);

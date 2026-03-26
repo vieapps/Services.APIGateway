@@ -596,7 +596,7 @@ namespace net.vieapps.Services.APIGateway
 		static Task WriteAsync(this HttpContext context, string contentType, string cacheControl, byte[] body, CancellationToken cancellationToken)
 			=> context.WriteAsync(body, new Dictionary<string, string>
 			{
-				["Content-Type"] = contentType ?? "application/json",
+				["Content-Type"] = contentType ?? "application/json; charset=utf-8",
 				["Cache-Control"] = cacheControl ?? "private, no-store, no-cache",
 				["X-Node"] = Global.NodeID,
 				["X-Correlation-ID"] = context.GetCorrelationID()
@@ -1551,6 +1551,23 @@ namespace net.vieapps.Services.APIGateway
 					Type = message.Data.Get<string>("Type"),
 					Data = message.Data.Get<JToken>("Data")
 				}.Send();
+
+			else if (message.Type.IsEquals("Monitor#Enable") || message.Type.IsEquals("Monitor#Start"))
+			{
+				var logPath = UtilityService.GetAppSetting("Path:Logs");
+				if (!string.IsNullOrWhiteSpace(logPath) && Directory.Exists(logPath))
+				{
+					Global.Monitor = true;
+					Global.StartMonitor(logPath);
+				}
+			}
+
+			else if (message.Type.IsEquals("Monitor#Disable") || message.Type.IsEquals("Monitor#Stop"))
+			{
+				Global.StopMonitor();
+				if (message.Type.IsEquals("Monitor#Disable"))
+					Global.Monitor = false;
+			}
 		}
 		#endregion
 

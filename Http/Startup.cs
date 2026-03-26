@@ -41,8 +41,10 @@ namespace net.vieapps.Services.APIGateway
 
 		public void ConfigureServices(IServiceCollection services)
 		{
+			// assign the service name
 			Global.ServiceName = "APIGateway";
 
+			// mandatory services
 			services
 				.AddHttpContextAccessor()
 				.AddResponseCompression(options => Global.PrepareResponseCompression(options))
@@ -295,6 +297,8 @@ namespace net.vieapps.Services.APIGateway
 				stopwatch.Stop();
 				Global.Logger.LogInformation($"The {Global.ServiceName} HTTP service was started - PID: {Environment.ProcessId} - Execution times: {stopwatch.GetElapsedTimes()}");
 				Global.Logger = loggerFactory.CreateLogger<Handler>();
+
+				Global.StartMonitor(logPath);
 			});
 
 			// assign app event handler => on stopping

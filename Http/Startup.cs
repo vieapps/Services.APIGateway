@@ -306,6 +306,7 @@ namespace net.vieapps.Services.APIGateway
 			appLifetime.ApplicationStopping.Register(() =>
 			{
 				Global.Logger = loggerFactory.CreateLogger<Startup>();
+				Global.StopMonitor();
 				Global.RSA.Dispose();
 				if (enableForwarder)
 					Router.CloseForwarder();

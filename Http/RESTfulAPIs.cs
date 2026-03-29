@@ -597,7 +597,7 @@ namespace net.vieapps.Services.APIGateway
 			=> context.WriteAsync(body, new Dictionary<string, string>
 			{
 				["Content-Type"] = contentType ?? "application/json; charset=utf-8",
-				["Cache-Control"] = cacheControl ?? "private, no-store, no-cache",
+				["Cache-Control"] = cacheControl ?? context.GetHttpCacheControl(true),
 				["X-Node"] = Global.NodeID,
 				["X-Correlation-ID"] = context.GetCorrelationID()
 			}, cancellationToken);

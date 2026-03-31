@@ -1467,7 +1467,7 @@ namespace net.vieapps.Services.APIGateway
 
 			new CommunicateMessage("APIGateway")
 			{
-				Type = "PurgeCache"
+				Type = "Cache#Purge"
 			}.Send();
 			await Global.Cache.FlushAllAsync(cancellationToken).ConfigureAwait(false);
 			return new JObject

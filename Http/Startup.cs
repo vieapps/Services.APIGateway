@@ -39,6 +39,8 @@ namespace net.vieapps.Services.APIGateway
 
 		public bool UseRateLimit { get; } = "true".IsEquals(UtilityService.GetAppSetting("APIs:RateLimit"));
 
+		string TooManyRequests { get; } = UtilityService.GetAppSetting("APIGateway:TooManyRequests", "Whoa, slow down! You're living too fast... 429 times and counting!");
+
 		public void ConfigureServices(IServiceCollection services)
 		{
 			// assign the service name
@@ -74,7 +76,8 @@ namespace net.vieapps.Services.APIGateway
 				).OnRejected = async (context, cancellationToken) =>
 				{
 					context.HttpContext.Response.StatusCode = (int)HttpStatusCode.TooManyRequests;
-					await context.HttpContext.Response.WriteAsync("Too many requests... ", cancellationToken).ConfigureAwait(false);
+					context.HttpContext.Response.ContentType = "text/plain";
+					await context.HttpContext.Response.Body.WriteAsync(this.TooManyRequests.ToBytes(), cancellationToken).ConfigureAwait(false);
 				});
 		}
 

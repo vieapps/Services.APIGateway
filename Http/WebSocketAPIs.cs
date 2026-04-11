@@ -688,116 +688,128 @@ namespace net.vieapps.Services.APIGateway
 				Session = session,
 				CorrelationID = correlationID
 			};
+			RouterRpcGate.Releaser? ticket = null;
 
 			try
 			{
-				// prepare the requesting information
-				var serviceName = requestObj.Get("ServiceName", "").GetANSIUri(true, true);
-				var objectName = requestObj.Get("ObjectName", "").GetANSIUri(true, true);
-				var verb = requestObj.Get("Verb", "GET").ToUpper();
-				var query = new Dictionary<string, string>(requestObj.Get("Query", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase);
-				query.TryGetValue("object-identity", out var objectIdentity);
-				var header = new Dictionary<string, string>(requestObj.Get("Header", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase)
+				ticket = await Global.RpcGate.TryEnterAsync(Global.CancellationToken).ConfigureAwait(false);
+				if (ticket == null)
 				{
-					["x-requester"] = "vieapps-ngx-websocket-apis"
-				};
-				if (!header.ContainsKey("x-app-token"))
-				{
-					var token = websocket.Get<JObject>("Token");
-					token["iat"] = DateTime.Now.ToUnixTimestamp();
-					header["x-app-token"] = JSONWebToken.Encode(token, Global.JWTKey);
-				}
-				var body = requestObj.Get("Body");
-				if (verb.IsEquals("GET") && query.Remove("x-body", out var requestBody))
-					try
-					{
-						body = requestBody.Url64Decode();
-					}
-					catch (Exception ex)
-					{
-						await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"Error occurred while parsing body of the 'x-body' parameter => {ex.Message}", ex).ConfigureAwait(false);
-					}
-				var extra = new Dictionary<string, string>(requestObj.Get("Extra", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase);
-				if (verb.IsEquals("GET") && query.Remove("x-request-extra", out var extraInfo) && !string.IsNullOrWhiteSpace(extraInfo))
-					try
-					{
-						extra = extraInfo.Url64Decode().ToExpandoObject().ToDictionary(kvp => kvp.Key, kvp => kvp.Value?.ToString(), StringComparer.OrdinalIgnoreCase);
-					}
-					catch { }
-
-				requestInfo = new RequestInfo(session, serviceName, objectName, verb, query, header)
-				{
-					Body = body == null ? "" : body is string strbody ? strbody : body.ToJson().ToString(Formatting.None),
-					Extra = extra,
-					CorrelationID = correlationID
-				};
-
-				// special: working with users
-				if (requestInfo.ServiceName.IsEquals("users"))
-				{
-					// stop process when request to work with users' sessions
-					if ("session".IsEquals(requestInfo.ObjectName))
-						throw new InvalidRequestException("Please change to use RESTful APIs for working with users' sessions");
-
-					// prepare related information
-					if ("account".IsEquals(requestInfo.ObjectName) || "otp".IsEquals(requestInfo.ObjectName))
-						requestInfo.PrepareAccountRelated(async (msg, ex) => await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", msg, ex, Global.ServiceName, LogLevel.Error, correlationID).ConfigureAwait(false));
-
-					// validate captcha
-					requestInfo.CaptchaIsValid();
-
-					// prepare signature
-					requestInfo.Extra["Signature"] = requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT")
-						? requestInfo.Body.GetHMACSHA256(Global.ValidationKey)
-						: requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey);
+					Global.Statistics.RpcRejected();
+					throw new SystemBusyException();
 				}
 
-				// special: working with files
-				else if (requestInfo.ServiceName.IsEquals("files"))
+				Global.Statistics.RpcEntered();
+				using (ticket.Value)
 				{
-					requestInfo.Extra["Signature"] = requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT")
-						? requestInfo.Body.GetHMACSHA256(Global.ValidationKey)
-						: requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey);
-					requestInfo.Extra["SessionID"] = requestInfo.Session.SessionID.GetHMACBLAKE256(Global.ValidationKey);
+					// prepare the requesting information
+					var serviceName = requestObj.Get("ServiceName", "").GetANSIUri(true, true);
+					var objectName = requestObj.Get("ObjectName", "").GetANSIUri(true, true);
+					var verb = requestObj.Get("Verb", "GET").ToUpper();
+					var query = new Dictionary<string, string>(requestObj.Get("Query", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase);
+					query.TryGetValue("object-identity", out var objectIdentity);
+					var header = new Dictionary<string, string>(requestObj.Get("Header", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase)
+					{
+						["x-requester"] = "vieapps-ngx-websocket-apis"
+					};
+					if (!header.ContainsKey("x-app-token"))
+					{
+						var token = websocket.Get<JObject>("Token");
+						token["iat"] = DateTime.Now.ToUnixTimestamp();
+						header["x-app-token"] = JSONWebToken.Encode(token, Global.JWTKey);
+					}
+					var body = requestObj.Get("Body");
+					if (verb.IsEquals("GET") && query.Remove("x-body", out var requestBody))
+						try
+						{
+							body = requestBody.Url64Decode();
+						}
+						catch (Exception ex)
+						{
+							await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", $"Error occurred while parsing body of the 'x-body' parameter => {ex.Message}", ex).ConfigureAwait(false);
+						}
+					var extra = new Dictionary<string, string>(requestObj.Get("Extra", new Dictionary<string, string>()), StringComparer.OrdinalIgnoreCase);
+					if (verb.IsEquals("GET") && query.Remove("x-request-extra", out var extraInfo) && !string.IsNullOrWhiteSpace(extraInfo))
+						try
+						{
+							extra = extraInfo.Url64Decode().ToExpandoObject().ToDictionary(kvp => kvp.Key, kvp => kvp.Value?.ToString(), StringComparer.OrdinalIgnoreCase);
+						}
+						catch { }
+
+					requestInfo = new RequestInfo(session, serviceName, objectName, verb, query, header)
+					{
+						Body = body == null ? "" : body is string strbody ? strbody : body.ToJson().ToString(Formatting.None),
+						Extra = extra,
+						CorrelationID = correlationID
+					};
+
+					// special: working with users
+					if (requestInfo.ServiceName.IsEquals("users"))
+					{
+						// stop process when request to work with users' sessions
+						if ("session".IsEquals(requestInfo.ObjectName))
+							throw new InvalidRequestException("Please change to use RESTful APIs for working with users' sessions");
+
+						// prepare related information
+						if ("account".IsEquals(requestInfo.ObjectName) || "otp".IsEquals(requestInfo.ObjectName))
+							requestInfo.PrepareAccountRelated(async (msg, ex) => await Global.WriteLogsAsync(WebSocketAPIs.Logger, "WebSocketAPIs", msg, ex, Global.ServiceName, LogLevel.Error, correlationID).ConfigureAwait(false));
+
+						// validate captcha
+						requestInfo.CaptchaIsValid();
+
+						// prepare signature
+						requestInfo.Extra["Signature"] = requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT")
+							? requestInfo.Body.GetHMACSHA256(Global.ValidationKey)
+							: requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey);
+					}
+
+					// special: working with files
+					else if (requestInfo.ServiceName.IsEquals("files"))
+					{
+						requestInfo.Extra["Signature"] = requestInfo.Verb.IsEquals("POST") || requestInfo.Verb.IsEquals("PUT")
+							? requestInfo.Body.GetHMACSHA256(Global.ValidationKey)
+							: requestInfo.Header["x-app-token"].GetHMACSHA256(Global.ValidationKey);
+						requestInfo.Extra["SessionID"] = requestInfo.Session.SessionID.GetHMACBLAKE256(Global.ValidationKey);
+					}
+
+					// tracking
+					if (RESTfulAPIs.TrackSessions)
+						requestInfo.SendSessionState();
+					else
+						requestInfo.TrackStatistics();
+
+					// call the service
+					var response = Global.StaticSegments.Contains(requestInfo.ServiceName.ToLower())
+						? verb.IsEquals("GET")
+							? (await Global.GetStaticFileContentAsync(Global.GetStaticFilePath([requestInfo.ServiceName.ToLower(), requestInfo.ObjectName.ToLower(), objectIdentity])).ConfigureAwait(false)).GetString().ToJson()
+							: throw new MethodNotAllowedException(verb)
+						: requestInfo.ServiceName.IsEquals("discovery")
+							? requestInfo.ObjectName.IsEquals("controllers")
+								? RESTfulAPIs.GetControllers()
+								: requestInfo.ObjectName.IsEquals("services")
+									? RESTfulAPIs.GetServices()
+									: requestInfo.ObjectName.IsEquals("definitions")
+										? await Global.CallServiceAsync(requestInfo.PrepareDefinitionRelated(), Global.CancellationToken, WebSocketAPIs.Logger, "WebSocketAPIs").ConfigureAwait(false)
+										: throw new InvalidRequestException("Unknown request")
+							: requestInfo.ServiceName.IsEquals("cache")
+								? await requestInfo.FlushCachingStoragesAsync(Global.CancellationToken).ConfigureAwait(false)
+								: RESTfulAPIs.ServiceForwarders.ContainsKey(requestInfo.ServiceName.ToLower())
+									? await requestInfo.ForwardRequestAsync(Global.CancellationToken).ConfigureAwait(false)
+									: verb.IsEquals("PATCH")
+										? "rollback".IsEquals(requestInfo.GetParameter("x-patch-mode"))
+											? await requestInfo.RollbackAsync(Global.CancellationToken).ConfigureAwait(false)
+											: "restore".IsEquals(requestInfo.GetParameter("x-patch-mode"))
+												? await requestInfo.RestoreAsync(Global.CancellationToken).ConfigureAwait(false)
+												: throw new InvalidRequestException("Unknown request")
+										: await Global.CallServiceAsync(requestInfo, Global.CancellationToken, WebSocketAPIs.Logger, "WebSocketAPIs").ConfigureAwait(false);
+
+					// send the response as an update message
+					await websocket.SendAsync(new UpdateMessage
+					{
+						Type = $"{requestInfo.ServiceName}{(string.IsNullOrWhiteSpace(requestInfo.ObjectName) ? "" : $"#{("Versions".IsEquals(requestInfo.ObjectName) ? objectIdentity : requestInfo.ObjectName)}#{("Versions".IsEquals(requestInfo.ObjectName) || "Refresh".IsEquals(objectIdentity) ? "Update" : !string.IsNullOrWhiteSpace(objectIdentity) && !objectIdentity.IsValidUUID() ? objectIdentity : verb).GetCapitalizedFirstLetter()}")}",
+						Data = response
+					}, requestObj.Get<string>("ID"), correlationID).ConfigureAwait(false);
 				}
-
-				// tracking
-				if (RESTfulAPIs.TrackSessions)
-					requestInfo.SendSessionState();
-				else
-					requestInfo.TrackStatistics();
-
-				// call the service
-				var response = Global.StaticSegments.Contains(requestInfo.ServiceName.ToLower())
-					? verb.IsEquals("GET")
-						? (await Global.GetStaticFileContentAsync(Global.GetStaticFilePath([requestInfo.ServiceName.ToLower(), requestInfo.ObjectName.ToLower(), objectIdentity])).ConfigureAwait(false)).GetString().ToJson()
-						: throw new MethodNotAllowedException(verb)
-					: requestInfo.ServiceName.IsEquals("discovery")
-						? requestInfo.ObjectName.IsEquals("controllers")
-							? RESTfulAPIs.GetControllers()
-							: requestInfo.ObjectName.IsEquals("services")
-								? RESTfulAPIs.GetServices()
-								: requestInfo.ObjectName.IsEquals("definitions")
-									? await Global.CallServiceAsync(requestInfo.PrepareDefinitionRelated(), Global.CancellationToken, WebSocketAPIs.Logger, "WebSocketAPIs").ConfigureAwait(false)
-									: throw new InvalidRequestException("Unknown request")
-						: requestInfo.ServiceName.IsEquals("cache")
-							? await requestInfo.FlushCachingStoragesAsync(Global.CancellationToken).ConfigureAwait(false)
-							: RESTfulAPIs.ServiceForwarders.ContainsKey(requestInfo.ServiceName.ToLower())
-								? await requestInfo.ForwardRequestAsync(Global.CancellationToken).ConfigureAwait(false)
-								: verb.IsEquals("PATCH")
-									? "rollback".IsEquals(requestInfo.GetParameter("x-patch-mode"))
-										? await requestInfo.RollbackAsync(Global.CancellationToken).ConfigureAwait(false)
-										: "restore".IsEquals(requestInfo.GetParameter("x-patch-mode"))
-											? await requestInfo.RestoreAsync(Global.CancellationToken).ConfigureAwait(false)
-											: throw new InvalidRequestException("Unknown request")
-									: await Global.CallServiceAsync(requestInfo, Global.CancellationToken, WebSocketAPIs.Logger, "WebSocketAPIs").ConfigureAwait(false);
-
-				// send the response as an update message
-				await websocket.SendAsync(new UpdateMessage
-				{
-					Type = $"{requestInfo.ServiceName}{(string.IsNullOrWhiteSpace(requestInfo.ObjectName) ? "" : $"#{("Versions".IsEquals(requestInfo.ObjectName) ? objectIdentity : requestInfo.ObjectName)}#{("Versions".IsEquals(requestInfo.ObjectName) || "Refresh".IsEquals(objectIdentity) ? "Update" : !string.IsNullOrWhiteSpace(objectIdentity) && !objectIdentity.IsValidUUID() ? objectIdentity : verb).GetCapitalizedFirstLetter()}")}",
-					Data = response
-				}, requestObj.Get<string>("ID"), correlationID).ConfigureAwait(false);
 			}
 			catch (RemoteServerException ex)
 			{
@@ -822,6 +834,11 @@ namespace net.vieapps.Services.APIGateway
 			catch (Exception ex)
 			{
 				await websocket.SendAsync(ex, correlationID, requestObj.Get<string>("ID"), $"Request: {requestObj.ToJson().ToString(RESTfulAPIs.JsonFormat)}").ConfigureAwait(false);
+			}
+			finally
+			{
+				if (ticket != null)
+					Global.Statistics.RpcCompleted();
 			}
 		}
 	}

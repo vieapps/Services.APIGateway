@@ -48,16 +48,46 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		Task ProcessRequestAsync(HttpContext context)
+		async Task ProcessRequestAsync(HttpContext context)
 		{
-			var requestPath = context.GetRequestPathSegments(true).First();
-			return requestPath.Equals("favicon.ico")
-				? context.ProcessFavouritesIconFileRequestAsync()
-				: requestPath.Equals("robots.txt")
-					? context.WriteAsync("User-agent: *\r\nDisallow: *", "text/plain", null, 0, "public", TimeSpan.Zero, null, Global.CancellationToken)
-					: Global.StaticSegments.Contains(requestPath)
-						? context.ProcessStaticFileRequestAsync()
-						: APIGateway.RESTfulAPIs.ProcessRequestAsync(context);
+			RouterRpcGate.Releaser? ticket = null;
+			try
+			{
+				var requestPath = context.GetRequestPathSegments(true).First();
+
+				if (requestPath.Equals("favicon.ico"))
+					await context.ProcessFavouritesIconFileRequestAsync().ConfigureAwait(false);
+
+				else if (requestPath.Equals("robots.txt"))
+					await context.WriteAsync("User-agent: *\r\nDisallow: *", "text/plain", null, 0, "public", TimeSpan.Zero, null, context.RequestAborted).ConfigureAwait(false);
+
+				else if (Global.StaticSegments.Contains(requestPath))
+					await context.ProcessStaticFileRequestAsync().ConfigureAwait(false);
+
+				else
+				{
+					ticket = await Global.RpcGate.TryEnterAsync(context.RequestAborted).ConfigureAwait(false);
+					if (ticket == null)
+					{
+						Global.Statistics.RpcRejected();
+						throw new SystemBusyException();
+					}
+					Global.Statistics.RpcEntered();
+					using (ticket.Value)
+					{
+						await APIGateway.RESTfulAPIs.ProcessRequestAsync(context).ConfigureAwait(false);
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				context.WriteError(APIGateway.RESTfulAPIs.Logger, ex);
+			}
+			finally
+			{
+				if (ticket != null)
+					Global.Statistics.RpcCompleted();
+			}
 		}
 
 		public class RESTfulAPIs { }

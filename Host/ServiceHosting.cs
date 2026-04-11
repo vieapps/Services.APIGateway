@@ -181,7 +181,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// thread pool
 			ThreadPool.GetMaxThreads(out var maxWorker, out var maxIO);
-			var workerThreads = Int32.TryParse(UtilityService.GetAppSetting($"{service.ServiceName}:ThreadPool:Worker"), out var workers) && workers > 0 ? workers : 200;
+			var workerThreads = Int32.TryParse(UtilityService.GetAppSetting($"{service.ServiceName}:ThreadPool:Workers"), out var workers) && workers > 0 ? workers : 200;
 			if (workerThreads > maxWorker)
 				workerThreads = maxWorker / 10;
 			int ioThreads = workerThreads / 10;

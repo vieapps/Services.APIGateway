@@ -1347,7 +1347,7 @@ namespace net.vieapps.Services.APIGateway
 				dir.GetFiles("*.*", 0, true, excludedSubFolders)
 					.Select(filePath => new FileInfo(filePath))
 					.Select(file => (File: file, Path: file.FullName.Left(file.FullName.Length - file.Name.Length - 1), file.Extension, file.LastWriteTime))
-					.Where(info => !excludedFileExtensions.Contains(info.Extension) && info.LastWriteTime < (specialFileExtensions.Contains(info.Extension) || specialFolders.Select(specialPath => info.Path.IsStartsWith(specialPath)).Where(state => state).Any() ? specialRemainTime : remainTime))
+					.Where(info => !excludedFileExtensions.Contains(info.Extension) && info.LastWriteTime < (specialFileExtensions.Contains(info.Extension) || specialFolders.Select(specialPath => info.Path.IsStartsWith(specialPath)).Where(state => state).Any() || info.File.Name.IsEndsWith("-monitor.txt") ? specialRemainTime : remainTime))
 					.Select(info => info.File)
 					.ForEach(file =>
 					{

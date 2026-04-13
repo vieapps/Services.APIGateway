@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Diagnostics;
 using System.Reactive.Linq;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using System.Configuration;
 using System.Collections.Generic;
@@ -45,7 +46,6 @@ namespace net.vieapps.Services.APIGateway
 
 		public void Dispose()
 			=> this.DisposeAsync().Execute(true);
-
 
 		#region Process Info
 		public class ProcessInfo
@@ -145,7 +145,7 @@ namespace net.vieapps.Services.APIGateway
 
 		bool IsWindows { get; } = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 
-		bool IsTimers { get; } = "true".IsEquals(UtilityService.GetAppSetting("Controller:Timers", "true"));
+		bool IsTimers { get; } = "true".IsEquals(UtilityService.GetAppSetting("Controller:Timers"));
 
 		DateTime ClientPingTime { get; set; } = DateTime.Now;
 
@@ -166,6 +166,8 @@ namespace net.vieapps.Services.APIGateway
 		List<string> TrashDataSources { get; } = new List<string>();
 
 		List<string> HttpServices = new List<string> { "APIs", "Files", "Portals", "CMSPortals" };
+
+		Channel<StatisticMessage> StatisticMessages;
 
 		/// <summary>
 		/// Gets the number of scheduling tasks
@@ -629,14 +631,19 @@ namespace net.vieapps.Services.APIGateway
 				Global.OnError?.Invoke($"Error occurred while cleaning-up the controller => {ex.Message}", ex);
 			}
 
+			if (this.IsTimers)
+				this.StatisticMessages.Writer.TryComplete();
+
 			// disconnect from API Gateway Router
 			try
 			{
 				this.InterCommunicator?.Dispose();
 				this.UpdateCommunicator?.Dispose();
 				this.CancellationTokenSource.Cancel();
+
 				if (this.AllowRouter)
 					await Router.DisconnectAsync().ConfigureAwait(false);
+
 				this.State = ServiceState.Disconnected;
 				Global.OnProcess?.Invoke($"The API Gateway Controller was disconnected");
 			}
@@ -1307,6 +1314,18 @@ namespace net.vieapps.Services.APIGateway
 							DeviceID = "*",
 						}.Send();
 				}, this.SchedulingInterval + 13);
+
+
+				// service statistics
+				this.StatisticMessages = Channel.CreateBounded<StatisticMessage>(new BoundedChannelOptions(1024 * 1024)
+				{
+					SingleWriter = false,
+					SingleReader = true,
+					FullMode = BoundedChannelFullMode.DropOldest
+				});
+				var time = DateTime.Now.AddMinutes(1);
+				var delayMilliseconds = (int)(new DateTime(time.Year, time.Month, time.Day, time.Hour, time.Minute, 1) - DateTime.Now).TotalMilliseconds;
+				this.StartTimer(this.ProcessStatisticsAsync, 60, delayMilliseconds);
 			}
 		}
 		#endregion
@@ -1634,6 +1653,11 @@ namespace net.vieapps.Services.APIGateway
 							}).ConfigureAwait(false);
 					}
 					break;
+
+				case "Service#Statistics":
+					if (this.IsTimers)
+						await this.UpdateStatisticsAsync(message).ConfigureAwait(false);
+					break;
 			}
 		}
 
@@ -1672,6 +1696,174 @@ namespace net.vieapps.Services.APIGateway
 		void SendServiceInfo(string name, string args, bool available, bool running)
 			=> this.SendServiceInfoAsync(name, args, available, running).Execute();
 		#endregion
+
+		async Task UpdateStatisticsAsync(CommunicateMessage message)
+		{
+			var statisticMessage = new StatisticMessage().CopyFrom(message.Data);
+			statisticMessage.Time = DateTime.Now;
+			await this.StatisticMessages.Writer.WriteAsync(statisticMessage, this.CancellationToken).ConfigureAwait(false);
+		}
+
+		async Task ProcessStatisticsAsync()
+		{
+			var forReUpdate = new List<StatisticMessage>();
+			var forAggregate = new List<StatisticMessage>();
+			var now = DateTime.Now.AddMinutes(-1);
+			now = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0);
+			try
+			{
+				while (this.StatisticMessages.Reader.TryRead(out var message))
+				{
+					if (message.Time.Minute == now.Minute)
+						forAggregate.Add(message);
+					else if (message.Time > now)
+						forReUpdate.Add(message);
+				}
+
+				var statistics = forAggregate.Aggregate();
+				var numberOfNodes = statistics.Sum(message => message.Nodes);
+
+				var totalWorkers = statistics.Sum(message => message.ThreadPoolWorkers);
+				var totalMaxWorkers = statistics.Sum(message => message.ThreadPoolMaxWorkers) / numberOfNodes;
+				var totalAsyncIO = statistics.Sum(message => message.ThreadPoolAsyncIO);
+				var totalMaxAsyncIO = statistics.Sum(message => message.ThreadPoolMaxAsyncIO) / numberOfNodes;
+				var workersUsage = totalMaxWorkers > 0 ? totalWorkers * 1.0 / totalMaxWorkers : 0;
+
+				var nodeMaxID = forAggregate.OrderByDescending(message => message.ThreadPoolWorkers).First().NodeID;
+				var nodeMaxWorkers = forAggregate.Max(message => message.ThreadPoolWorkers);
+				var nodeMaxWorkersUsage = forAggregate.Max(message => message.ThreadPoolMaxWorkers > 0 ? message.ThreadPoolWorkers * 1.0 / message.ThreadPoolMaxWorkers : 0);
+
+				var cacheProvider = statistics.First().CacheProvider;
+				var cacheStatuses = statistics.Where(message => message.CacheStatus != "OK");
+				var cacheStatus = (cacheStatuses.FirstOrDefault(message => message.CacheStatus == "🔥CRITICAL") ?? cacheStatuses.FirstOrDefault(message => message.CacheStatus == "⚠️WARN"))?.CacheStatus ?? "OK";
+				var numberOfServices = forAggregate.Select(message => message.ServiceName).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+				var cacheTotalQueue = statistics.Sum(message => message.CacheTotalQueue);
+				var cacheMaxQueue = forAggregate.Max(message => message.CacheTotalQueue);
+				var cacheAvgQueue = cacheTotalQueue / numberOfServices;
+				var cacheTotalInteractiveQueue = statistics.Sum(message => message.CacheInteractiveQueue);
+				var cacheMaxInteractiveQueue = forAggregate.Max(message => message.CacheInteractiveQueue);
+				var cacheAvgInteractiveQueue = cacheTotalInteractiveQueue / numberOfServices;
+				var cacheMaxPing = forAggregate.Max(message => message.CachePingMilliseconds);
+				var cacheAvgPing = forAggregate.Average(message => message.CachePingMilliseconds);
+
+				var totalMaxRpcGate = statistics.Sum(message => message.RpcGateMax);
+				var totalCurrentRpcGate = statistics.Sum(message => message.RpcGateCurrent);
+				var totalAvailableRpcGate = statistics.Sum(message => message.RpcGateAvailable);
+				var rpcGateUsage = totalMaxRpcGate > 0 ? totalCurrentRpcGate * 1.0 / totalMaxRpcGate : 0;
+
+				var totalRpcIn = statistics.Sum(message => message.RpcEnteredRate);
+				var totalRpcOut = statistics.Sum(message => message.RpcCompletedRate);
+				var totalRpcInFlight = statistics.Sum(message => message.RpcInFlight);
+				var totalRpcRejected = statistics.Sum(message => message.RpcRejected);
+
+				var rpcBackpressure = totalRpcIn - totalRpcOut;
+				var rpcCompletionRatio = totalRpcIn > 0 ? totalRpcOut / totalRpcIn : 1;
+				var rpcRejectRate = totalRpcIn > 0 ? totalRpcRejected * 1.0 / (totalRpcIn * 60) : 0;
+				var rpcTotalCompleted = statistics.Sum(message => message.RpcCompleted);
+				var rpcWeightedLatency = statistics.Sum(message => message.RpcAvgLatency * message.RpcCompleted);
+				var rpcAvgLatency = rpcTotalCompleted > 0 ? rpcWeightedLatency / rpcTotalCompleted : 0;
+				var rpcMaxLatency = statistics.Any() ? statistics.Max(message => message.RpcMaxLatency) : 0;
+
+				var messageData = new JObject
+				{
+					["Time"] = now,
+					["Services"] = statistics.ToJArray(msg => msg.ToJson(json =>
+					{
+						json.Remove("Time");
+						json.Remove("Nodes");
+						json.Remove("NodeID");
+						json.Remove("UseL1Cache");
+						json.Remove("IsHttp");
+						if (msg.ServiceName.IsEquals("APIGateway"))
+						{
+							json.Remove("L1Hit304");
+							json.Remove("L1Hit200");
+							json.Remove("L1Miss");
+							json.Remove("L1HitRatio");
+							json.Remove("L2Hit304");
+							json.Remove("L2Hit200");
+							json.Remove("L2Miss");
+							json.Remove("L2HitRatio");
+						}
+					})),
+					["ThreadPool"] = new JObject
+					{
+						["Workers"] = totalWorkers,
+						["MaxWorkers"] = totalMaxWorkers,
+						["Usage"] = workersUsage,
+						["AsyncIO"] = totalAsyncIO,
+						["MaxAsyncIO"] = totalMaxAsyncIO,
+						["NodeMax"] = new JObject
+						{
+							["ID"] = nodeMaxID,
+							["Workers"] = nodeMaxWorkers,
+							["WorkersUsage"] = nodeMaxWorkersUsage,
+						}
+					},
+					["Cache"] = new JObject
+					{
+						["Provider"] = cacheProvider,
+						["Status"] = cacheStatus,
+						["Ping"] = new JObject
+						{
+							["Max"] = cacheMaxPing,
+							["Avg"] = cacheAvgPing
+						},
+						["Queue"] = new JObject
+						{
+							["Total"] = cacheTotalQueue,
+							["Max"] = cacheMaxQueue,
+							["Avg"] = cacheAvgQueue
+						},
+						["Interactive"] = new JObject
+						{
+							["Total"] = cacheTotalInteractiveQueue,
+							["Max"] = cacheMaxInteractiveQueue,
+							["Avg"] = cacheAvgInteractiveQueue
+						}
+					},
+					["Router"] = new JObject
+					{
+						["Gate"] = new JObject
+						{
+							["Max"] = totalMaxRpcGate,
+							["Current"] = totalCurrentRpcGate,
+							["Available"] = totalAvailableRpcGate,
+							["Usage"] = rpcGateUsage
+						},
+						["Call"] = new JObject
+						{
+							["Backpressure"] = rpcBackpressure,
+							["CompletionRatio"] = rpcCompletionRatio,
+							["RejectRate"] = rpcRejectRate,
+							["TotalCompleted"] = rpcTotalCompleted,
+							["AvgLatency"] = rpcAvgLatency,
+							["MaxLatency"] = rpcMaxLatency
+						}
+					}
+				};
+
+				new CommunicateMessage("APIGateway")
+				{
+					Type = "System#Statistics",
+					Data = messageData
+				}.Send();
+
+				new UpdateMessage
+				{
+					Type = "System#Statistics",
+					DeviceID = "*",
+					Data = messageData
+				}.Send();
+
+				await forReUpdate.ForEachAsync(async msg => await this.StatisticMessages.Writer.WriteAsync(msg, this.CancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
+			}
+			catch (OperationCanceledException) { }
+			catch (Exception ex)
+			{
+				Global.OnProcess?.Invoke($"Error occurred while publishing statistics => {ex.Message}\r\nStack: {ex.GetStack(false)}");
+			}
+		}
 
 		string PrepareTimestamps(string input)
 		{

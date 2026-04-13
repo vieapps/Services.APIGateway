@@ -688,7 +688,9 @@ namespace net.vieapps.Services.APIGateway
 				Session = session,
 				CorrelationID = correlationID
 			};
+
 			RouterRpcGate.Releaser? ticket = null;
+			var stopwatch = Stopwatch.StartNew();
 
 			try
 			{
@@ -838,7 +840,7 @@ namespace net.vieapps.Services.APIGateway
 			finally
 			{
 				if (ticket != null)
-					Global.Statistics.RpcCompleted();
+					Global.Statistics.RpcCompleted(stopwatch);
 			}
 		}
 	}

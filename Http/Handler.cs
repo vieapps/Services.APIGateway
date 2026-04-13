@@ -51,6 +51,7 @@ namespace net.vieapps.Services.APIGateway
 		async Task ProcessRequestAsync(HttpContext context)
 		{
 			RouterRpcGate.Releaser? ticket = null;
+			var stopwatch = Stopwatch.StartNew();
 			try
 			{
 				var requestPath = context.GetRequestPathSegments(true).First();
@@ -86,7 +87,7 @@ namespace net.vieapps.Services.APIGateway
 			finally
 			{
 				if (ticket != null)
-					Global.Statistics.RpcCompleted();
+					Global.Statistics.RpcCompleted(stopwatch);
 			}
 		}
 

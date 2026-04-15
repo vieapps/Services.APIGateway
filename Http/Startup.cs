@@ -301,7 +301,6 @@ namespace net.vieapps.Services.APIGateway
 				Global.Logger.LogInformation($"The {Global.ServiceName} HTTP service was started - PID: {Environment.ProcessId} - Execution times: {stopwatch.GetElapsedTimes()}");
 				Global.Logger = loggerFactory.CreateLogger<Handler>();
 
-				Global.MonitorLogFilePattern = "{service}.http-{hour}-monitor.txt";
 				Global.StartMonitor(logPath);
 			});
 

@@ -41,7 +41,9 @@ namespace net.vieapps.Services.APIGateway
 				// HTTP
 				else
 				{
+					Global.Statistics.IncreaseRequest();
 					await (context.Request.Path.Value.IsEquals(this.LoadBalancerHealthCheckURL) ? context.WriteAsync("OK", "text/plain", null, 0, null, TimeSpan.Zero, null, Global.CancellationToken) : this.ProcessRequestAsync(context)).ConfigureAwait(false);
+					Global.Statistics.DecreaseRequest();
 					if (Global.IsVisitLogEnabled)
 						await context.WriteVisitFinishingLogAsync().ConfigureAwait(false);
 				}
@@ -50,45 +52,48 @@ namespace net.vieapps.Services.APIGateway
 
 		async Task ProcessRequestAsync(HttpContext context)
 		{
-			RouterRpcGate.Releaser? ticket = null;
-			var stopwatch = Stopwatch.StartNew();
-			try
-			{
-				var requestPath = context.GetRequestPathSegments(true).First();
+			var requestPath = context.GetRequestPathSegments(true).First();
 
-				if (requestPath.Equals("favicon.ico"))
-					await context.ProcessFavouritesIconFileRequestAsync().ConfigureAwait(false);
+			if (requestPath.Equals("favicon.ico"))
+				await context.ProcessFavouritesIconFileRequestAsync().ConfigureAwait(false);
 
-				else if (requestPath.Equals("robots.txt"))
-					await context.WriteAsync("User-agent: *\r\nDisallow: *", "text/plain", null, 0, "public", TimeSpan.Zero, null, context.RequestAborted).ConfigureAwait(false);
+			else if (requestPath.Equals("robots.txt"))
+				await context.WriteAsync("User-agent: *\r\nDisallow: *", "text/plain", null, 0, "public", TimeSpan.Zero, null, context.RequestAborted).ConfigureAwait(false);
 
-				else if (Global.StaticSegments.Contains(requestPath))
-					await context.ProcessStaticFileRequestAsync().ConfigureAwait(false);
+			else if (Global.StaticSegments.Contains(requestPath))
+				await context.ProcessStaticFileRequestAsync().ConfigureAwait(false);
 
-				else
+			else
+				try
 				{
-					ticket = await Global.RpcGate.TryEnterAsync(context.RequestAborted).ConfigureAwait(false);
+					var ticket = await Global.RpcGate.TryEnterAsync(context.RequestAborted).ConfigureAwait(false);
 					if (ticket == null)
 					{
 						Global.Statistics.RpcRejected();
 						throw new SystemBusyException();
 					}
 					Global.Statistics.RpcEntered();
+					var stopwatch = Stopwatch.StartNew();
 					using (ticket.Value)
 					{
-						await APIGateway.RESTfulAPIs.ProcessRequestAsync(context).ConfigureAwait(false);
+						try
+						{
+							await APIGateway.RESTfulAPIs.ProcessRequestAsync(context).ConfigureAwait(false);
+						}
+						catch (Exception)
+						{
+							throw;
+						}
+						finally
+						{
+							Global.Statistics.RpcCompleted(stopwatch);
+						}
 					}
 				}
-			}
-			catch (Exception ex)
-			{
-				context.WriteError(APIGateway.RESTfulAPIs.Logger, ex);
-			}
-			finally
-			{
-				if (ticket != null)
-					Global.Statistics.RpcCompleted(stopwatch);
-			}
+				catch (Exception ex)
+				{
+					context.WriteError(APIGateway.RESTfulAPIs.Logger, ex);
+				}
 		}
 
 		public class RESTfulAPIs { }

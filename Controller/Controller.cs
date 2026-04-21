@@ -178,6 +178,8 @@ namespace net.vieapps.Services.APIGateway
 		/// Gets the number of scheduling timers
 		/// </summary>
 		public int NumberOfTimers => this.Timers.Count;
+
+		(int Total, int User, int Visitor, int Crawler) Sessions { get; set; } = (0, 0, 0, 0);
 		#endregion
 
 		#region Start/Stop controller
@@ -1366,7 +1368,7 @@ namespace net.vieapps.Services.APIGateway
 				dir.GetFiles("*.*", 0, true, excludedSubFolders)
 					.Select(filePath => new FileInfo(filePath))
 					.Select(file => (File: file, Path: file.FullName.Left(file.FullName.Length - file.Name.Length - 1), file.Extension, file.LastWriteTime))
-					.Where(info => !excludedFileExtensions.Contains(info.Extension) && info.LastWriteTime < (specialFileExtensions.Contains(info.Extension) || specialFolders.Select(specialPath => info.Path.IsStartsWith(specialPath)).Where(state => state).Any() || info.File.Name.IsEndsWith("-monitor.txt") ? specialRemainTime : remainTime))
+					.Where(info => !excludedFileExtensions.Contains(info.Extension) && info.LastWriteTime < (specialFileExtensions.Contains(info.Extension) || specialFolders.Select(specialPath => info.Path.IsStartsWith(specialPath)).Any(state => state) ? specialRemainTime : remainTime))
 					.Select(info => info.File)
 					.ForEach(file =>
 					{
@@ -1658,6 +1660,11 @@ namespace net.vieapps.Services.APIGateway
 					if (this.IsTimers)
 						await this.UpdateStatisticsAsync(message).ConfigureAwait(false);
 					break;
+
+				case "Session#Statistics":
+					if (this.IsTimers)
+						this.Sessions = (message.Data.Get("Total", 0), message.Data.Get("User", 0), message.Data.Get("Visitor", 0), message.Data.Get("Crawler", 0));
+					break;
 			}
 		}
 
@@ -1706,22 +1713,31 @@ namespace net.vieapps.Services.APIGateway
 
 		async Task ProcessStatisticsAsync()
 		{
-			var (forAggregate, forReUpdate) = this.StatisticMessages.GetMessages();
-			var statisticsJson = forAggregate.Aggregate();
-
-			new CommunicateMessage("APIGateway")
+			var time = DateTime.Now.AddMinutes(-1);
+			time = new DateTime(time.Year, time.Month, time.Day, time.Hour, time.Minute, 0);
+			var (forAggregate, forReUpdate) = this.StatisticMessages.GetMessages(time);
+			var statistics = forAggregate.Aggregate(json =>
 			{
-				Type = "System#Statistics",
-				Data = statisticsJson
-			}.Send();
-
+				json["Time"] = time;
+				json["Sessions"] = new JObject
+				{
+					["Total"] = this.Sessions.Total,
+					["User"] = this.Sessions.User,
+					["Visitor"] = this.Sessions.Visitor,
+					["Crawler"] = this.Sessions.Crawler
+				};
+			});
 			new UpdateMessage
 			{
 				Type = "System#Statistics",
 				DeviceID = "*",
-				Data = statisticsJson
+				Data = statistics
 			}.Send();
-
+			new CommunicateMessage("APIGateway")
+			{
+				Type = "System#Statistics",
+				Data = statistics
+			}.Send();
 			await forReUpdate.ForEachAsync(async message => await this.StatisticMessages.Writer.WriteAsync(message, this.CancellationToken).ConfigureAwait(false), true, false).ConfigureAwait(false);
 		}
 

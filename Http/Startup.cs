@@ -145,7 +145,7 @@ namespace net.vieapps.Services.APIGateway
 
 			// setup the forwarder of API Gateway Router
 			var excludedBranches = new HashSet<string>(["router", "pusher"], StringComparer.OrdinalIgnoreCase);
-			var enableForwarder = "true".IsEquals(UtilityService.GetAppSetting("Router:Forwarder", "false"));
+			var enableForwarder = "true".IsEquals(UtilityService.GetAppSetting("Router:Forwarder"));
 			if (enableForwarder)
 				appBuilder.Map("/~router", Router.OpenForwarder);
 

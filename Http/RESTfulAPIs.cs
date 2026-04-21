@@ -153,10 +153,14 @@ namespace net.vieapps.Services.APIGateway
 				else if (requestInfo.ObjectName.IsEquals("Activate"))
 					isActivationProccessed = requestInfo.Verb.IsEquals("GET");
 			}
-			else if (requestInfo.ServiceName.IsStartsWith("Session") || requestInfo.ServiceName.IsStartsWith("Online") || requestInfo.ServiceName.IsStartsWith("Statistic") || requestInfo.ServiceName.IsStartsWith("Hit") || requestInfo.ServiceName.IsStartsWith("Visit") || requestInfo.ServiceName.IsStartsWith("Counter"))
+			else if (requestInfo.ServiceName.IsStartsWith("Statistic") || requestInfo.ServiceName.IsStartsWith("Hit") || requestInfo.ServiceName.IsStartsWith("Visit") || requestInfo.ServiceName.IsStartsWith("Counter") || requestInfo.ServiceName.IsStartsWith("Session") || requestInfo.ServiceName.IsStartsWith("Online"))
 			{
-				requestInfo.ObjectName = requestInfo.ServiceName.IsStartsWith("Statistic") || requestInfo.ServiceName.IsStartsWith("Hit") || requestInfo.ServiceName.IsStartsWith("Visit") || requestInfo.ServiceName.IsStartsWith("Counter") ? "Statistics" : "Sessions";
 				requestInfo.ServiceName = "Users";
+				requestInfo.ObjectName = requestInfo.ServiceName.IsStartsWith("Statistic")
+					? "System.Statistics"
+					: requestInfo.ServiceName.IsStartsWith("Hit") || requestInfo.ServiceName.IsStartsWith("Visit") || requestInfo.ServiceName.IsStartsWith("Counter")
+						? "Visit.Statistics"
+						: "Session.Statistics";
 			}
 
 			// check token & session
@@ -618,7 +622,7 @@ namespace net.vieapps.Services.APIGateway
 					{ "Signature", body.GetHMACSHA256(Global.ValidationKey) }
 				},
 				CorrelationID = requestInfo.CorrelationID
-			}, Global.CancellationToken, RESTfulAPIs.Logger, "Authentications").ConfigureAwait(false);
+			}, context.RequestAborted, RESTfulAPIs.Logger, "Authentications").ConfigureAwait(false);
 
 			// session state
 			requestInfo.SendSessionState(true, sendSessionState);

@@ -107,12 +107,10 @@ namespace net.vieapps.Services.APIGateway
 			Global.Logger.LogInformation($"Initialize the forwarder of API Gateway Router [{UtilityService.GetAppSetting("HttpUri:APIs")}/~router]");
 			Router.Forwarder = new WampHost(new ForwardingRealmContainer($"{address}{(address.EndsWith("/") ? "" : "/")}{realm}", useJSON));
 
-			appBuilder
-				.UseForwardedHeaders(Global.GetForwardedHeadersOptions())
-				.UseWebSockets(new WebSocketOptions
-				{
-					KeepAliveInterval = WebSocketAPIs.WebSocket.KeepAliveInterval
-				});
+			appBuilder.UseForwardedHeaders(Global.GetForwardedHeadersOptions()).UseWebSockets(new WebSocketOptions
+			{
+				KeepAliveInterval = WebSocketAPIs.WebSocket.KeepAliveInterval
+			});
 			Router.Forwarder.RegisterTransport(new WampSharp.AspNetCore.WebSockets.Server.AspNetCoreWebSocketTransport(appBuilder), new JTokenJsonBinding(), new JTokenMessagePackBinding());
 			Global.Logger.LogInformation("The transport of forwarder of API Gateway Router was registered (ASP.NET Core WebSocket)");
 
@@ -121,10 +119,11 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		public static void CloseForwarder()
-			=> Router.ForwardingTokens.Values.ToList().ForEachAsync(async forwardingToken => await forwardingToken.DisposeAsync())
-				.ContinueWith(_ => Router.Forwarder?.Dispose(), TaskContinuationOptions.OnlyOnRanToCompletion)
-				.ContinueWith(_ => Global.Logger.LogInformation("The forwarder of API Gateway Router was disposed"), TaskContinuationOptions.OnlyOnRanToCompletion)
-				.Execute(true);
+		{
+			Router.ForwardingTokens.Values.ForEachAsync(async forwardingToken => await forwardingToken.DisposeAsync().ConfigureAwait(false)).Execute(true);
+			Router.Forwarder?.Dispose();
+			Global.Logger.LogInformation("The forwarder of API Gateway Router was disposed");
+		}
 	}
 
 	class ForwardingToken : IWampRegistrationSubscriptionToken
@@ -168,13 +167,9 @@ namespace net.vieapps.Services.APIGateway
 
 		public void Dispose()
 		{
-			GC.SuppressFinalize(this);
 			this.UnregisterForwardingTokenAsync().Execute(true);
 			this._localToken.Dispose();
 		}
-
-		~ForwardingToken()
-			=> this.Dispose();
 	}
 
 	class ForwardingRpcCatalog : IWampRpcOperationCatalog

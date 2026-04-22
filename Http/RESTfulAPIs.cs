@@ -155,12 +155,12 @@ namespace net.vieapps.Services.APIGateway
 			}
 			else if (requestInfo.ServiceName.IsStartsWith("Statistic") || requestInfo.ServiceName.IsStartsWith("Hit") || requestInfo.ServiceName.IsStartsWith("Visit") || requestInfo.ServiceName.IsStartsWith("Counter") || requestInfo.ServiceName.IsStartsWith("Session") || requestInfo.ServiceName.IsStartsWith("Online"))
 			{
-				requestInfo.ServiceName = "Users";
 				requestInfo.ObjectName = requestInfo.ServiceName.IsStartsWith("Statistic")
 					? "System.Statistics"
 					: requestInfo.ServiceName.IsStartsWith("Hit") || requestInfo.ServiceName.IsStartsWith("Visit") || requestInfo.ServiceName.IsStartsWith("Counter")
 						? "Visit.Statistics"
 						: "Session.Statistics";
+				requestInfo.ServiceName = "Users";
 			}
 
 			// check token & session
@@ -607,7 +607,7 @@ namespace net.vieapps.Services.APIGateway
 			}, cancellationToken);
 
 		static Task WriteAsync(this HttpContext context, JToken json, CancellationToken cancellationToken)
-			=> context.WriteAsync(null, null, json.ToString(RESTfulAPIs.JsonFormat).ToBytes(), cancellationToken);
+			=> context.WriteAsync(null, null, json.ToBytes(RESTfulAPIs.JsonFormat), cancellationToken);
 
 		#region Create/Renew a session
 		static async Task CreateOrRenewSessionAsync(this HttpContext context, RequestInfo requestInfo, JToken session = null, bool sendSessionState = true)

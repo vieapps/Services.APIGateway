@@ -302,6 +302,7 @@ namespace net.vieapps.Services.APIGateway
 				Global.Logger = loggerFactory.CreateLogger<Handler>();
 
 				Global.StartMonitor(logPath);
+				Global.MonitorLogFilePath = Path.Combine(logPath, $"{Global.ServiceName.ToLower()}.http");
 			});
 
 			// assign app event handler => on stopping

@@ -1704,12 +1704,8 @@ namespace net.vieapps.Services.APIGateway
 			=> this.SendServiceInfoAsync(name, args, available, running).Execute();
 		#endregion
 
-		async Task UpdateStatisticsAsync(CommunicateMessage message)
-		{
-			var statisticMessage = new StatisticMessage().CopyFrom(message.Data);
-			statisticMessage.Time = DateTime.Now;
-			await this.StatisticMessages.Writer.WriteAsync(statisticMessage, this.CancellationToken).ConfigureAwait(false);
-		}
+		ValueTask UpdateStatisticsAsync(CommunicateMessage message)
+			=> this.StatisticMessages.Writer.WriteAsync(new StatisticMessage(message.Data, DateTime.Now), this.CancellationToken);
 
 		async Task ProcessStatisticsAsync()
 		{

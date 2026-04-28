@@ -287,7 +287,10 @@ namespace net.vieapps.Services.APIGateway
 					logger.LogInformation($"The service was started - PID: {Process.GetCurrentProcess().Id} - Execution times: {stopwatch.GetElapsedTimes()}");
 
 					if (isUserInteractive && !doSyncWork)
+					{
+						logger.LogInformation($"Router connection info => [{Router.IncomingChannel != null}/{Router.IncomingChannelSessionID}] :: [{Router.OutgoingChannel != null}/{Router.OutgoingChannelSessionID}]");
 						logger.LogWarning($"=====> Enter \"exit\" to terminate ...............");
+					}
 				});
 
 			// do the synchronous work
@@ -321,7 +324,53 @@ namespace net.vieapps.Services.APIGateway
 				}
 				else
 				{
-					while (Console.ReadLine() != "exit") { }
+					var command = Console.ReadLine();
+					while (command != null)
+					{
+						var commands = command.ToArray(' ');
+
+						if (commands[0].IsEquals("send-message") && commands.Length > 2)
+							try
+							{
+								service.SendInterCommunicateMessage(new CommunicateMessage(commands[1])
+								{
+									Type = commands[2],
+									Data = commands.Length > 3 ? commands.Skip(3).Join(" ").ToJSON() : null
+								}, false, true);
+							}
+							catch (Exception ex)
+							{
+								logger.LogInformation($"Error occurred while sending the message => {ex.Message}", ex);
+							}
+
+						else if ((commands[0].IsEquals("send-message-to-api-gateway") || commands[0].IsEquals("send-api-message")) && commands.Length > 1)
+							try
+							{
+								service.SendInterCommunicateMessage(new CommunicateMessage("APIGateway")
+								{
+									Type = commands[1],
+									Data = commands.Length > 2 ? commands.Skip(2).Join(" ").ToJSON() : null
+								}, false, true);
+							}
+							catch (Exception ex)
+							{
+								logger.LogInformation($"Error occurred while sending the message => {ex.Message}", ex);
+							}
+
+						else if (!commands[0].IsEquals("exit"))
+							logger.LogInformation(
+								"Commands:" + "\r\n\t" +
+								"send-message <service> <type> [data]: send an inter-communicate message to other service" + "\r\n\t" +
+								"send-message-to-api-gateway <type> [data]: send an inter-communicate message to API Gateway" + "\r\n\t" +
+								"help: show available commands" + "\r\n\t" +
+								"exit: shutdown & terminate"
+							);
+
+						command = commands[0].IsEquals("exit")
+							? null
+							: Console.ReadLine();
+					}
+
 					if (!isUserInteractive)
 						logger.LogDebug(">>>>> Got \"exit\" command from API Gateway Controller ...............");
 				}

@@ -26,30 +26,23 @@ namespace net.vieapps.Services.APIGateway
 				if (isUserInteractive)
 					builder.AddConsole();
 				if (!string.IsNullOrWhiteSpace(logPath) && Directory.Exists(logPath))
-					builder.AddSerilog(new LoggerConfiguration().WriteTo
-						.File(path: Path.Combine(logPath, "apigateway.router-.txt"), rollingInterval: RollingInterval.Day)
-						.CreateLogger()
-					);
+					builder.AddSerilog(new LoggerConfiguration().WriteTo.File(path: Path.Combine(logPath, "apigateway.router-.txt"), rollingInterval: RollingInterval.Day).CreateLogger());
 			})
 			.BuildServiceProvider()
 			.GetService<ILoggerFactory>()
 			.CreateLogger<RouterComponent>();
 
 			void showInfo()
-			{
-				logger.LogInformation("Info:" + "\r\n\t" + router.RouterInfoString);
-			}
+				=> logger.LogInformation("Info:" + "\r\n\t" + router.RouterInfoString);
 
 			void showCommands()
-			{
-				logger.LogInformation(
+				=> logger.LogInformation(
 					$"Commands:" + "\r\n\t" +
 					$"- info: show the router information" + "\r\n\t" +
 					$"- sessions: show all the sessions" + "\r\n\t" +
 					$"- help: show the available commands" + "\r\n\t" +
 					$"- exit: shutdown and terminate"
 				);
-			}
 
 			void processCommands()
 			{
@@ -90,7 +83,7 @@ namespace net.vieapps.Services.APIGateway
 			// start
 			router = new RouterComponent
 			{
-				OnError = ex => logger.LogError(ex, ex.Message),
+				OnError = ex => logger.LogInformation(ex, ex.Message),
 				OnStarted = () =>
 				{
 					logger.LogInformation("VIEApps NGX API Gateway Router was started" + "\r\n\r\n" + router.RouterInfoString.Replace("\t", ""));
@@ -102,8 +95,8 @@ namespace net.vieapps.Services.APIGateway
 
 			if (isUserInteractive && args?.FirstOrDefault(a => a.StartsWith("/docker")) == null)
 			{
+				router.OnCommand = command => logger.LogInformation($"Got a command\r\n{command}");
 				router.OnSessionCreated = info => logger.LogInformation(
-					(isUserInteractive ? "\r\n\r\n" : "") +
 					$"A session was opened" + "\r\n" +
 					$"- Session ID: {info.SessionID}" + "\r\n" +
 					$"- Connection ID: {info.ConnectionID}" + "\r\n" +
@@ -111,7 +104,6 @@ namespace net.vieapps.Services.APIGateway
 					$"- Service: {info.Name ?? "N/A"} [{info.Description ?? "N/A"}]"
 				);
 				router.OnSessionUpdated = info => logger.LogInformation(
-					(isUserInteractive ? "\r\n\r\n" : "") +
 					$"A session was updated" + "\r\n" +
 					$"- Session ID: {info.SessionID}" + "\r\n" +
 					$"- Connection ID: {info.ConnectionID}" + "\r\n" +
@@ -119,7 +111,6 @@ namespace net.vieapps.Services.APIGateway
 					$"- Service: {info.Name ?? "N/A"} [{info.Description ?? "N/A"}]"
 				);
 				router.OnSessionClosed = info => logger.LogInformation(
-					(isUserInteractive ? "\r\n\r\n" : "") +
 					$"A session was closed" + "\r\n" +
 					$"- Session ID: {info.SessionID}" + "\r\n" +
 					$"- Connection ID: {info.ConnectionID}" + "\r\n" +

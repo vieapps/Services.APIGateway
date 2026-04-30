@@ -23,19 +23,18 @@ namespace net.vieapps.Services.APIGateway
 	public class RouterComponent
 	{
 
-		public const string Powered = "WAMP#v23.8.1-Fleck#v1.2.0-SSL+rev:2026.02.14#blue.ocean";
+		public const string Powered = "WAMP#v23.8.1-Fleck#v1.2.0-SSL+rev:2026.04.24#someone.special";
 
 		#region Properties
+		public IWampHost Host { get; private set; }
 
-		public IWampHost Host { get; private set; } = null;
+		public IWampHostedRealm HostedRealm { get; private set; }
 
-		public IWampHostedRealm HostedRealm { get; private set; } = null;
+		public string Address { get; set; }
 
-		public string Address { get; set; } = null;
+		public string Realm { get; set; }
 
-		public string Realm { get; set; } = null;
-
-		public X509Certificate2 SslCertificate { get; set; } = null;
+		public X509Certificate2 SslCertificate { get; set; }
 
 		public SslProtocols SslProtocol { get; set; } = SslProtocols.Tls12;
 
@@ -43,24 +42,33 @@ namespace net.vieapps.Services.APIGateway
 
 		public bool IsUserInteractive { get; private set; } = false;
 
-		public Action<Exception> OnError { get; set; } = null;
+		public Action<JObject> OnCommand { get; set; }
 
-		public Action OnStarted { get; set; } = null;
+		public Action<Exception> OnError { get; set; }
 
-		public Action OnStopped { get; set; } = null;
+		public Action OnStarted { get; set; }
 
-		public Action<SessionInfo> OnSessionCreated { get; set; } = null;
+		public Action OnStopped { get; set; }
 
-		public Action<SessionInfo> OnSessionUpdated { get; set; } = null;
+		public Action<SessionInfo> OnSessionCreated { get; set; }
 
-		public Action<SessionInfo> OnSessionClosed { get; set; } = null;
+		public Action<SessionInfo> OnSessionUpdated { get; set; }
 
-		Fleck.WebSocketServer StatisticsServer { get; set; } = null;
+		public Action<SessionInfo> OnSessionClosed { get; set; }
+
+		Fleck.WebSocketServer StatisticsServer { get; set; }
+
+		Process Process { get; set; }
+
+		DateTime LastMonitoringTime { get; set; }
+
+		TimeSpan LastMonitoringTotalProcessorTime { get; set; }
 		#endregion
 
 		public void Start(string[] args)
 		{
 			// prepare
+			this.Process = Process.GetCurrentProcess();
 			this.IsUserInteractive = Environment.UserInteractive && args?.FirstOrDefault(a => a.StartsWith("/daemon")) == null;
 
 			if (string.IsNullOrWhiteSpace(this.Address) || string.IsNullOrWhiteSpace(this.Realm))
@@ -172,54 +180,69 @@ namespace net.vieapps.Services.APIGateway
 					{
 						try
 						{
-							var json = JObject.Parse(message);
-							var command = json.Value<string>("Command") ?? "Unknown";
+							var commandJson = JObject.Parse(message);
+							var command = (commandJson.Value<string>("Command") ?? "Unknown").ToLower().Trim();
+							this.OnCommand?.Invoke(commandJson);							
 
-							if (command.ToLower().Equals("info"))
-								websocket.Send(this.RouterInfo.ToString(Formatting.None)).Run();
+							if (command.Equals("info"))
+								websocket.Send(this.RouterInfo.ToString(Formatting.None)).Execute();
 
-							else if (command.ToLower().Equals("connections"))
+							else if (command.Equals("connections"))
 								websocket.Send(new JObject
 								{
 									{ "Connections", this.Sessions.Count }
-								}.ToString(Formatting.None)).Run();
+								}.ToString(Formatting.None)).Execute();
 
-							else if (command.ToLower().Equals("sessions"))
-								websocket.Send(this.SessionsInfo.ToString(Formatting.None)).Run();
+							else if (command.Equals("sessions"))
+								websocket.Send(this.SessionsInfo.ToString(Formatting.None)).Execute();
 
-							else if (command.ToLower().Equals("session"))
+							else if (command.Equals("session"))
 							{
-								if (this.Sessions.TryGetValue(json.Value<long>("SessionID"), out var sessionInfo))
-									websocket.Send(sessionInfo.ToJson().ToString(Formatting.None)).Run();
+								if (this.Sessions.TryGetValue(commandJson.Value<long>("SessionID"), out var sessionInfo))
+									websocket.Send(sessionInfo.ToJson().ToString(Formatting.None)).Execute();
 								else
 									websocket.Send(new JObject
 									{
 										{ "Error", $"Not Found" }
-									}.ToString(Formatting.None)).Run();
+									}.ToString(Formatting.None)).Execute();
 							}
 
-							else if (command.ToLower().Equals("update"))
+							else if (command.Equals("update"))
 							{
-								if (this.Sessions.TryGetValue(json.Value<long>("SessionID"), out var sessionInfo))
+								if (this.Sessions.TryGetValue(commandJson.Value<long>("SessionID"), out var sessionInfo))
 								{
-									sessionInfo.Name = json.Value<string>("Name");
-									sessionInfo.Description = json.Value<string>("Description");
+									sessionInfo.Name = commandJson.Value<string>("Name");
+									sessionInfo.Description = commandJson.Value<string>("Description");
 									this.OnSessionUpdated?.Invoke(sessionInfo);
 								}
+							}
+
+							else if (command.Equals("envinfo") || command.Equals("environmentinfo"))
+							{
+								var (pid, cpuUsage, memoryUsage, lastTotalProcessorTime, now) = this.Process.GetRuntimeInfo(this.LastMonitoringTotalProcessorTime, this.LastMonitoringTime);
+								this.LastMonitoringTotalProcessorTime = lastTotalProcessorTime;
+								this.LastMonitoringTime = now;
+								websocket.Send(new JObject
+								{
+									["Time"] = now.ToLocalTime(),
+									["CpuUsage"] = cpuUsage,
+									["MemoryUsage"] = memoryUsage
+								}.ToString(Formatting.None)).Execute();
 							}
 
 							else
 								websocket.Send(new JObject
 								{
 									{ "Error", $"Unknown command [{message}]" }
-								}.ToString(Formatting.None)).Run();
+								}.ToString(Formatting.None)).Execute();
 						}
 						catch (Exception ex)
 						{
 							websocket.Send(new JObject
 							{
 								{ "Error", $"Bad command [{message}] => {ex.Message}" }
-							}.ToString(Formatting.None)).Run();
+							}.ToString(Formatting.None)).Execute();
+							this.OnError?.Invoke(ex);
 						}
 					});
 				}
@@ -237,6 +260,8 @@ namespace net.vieapps.Services.APIGateway
 			startRouter();
 			if (this.Host != null)
 			{
+				this.LastMonitoringTime = DateTime.UtcNow;
+				this.LastMonitoringTotalProcessorTime = this.Process.TotalProcessorTime;
 				if ("true".Equals(ConfigurationManager.AppSettings["StatisticsWebSocketServer:Enable"] ?? "true"))
 					startStatisticServer();
 				this.OnStarted?.Invoke();
@@ -260,7 +285,7 @@ namespace net.vieapps.Services.APIGateway
 
 		public JObject RouterInfo => new JObject
 		{
-			{ "ProcessID", $"{Process.GetCurrentProcess().Id}" },
+			{ "ProcessID", this.Process.Id.ToString() },
 			{ "WorkingMode", this.IsUserInteractive ? "Interactive app" : "Background service" },
 			{ "UseSecuredConnections", $"{this.SslCertificate != null}".ToLower() + (this.SslCertificate != null ? $" (Issued by {this.SslCertificate.GetNameInfo(X509NameType.DnsName, true)})" : "") },
 			{ "ListeningURI", $"{this.Address}{this.Realm}" },
@@ -314,7 +339,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					info += "\r\n" + "Details:";
 					foreach (JObject session in sessions)
-						info += "\r\n\t" + $"Session ID: {session.Value<long>("SessionID")} - Connection Info: {session.Value<string>("ConnectionID")} - {session.Value<string>("EndPoint")}";
+						info += "\r\n\t" + $"Session ID: {session.Value<long>("SessionID")} - Connection Info: {session.Value<string>("ConnectionID")} - {session.Value<string>("EndPoint")} - Service: {session.Value<string>("Name") ?? "N /A"} [{session.Value<string>("Description") ?? "N /A"}]";
 				}
 				return info;
 			}
@@ -349,11 +374,11 @@ namespace net.vieapps.Services.APIGateway
 		internal JObject ToJson()
 			=> new JObject
 			{
-				{ "SessionID", this.SessionID },
-				{ "ConnectionID", $"{this.ConnectionID}" },
-				{ "EndPoint", $"{this.EndPoint}" },
-				{ "Name", this.Name },
-				{ "Description", this.Description }
+				["SessionID"] = this.SessionID,
+				["ConnectionID"] = this.ConnectionID.ToString(),
+				["EndPoint"] = this.EndPoint.ToString(),
+				["Name"] = this.Name,
+				["Description"] = this.Description
 			};
 
 		public override string ToString()
@@ -374,12 +399,30 @@ namespace net.vieapps.Services.APIGateway
 			}
 		}
 
-		public static void Run(this Task task, bool waitForCompletion = false, Action<Exception> onError = null)
+		public static void Execute(this Task task, bool waitForCompletion = false, Action<Exception> onError = null)
 		{
 			if (waitForCompletion)
 				task.ExecuteTask(onError).Wait();
 			else
 				task.ExecuteTask(onError).ConfigureAwait(false);
 		}
+
+		public static (int PID, double CpuUsage, int MemoryUsage, TimeSpan LastTotalProcessorTime, DateTime LastCheckTime) GetRuntimeInfo(this Process process, TimeSpan lastTotalProcessorTime, DateTime lastCheckTime)
+		{
+			var pid = process.Id;
+			var now = DateTime.UtcNow;
+			var totalProcessorTime = process.TotalProcessorTime;
+			var cpuUsedMilliseconds = (totalProcessorTime - lastTotalProcessorTime).TotalMilliseconds;
+			var elapsedMilliseconds = (now - lastCheckTime).TotalMilliseconds;
+			double cpuUsage = 0;
+			if (elapsedMilliseconds > 0)
+			{
+				cpuUsage = cpuUsedMilliseconds / (elapsedMilliseconds * Environment.ProcessorCount) * 100;
+				cpuUsage = Math.Max(0, Math.Min(cpuUsage, 100));
+			}
+			var memoryUsage = (int)(process.WorkingSet64 / 1024 / 1024);
+			return (pid, cpuUsage, memoryUsage, totalProcessorTime, now);
+		}
+
 	}
 }

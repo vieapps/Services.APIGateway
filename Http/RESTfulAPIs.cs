@@ -372,7 +372,7 @@ namespace net.vieapps.Services.APIGateway
 						throw new MethodNotAllowedException(requestInfo.Verb);
 
 					requestInfo.ObjectName = "service";
-					var response = await Global.CallServiceAsync(requestInfo, cts.Token).ConfigureAwait(false);
+					var response = await context.CallServiceAsync(requestInfo, cts.Token).ConfigureAwait(false);
 					context.UpdateServerTiming("ngxServe", stopwatch.ElapsedMilliseconds);
 					await context.WriteAsync(response, cts.Token).ConfigureAwait(false);
 				}

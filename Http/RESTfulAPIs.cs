@@ -951,7 +951,7 @@ namespace net.vieapps.Services.APIGateway
 
 				// prepare new session
 				requestInfo.Session.SessionID = UtilityService.NewUUID;
-				requestInfo.Session.User = new User("", requestInfo.Session.SessionID, [SystemRole.All.ToString()], []);
+				requestInfo.Session.User = new User("", requestInfo.Session.SessionID, requestInfo.Session.DeviceID, [SystemRole.All.ToString()], []);
 				requestInfo.Session.Verified = false;
 				await Task.WhenAll
 				(

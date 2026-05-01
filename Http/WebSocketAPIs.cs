@@ -608,7 +608,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 						session.SendSessionState("Users", "REVOKE /session", false, true, true);
 						session.SessionID = UtilityService.NewUUID;
-						session.User = new User("", session.SessionID, [SystemRole.All.ToString()], []);
+						session.User = new User("", session.SessionID, session.DeviceID, [SystemRole.All.ToString()], []);
 						session.Verified = false;
 						await Global.Cache.SetAsync($"Session#{session.SessionID}", session.GetEncryptedID(), 13).ConfigureAwait(false);
 						new UpdateMessage

@@ -23,7 +23,7 @@ namespace net.vieapps.Services.APIGateway
 	public class RouterComponent
 	{
 
-		public const string Powered = "WAMP#v23.8.1-Fleck#v1.2.0-SSL+rev:2026.04.24#someone.special";
+		public const string Powered = "WAMP#v23.8.1-Fleck#v1.2.0-SSL+rev:2026.05.01#re.united";
 
 		#region Properties
 		public IWampHost Host { get; private set; }
@@ -58,17 +58,14 @@ namespace net.vieapps.Services.APIGateway
 
 		Fleck.WebSocketServer StatisticsServer { get; set; }
 
-		Process Process { get; set; }
+		DateTime LastCheckTime { get; set; }
 
-		DateTime LastMonitoringTime { get; set; }
-
-		TimeSpan LastMonitoringTotalProcessorTime { get; set; }
+		TimeSpan LastTotalProcessorTime { get; set; }
 		#endregion
 
 		public void Start(string[] args)
 		{
 			// prepare
-			this.Process = Process.GetCurrentProcess();
 			this.IsUserInteractive = Environment.UserInteractive && args?.FirstOrDefault(a => a.StartsWith("/daemon")) == null;
 
 			if (string.IsNullOrWhiteSpace(this.Address) || string.IsNullOrWhiteSpace(this.Realm))
@@ -219,12 +216,12 @@ namespace net.vieapps.Services.APIGateway
 
 							else if (command.Equals("envinfo") || command.Equals("environmentinfo"))
 							{
-								var (pid, cpuUsage, memoryUsage, lastTotalProcessorTime, now) = this.Process.GetRuntimeInfo(this.LastMonitoringTotalProcessorTime, this.LastMonitoringTime);
-								this.LastMonitoringTotalProcessorTime = lastTotalProcessorTime;
-								this.LastMonitoringTime = now;
+								var (cpuUsage, memoryUsage, lastTotalProcessorTime, lastCheckTime) = Process.GetCurrentProcess().GetRuntimeInfo(this.LastTotalProcessorTime, this.LastCheckTime);
+								this.LastTotalProcessorTime = lastTotalProcessorTime;
+								this.LastCheckTime = lastCheckTime;
 								websocket.Send(new JObject
 								{
-									["Time"] = now.ToLocalTime(),
+									["Time"] = lastCheckTime.ToLocalTime(),
 									["CpuUsage"] = cpuUsage,
 									["MemoryUsage"] = memoryUsage
 								}.ToString(Formatting.None)).Execute();
@@ -260,8 +257,8 @@ namespace net.vieapps.Services.APIGateway
 			startRouter();
 			if (this.Host != null)
 			{
-				this.LastMonitoringTime = DateTime.UtcNow;
-				this.LastMonitoringTotalProcessorTime = this.Process.TotalProcessorTime;
+				this.LastCheckTime = DateTime.UtcNow;
+				this.LastTotalProcessorTime = Process.GetCurrentProcess().TotalProcessorTime;
 				if ("true".Equals(ConfigurationManager.AppSettings["StatisticsWebSocketServer:Enable"] ?? "true"))
 					startStatisticServer();
 				this.OnStarted?.Invoke();
@@ -285,7 +282,7 @@ namespace net.vieapps.Services.APIGateway
 
 		public JObject RouterInfo => new JObject
 		{
-			{ "ProcessID", this.Process.Id.ToString() },
+			{ "ProcessID", Process.GetCurrentProcess().Id.ToString() },
 			{ "WorkingMode", this.IsUserInteractive ? "Interactive app" : "Background service" },
 			{ "UseSecuredConnections", $"{this.SslCertificate != null}".ToLower() + (this.SslCertificate != null ? $" (Issued by {this.SslCertificate.GetNameInfo(X509NameType.DnsName, true)})" : "") },
 			{ "ListeningURI", $"{this.Address}{this.Realm}" },
@@ -407,9 +404,8 @@ namespace net.vieapps.Services.APIGateway
 				task.ExecuteTask(onError).ConfigureAwait(false);
 		}
 
-		public static (int PID, double CpuUsage, int MemoryUsage, TimeSpan LastTotalProcessorTime, DateTime LastCheckTime) GetRuntimeInfo(this Process process, TimeSpan lastTotalProcessorTime, DateTime lastCheckTime)
+		public static (double CpuUsage, int MemoryUsage, TimeSpan LastTotalProcessorTime, DateTime LastCheckTime) GetRuntimeInfo(this Process process, TimeSpan lastTotalProcessorTime, DateTime lastCheckTime)
 		{
-			var pid = process.Id;
 			var now = DateTime.UtcNow;
 			var totalProcessorTime = process.TotalProcessorTime;
 			var cpuUsedMilliseconds = (totalProcessorTime - lastTotalProcessorTime).TotalMilliseconds;
@@ -421,7 +417,7 @@ namespace net.vieapps.Services.APIGateway
 				cpuUsage = Math.Max(0, Math.Min(cpuUsage, 100));
 			}
 			var memoryUsage = (int)(process.WorkingSet64 / 1024 / 1024);
-			return (pid, cpuUsage, memoryUsage, totalProcessorTime, now);
+			return (cpuUsage, memoryUsage, totalProcessorTime, now);
 		}
 
 	}

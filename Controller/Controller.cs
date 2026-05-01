@@ -172,13 +172,9 @@ namespace net.vieapps.Services.APIGateway
 
 		Channel<(DateTime Time, double CpuUsage, double MemoryUsage)> RouterStatistics { get; set; }
 
-		((double Min, double Max, double Average) CpuUsage, (double Min, double Max, double Average) MemoryUsage) RouterInfo { get; set; } = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0));
+		((double Min, double Max, double Average) CpuUsage, (double Min, double Max, double Average) MemoryUsage) RouterStats { get; set; } = ((Min: 0.0, Max: 0.0, Average: 0.0), (Min: 0.0, Max: 0.0, Average: 0.0));
 
-		ManagedWebSocket RouterWebSocket { get; set; }
-
-		Task RouterStatisticsReceiver { get; set; }
-
-		(int Total, int User, int Visitor, int Crawler) Sessions { get; set; } = (0, 0, 0, 0);
+		(int Total, int User, int Visitor, int Crawler) Sessions { get; set; } = (Total: 0, User: 0, Visitor: 0, Crawler: 0);
 
 		/// <summary>
 		/// Gets the number of scheduling tasks
@@ -657,9 +653,6 @@ namespace net.vieapps.Services.APIGateway
 
 				if (this.AllowRouter)
 					await Router.DisconnectAsync().ConfigureAwait(false);
-
-				if (this.IsTimers)
-					await this.RouterStatisticsReceiver.ConfigureAwait(false);
 
 				this.State = ServiceState.Disconnected;
 				Global.OnProcess?.Invoke($"The API Gateway Controller was disconnected");
@@ -1333,14 +1326,14 @@ namespace net.vieapps.Services.APIGateway
 				}, this.SchedulingInterval + 13);
 
 				// statistics
-				this.ServiceStatistics = Channel.CreateBounded<StatisticMessage>(new BoundedChannelOptions(1024 * 1024)
+				this.ServiceStatistics = Channel.CreateBounded<StatisticMessage>(new BoundedChannelOptions(1024 * 60)
 				{
 					SingleWriter = false,
 					SingleReader = true,
 					FullMode = BoundedChannelFullMode.DropOldest
 				});
 
-				this.RouterStatistics = Channel.CreateBounded<(DateTime Time, double CpuUsage, double MemoryUsage)>(new BoundedChannelOptions(1024 * 1024)
+				this.RouterStatistics = Channel.CreateBounded<(DateTime Time, double CpuUsage, double MemoryUsage)>(new BoundedChannelOptions(256)
 				{
 					SingleWriter = false,
 					SingleReader = true,
@@ -1348,7 +1341,7 @@ namespace net.vieapps.Services.APIGateway
 				});
 
 				Router.OnRouterWebSocketMessageReceived = (_, message) => this.UpdateRouterStatistics(message);
-				this.StartTimer(this.GetRouterStatisticsAsync, 5);
+				this.StartTimer(this.GetRouterStatisticsAsync, 1);
 
 				var now = DateTime.Now;
 				var time = now.AddMinutes(1);
@@ -1751,20 +1744,20 @@ namespace net.vieapps.Services.APIGateway
 					["Visitor"] = this.Sessions.Visitor,
 					["Crawler"] = this.Sessions.Crawler
 				};
-				var router = json.Get<JObject>("Upstream")?.Get<JObject>("Router");
+				var router = json.Get<JObject>("Router");
 				if (router != null)
 				{
 					router["CPU"] = new JObject
 					{
-						["Min"] = this.RouterInfo.CpuUsage.Min,
-						["Max"] = this.RouterInfo.CpuUsage.Max,
-						["Average"] = this.RouterInfo.CpuUsage.Average
+						["Min"] = this.RouterStats.CpuUsage.Min,
+						["Max"] = this.RouterStats.CpuUsage.Max,
+						["Average"] = this.RouterStats.CpuUsage.Average
 					};
 					router["Memory"] = new JObject
 					{
-						["Min"] = this.RouterInfo.MemoryUsage.Min,
-						["Max"] = this.RouterInfo.MemoryUsage.Max,
-						["Average"] = this.RouterInfo.MemoryUsage.Average
+						["Min"] = this.RouterStats.MemoryUsage.Min,
+						["Max"] = this.RouterStats.MemoryUsage.Max,
+						["Average"] = this.RouterStats.MemoryUsage.Average
 					};
 				}
 			}) : null;
@@ -1813,7 +1806,7 @@ namespace net.vieapps.Services.APIGateway
 				memoryAverage = forAggregate.Average(info => info.MemoryUsage);
 			}
 
-			this.RouterInfo = ((cpuMin, cpuMax, cpuAverage), (memoryMin, memoryMax, memoryAverage));
+			this.RouterStats = ((Min: cpuMin, Max: cpuMax, Average: cpuAverage), (Min: memoryMin, Max: memoryMax, Average: memoryAverage));
 			forReUpdate.ForEach(info => this.RouterStatistics.Writer.TryWrite(info));
 		}
 
@@ -1823,12 +1816,12 @@ namespace net.vieapps.Services.APIGateway
 				["Command"] = "EnvironmentInfo"
 			}.AsString());
 
-		void UpdateRouterStatistics(string data)
+		void UpdateRouterStatistics(string message)
 		{
-			var message = data.ToJson();
-			var timeStr = message.Value<string>("Time");
-			var cpuUsage = message.Value<object>("CpuUsage");
-			var memoryUsage = message.Value<object>("MemoryUsage");
+			var json = message.ToJson();
+			var timeStr = json.Value<string>("Time");
+			var cpuUsage = json.Value<object>("CpuUsage");
+			var memoryUsage = json.Value<object>("MemoryUsage");
 			if (timeStr != null && DateTime.TryParse(timeStr, out var time) && cpuUsage != null && memoryUsage != null)
 				try
 				{

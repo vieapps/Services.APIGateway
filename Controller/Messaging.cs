@@ -127,14 +127,14 @@ namespace net.vieapps.Services.APIGateway
 				}, true, false).ConfigureAwait(false);
 		}
 
-		internal static async Task SaveMessagesAsync()
+		internal static async Task SaveMessagesAsync(CancellationToken cancellationToken = default)
 		{
 			await (MailSender.Messages?.Values ?? Array.Empty<MailInfo>()).ToJArray(info => new JObject
 			{
 				{ "Time", info.Time },
 				{ "Counters", info.Counters },
 				{ "Message", info.Message.Encrypted }
-			}).ToString(Formatting.Indented).SaveAsTextAsync(Path.Combine(Global.StatusPath, "mails.json")).ConfigureAwait(false);
+			}).SaveAsTextAsync(Path.Combine(Global.StatusPath, "mails.json"), cancellationToken, Formatting.Indented).ConfigureAwait(false);
 			MailSender.Messages = null;
 		}
 		#endregion
@@ -289,15 +289,14 @@ namespace net.vieapps.Services.APIGateway
 				}, true, false).ConfigureAwait(false);
 		}
 
-		internal static async Task SaveMessagesAsync()
+		internal static async Task SaveMessagesAsync(CancellationToken cancellationToken = default)
 		{
-			if (WebHookSender.Messages.Count > 0)
-				await WebHookSender.Messages.ToJArray(info => new JObject
-				{
-					{ "Time", info.Time },
-					{ "Counters", info.Counters },
-					{ "Message", info.Message.Encrypted }
-				}).ToString(Formatting.Indented).ToBytes().ToMemoryStream().SaveAsTextAsync(Path.Combine(Global.StatusPath, "web-hooks.json")).ConfigureAwait(false);
+			await (WebHookSender.Messages?.Values ?? Array.Empty<WebHookInfo>()).ToJArray(info => new JObject
+			{
+				{ "Time", info.Time },
+				{ "Counters", info.Counters },
+				{ "Message", info.Message.Encrypted }
+			}).SaveAsTextAsync(Path.Combine(Global.StatusPath, "web-hooks.json"), cancellationToken, Formatting.Indented).ConfigureAwait(false);
 		}
 		#endregion
 

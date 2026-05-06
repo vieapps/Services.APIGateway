@@ -356,7 +356,7 @@ namespace net.vieapps.Services.APIGateway
 							(
 								"messages.services.apigateway",
 								message => this.Info.ID.IsEquals(message.ExcludedNodeID) ? Task.CompletedTask : this.ProcessInterCommunicateMessageAsync(message),
-								exception => Global.OnError?.Invoke($"Error occurred while fetching an inter-communicate message of API Gateway => {exception.Message}", this.State == ServiceState.Connected ? exception : null)
+								exception => Global.OnError?.Invoke($"Error occurred while processing an inter-communicate message of API Gateway => {exception.Message}\r\nStack: {exception.StackTrace}", this.State == ServiceState.Connected ? exception : null)
 							);
 							Global.OnProcess?.Invoke($"The communicator of API Gateway was{(this.State == ServiceState.Disconnected ? " re-" : " ")}subscribed successful");
 
@@ -625,23 +625,26 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// do clean-up tasks
-			try
+			if (this.AllowRegisterHelperServices)
 			{
-				this.MailSender?.Dispose();
-				await MailSender.SaveMessagesAsync().ConfigureAwait(false);
-
-				this.WebHookSender?.Dispose();
-				await WebHookSender.SaveMessagesAsync().ConfigureAwait(false);
-			}
-			catch (Exception ex)
-			{
-				Global.OnError?.Invoke($"Error occurred while cleaning-up the controller => {ex.Message}", ex);
+				try
+				{
+					this.MailSender?.Dispose();
+					await MailSender.SaveMessagesAsync().ConfigureAwait(false);
+				}
+				catch { }
+				try
+				{
+					this.WebHookSender?.Dispose();
+					await WebHookSender.SaveMessagesAsync().ConfigureAwait(false);
+				}
+				catch { }
 			}
 
 			if (this.IsTimers)
 			{
-				this.ServiceStatistics.Writer.TryComplete();
-				this.RouterStatistics.Writer.TryComplete();
+				this.ServiceStatistics.Writer?.TryComplete();
+				this.RouterStatistics.Writer?.TryComplete();
 			}
 
 			// disconnect from API Gateway Router
@@ -1201,82 +1204,84 @@ namespace net.vieapps.Services.APIGateway
 		void RegisterTimers()
 		{
 			// send email messages
-			this.StartTimer(async () =>
-			{
-				if (this.MailSender == null)
-					try
-					{
-						this.MailSender = new MailSender(this.CancellationToken);
-						await this.MailSender.ProcessAsync
-						(
-							message =>
-							{
-								var log = "The email message has been sent" + "\r\n" +
-									$"- ID: {message.ID}" + "\r\n" +
-									$"- From: {message.From}" + "\r\n" +
-									$"- To: {message.To}" + (!string.IsNullOrWhiteSpace(message.Cc) ? $" / {message.Cc}" : "") + (!string.IsNullOrWhiteSpace(message.Bcc) ? $" / {message.Bcc}" : "") + "\r\n" +
-									$"- Subject: {message.Subject}";
-								Global.WriteLog(message.CorrelationID, "APIGateway", "Emails", log);
-							},
-							(message, exception, beRemoved) =>
-							{
-								var log = $"Error occurred while sending an email message => {exception.Message} [{exception.GetType()}]" + "\r\n" +
-									$"- ID: {message.ID}" + "\r\n" +
-									$"- From: {message.From}" + "\r\n" +
-									$"- To: {message.To}" + (!string.IsNullOrWhiteSpace(message.Cc) ? $" / {message.Cc}" : "") + (!string.IsNullOrWhiteSpace(message.Bcc) ? $" / {message.Bcc}" : "") + "\r\n" +
-									$"- Subject: {message.Subject}" +
-									$"{(beRemoved ? "\r\n++ NOTED: The message will  be removed from queue because its failed too much times" : "")}";
-								Global.WriteLog(message.CorrelationID, "APIGateway", "Emails", log, exception.StackTrace);
-							}
-						).ConfigureAwait(false);
-					}
-					catch (Exception ex)
-					{
-						Global.OnError?.Invoke($"Error occurred while processing email messages: {ex.Message}", ex);
-					}
-					finally
-					{
-						this.MailSender?.Dispose();
-						this.MailSender = null;
-					}
-			}, this.SendMailInterval);
+			if (this.AllowRegisterHelperServices)
+				this.StartTimer(async () =>
+				{
+					if (this.MailSender == null)
+						try
+						{
+							this.MailSender = new MailSender(this.CancellationToken);
+							await this.MailSender.ProcessAsync
+							(
+								message =>
+								{
+									var log = "The email message has been sent" + "\r\n" +
+										$"- ID: {message.ID}" + "\r\n" +
+										$"- From: {message.From}" + "\r\n" +
+										$"- To: {message.To}" + (!string.IsNullOrWhiteSpace(message.Cc) ? $" / {message.Cc}" : "") + (!string.IsNullOrWhiteSpace(message.Bcc) ? $" / {message.Bcc}" : "") + "\r\n" +
+										$"- Subject: {message.Subject}";
+									Global.WriteLog(message.CorrelationID, "APIGateway", "Emails", log);
+								},
+								(message, exception, beRemoved) =>
+								{
+									var log = $"Error occurred while sending an email message => {exception.Message} [{exception.GetType()}]" + "\r\n" +
+										$"- ID: {message.ID}" + "\r\n" +
+										$"- From: {message.From}" + "\r\n" +
+										$"- To: {message.To}" + (!string.IsNullOrWhiteSpace(message.Cc) ? $" / {message.Cc}" : "") + (!string.IsNullOrWhiteSpace(message.Bcc) ? $" / {message.Bcc}" : "") + "\r\n" +
+										$"- Subject: {message.Subject}" +
+										$"{(beRemoved ? "\r\n++ NOTED: The message will  be removed from queue because its failed too much times" : "")}";
+									Global.WriteLog(message.CorrelationID, "APIGateway", "Emails", log, exception.StackTrace);
+								}
+							).ConfigureAwait(false);
+						}
+						catch (Exception ex)
+						{
+							Global.OnError?.Invoke($"Error occurred while processing email messages: {ex.Message}", ex);
+						}
+						finally
+						{
+							this.MailSender?.Dispose();
+							this.MailSender = null;
+						}
+				}, this.SendMailInterval);
 
 			// send web hook messages
-			this.StartTimer(async () =>
-			{
-				if (this.WebHookSender == null)
-					try
-					{
-						this.WebHookSender = new WebHookSender(this.CancellationToken);
-						await this.WebHookSender.ProcessAsync
-						(
-							message =>
-							{
-								var log = "The web-hook message has been sent" + "\r\n" +
-									$"- ID: {message.ID}" + "\r\n" +
-									$"- End-point: {message.EndpointURL}";
-								Global.WriteLog(message.CorrelationID, "APIGateway", "WebHooks", log);
-							},
-							(message, exception, beRemoved) =>
-							{
-								var log = $"Error occurred while sending a web-hook message => {exception.Message} [{exception.GetType()}]" + "\r\n" +
-									$"- ID: {message.ID}" + "\r\n" +
-									$"- End-point: {message.EndpointURL}" +
-									$"{(beRemoved ? "\r\n++ NOTED: The message will  be removed from queue because its failed too much times" : "")}";
-								Global.WriteLog(message.CorrelationID, "APIGateway", "WebHooks", log, exception.StackTrace);
-							}
-						).ConfigureAwait(false);
-					}
-					catch (Exception ex)
-					{
-						Global.OnError?.Invoke($"Error occurred while processing web-hook messages: {ex.Message}", ex);
-					}
-					finally
-					{
-						this.WebHookSender?.Dispose();
-						this.WebHookSender = null;
-					}
-			}, this.SendWebHooksInterval);
+			if (this.AllowRegisterHelperServices)
+				this.StartTimer(async () =>
+				{
+					if (this.WebHookSender == null)
+						try
+						{
+							this.WebHookSender = new WebHookSender(this.CancellationToken);
+							await this.WebHookSender.ProcessAsync
+							(
+								message =>
+								{
+									var log = "The web-hook message has been sent" + "\r\n" +
+										$"- ID: {message.ID}" + "\r\n" +
+										$"- End-point: {message.EndpointURL}";
+									Global.WriteLog(message.CorrelationID, "APIGateway", "WebHooks", log);
+								},
+								(message, exception, beRemoved) =>
+								{
+									var log = $"Error occurred while sending a web-hook message => {exception.Message} [{exception.GetType()}]" + "\r\n" +
+										$"- ID: {message.ID}" + "\r\n" +
+										$"- End-point: {message.EndpointURL}" +
+										$"{(beRemoved ? "\r\n++ NOTED: The message will  be removed from queue because its failed too much times" : "")}";
+									Global.WriteLog(message.CorrelationID, "APIGateway", "WebHooks", log, exception.StackTrace);
+								}
+							).ConfigureAwait(false);
+						}
+						catch (Exception ex)
+						{
+							Global.OnError?.Invoke($"Error occurred while processing web-hook messages: {ex.Message}", ex);
+						}
+						finally
+						{
+							this.WebHookSender?.Dispose();
+							this.WebHookSender = null;
+						}
+				}, this.SendWebHooksInterval);
 
 			// house keeper
 			this.StartTimer(this.RunHouseKeeper, 60 * 60);
@@ -1724,8 +1729,11 @@ namespace net.vieapps.Services.APIGateway
 		#endregion
 
 		#region System statistics
-		ValueTask UpdateServiceStatisticsAsync(CommunicateMessage message)
-			=> this.ServiceStatistics.Writer.WriteAsync(new StatisticMessage(message.Data, DateTime.Now), this.CancellationToken);
+		async ValueTask UpdateServiceStatisticsAsync(CommunicateMessage message)
+		{
+			if (this.ServiceStatistics?.Writer != null)
+				await this.ServiceStatistics.Writer.WriteAsync(new StatisticMessage(message.Data, DateTime.Now), this.CancellationToken).ConfigureAwait(false);
+		}
 
 		async Task ProcessServiceStatisticsAsync()
 		{

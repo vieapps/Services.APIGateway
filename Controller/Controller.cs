@@ -1757,15 +1757,15 @@ namespace net.vieapps.Services.APIGateway
 				{
 					router["CPU"] = new JObject
 					{
-						["Min"] = this.RouterStats.CpuUsage.Min,
-						["Max"] = this.RouterStats.CpuUsage.Max,
-						["Average"] = this.RouterStats.CpuUsage.Average
+						["Min"] = Math.Round(this.RouterStats.CpuUsage.Min, 2),
+						["Max"] = Math.Round(this.RouterStats.CpuUsage.Max, 2),
+						["Average"] = Math.Round(this.RouterStats.CpuUsage.Average, 2)
 					};
 					router["Memory"] = new JObject
 					{
-						["Min"] = this.RouterStats.MemoryUsage.Min,
-						["Max"] = this.RouterStats.MemoryUsage.Max,
-						["Average"] = this.RouterStats.MemoryUsage.Average
+						["Min"] = Math.Round(this.RouterStats.MemoryUsage.Min, 2),
+						["Max"] = Math.Round(this.RouterStats.MemoryUsage.Max, 2),
+						["Average"] = Math.Round(this.RouterStats.MemoryUsage.Average, 2)
 					};
 				}
 			}) : null;

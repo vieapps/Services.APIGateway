@@ -20,10 +20,8 @@ using WampSharp.V2.Realm;
 
 namespace net.vieapps.Services.APIGateway
 {
-	public class RouterComponent
+	public class RouterComponent : IDisposable
 	{
-
-		public const string Powered = "WAMP#v23.8.1-Fleck#v1.2.0-SSL+rev:2026.05.01#re.united";
 
 		#region Properties
 		public IWampHost Host { get; private set; }
@@ -62,6 +60,17 @@ namespace net.vieapps.Services.APIGateway
 
 		TimeSpan LastTotalProcessorTime { get; set; }
 		#endregion
+
+		public const string Powered = "WAMP#v23.8.1-Fleck#v1.2.0-SSL+rev:2026.05.01#re.united";
+
+		public void Dispose()
+		{
+			try
+			{
+				this.Stop();
+			}
+			catch { }
+		}
 
 		public void Start(string[] args)
 		{
@@ -340,15 +349,6 @@ namespace net.vieapps.Services.APIGateway
 				}
 				return info;
 			}
-		}
-
-		~RouterComponent()
-		{
-			try
-			{
-				this.Stop();
-			}
-			catch { }
 		}
 	}
 

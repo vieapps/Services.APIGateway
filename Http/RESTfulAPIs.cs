@@ -34,7 +34,7 @@ namespace net.vieapps.Services.APIGateway
 
 		public static List<string> ExcludedHeaders { get; } = UtilityService.GetAppSetting("APIs:ExcludedHeaders", "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,priority,purpose,ms-aspnetcore-token,x-forwarded-for,x-forwarded-proto,x-forwarded-port,x-original-for,x-original-proto,x-original-remote-endpoint,x-original-port,cdn-loop").ToList();
 
-		public static HashSet<string> NoTokenRequiredServices { get; } = $"{UtilityService.GetAppSetting("APIs:NoTokenRequiredServices", "")}|test|indexes|iplocations|discovery|webhook|webhooks".ToLower().ToHashSet('|', true);
+		public static HashSet<string> NoTokenRequiredServices { get; } = $"{UtilityService.GetAppSetting("APIs:NoTokenRequiredServices", "")}|test|metrics|indexes|iplocations|discovery|webhook|webhooks".ToLower().ToHashSet('|', true);
 
 		public static string PrivateToken { get; } = UtilityService.GetAppSetting("APIs:PrivateToken", UtilityService.NewUUID);
 
@@ -153,14 +153,14 @@ namespace net.vieapps.Services.APIGateway
 				else if (requestInfo.ObjectName.IsEquals("Activate"))
 					isActivationProccessed = requestInfo.Verb.IsEquals("GET");
 			}
-			else if (requestInfo.ServiceName.IsStartsWith("Statistic") || requestInfo.ServiceName.IsStartsWith("Hit") || requestInfo.ServiceName.IsStartsWith("Visit") || requestInfo.ServiceName.IsStartsWith("Counter") || requestInfo.ServiceName.IsStartsWith("Session") || requestInfo.ServiceName.IsStartsWith("Online"))
+			else if (svcName.IsStartsWith("Metric") || svcName.IsStartsWith("Statistic") || svcName.IsStartsWith("Hit") || svcName.IsStartsWith("Visit") || svcName.IsStartsWith("Counter") || svcName.IsStartsWith("Session") || svcName.IsStartsWith("Online"))
 			{
-				requestInfo.ObjectName = requestInfo.ServiceName.IsStartsWith("Statistic")
+				requestInfo.ServiceName = "Users";
+				requestInfo.ObjectName = svcName.IsStartsWith("Metric") || svcName.IsStartsWith("Statistic")
 					? "System.Statistics"
-					: requestInfo.ServiceName.IsStartsWith("Hit") || requestInfo.ServiceName.IsStartsWith("Visit") || requestInfo.ServiceName.IsStartsWith("Counter")
+					: svcName.IsStartsWith("Hit") || svcName.IsStartsWith("Visit") || svcName.IsStartsWith("Counter")
 						? "Visit.Statistics"
 						: "Session.Statistics";
-				requestInfo.ServiceName = "Users";
 			}
 
 			// check token & session
@@ -169,6 +169,7 @@ namespace net.vieapps.Services.APIGateway
 				var tokenIsRequired = !isWebHookRequest && !isActivationProccessed
 					&& (!isSessionInitialized || !requestInfo.Session.User.ID.Equals("") && !requestInfo.Session.User.IsSystemAccount || requestInfo.Query.ContainsKey("register"))
 					&& !RESTfulAPIs.NoTokenRequiredServices.Contains(requestInfo.ServiceName)
+					&& !RESTfulAPIs.NoTokenRequiredServices.Contains(svcName)
 					&& !RESTfulAPIs.PrivateToken.IsEquals(requestInfo.GetParameter("x-private-token"));
 				if (tokenIsRequired)
 				{

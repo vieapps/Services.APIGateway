@@ -34,7 +34,7 @@ namespace net.vieapps.Services.APIGateway
 
 		public static List<string> ExcludedHeaders { get; } = UtilityService.GetAppSetting("APIs:ExcludedHeaders", "connection,accept,accept-encoding,accept-language,cache-control,cookie,content-type,content-length,user-agent,referer,host,origin,if-modified-since,if-none-match,upgrade-insecure-requests,priority,purpose,ms-aspnetcore-token,x-forwarded-for,x-forwarded-proto,x-forwarded-port,x-original-for,x-original-proto,x-original-remote-endpoint,x-original-port,cdn-loop").ToList();
 
-		public static HashSet<string> NoTokenRequiredServices { get; } = $"{UtilityService.GetAppSetting("APIs:NoTokenRequiredServices", "")}|test|metrics|indexes|iplocations|discovery|webhook|webhooks".ToLower().ToHashSet('|', true);
+		public static HashSet<string> NoTokenRequiredServices { get; } = $"{UtilityService.GetAppSetting("APIs:NoTokenRequiredServices", "")}|test|trace|metrics|indexes|iplocations|discovery|webhook|webhooks".ToLower().ToHashSet('|', true);
 
 		public static string PrivateToken { get; } = UtilityService.GetAppSetting("APIs:PrivateToken", UtilityService.NewUUID);
 
@@ -162,6 +162,8 @@ namespace net.vieapps.Services.APIGateway
 						? "Visit.Statistics"
 						: "Session.Statistics";
 			}
+			else if (svcName.IsEquals("Trace"))
+				requestInfo.ServiceName = "Logs";
 
 			// check token & session
 			try
@@ -366,11 +368,39 @@ namespace net.vieapps.Services.APIGateway
 			else if (requestInfo.ServiceName.IsEquals("logs"))
 				try
 				{
-					if (!context.IsAuthenticated())
-						throw new AccessDeniedException();
+					if (!requestInfo.IsAuthenticated() && !svcName.IsEquals("Trace"))
+						throw new UnauthorizedAccessException();
 
 					if (!requestInfo.Verb.IsEquals("GET"))
 						throw new MethodNotAllowedException(requestInfo.Verb);
+
+					if (svcName.IsEquals("Trace"))
+					{
+						var time = DateTime.Now.AddMinutes(-1);
+
+						var paginationJson = new JObject();
+						if (Int32.TryParse(requestInfo.GetParameter("x-page"), out var pageNumber) && pageNumber > 0)
+							paginationJson["PageNumber"] = pageNumber;
+
+						var filterJson = new JObject();
+						if (requestInfo.TryGetParameter("x-correlation-id", out var correlationID))
+						{
+							filterJson["CorrelationID"] = correlationID;
+							requestInfo.CorrelationID = context.SetItem("Correlation-ID", UtilityService.NewUUID);
+						}
+						filterJson["ServiceName"] = requestInfo.GetParameter("x-service-name");
+						filterJson["ObjectName"] = requestInfo.GetParameter("x-object-name");
+						filterJson["StartTime"] = requestInfo.GetParameter("x-start-time") ?? new DateTime(time.Year, time.Month, time.Day, time.Hour, time.Minute, 0).ToIsoString();
+						filterJson["EndTime"] = requestInfo.GetParameter("x-end-time") ?? new DateTime(time.Year, time.Month, time.Day, time.Hour, time.Minute, 59).ToIsoString();
+
+						requestInfo.Query.Remove("x-page");
+						requestInfo.Query.Remove("x-correlation-id");
+						requestInfo.Query.Remove("x-service-name");
+						requestInfo.Query.Remove("x-object-name");
+						requestInfo.Query.Remove("x-start-time");
+						requestInfo.Query.Remove("x-end-time");
+						requestInfo.Query["x-request"] = new JObject { ["FilterBy"] = filterJson, ["Pagination"] = paginationJson }.AsString().Url64Encode();
+					}
 
 					requestInfo.ObjectName = "service";
 					var response = await context.CallServiceAsync(requestInfo, cts.Token).ConfigureAwait(false);

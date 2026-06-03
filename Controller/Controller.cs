@@ -74,6 +74,20 @@ namespace net.vieapps.Services.APIGateway
 
 			public int RecyclePeriod { get; internal set; } = 0;
 
+			public bool WatchThreshold { get; internal set; } = false;
+
+			public double CpuThreshold { get; internal set; }
+
+			public double CpuUsage { get; internal set; }
+
+			public int MemoryThreshold { get; internal set; }
+
+			public int MemoryUsage { get; internal set; }
+
+			public TimeSpan LastTotalProcessorTime { get; internal set; }
+			
+			public DateTime LastCheckTime { get; internal set; }
+
 			public Dictionary<string, object> Extra { get; }
 
 			public ExternalProcess.Info Instance { get; internal set; }
@@ -88,6 +102,37 @@ namespace net.vieapps.Services.APIGateway
 				=> this.Extra.TryGetValue(name, out var value) && value != null && value is T val
 					? val
 					: @default;
+
+			public ProcessInfo Watch(bool firstTime = false)
+			{
+				if (this.Instance != null && this.Instance.Process != null && this.WatchThreshold)
+				{
+					var process = this.Instance.Process;
+					process.Refresh();
+					if (firstTime)
+					{
+						this.LastTotalProcessorTime = process.TotalProcessorTime;
+						this.LastCheckTime = DateTime.UtcNow;
+					}
+					else
+					{
+						var now = DateTime.UtcNow;
+						var totalProcessorTime = process.TotalProcessorTime;
+						var cpuUsedMilliseconds = (totalProcessorTime - this.LastTotalProcessorTime).TotalMilliseconds;
+						var elapsedMilliseconds = (now - this.LastCheckTime).TotalMilliseconds;
+
+						if (this.LastCheckTime != DateTime.MinValue && elapsedMilliseconds > 0)
+						{
+							this.CpuUsage = cpuUsedMilliseconds / (elapsedMilliseconds * Environment.ProcessorCount) * 100;
+							this.CpuUsage = Math.Max(0, Math.Min(this.CpuUsage, 100));
+						}
+						this.MemoryUsage = (int)(process.WorkingSet64 / 1024 / 1024);
+						this.LastTotalProcessorTime = totalProcessorTime;
+						this.LastCheckTime = now;
+					}
+				}
+				return this;
+			}
 		}
 		#endregion
 
@@ -166,7 +211,11 @@ namespace net.vieapps.Services.APIGateway
 
 		List<string> TrashDataSources { get; } = new List<string>();
 
-		List<string> HttpServices = new List<string> { "APIs", "Files", "Portals", "CMSPortals" };
+		List<string> HttpServices { get; } = new List<string> { "APIs", "Files", "Portals", "CMSPortals" };
+
+		bool IsServiceStatisticsCollector { get; } = "true".IsEquals(UtilityService.GetAppSetting("ServiceStatistics:Collector"));
+
+		bool IsServiceStatisticsSampleEnabled { get; } = "true".IsEquals(UtilityService.GetAppSetting("ServiceStatistics:Samples"));
 
 		Channel<StatisticMessage> ServiceStatistics { get; set; }
 
@@ -176,15 +225,13 @@ namespace net.vieapps.Services.APIGateway
 
 		(int Total, int User, int Visitor, int Crawler) Sessions { get; set; } = (Total: 0, User: 0, Visitor: 0, Crawler: 0);
 
-		/// <summary>
-		/// Gets the number of scheduling tasks
-		/// </summary>
 		public int NumberOfTasks => this.Tasks.Count;
 
-		/// <summary>
-		/// Gets the number of scheduling timers
-		/// </summary>
 		public int NumberOfTimers => this.Timers.Count;
+
+		DateTime LastWatch { get; set; } = DateTime.Now;
+
+		int WatchingInterval { get; set; } = 15;
 		#endregion
 
 		#region Start/Stop controller
@@ -255,13 +302,35 @@ namespace net.vieapps.Services.APIGateway
 				this.ServiceHosting = servicesConfiguration.Section.Attributes["executable"]?.Value.Trim() ?? this.ServiceHosting;
 				if (this.ServiceHosting.IsEndsWith(".exe") || this.ServiceHosting.IsEndsWith(".dll"))
 					this.ServiceHosting = this.ServiceHosting.Left(this.ServiceHosting.Length - 4).Trim();
+
 				if (servicesConfiguration.Section.SelectNodes("./add") is XmlNodeList services)
 					services.ToList().ForEach(service =>
 					{
 						var name = service.Attributes["name"]?.Value?.Trim().ToLower();
 						var type = service.Attributes["type"]?.Value?.Trim().Replace(" ", "");
 						if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(type))
-							this.BusinessServices[name] = new ProcessInfo(name, service.Attributes["executable"]?.Value?.Trim(), $"{type} {service.Attributes["arguments"]?.Value}".Trim(), service.Attributes["runAs"]?.Value?.Trim(), service.Attributes["recycleAt"]?.Value?.Trim(), service.Attributes["recyclePeriod"]?.Value?.Trim());
+						{
+							var executable = service.Attributes["executable"]?.Value?.Trim();
+							var arguments = service.Attributes["arguments"]?.Value;
+							var runAs = service.Attributes["runAs"]?.Value?.Trim();
+							var recycleAt = service.Attributes["recycleAt"]?.Value?.Trim();
+							var recyclePeriod = service.Attributes["recyclePeriod"]?.Value?.Trim();
+							var serviceInfo = new ProcessInfo(name, executable, $"{type} {arguments}".Trim(), runAs, recycleAt, recyclePeriod);
+
+							if (!Double.TryParse(service.Attributes["cpuThreshold"]?.Value ?? "80", out var cpuThreshold) || cpuThreshold < 0)
+								cpuThreshold = 0.0;
+							if (!Int32.TryParse(service.Attributes["memoryThreshold"]?.Value ?? "10240", out var memoryThreshold) || memoryThreshold < 0)
+								memoryThreshold = 0;
+
+							if (cpuThreshold > 0 || memoryThreshold > 0)
+							{
+								serviceInfo.WatchThreshold = true;
+								serviceInfo.CpuThreshold = cpuThreshold;
+								serviceInfo.MemoryThreshold = memoryThreshold;
+							}
+
+							this.BusinessServices[name] = serviceInfo;
+						}
 					});
 			}
 
@@ -919,6 +988,7 @@ namespace net.vieapps.Services.APIGateway
 				(
 					$"{(string.IsNullOrWhiteSpace(this.BusinessServices[name].RunAs) ? "" : $"{this.BusinessServices[name].RunAs} ")}{serviceHosting}",
 					$"/svc:{this.BusinessServices[name].Arguments} {arguments ?? ""} /agc:r {this.GetServiceArguments().Replace("/", "/call-")} /controller-id:{this.Info.ID}".Trim(),
+					null,
 					(sender, args) =>
 					{
 						this.BusinessServices[name].Instance = null;
@@ -937,10 +1007,12 @@ namespace net.vieapps.Services.APIGateway
 									{ "NotAvailable", "" }
 								});
 						}
-					}
+					},
+					null,
+					!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
 				);
 
-				this.BusinessServices[name].Set("State", "Running");
+				this.BusinessServices[name].Watch(true).Set("State", "Running");
 				Global.OnServiceStarted?.Invoke(name, $"The service was {re}started{(this.BusinessServices[name].RecycleAt != null ? $" (be recycled at {this.BusinessServices[name].RecycleAt.Value:HH:mm:ss})" : "")} - Process ID: {this.BusinessServices[name].Instance.ID}");
 			}
 			catch (Exception ex)
@@ -1032,22 +1104,61 @@ namespace net.vieapps.Services.APIGateway
 
 		void WatchBusinessServices()
 		{
+			var isWatching = (DateTime.Now - this.LastWatch).TotalMinutes >= this.WatchingInterval;
+			var watchingLogs = "";
 			var svcArgs = this.GetServiceArguments().Replace("/", "/call-");
 			this.BusinessServices.ForEach(kvp =>
 			{
 				var svcInfo = kvp.Value;
-				if (svcInfo.Instance != null && svcInfo.RecycleAt != null && DateTime.Now >= svcInfo.RecycleAt.Value && DateTime.Now <= svcInfo.RecycleAt.Value.AddSeconds(9))
-					ExternalProcess.Kill(svcInfo.Instance.Process, null, _ =>
+				if (svcInfo.Instance != null)
+				{
+					var pid = svcInfo.Instance.ID;
+					var isRecycled = svcInfo.RecycleAt != null && DateTime.Now >= svcInfo.RecycleAt.Value && DateTime.Now <= svcInfo.RecycleAt.Value.AddSeconds(9);
+					if (isRecycled)
+						ExternalProcess.Kill(svcInfo.Instance.Process, null, _ =>
+						{
+							using (svcInfo.Instance.Process)
+								this.BusinessServices[kvp.Key].Set("State", "Running");
+							svcInfo.Instance = null;
+							svcInfo.RecycleAt = DateTime.Now.AddHours(svcInfo.RecyclePeriod > 0 ? svcInfo.RecyclePeriod : 24);
+							Global.OnProcess?.Invoke($"The service [{kvp.Key} - PID: {pid}] was terminated when recycled ({svcInfo.RecycleAt.Value:HH:mm:ss})");
+						});
+
+					else
 					{
-						using (svcInfo.Instance.Process)
-							this.BusinessServices[kvp.Key].Set("State", "Running");
-						svcInfo.Instance = null;
-						svcInfo.RecycleAt = DateTime.Now.AddHours(svcInfo.RecyclePeriod > 0 ? svcInfo.RecyclePeriod : 24);
-						Global.OnProcess?.Invoke($"The service [{kvp.Key}] was killed (be recycled at {svcInfo.RecycleAt.Value:HH:mm:ss})");
-					});
-				else if (svcInfo.Instance == null && "Running".IsEquals(svcInfo.Get<string>("State")))
+						svcInfo.Watch();
+						if (isWatching)
+						{
+							var terminatedByHighCpu = !isRecycled && svcInfo.CpuThreshold > 0 && svcInfo.CpuUsage >= svcInfo.CpuThreshold;
+							var terminatedByHighMemory = !isRecycled && svcInfo.MemoryThreshold > 0 && svcInfo.MemoryUsage >= svcInfo.MemoryThreshold;
+							if (terminatedByHighCpu || terminatedByHighMemory)
+							{
+								ExternalProcess.Kill(svcInfo.Instance.Process, null, _ =>
+								{
+									using (svcInfo.Instance.Process)
+										this.BusinessServices[kvp.Key].Set("State", "Running");
+									svcInfo.Instance = null;
+									Global.OnProcess?.Invoke($"The service [{kvp.Key} - PID: {pid}] was terminated when reach threshold ({(terminatedByHighCpu ? $"CPU: {svcInfo.CpuUsage:##0.00}%" : "")}{(terminatedByHighMemory ? $"Memory: {svcInfo.MemoryUsage:###,###,###0}MB" : "")})");
+								});
+								watchingLogs += "\r\n" + $"The service [{kvp.Key} - PID: {pid}] was terminated when reach threshold ({(terminatedByHighCpu ? $"CPU: {svcInfo.CpuUsage:##0.00}%" : "")}{(terminatedByHighMemory ? $"Memory: {svcInfo.MemoryUsage:###,###,###0}MB" : "")})";
+							}
+							else
+							{
+								var upTime = (DateTime.Now - svcInfo.Instance.StartTime.Value).GetElapsedTimes();
+								watchingLogs += "\r\n" + $"- {kvp.Key} [PID: {pid}] - CPU: {svcInfo.CpuUsage:##0.00}% - RAM: {svcInfo.MemoryUsage:###,###,###0}MB - Uptime: {upTime}";
+							}
+						}
+					}
+				}
+
+				else if ("Running".IsEquals(svcInfo.Get<string>("State")))
 					this.StartBusinessService(kvp.Key, svcArgs);
 			});
+			if (isWatching)
+			{
+				this.LastWatch = DateTime.Now;
+				Global.OnProcess?.Invoke($"Service watcher [{this.BusinessServices.Count}]" + watchingLogs);
+			}
 		}
 		#endregion
 
@@ -1329,8 +1440,11 @@ namespace net.vieapps.Services.APIGateway
 							DeviceID = "*",
 						}.Send();
 				}, this.SchedulingInterval + 13);
+			}
 
-				// statistics
+			// timer to collect services' statistics
+			if (this.IsServiceStatisticsCollector)
+			{
 				this.ServiceStatistics = Channel.CreateBounded<StatisticMessage>(new BoundedChannelOptions(1024 * 60)
 				{
 					SingleWriter = false,
@@ -1681,12 +1795,12 @@ namespace net.vieapps.Services.APIGateway
 					break;
 
 				case "Service#Statistics":
-					if (this.IsTimers)
+					if (this.IsServiceStatisticsCollector)
 						await this.UpdateServiceStatisticsAsync(message).ConfigureAwait(false);
 					break;
 
 				case "Session#Statistics":
-					if (this.IsTimers)
+					if (this.IsServiceStatisticsCollector)
 						this.Sessions = (message.Data.Get("Total", 0), message.Data.Get("User", 0), message.Data.Get("Visitor", 0), message.Data.Get("Crawler", 0));
 					break;
 			}
@@ -1742,16 +1856,8 @@ namespace net.vieapps.Services.APIGateway
 			this.PrepareRouterStatistics(time);
 
 			var (forAggregate, forReUpdate) = this.ServiceStatistics.GetMessages(time);
-			var statistics = forAggregate.Any() ? forAggregate.Aggregate(json =>
+			var statistics = forAggregate.Any() ? forAggregate.Aggregate(time, this.IsServiceStatisticsSampleEnabled, json =>
 			{
-				json["Time"] = time;
-				json["Sessions"] = new JObject
-				{
-					["Total"] = this.Sessions.Total,
-					["User"] = this.Sessions.User,
-					["Visitor"] = this.Sessions.Visitor,
-					["Crawler"] = this.Sessions.Crawler
-				};
 				var router = json.Get<JObject>("Router");
 				if (router != null)
 				{
@@ -1768,6 +1874,13 @@ namespace net.vieapps.Services.APIGateway
 						["Average"] = Math.Round(this.RouterStats.MemoryUsage.Average, 2)
 					};
 				}
+				json["Sessions"] = new JObject
+				{
+					["Total"] = this.Sessions.Total,
+					["User"] = this.Sessions.User,
+					["Visitor"] = this.Sessions.Visitor,
+					["Crawler"] = this.Sessions.Crawler
+				};
 			}) : null;
 
 			if (statistics != null)
@@ -1778,11 +1891,15 @@ namespace net.vieapps.Services.APIGateway
 					DeviceID = "*",
 					Data = statistics
 				}.Send();
+
 				new CommunicateMessage("APIGateway")
 				{
 					Type = "System#Statistics",
 					Data = statistics
 				}.Send();
+
+				//var filePath = Path.Combine(Global.StatusPath, $"system.statistics-{time:yyyyMMdd-HH_mm}.json");
+				//await statistics.SaveAsTextAsync(filePath, this.CancellationToken, Newtonsoft.Json.Formatting.None).ConfigureAwait(false);
 			}
 
 			await forReUpdate.ForEachAsync(async message => await this.ServiceStatistics.Writer.WriteAsync(message, this.CancellationToken).ConfigureAwait(false), true, false).ConfigureAwait(false);

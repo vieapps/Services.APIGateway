@@ -694,6 +694,7 @@ namespace net.vieapps.Services.APIGateway
 			}
 
 			// do clean-up tasks
+			/*
 			if (this.AllowRegisterHelperServices)
 			{
 				try
@@ -709,6 +710,7 @@ namespace net.vieapps.Services.APIGateway
 				}
 				catch { }
 			}
+			*/
 
 			if (this.IsTimers)
 			{

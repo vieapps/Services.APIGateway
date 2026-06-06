@@ -202,8 +202,8 @@ namespace net.vieapps.Services.APIGateway
 
 		internal static void Stop()
 		{
-			Task.WaitAll(Program.Manager.DisposeAsync(), Program.Controller.DisposeAsync());
 			Program.CancellationTokenSource.Cancel();
+			Task.WaitAll(Program.Manager.DisposeAsync(), Program.Controller.DisposeAsync());
 			Program.CancellationTokenSource.Dispose();
 		}
 	}

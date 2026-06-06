@@ -18,7 +18,6 @@ using WampSharp.V2.Client;
 using WampSharp.V2.Core.Contracts;
 using WampSharp.V2.Realm;
 using net.vieapps.Components.Repository;
-using net.vieapps.Components.WebSockets;
 using net.vieapps.Components.Utility;
 #endregion
 
@@ -1015,7 +1014,7 @@ namespace net.vieapps.Services.APIGateway
 				);
 
 				this.BusinessServices[name].Watch(true).Set("State", "Running");
-				Global.OnServiceStarted?.Invoke(name, $"The service was {re}started{(this.BusinessServices[name].RecycleAt != null ? $" (be recycled at {this.BusinessServices[name].RecycleAt.Value:HH:mm:ss})" : "")} - Process ID: {this.BusinessServices[name].Instance.ID}");
+				Global.OnServiceStarted?.Invoke(name, $"The service was {re}started - Process ID: {this.BusinessServices[name].Instance.ID}");
 			}
 			catch (Exception ex)
 			{
@@ -1142,7 +1141,7 @@ namespace net.vieapps.Services.APIGateway
 									svcInfo.Instance = null;
 									Global.OnProcess?.Invoke($"The service [{kvp.Key} - PID: {pid}] was terminated when reach threshold ({(terminatedByHighCpu ? $"CPU: {svcInfo.CpuUsage:##0.00}%" : "")}{(terminatedByHighMemory ? $"Memory: {svcInfo.MemoryUsage:###,###,###0}MB" : "")})");
 								});
-								watchingLogs += "\r\n" + $"The service [{kvp.Key} - PID: {pid}] was terminated when reach threshold ({(terminatedByHighCpu ? $"CPU: {svcInfo.CpuUsage:##0.00}%" : "")}{(terminatedByHighMemory ? $"Memory: {svcInfo.MemoryUsage:###,###,###0}MB" : "")})";
+								watchingLogs += "\r\n" + $"- {kvp.Key} [PID: {pid}] was terminated when reach threshold ({(terminatedByHighCpu ? $"CPU: {svcInfo.CpuUsage:##0.00}%" : "")}{(terminatedByHighMemory ? $"Memory: {svcInfo.MemoryUsage:###,###,###0}MB" : "")})";
 							}
 							else
 							{

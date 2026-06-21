@@ -212,18 +212,6 @@ namespace net.vieapps.Services.APIGateway
 
 		List<string> HttpServices { get; } = new List<string> { "APIs", "Files", "Portals", "CMSPortals" };
 
-		bool IsServiceStatisticsCollector { get; } = "true".IsEquals(UtilityService.GetAppSetting("ServiceStatistics:Collector"));
-
-		bool IsServiceStatisticsSampleEnabled { get; } = "true".IsEquals(UtilityService.GetAppSetting("ServiceStatistics:Samples"));
-
-		Channel<StatisticMessage> ServiceStatistics { get; set; }
-
-		Channel<(DateTime Time, double CpuUsage, double MemoryUsage)> RouterStatistics { get; set; }
-
-		((double Min, double Max, double Average) CpuUsage, (double Min, double Max, double Average) MemoryUsage) RouterStats { get; set; } = ((Min: 0.0, Max: 0.0, Average: 0.0), (Min: 0.0, Max: 0.0, Average: 0.0));
-
-		(int Total, int User, int Visitor, int Crawler) Sessions { get; set; } = (Total: 0, User: 0, Visitor: 0, Crawler: 0);
-
 		public int NumberOfTasks => this.Tasks.Count;
 
 		public int NumberOfTimers => this.Timers.Count;
@@ -710,12 +698,6 @@ namespace net.vieapps.Services.APIGateway
 				catch { }
 			}
 			*/
-
-			if (this.IsTimers)
-			{
-				this.ServiceStatistics.Writer?.TryComplete();
-				this.RouterStatistics.Writer?.TryComplete();
-			}
 
 			// disconnect from API Gateway Router
 			try
@@ -1442,32 +1424,6 @@ namespace net.vieapps.Services.APIGateway
 						}.Send();
 				}, this.SchedulingInterval + 13);
 			}
-
-			// timer to collect services' statistics
-			if (this.IsServiceStatisticsCollector)
-			{
-				this.ServiceStatistics = Channel.CreateBounded<StatisticMessage>(new BoundedChannelOptions(1024 * 60)
-				{
-					SingleWriter = false,
-					SingleReader = true,
-					FullMode = BoundedChannelFullMode.DropOldest
-				});
-
-				this.RouterStatistics = Channel.CreateBounded<(DateTime Time, double CpuUsage, double MemoryUsage)>(new BoundedChannelOptions(256)
-				{
-					SingleWriter = false,
-					SingleReader = true,
-					FullMode = BoundedChannelFullMode.DropOldest
-				});
-
-				Router.OnRouterWebSocketMessageReceived = (_, message) => this.UpdateRouterStatistics(message);
-				this.StartTimer(this.GetRouterStatisticsAsync, 1);
-
-				var now = DateTime.Now;
-				var time = now.AddMinutes(1);
-				var delayMilliseconds = (int)(new DateTime(time.Year, time.Month, time.Day, time.Hour, time.Minute, 1) - now).TotalMilliseconds;
-				this.StartTimer(this.ProcessServiceStatisticsAsync, 60, delayMilliseconds);
-			}
 		}
 		#endregion
 
@@ -1555,7 +1511,7 @@ namespace net.vieapps.Services.APIGateway
 			{
 				new CommunicateMessage("Logs")
 				{
-					Type = "Clean"
+					Type = "ServiceLog#Clean"
 				}.Send();
 
 				// clean recycle-bin contents
@@ -1794,16 +1750,6 @@ namespace net.vieapps.Services.APIGateway
 							}).ConfigureAwait(false);
 					}
 					break;
-
-				case "Service#Statistics":
-					if (this.IsServiceStatisticsCollector)
-						await this.UpdateServiceStatisticsAsync(message).ConfigureAwait(false);
-					break;
-
-				case "Session#Statistics":
-					if (this.IsServiceStatisticsCollector)
-						this.Sessions = (message.Data.Get("Total", 0), message.Data.Get("User", 0), message.Data.Get("Visitor", 0), message.Data.Get("Crawler", 0));
-					break;
 			}
 		}
 
@@ -1841,123 +1787,6 @@ namespace net.vieapps.Services.APIGateway
 
 		void SendServiceInfo(string name, string args, bool available, bool running)
 			=> this.SendServiceInfoAsync(name, args, available, running).Execute();
-		#endregion
-
-		#region System statistics
-		async ValueTask UpdateServiceStatisticsAsync(CommunicateMessage message)
-		{
-			if (this.ServiceStatistics?.Writer != null)
-				await this.ServiceStatistics.Writer.WriteAsync(new StatisticMessage(message.Data, DateTime.Now), this.CancellationToken).ConfigureAwait(false);
-		}
-
-		async Task ProcessServiceStatisticsAsync()
-		{
-			var time = DateTime.Now.AddMinutes(-1);
-			time = new DateTime(time.Year, time.Month, time.Day, time.Hour, time.Minute, 0);
-			this.PrepareRouterStatistics(time);
-
-			var (forAggregate, forReUpdate) = this.ServiceStatistics.GetMessages(time);
-			var statistics = forAggregate.Any() ? forAggregate.Aggregate(time, this.IsServiceStatisticsSampleEnabled, json =>
-			{
-				var router = json.Get<JObject>("Router");
-				if (router != null)
-				{
-					router["CPU"] = new JObject
-					{
-						["Min"] = Math.Round(this.RouterStats.CpuUsage.Min, 2),
-						["Max"] = Math.Round(this.RouterStats.CpuUsage.Max, 2),
-						["Average"] = Math.Round(this.RouterStats.CpuUsage.Average, 2)
-					};
-					router["Memory"] = new JObject
-					{
-						["Min"] = Math.Round(this.RouterStats.MemoryUsage.Min, 2),
-						["Max"] = Math.Round(this.RouterStats.MemoryUsage.Max, 2),
-						["Average"] = Math.Round(this.RouterStats.MemoryUsage.Average, 2)
-					};
-				}
-				json["Sessions"] = new JObject
-				{
-					["Total"] = this.Sessions.Total,
-					["User"] = this.Sessions.User,
-					["Visitor"] = this.Sessions.Visitor,
-					["Crawler"] = this.Sessions.Crawler
-				};
-			}) : null;
-
-			if (statistics != null)
-			{
-				new UpdateMessage
-				{
-					Type = "System#Statistics",
-					DeviceID = "*",
-					Data = statistics
-				}.Send();
-
-				new CommunicateMessage("APIGateway")
-				{
-					Type = "System#Statistics",
-					Data = statistics
-				}.Send();
-
-				//var filePath = Path.Combine(Global.StatusPath, $"system.statistics-{time:yyyyMMdd-HH_mm}.json");
-				//await statistics.SaveAsTextAsync(filePath, this.CancellationToken, Newtonsoft.Json.Formatting.None).ConfigureAwait(false);
-			}
-
-			await forReUpdate.ForEachAsync(async message => await this.ServiceStatistics.Writer.WriteAsync(message, this.CancellationToken).ConfigureAwait(false), true, false).ConfigureAwait(false);
-		}
-
-		void PrepareRouterStatistics(DateTime time)
-		{
-			var forReUpdate = new List<(DateTime Time, double CpuUsage, double MemoryUsage)>();
-			var forAggregate = new List<(DateTime Time, double CpuUsage, double MemoryUsage)>();
-			while (this.RouterStatistics.Reader.TryRead(out var info))
-			{
-				if (info.Time.Hour == time.Hour && info.Time.Minute == time.Minute)
-					forAggregate.Add(info);
-				else if (info.Time > time)
-					forReUpdate.Add(info);
-			}
-
-			double cpuMin = 0, cpuMax = 0, cpuAverage = 0;
-			double memoryMin = 0, memoryMax = 0, memoryAverage = 0;
-
-			if (forAggregate.Count > 0)
-			{
-				cpuMin = forAggregate.Min(info => info.CpuUsage);
-				cpuMax = forAggregate.Max(info => info.CpuUsage);
-				cpuAverage = forAggregate.Average(info => info.CpuUsage);
-				
-				memoryMin = forAggregate.Min(info => info.MemoryUsage);
-				memoryMax = forAggregate.Max(info => info.MemoryUsage);
-				memoryAverage = forAggregate.Average(info => info.MemoryUsage);
-			}
-
-			this.RouterStats = ((Min: cpuMin, Max: cpuMax, Average: cpuAverage), (Min: memoryMin, Max: memoryMax, Average: memoryAverage));
-			forReUpdate.ForEach(info => this.RouterStatistics.Writer.TryWrite(info));
-		}
-
-		Task GetRouterStatisticsAsync()
-			=> Router.SendMessageToRouterAsync(new JObject
-			{
-				["Command"] = "EnvironmentInfo"
-			}.AsString());
-
-		void UpdateRouterStatistics(string message)
-		{
-			var json = message.ToJson();
-			var timeStr = json.Value<string>("Time");
-			var cpuUsage = json.Value<object>("CpuUsage");
-			var memoryUsage = json.Value<object>("MemoryUsage");
-			if (timeStr != null && DateTime.TryParse(timeStr, out var time) && cpuUsage != null && memoryUsage != null)
-				try
-				{
-					this.RouterStatistics.Writer.TryWrite((Time: time, CpuUsage: cpuUsage.As<double>(), MemoryUsage: memoryUsage.As<double>()));
-				}
-				catch (Exception ex)
-				{
-					Global.OnError?.Invoke($"Error while updating router statistics => {ex.Message}", ex);
-				}
-		}
 		#endregion
 
 		string PrepareTimestamps(string input)

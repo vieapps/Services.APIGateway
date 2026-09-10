@@ -7,16 +7,15 @@ using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using Microsoft.AspNetCore.Http;
+using Newtonsoft.Json.Linq;
 using net.vieapps.Components.Utility;
 #endregion
 
 namespace net.vieapps.Services.APIGateway
 {
-	public class Handler
+	public class Handler(RequestDelegate _)
 	{
 		string LoadBalancerHealthCheckURL { get; } = UtilityService.GetAppSetting("LoadBalancer:HealthCheckURL", "/load-balancer-health-check");
-
-		public Handler(RequestDelegate _) { }
 
 		public async Task Invoke(HttpContext context)
 		{
@@ -109,7 +108,7 @@ namespace net.vieapps.Services.APIGateway
 		public async Task Invoke(HttpContext context)
 		{
 			// process the request of HTTP
-			if (!context.WebSockets.IsWebSocketRequest && !context.IsEventStreamRequest())
+			if (!context.WebSockets.IsWebSocketRequest)
 			{
 				// CORS options
 				context.Response.Headers.AccessControlAllowOrigin = "*";
@@ -136,6 +135,28 @@ namespace net.vieapps.Services.APIGateway
 
 			// next step
 			await this.NextAsync(context).ConfigureAwait(false);
+		}
+	}
+
+	public class McpHandler(RequestDelegate _)
+	{
+		public async Task Invoke(HttpContext context)
+		{
+			if (!context.Request.Method.IsEquals("OPTIONS"))
+			{
+				Global.Statistics.IncreaseRequest(false);
+				try
+				{
+					await context.ProcessMcpRequestAsync().ConfigureAwait(false);
+				}
+				catch (Exception ex)
+				{
+					await context.WriteMcpErrorAsync(ex, context.GetItem<JObject>("RequestBody")?.Get<string>("id"), Global.CancellationToken).ConfigureAwait(false);
+				}
+				Global.Statistics.DecreaseRequest(false);
+				if (Global.IsVisitLogEnabled)
+					await context.WriteVisitFinishingLogAsync().ConfigureAwait(false);
+			}
 		}
 	}
 }

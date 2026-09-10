@@ -9,11 +9,10 @@ using System.Collections.Generic;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
 using WampSharp.V2.Realm;
 using net.vieapps.Components.Repository;
@@ -143,13 +142,16 @@ namespace net.vieapps.Services.APIGateway
 			if (this.UseRateLimit)
 				appBuilder.UseRateLimiter();
 
+			// setup MCP
+			appBuilder.Map("/~mcp", builder => builder.UseMiddleware<Starter>().UseMiddleware<Authenticator>(true, true).UseMiddleware<McpHandler>());
+
 			// setup the forwarder of API Gateway Router
-			var excludedBranches = new HashSet<string>(["router", "pusher"], StringComparer.OrdinalIgnoreCase);
 			var enableForwarder = "true".IsEquals(UtilityService.GetAppSetting("Router:Forwarder"));
 			if (enableForwarder)
 				appBuilder.Map("/~router", Router.OpenForwarder);
 
 			// setup the path mappers
+			var excludedBranches = new HashSet<string>(["router", "pusher", "mcp"], StringComparer.OrdinalIgnoreCase);
 			var onIncomingConnectionEstablished = new List<Action<object, WampSessionCreatedEventArgs>>();
 			var onOutgoingConnectionEstablished = new List<Action<object, WampSessionCreatedEventArgs>>();
 			var pathMappers = new List<string>();
@@ -184,14 +186,14 @@ namespace net.vieapps.Services.APIGateway
 					}
 				});
 
-			// setup the handler for all requests
+			// main
 			appBuilder
 				.UseWebSockets(new WebSocketOptions
 				{
 					KeepAliveInterval = WebSocketAPIs.WebSocket.KeepAliveInterval
 				})
-				.UseMiddleware<Authenticator>(true, true, true, 0, true)
 				.UseMiddleware<Starter>()
+				.UseMiddleware<Authenticator>(true, true, true, 0, true)
 				.UseMiddleware<Handler>();
 
 			// connect to API Gateway Router

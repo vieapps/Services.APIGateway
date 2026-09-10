@@ -3,7 +3,7 @@
 	<PropertyGroup>
 		<TargetFrameworks>net10.0</TargetFrameworks>
 		<WarningLevel>3</WarningLevel>
-		<NoWarn>1573,1591,IDE0054,IDE0090,CA1822,NU1605</NoWarn>
+		<NoWarn>1573,1591,IDE0054,IDE0090,CA1822,NU1605,CS9113</NoWarn>
 		<OutputType>Exe</OutputType>
 		<InvariantGlobalization>true</InvariantGlobalization>
 		<AspNetCoreHostingModel>OutOfProcess</AspNetCoreHostingModel>		
@@ -29,8 +29,8 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.10.2606.2" />
-		<PackageReference Include="VIEApps.Services.Base.Http" Version="10.10.2606.2" />
+		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.10.2609.2" />
+		<PackageReference Include="VIEApps.Services.Base.Http" Version="10.10.2609.2" />
 		<PackageReference Include="WampSharp.AspNetCore.WebSockets.Server" Version="23.8.1" />
 	</ItemGroup>
 

@@ -104,6 +104,7 @@ namespace net.vieapps.Services.APIGateway
 					if (pathSegments.Length > 4 && !string.IsNullOrWhiteSpace(pathSegments[4]))
 						header["x-webhook-adapter"] = pathSegments[4].GetANSIUri().Replace("_", "");
 				}
+
 				else if (pathSegments.Length > 3 && pathSegments[3].IsValidUUID())
 					queryString["object-extra-identity"] = pathSegments[3];
 
@@ -1603,6 +1604,9 @@ namespace net.vieapps.Services.APIGateway
 				if (message.Type.IsEquals("Monitor#Disable"))
 					Global.Monitor = false;
 			}
+
+			else if (message.Type.IsStartsWith("MCP#"))
+				message.UpdateMcpSettings();
 		}
 		#endregion
 

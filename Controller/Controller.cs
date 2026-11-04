@@ -7,7 +7,6 @@ using System.Reflection;
 using System.Diagnostics;
 using System.Reactive.Linq;
 using System.Threading;
-using System.Threading.Channels;
 using System.Threading.Tasks;
 using System.Configuration;
 using System.Collections.Generic;
@@ -45,7 +44,10 @@ namespace net.vieapps.Services.APIGateway
 		}
 
 		public void Dispose()
-			=> this.DisposeAsync().Execute(true);
+		{
+			GC.SuppressFinalize(this);
+			this.DisposeAsync().Execute(true);
+		}
 
 		#region Process Info
 		public class ProcessInfo
@@ -936,8 +938,8 @@ namespace net.vieapps.Services.APIGateway
 		/// <returns></returns>
 		public string GetServiceArguments()
 		{
-			var runtimeArguments = Extensions.GetRuntimeArguments();
-			return $"/user:{runtimeArguments.User.UrlEncode()} /host:{runtimeArguments.Host.UrlEncode()} /platform:{runtimeArguments.Platform.UrlEncode()} /os:{runtimeArguments.OS.UrlEncode()}";
+			var (user, host, platform, os) = Extensions.GetRuntimeArguments();
+			return $"/user:{user.UrlEncode()} /host:{host.UrlEncode()} /platform:{platform.UrlEncode()} /os:{os.UrlEncode()}";
 		}
 
 		/// <summary>
@@ -995,8 +997,9 @@ namespace net.vieapps.Services.APIGateway
 					!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
 				);
 
-				this.BusinessServices[name].Watch(true).Set("State", "Running");
-				Global.OnServiceStarted?.Invoke(name, $"The service was {re}started - Process ID: {this.BusinessServices[name].Instance.ID}");
+				var svcInfo = this.BusinessServices[name];
+				svcInfo.Watch(true).Set("State", "Running");
+				Global.OnServiceStarted?.Invoke(name, $"The service was {re}started - Process ID: {svcInfo.Instance.ID}" + (svcInfo.RecycleAt != null ? $" [Be recycled at: {svcInfo.RecycleAt:HH:mm:ss}]" : ""));
 			}
 			catch (Exception ex)
 			{
@@ -1005,7 +1008,7 @@ namespace net.vieapps.Services.APIGateway
 				{
 					{ "State", "Error" },
 					{ "Error", ex.Message },
-					{ "ErrorStack", ex.StackTrace }
+					{ "Stack", ex.StackTrace }
 				});
 			}
 		}
@@ -1047,7 +1050,7 @@ namespace net.vieapps.Services.APIGateway
 					{
 						{ "State", "Error" },
 						{ "Error", ex.Message },
-						{ "ErrorStack", ex.StackTrace }
+						{ "Stack", ex.StackTrace }
 					});
 					if (sendServiceInfo)
 						this.SendServiceInfo(name, processInfo.Instance?.Arguments, false, false);
@@ -1069,7 +1072,7 @@ namespace net.vieapps.Services.APIGateway
 						{
 							{ "State", "Error" },
 							{ "Error", ex.Message },
-							{ "ErrorStack", ex.StackTrace }
+							{ "Stack", ex.StackTrace }
 						});
 						if (sendServiceInfo)
 							this.SendServiceInfo(name, processInfo.Instance?.Arguments, false, false);
@@ -1128,7 +1131,7 @@ namespace net.vieapps.Services.APIGateway
 							else
 							{
 								var upTime = (DateTime.Now - svcInfo.Instance.StartTime.Value).GetElapsedTimes();
-								watchingLogs += "\r\n" + $"- {kvp.Key} [PID: {pid}] - CPU: {svcInfo.CpuUsage:##0.00}% - RAM: {svcInfo.MemoryUsage:###,###,###0}MB - Uptime: {upTime}";
+								watchingLogs += "\r\n" + $"- {kvp.Key} [PID: {pid}] - CPU: {svcInfo.CpuUsage:##0.00}% - RAM: {svcInfo.MemoryUsage:###,###,###0}MB - Uptime: {upTime}" + (svcInfo.RecycleAt != null ? $" [Be recycled at: {svcInfo.RecycleAt:HH:mm:ss}]" : "");
 							}
 						}
 					}

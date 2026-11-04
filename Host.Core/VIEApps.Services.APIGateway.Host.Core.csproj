@@ -3,7 +3,7 @@
 	<PropertyGroup>
 		<TargetFrameworks>net10.0;net10.0-windows</TargetFrameworks>
 		<WarningLevel>3</WarningLevel>
-		<NoWarn>1573,1591,NU1605</NoWarn>
+		<NoWarn>1573,1591,NU1605,NU1902,NU1903</NoWarn>
 		<OutputType>Exe</OutputType>
 		<GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
 		<ServerGarbageCollection>true</ServerGarbageCollection>
@@ -36,7 +36,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.10.2609.2" />
+		<PackageReference Include="VIEApps.Components.Utility.AssemblyLoader" Version="10.10.2610.1" />
 	</ItemGroup>
 
 	<ItemGroup>

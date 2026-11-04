@@ -619,7 +619,7 @@ namespace net.vieapps.Services.APIGateway
 					await Task.WhenAll
 					(
 						this.BusinessServices.Keys.ForEachAsync(name => UtilityService.ExecuteTask(() => this.StopBusinessService(name, false, false))),
-						this.Tasks.Values.ForEachAsync(serviceInfo => UtilityService.ExecuteTask(() => ExternalProcess.Stop(serviceInfo.Instance, null, null, 789)))
+						this.Tasks.Values.ForEachAsync(serviceInfo => UtilityService.ExecuteTask(() => ExternalProcess.Stop(serviceInfo.Instance, null)))
 					).ConfigureAwait(false);
 				}
 				catch (Exception ex)
@@ -994,7 +994,7 @@ namespace net.vieapps.Services.APIGateway
 						}
 					},
 					null,
-					!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+					!this.IsWindows
 				);
 
 				var svcInfo = this.BusinessServices[name];
@@ -1076,8 +1076,7 @@ namespace net.vieapps.Services.APIGateway
 						});
 						if (sendServiceInfo)
 							this.SendServiceInfo(name, processInfo.Instance?.Arguments, false, false);
-					},
-					1234
+					}
 				);
 		}
 
@@ -1101,14 +1100,19 @@ namespace net.vieapps.Services.APIGateway
 					var pid = svcInfo.Instance.ID;
 					var isRecycled = svcInfo.RecycleAt != null && DateTime.Now >= svcInfo.RecycleAt.Value && DateTime.Now <= svcInfo.RecycleAt.Value.AddSeconds(9);
 					if (isRecycled)
-						ExternalProcess.Kill(svcInfo.Instance.Process, null, _ =>
-						{
-							using (svcInfo.Instance.Process)
-								this.BusinessServices[kvp.Key].Set("State", "Running");
-							svcInfo.Instance = null;
-							svcInfo.RecycleAt = DateTime.Now.AddHours(svcInfo.RecyclePeriod > 0 ? svcInfo.RecyclePeriod : 24);
-							Global.OnProcess?.Invoke($"The service [{kvp.Key} - PID: {pid}] was terminated when recycled ({svcInfo.RecycleAt.Value:HH:mm:ss})");
-						});
+						ExternalProcess.Kill
+						(
+							svcInfo.Instance.Process,
+							_ =>
+							{
+								using (svcInfo.Instance.Process)
+									this.BusinessServices[kvp.Key].Set("State", "Running");
+								svcInfo.Instance = null;
+								svcInfo.RecycleAt = DateTime.Now.AddHours(svcInfo.RecyclePeriod > 0 ? svcInfo.RecyclePeriod : 24);
+								Global.OnProcess?.Invoke($"The service [{kvp.Key} - PID: {pid}] was terminated when recycled ({svcInfo.RecycleAt.Value:HH:mm:ss})");
+							},
+							ex => Global.OnError?.Invoke($"Error occurred while recycling the service [{kvp.Key} - PID: {pid}] => {ex.Message}", ex)
+						);
 
 					else
 					{
@@ -1119,13 +1123,17 @@ namespace net.vieapps.Services.APIGateway
 							var terminatedByHighMemory = !isRecycled && svcInfo.MemoryThreshold > 0 && svcInfo.MemoryUsage >= svcInfo.MemoryThreshold;
 							if (terminatedByHighCpu || terminatedByHighMemory)
 							{
-								ExternalProcess.Kill(svcInfo.Instance.Process, null, _ =>
-								{
-									using (svcInfo.Instance.Process)
-										this.BusinessServices[kvp.Key].Set("State", "Running");
-									svcInfo.Instance = null;
-									Global.OnProcess?.Invoke($"The service [{kvp.Key} - PID: {pid}] was terminated when reach threshold ({(terminatedByHighCpu ? $"CPU: {svcInfo.CpuUsage:##0.00}%" : "")}{(terminatedByHighMemory ? $"Memory: {svcInfo.MemoryUsage:###,###,###0}MB" : "")})");
-								});
+								ExternalProcess.Kill
+								(
+									svcInfo.Instance.Process, 
+									_ =>
+									{
+										using (svcInfo.Instance.Process)
+											this.BusinessServices[kvp.Key].Set("State", "Running");
+										svcInfo.Instance = null;
+										Global.OnProcess?.Invoke($"The service [{kvp.Key} - PID: {pid}] was terminated when reach threshold ({(terminatedByHighCpu ? $"CPU: {svcInfo.CpuUsage:##0.00}%" : "")}{(terminatedByHighMemory ? $"Memory: {svcInfo.MemoryUsage:###,###,###0}MB" : "")})");
+									}
+								);
 								watchingLogs += "\r\n" + $"- {kvp.Key} [PID: {pid}] was terminated when reach threshold ({(terminatedByHighCpu ? $"CPU: {svcInfo.CpuUsage:##0.00}%" : "")}{(terminatedByHighMemory ? $"Memory: {svcInfo.MemoryUsage:###,###,###0}MB" : "")})";
 							}
 							else
@@ -1224,7 +1232,6 @@ namespace net.vieapps.Services.APIGateway
 		void StopLogFlusher()
 		{
 			if (this.LogFlusher != null)
-			{
 				if (this.IsWindows)
 					try
 					{
@@ -1254,10 +1261,8 @@ namespace net.vieapps.Services.APIGateway
 							Global.OnError?.Invoke($"Error occurred while stopping the logging service => {ex.Message}", ex);
 							ExternalProcess.Kill(this.LogFlusher?.Process);
 							this.LogFlusher = null;
-						},
-						1234
+						}
 					);
-			}
 		}
 		#endregion
 
